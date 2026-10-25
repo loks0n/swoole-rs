@@ -13,9 +13,9 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[3]
-from tools.build_upstream import COMMIT as PIN
 sys.path.insert(0, str(ROOT))
 from tools.build_hybrid import apply_patch_verified
+from tools.build_upstream import COMMIT as PIN
 
 
 def digest(path):

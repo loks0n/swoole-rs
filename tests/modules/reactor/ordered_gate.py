@@ -11,10 +11,10 @@ import subprocess
 import tempfile
 import sys
 
-from tools.build_upstream import COMMIT as PIN
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 from tools.build_hybrid import apply_patch_verified
+from tools.build_upstream import COMMIT as PIN
 
 
 def block(source, start):
