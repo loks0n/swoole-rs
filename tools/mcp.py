@@ -20,6 +20,13 @@ TOOLS = [
          'workflow': WORKFLOW, 'commit': COMMIT,
          'timeout_s': {'type': 'integer', 'minimum': 0, 'maximum': 3600, 'description': 'Default 1800'}},
          'required': ['workflow']}},
+    {'name': 'pr_merge_when_green', 'description': "Wait for a pull request's checks on its current head and squash-merge it "
+                                                   'when they pass. Waits again if the head moves; returns without merging on failure.',
+     'inputSchema': {'type': 'object', 'properties': {
+         'number': {'type': 'integer', 'description': 'Pull request number'},
+         'workflow': {**WORKFLOW, 'description': 'Workflow that must pass; default pr.yml'},
+         'timeout_s': {'type': 'integer', 'minimum': 0, 'maximum': 3600, 'description': 'Default 1800'}},
+         'required': ['number']}},
 ]
 
 
@@ -67,7 +74,23 @@ def workflow_wait(workflow, commit=None, timeout_s=1800, poll=10):
         time.sleep(poll)
 
 
-HANDLERS = {'workflow_get': workflow_get, 'workflow_wait': workflow_wait}
+def pr_merge_when_green(number, workflow='pr.yml', timeout_s=1800, poll=10):
+    deadline = time.monotonic() + timeout_s
+    while True:
+        head = gh('pr', 'view', str(number), '--json', 'headRefOid', '-q', '.headRefOid').strip()
+        result = workflow_wait(workflow, head, max(0, int(deadline - time.monotonic())), poll)
+        if result['state'] != 'passed':
+            return {**result, 'merged': False}
+        # Merge only the commit that passed: --match-head-commit refuses if the branch moved.
+        merged = subprocess.run(['gh', 'pr', 'merge', str(number), '--squash', '--delete-branch',
+                                 '--match-head-commit', head], capture_output=True, text=True)
+        if merged.returncode == 0:
+            return {**result, 'merged': True}
+        if gh('pr', 'view', str(number), '--json', 'headRefOid', '-q', '.headRefOid').strip() == head:
+            return {**result, 'merged': False, 'error': merged.stderr.strip()}
+
+
+HANDLERS = {'workflow_get': workflow_get, 'workflow_wait': workflow_wait, 'pr_merge_when_green': pr_merge_when_green}
 
 
 def handle(message):
