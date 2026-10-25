@@ -2,33 +2,32 @@
 
 ## Original PHPTs
 
-`test_originals.py` inventories all 33 `tests/swoole_timer/*.phpt` files from the
-pinned Git objects (the selection fails if that inventory changes) and runs them
-serially with PHP's official runner and the shared support adapter
-(`corpus/upstream/run.py`). Assertions, expected output, skip probes and real
-sleeps are unchanged.
+All 35 `tests/swoole_timer/*.phpt` files are in the `timers` group of
+`corpus/upstream/manifest.json` and run one per process group with PHP's
+official runner (`corpus/upstream/run.py`). Assertions, expected output, skip
+probes and real sleeps are unchanged.
 
 ```sh
-python3 -m pytest tests/modules/timer/test_originals.py \
+python3 corpus/upstream/run.py --module timers --require-all \
   --engine upstream=/absolute/path/to/upstream/swoole.so \
   --engine timer=/absolute/path/to/timer/swoole.so
 ```
 
-By default the 29 local cases run and the four network-dependent cases
+By default the 31 local cases run and the four network-dependent cases
 (`bug_4794_3` qq.com, `bug_4794_5` negative DNS, `bug_4794_6` baidu.com,
 `bug_4794_7` 11.11.11.11 timeout) are listed as `unmeasured_cases`, not passes.
 `--external-network` runs them online (`--online` or `SKIP_ONLINE_TESTS=0`,
-depending on the runner). `--case NAME` selects single originals. `passed`
-requires every selected case to pass with no skip, warning, XFAIL or missing
-result.
+depending on the runner). `--case PATH` selects single originals. With
+`--require-all`, every selected case must pass with no skip, warning, XFAIL or
+missing result.
 
-`bug_4794_8` binds fixed port 127.0.0.1:9601; the driver checks the port first
+`bug_4794_8` binds fixed port 127.0.0.1:9601; the runner checks the port first
 and records an occupied port as a failure without touching the listener. Run no
-other 9601 workload concurrently. Its unit tests cover selection and the
-port guard.
+other 9601 workload concurrently.
 
-All 33 pass per engine on macOS PHP 8.5 and Linux PHP 8.2 (with
-`--external-network`).
+At v6.2.2, all 33 then-pinned cases passed per engine on macOS PHP 8.5 and Linux
+PHP 8.2 (with `--external-network`). v6.2.4 added `clear_all_destructor_clears`
+and `memory_limit_fatal_error`.
 
 ### Known failure: `bug_4794_4` output order
 

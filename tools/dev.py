@@ -775,7 +775,6 @@ def plan(args, reports):
                    '--engine', f'upstream={reference}', '--engine', f'hybrid={hybrid}')
             pytest('timer-native', 'tests/modules/timer/test_adapter.py', '--manifest', manifest, *php,
                    *(['--sanitize'] if sys.platform == 'darwin' else []))
-            pytest('timer-originals', 'tests/modules/timer/test_originals.py', *php, *engines)
     if 'buffer' in modules:
         if getattr(args, 'string_direct_fields', False):
             script('buffer-string-direct-fields', 'tests/modules/buffer/string/compatibility.py',
@@ -910,7 +909,7 @@ def plan(args, reports):
     # Buffer changes affect all queued network output; retain all PHPTs for it.
     if integrate or 'buffer' in modules or phpt:
         script('phpt', 'corpus/upstream/run.py', '--source', manifest.parent / 'src', *php, *engines, *phpt, '--jobs', args.jobs,
-               '--require-all', *report('phpt'))
+               '--require-all', *(['--external-network'] if getattr(args, 'external_network', False) else []), *report('phpt'))
     if args.benchmark:
         # These phases are strictly after correctness checks and never concurrent.
         if 'timer' in modules:

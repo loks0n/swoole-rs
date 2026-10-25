@@ -73,7 +73,7 @@ a release gate for replacing production Swoole.
 
 ## Original Swoole PHPT tests
 
-A separate [upstream selection](upstream/README.md) runs 69 original tests through
+A separate [upstream selection](upstream/README.md) runs 92 original tests through
 PHP's official PHPT runner, with source checksums and unchanged assertions.
 Use `python3 corpus/upstream/run.py --engine upstream=target/upstream/src/modules/swoole.so --require-all`.
 This complements the twelve external application e2e projects for 81 total cases; unsupported APIs and

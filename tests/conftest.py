@@ -12,7 +12,6 @@ def pytest_addoption(parser):
     parser.addoption('--archive', help='Prebuilt Rust static archive; skips the cargo build')
     parser.addoption('--sanitize', action='store_true', help='Build native callers with ASan/UBSan')
     parser.addoption('--rust-asan', action='store_true', help='--archive was compiled with Rust ASan')
-    parser.addoption('--external-network', action='store_true', help='Include original cases that need DNS/routes')
 
 
 def engines(config):
