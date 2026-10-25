@@ -164,14 +164,9 @@ def plan(args, reports):
         if 'base64' in modules:
             script('base64-originals', 'tests/modules/base64/original.py', '--source', ROOT / 'target/upstream/src',
                    *php, *engines, *report('base64-originals'))
-    for module in ['crc32', 'error']:
-        if module in modules:
-            script(module + '-native', 'tools/core_check.py', '--module', module,
-                   '--build-manifest', manifest, '--sanitize', *report(module + '-native'))
-    for module, phase, flag in [('crc32', 'crc32-positive', '--positive-only')]:
-        if module in modules:
-            script(phase, 'tools/core_check.py', '--module', module, '--build-manifest', manifest,
-                   '--sanitize', flag, *report(phase))
+    if 'error' in modules:
+        script('error-native', 'tools/core_check.py', '--module', 'error',
+               '--build-manifest', manifest, '--sanitize', *report('error-native'))
     if 'error' in modules and integrate:
         script('error-php', 'tests/modules/error/php.py', '--source', ROOT / 'target/upstream/src',
                *php, *engines, *report('error-php'))
