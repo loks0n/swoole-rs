@@ -98,8 +98,11 @@ def jobs(port):
 
 def coroutines(engine, entry):
     result = run_isolated(engine.command(entry), timeout=10)
-    expect(result.returncode, 0)
-    expect(json.loads(result.stdout), {'results': [{'id': i, 'result': i*i} for i in range(1, 5)], 'timed_out': True})
+    try:
+        expect(result.returncode, 0)
+        expect(json.loads(result.stdout), {'results': [{'id': i, 'result': i*i} for i in range(1, 5)], 'timed_out': True})
+    except (AssertionError, ValueError) as error:
+        raise AssertionError(f'{error}; stdout={result.stdout[-1500:]!r}; stderr={result.stderr[-1500:]!r}') from error
 
 
 class WebSocket:
