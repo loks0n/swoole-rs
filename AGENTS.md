@@ -36,7 +36,7 @@ beyond a checkout, `gh` with `GH_TOKEN`, and the toolchain. Prefer cloud
 environments to one shared machine. Each executor loops:
 
 1. Claim the highest-priority, oldest `status:ready` issue (see Tickets).
-2. Branch from `main`, commit. The pre-commit hook runs quick checks (~15s);
+2. Branch from `main`, commit. The pre-commit hook runs quick checks (~5s warm);
    enable the hooks with `git config core.hooksPath .githooks`.
 3. Push and open a PR whose body says `Closes #n`. The PR tier runs unit and
    integration CI (target: under 3 minutes).
@@ -109,6 +109,6 @@ ad-hoc scripts, `gh run watch`).
 
 ## CI
 
-Three tiers: the pre-commit hook (~15s), the PR tier (`pr.yml`, under 3 minutes
+Three tiers: the pre-commit hook (~5s warm), the PR tier (`pr.yml`, under 3 minutes
 warm) and the merge tier (`merge.yml`, on `main`). Keep them cached and audit
 them regularly for waste and duplicate steps; slow or flaky CI is a ticket.

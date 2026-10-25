@@ -130,7 +130,7 @@ failures, and reports `new_failures` / `resolved_failures` per case only when
 both sides have matching case inventories and an unchanged upstream control
 binary. Other differences appear as `unqualified_status_changes`.
 
-Tooling tests: `python3 -m unittest discover -s tests/dev -v`.
+Tooling tests: `tests/dev/run.sh` (parallel; prints only failing files), or `python3 -m unittest discover -b -s tests/dev` (`-b` hides output from passing tests).
 
 ## Environment preflight
 
