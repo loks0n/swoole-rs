@@ -12,6 +12,9 @@ extents are caller preconditions.
 
 ## M09 Base64 (`native/include/swoole_rs_base64.h`, crate `swoole-rs-base64`)
 
+The header is generated from the crate by cbindgen (`crates/base64/cbindgen.toml`);
+run `tools/headers.sh` after changing an export. The PR tier fails if it is stale.
+
 Signatures mirror the pinned low-level functions. Null input is allowed only for
 length 0; output must be non-null.
 
