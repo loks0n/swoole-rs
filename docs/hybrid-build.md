@@ -11,6 +11,23 @@ builder refuses a different commit or tracked modifications there, and applies
 checksum-verified patches from `migration/patches/<module>/` to a separate Git
 clone. Do not edit the reference to develop a patch.
 
+## Editing patches
+
+Each module's patches are a branch of the pinned upstream, one commit per patch
+file named after it:
+
+```sh
+python3 tools/patches.py checkout phphelpers   # target/patches/phphelpers, branch patches/phphelpers
+# edit, then amend or fixup the commit for that patch (git rebase -i 8e8c499)
+python3 tools/patches.py export phphelpers     # rewrites the patch files and manifest.json
+rm -rf target/patches/phphelpers
+```
+
+Upstream changes then surface as ordinary rebase conflicts. Export writes
+`git diff` output and drops patch files that no longer have a commit; add a
+commit to add a patch. New destinations must be in the module's
+`upstream_patch_targets` in `migration/modules.json`.
+
 ## Build variants
 
 Needs the PHP toolchain from the [corpus instructions](../corpus/README.md) plus

@@ -3,21 +3,21 @@
   "patches": [
     {
       "path": "0001-php_swoole_cxx.patch",
-      "sha256": "72934c7da112dcdbc13fa15ea53c6c903031e8bf6592d378fa05708a158210e1",
+      "sha256": "cda6d33460a436b63a52f53b2da19219e561939d6751bf0b8cbe1026ec7f4c7b",
       "upstream_paths": [
         "ext-src/php_swoole_cxx.cc"
       ]
     },
     {
       "path": "0002-swoole_stdext.patch",
-      "sha256": "3702dc08f3d226b0dd2f4b7bd53798ed719b8329b41f4079866bb574db546a4b",
+      "sha256": "b8bcb38d90e8bfe2e527ee9859b260c2ea89fb73b10656b91fff2be9a56eb4f9",
       "upstream_paths": [
         "ext-src/swoole_stdext.cc"
       ]
     },
     {
       "path": "0003-php_swoole_cxx.patch",
-      "sha256": "f96a17a49970e16f7a3b3c328af9b646fbf3969696b972f33e079f78bf7bbfc6",
+      "sha256": "bfd97fe3453a3e25cabc87480fb035f2fa3966599cc6b4cfa27a78424399280f",
       "upstream_paths": [
         "ext-src/php_swoole_cxx.h"
       ]

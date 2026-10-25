@@ -31,7 +31,8 @@ allocation/error/publication/cleanup order and fresh observations after
 callbacks. Native dup is a C string; Zend edup keeps binary length. Removing the
 alias map changes startup allocation/OOM behaviour.
 
-`make_patches.py PINNED` regenerates the three overlays.
+Edit the three overlays with `tools/patches.py`; see
+[hybrid build](../../../docs/hybrid-build.md#editing-patches).
 
 ## Body gate (`gate.py`, `phphelpers-policy`)
 
