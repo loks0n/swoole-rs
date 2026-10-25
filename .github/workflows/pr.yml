@@ -21,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 tools/check_migration.py
-      - run: python3 -m unittest discover -s tests/dev
+      - run: tests/dev/run.sh
 
   hybrid:
     runs-on: ubuntu-24.04
