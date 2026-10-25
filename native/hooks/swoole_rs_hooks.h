@@ -49,7 +49,7 @@ int32_t swr_v1_hook_dns_error(int32_t error, int32_t asynchronous_timeout, int32
 double swr_v1_hook_sleep_timeout(double seconds, double minimum);
 bool swr_v1_hook_packet_start(uint64_t buffered, uint32_t header, bool custom);
 int32_t swr_v1_hook_packet_length(int64_t length, uint32_t maximum);
-int64_t swr_v1_hook_packet_result(uint64_t buffered, int64_t expected);
+int64_t swr_v1_hook_packet_result(uint64_t buffered, int64_t expected, bool timed_out);
 uint64_t swr_v1_hook_packet_window(uint64_t size, uint64_t buffered, uint64_t maximum);
 typedef struct { uint64_t offset; uint64_t grow; int32_t action; } swr_v1_hook_eof_plan;
 swr_v1_hook_eof_plan swr_v1_hook_packet_eof(int64_t found, uint32_t eof_length, uint64_t buffered, uint64_t size, uint32_t maximum);
