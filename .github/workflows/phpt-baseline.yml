@@ -37,12 +37,13 @@ jobs:
       # php -n loads nothing; load every extension the distribution enables, in its order.
       - id: extensions
         run: echo "args=$(sed -n 's/^extension=\(.*\)/--php-extension \1/p' /etc/php/*/cli/conf.d/*.ini | sed 's/\.so$//' | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
-      # Upstream failures are the point of the run; the summary job reports them.
+      # Exit 1 means some upstream tests failed, which is what the run records; anything
+      # else (a runner crash) fails the shard.
       - run: >
-          python3 corpus/upstream/run.py --manifest target/baseline/manifest.json --timeout 30
+          python3 corpus/upstream/run.py --manifest target/baseline/manifest.json --timeout 30 --external-network
           ${{ steps.extensions.outputs.args }}
           --engine upstream=target/hybrid/upstream-php-sockets/modules/swoole.so
-          --output target/baseline/shard-${{ matrix.index }}.json || true
+          --output target/baseline/shard-${{ matrix.index }}.json || [ $? -eq 1 ]
       - uses: actions/upload-artifact@v4
         if: always()
         with:

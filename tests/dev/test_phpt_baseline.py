@@ -20,6 +20,7 @@ class PhptBaseline(unittest.TestCase):
         self.assertEqual(skip_reason(detail), 'mysql server not available')
         self.assertEqual(category('mysql server not available'), 'service')
         self.assertEqual(category('skip on ZTS'), 'zts')
+        self.assertEqual(category('not support in nts'), 'zts')
         self.assertEqual(category('for select'), 'other')
         with tempfile.TemporaryDirectory() as temp:
             report = Path(temp) / 'shard.json'

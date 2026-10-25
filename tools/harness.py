@@ -172,7 +172,7 @@ def run_compiler(command, *, timeout=60):
 def run_isolated(command, *, timeout=15, cwd=None, env=None):
     """Capture a CLI test, bounding its whole process group including forked children."""
     proc = subprocess.Popen(command, cwd=cwd, env=env, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, text=True, start_new_session=True)
+                            stderr=subprocess.PIPE, text=True, errors='replace', start_new_session=True)
     result = None
     try:
         stdout, stderr = proc.communicate(timeout=timeout)
