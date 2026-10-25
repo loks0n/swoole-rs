@@ -58,8 +58,7 @@ preexisting tail bytes. Rust matches C++ for every span.
 `x86_probe.rs` includes the production source unchanged in a freestanding
 x86_64 Linux ELF that exits nonzero on any failed check. Build it with
 `rustc --target x86_64-unknown-linux-gnu`, `-C panic=abort`, static relocation,
-rust-lld and link args `-nostdlib -static -no-pie`, then run it with
-`python3 tools/linux_dev.py -- /repo/target/NAME` (binfmt emulation).
+rust-lld and link args `-nostdlib -static -no-pie`, then run it in the devcontainer (see `docs/development.md`).
 
 ## Known gaps
 

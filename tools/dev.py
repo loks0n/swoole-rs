@@ -17,9 +17,18 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.harness import ROOT, write_report
 from tools.build_hybrid import MODULES, REACTOR_OWNED_CAPABILITIES, HTTP_STORAGE_CAPABILITIES, reactor_owned_capabilities, http_storage_capabilities, storage_suffix, profile_suffix, build_alias
 from tools.build_upstream import require_build_space
-from tools.dev_environment import PYTHON_IDENTITY
 from tools.dev_report import read_json
 from tools.private_copy import copy_private
+
+
+# Exit 0 only when this Python can configure a TLS 1.3-only client context.
+TLS13_PROBE = """import ssl, sys
+context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+try:
+    context.minimum_version = context.maximum_version = ssl.TLSVersion.TLSv1_3
+except ValueError:
+    sys.exit(2)
+sys.exit(0 if ssl.HAS_TLSv1_3 else 2)"""
 
 
 def require_frozen_source(expected):
@@ -840,8 +849,7 @@ def plan(args, reports):
                    *engines, *report('websocket-close'))
     if repair:
         tls13_python = getattr(args, 'tls13_python', None) or python
-        add('halfclose-tls13-driver', tls13_python, '-I', '-S', '-B', '-c',
-            PYTHON_IDENTITY + '\nraise SystemExit(0 if versions["1.3"]["configuration_accepted"] and versions["1.3"]["advertised"] else 2)')
+        add('halfclose-tls13-driver', tls13_python, '-I', '-S', '-B', '-c', TLS13_PROBE)
         candidate = ['--engine', f'hybrid={hybrid}']
         script('halfclose-queued', 'tests/modules/halfclose/gate.py', *php, *candidate, *report('halfclose-queued'))
         script('halfclose-prequeue', 'tests/modules/halfclose/prequeue.py', *php, *candidate, *report('halfclose-prequeue'))
