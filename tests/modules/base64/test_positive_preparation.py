@@ -61,8 +61,7 @@ using oracle::base64_encode; using oracle::base64_decode;
                 if shutil.disk_usage(checked).free < 4 * 1024**3:
                     raise RuntimeError('Unchanged 4GiB guard: ' + str(checked))
             (path / 'control.cc').write_text(fixture)
-            subprocess.run(['python3', str(ROOT / 'tools/shared_cache.py'), '--',
-                            'c++', '-std=c++14', str(path / 'control.cc'), '-o', str(path / 'control')],
+            subprocess.run(['c++', '-std=c++14', str(path / 'control.cc'), '-o', str(path / 'control')],
                            check=True, capture_output=True, text=True, timeout=60)
             for encode_only, workloads, decodes in [(True, 7, 0), (False, 14, 7)]:
                 with self.subTest(encode_only=encode_only):

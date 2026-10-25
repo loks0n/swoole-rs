@@ -12,7 +12,7 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 
 PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
 
@@ -121,7 +121,7 @@ uint8_t message_policy(uint8_t opcode, uint8_t settings) {
             command += ['-ldl', '-lpthread', '-lrt', '-lutil']
         if args.sanitize:
             command += ['-fsanitize=address,undefined', '-fno-sanitize=alignment', '-fno-sanitize-recover=all']
-        report['compile'] = compile_cached(command + ['-o', str(binary)], output=binary, scratch=tree)
+        report['compile'] = run_compiler(command + ['-o', str(binary)])
         if report['compile']['returncode']:
             write_report(args.output, report)
             print(report['compile']['stderr'], file=sys.stderr)

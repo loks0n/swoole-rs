@@ -11,7 +11,7 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 
 PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
 TARGETS = ['src/protocol/mqtt.cc', 'src/protocol/redis.cc', 'src/protocol/socks5.cc', 'src/protocol/message_bus.cc', 'include/swoole_message_bus.h', 'ext-src/swoole_redis_server.cc']
@@ -102,7 +102,7 @@ def main():
             command += ['-ldl', '-lpthread', '-lrt', '-lutil']
         if args.sanitize:
             command += ['-fsanitize=address,undefined', '-fno-sanitize-recover=all']
-        report['compile'] = compile_cached(command + ['-o', str(binary)], output=binary, scratch=tree)
+        report['compile'] = run_compiler(command + ['-o', str(binary)])
         if report['compile']['returncode']:
             write_report(args.output, report)
             print(report['compile']['stderr'], file=sys.stderr)
@@ -113,7 +113,7 @@ def main():
             failure_source = local / 'pool_failure.cc'
             failure_binary = tree / 'pool-failure'
             failure_command = [str(failure_source) if item == str(local / 'native.cc') else item for item in command]
-            report['allocation_compile'] = compile_cached(failure_command + ['-o', str(failure_binary)], output=failure_binary, scratch=tree)
+            report['allocation_compile'] = run_compiler(failure_command + ['-o', str(failure_binary)])
             if report['allocation_compile']['returncode']:
                 report['passed'] = False
                 write_report(args.output, report)
@@ -134,7 +134,7 @@ def main():
             benchmark = [str(local / 'bench.cc') if item == str(local / 'native.cc') else item for item in command]
             benchmark[benchmark.index('-O2')] = '-O3'
             benchmark = [item for item in benchmark if not item.startswith('-fsanitize=') and not item.startswith('-fno-sanitize-recover=')]
-            report['benchmark_compile'] = compile_cached(benchmark + ['-o', str(binary)], output=binary, scratch=tree)
+            report['benchmark_compile'] = run_compiler(benchmark + ['-o', str(binary)])
             if report['benchmark_compile']['returncode']:
                 write_report(args.output, report)
                 return 1

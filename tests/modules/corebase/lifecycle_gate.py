@@ -61,7 +61,7 @@ def main():
             file = Path(__file__).with_name(name)
             report['sources'][name] = sha(file)
             shutil.copy2(file, attempt / name)
-        report['imported_helpers'] = {name: sha(ROOT / name) for name in ['tools/harness.py', 'tools/native_core.py', 'tools/build_hybrid.py', 'tools/build_upstream.py', 'tools/check_migration.py', 'tools/dev_cache.py']}
+        report['imported_helpers'] = {name: sha(ROOT / name) for name in ['tools/harness.py', 'tools/native_core.py', 'tools/build_hybrid.py', 'tools/build_upstream.py', 'tools/check_migration.py']}
         for name, driver in [('cleanup_thread', 'hooks'), ('fork_guards', 'fork'),
                              ('task_directory', 'task-directory'), ('task_lifetime', 'task-lifetime'),
                              *([('syscall_failures', 'fork-failure'), ('init_prefixes', 'init'), ('init_host_effects', 'init-host')] if platform.system() == 'Linux' else [])]:

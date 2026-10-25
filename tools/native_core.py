@@ -21,9 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.build_hybrid import MODULES, headers_for, patches_for, apply_patch_verified
 from tools.build_upstream import COMMIT, require_build_space
 from tools.check_migration import validate
-from tools.dev_cache import exclusive
+from tools.harness import exclusive
 from tools.harness import ROOT, run_isolated, write_report
-from tools.shared_cache import compiler_settings, compiler_launcher
 
 
 @contextmanager
@@ -250,7 +249,7 @@ def main():
         archive = args.archive.resolve(strict=True) if args.archive else None
         compiler = subprocess.check_output(['c++','--version'],text=True).splitlines()[0]
         ccache = args.ccache.resolve(strict=True) if args.ccache else None
-        inputs = {'cache_helper_sha256': sha(Path(__file__).with_name('shared_cache.py')), 'ccache': {'path':str(ccache), 'sha256':sha(ccache), 'version':subprocess.check_output([str(ccache),'--version'],text=True).splitlines()[0]} if ccache else None,
+        inputs = {'ccache': {'path':str(ccache), 'sha256':sha(ccache), 'version':subprocess.check_output([str(ccache),'--version'],text=True).splitlines()[0]} if ccache else None,
                   'pin': COMMIT, 'config_sha256': sha(args.config), 'patches': patches,
                   'headers': {p.name: sha(p) for p in headers}, 'archive_sha256': sha(archive) if archive else None,
                   'compiler': compiler, 'cmake': subprocess.check_output(['cmake','--version'],text=True).splitlines()[0],
@@ -315,12 +314,9 @@ def main():
                     launchers = []
                     debug_map = '-fdebug-prefix-map='+str(work)+'=/swoole-native-originals' if ccache else ''
                     if ccache:
-                        settings = {**compiler_settings(ROOT), 'base_dir': str(work),
-                                    'stats_log': str(attempt/'ccache-stats.log')}
-                        launcher = ';'.join(compiler_launcher(ccache, settings))
+                        launcher = ';'.join(['env', 'CCACHE_BASEDIR=' + str(work), str(ccache)])
                         launchers = ['-DCMAKE_C_COMPILER_LAUNCHER='+launcher,'-DCMAKE_CXX_COMPILER_LAUNCHER='+launcher]
-                        report['compiler_cache'] = {'launcher':launcher,'stats_log':str(attempt/'ccache-stats.log'),
-                                                    'scope':'Per-attempt compiler events, not runtime performance; absolute private tree paths normalized by ccache base_dir'}
+                        report['compiler_cache'] = {'launcher':launcher}
                     openssl = ['-Dopenssl_dir='+str(args.openssl_dir.resolve())] if args.openssl_dir else []
                 run(['cmake','-S',tree,'-B',build,'-DCMAKE_BUILD_TYPE=Release','-Dphp_dir='+args.php_dir,
                      '-DCMAKE_CXX_FLAGS_RELEASE=-O2 -UNDEBUG','-DCMAKE_C_FLAGS_RELEASE=-O2 -UNDEBUG',

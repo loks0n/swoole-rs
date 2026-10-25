@@ -8,7 +8,7 @@ import sys
 import tempfile
 from ordered_gate import ROOT, PIN, block, apply_patch_verified
 from tools.build_upstream import require_build_space
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 from tools.harness import run_isolated
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True);p.add_argument('--report',type=Path,required=True);p.add_argument('--sanitize',action='store_true');a=p.parse_args()
@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix='swr-inert-queues-') as temporary:
                 if sys.platform.startswith('linux'):command+=['-ldl','-lm']
                 for stage,cmd in [('compile',command),('execute',[binary])]:
                     require_build_space(ROOT);require_build_space(tree)
-                    result=compile_cached(cmd,output=binary,scratch=tree) if stage=='compile' else vars(run_isolated(list(map(str,cmd)),cwd=tree,timeout=60))
+                    result=run_compiler(cmd) if stage=='compile' else vars(run_isolated(list(map(str,cmd)),cwd=tree,timeout=60))
                     report['commands'].append(dict(variant=variant,standard=standard,stage=stage,command=list(map(str,cmd)),exit=result['returncode'],stdout=result['stdout'],stderr=result['stderr']))
                     if result['returncode'] or result['stderr']:raise RuntimeError(variant+' '+stage+' failed or warned')
                 report['results'].append(dict(variant=variant,standard=standard,observations=json.loads(result['stdout'])))

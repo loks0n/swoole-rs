@@ -16,7 +16,7 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 
 PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
 
@@ -31,7 +31,6 @@ def main():
     parser.add_argument('--build-manifest', type=Path, default=ROOT / 'target/hybrid/rust-buffer-websocket/build-manifest.json')
     parser.add_argument('--output', default=str(ROOT / 'target/reports/websocket-prefix.json'))
     parser.add_argument('--sanitize', action='store_true', help='C++ source/caller ASan+UBSan; Rust archive not instrumented')
-    parser.add_argument('--no-cache', action='store_true', help='Recompile native binary; execution always runs')
     args = parser.parse_args()
     manifest = json.loads(args.build_manifest.read_text())
     if manifest['inputs']['upstream_commit'] != PIN or not manifest['migrated_feature_bits'] & 1:
@@ -74,7 +73,7 @@ def main():
             command += ['-fsanitize=address,undefined', '-fno-sanitize-recover=all']
         command += ['-o', str(binary)]
         report['compile_command'] = command
-        compiled = compile_cached(command, output=binary, scratch=tree, timeout=60, cache=not args.no_cache)
+        compiled = run_compiler(command, timeout=60)
         report['compile'] = compiled
         if compiled['returncode']:
             write_report(args.output, report)

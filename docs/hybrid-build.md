@@ -33,8 +33,8 @@ native callbacks unless a selected module replaces them.
 
 Shared options (also on `build_upstream.py`): `--jobs N`, `--php-config PATH`,
 `--phpize PATH`, `--openssl-dir PREFIX`, `--stdext`, `--php-sockets`,
-`--ccache PATH` / `--no-ccache` (ccache is auto-detected; cache is bounded at
-256 MiB, see `tools/shared_cache.py`). The runners' `--php` must match the build
+`--ccache PATH` / `--no-ccache` (ccache is auto-detected and uses its own
+settings). The runners' `--php` must match the build
 toolchain. Neither builder installs the extension or edits php.ini.
 
 Stable paths point to the latest build of each variant:

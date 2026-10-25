@@ -12,8 +12,7 @@ there is no binary layout compatibility with native. Native code keeps FILE/fd/
 mutex custody, clock/calendar/libc, identity, descriptor, diagnostic and
 backtrace effects after Rust returns.
 
-Run ad-hoc commands through `tools/shared_cache.py --`, with a release archive
-matching the current utility sources, headers and overlays.
+Use a release archive matching the current utility sources, headers and overlays.
 
 ## Body and policy gates
 

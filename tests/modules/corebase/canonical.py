@@ -106,7 +106,7 @@ def main():
         report.update(archive=str(args.archive), archive_sha256=sha(args.archive), config_sha256=sha(args.config),
                       runner_sha256=sha(__file__), environment={key: env.get(key) for key in ['PATH', 'PKG_CONFIG_PATH', 'LIBRARY_PATH']},
                       helper_sha256={name: sha(ROOT / name) for name in ['tools/native_core.py', 'tools/build_upstream.py',
-                          'tools/harness.py', 'tools/build_hybrid.py', 'tools/check_migration.py', 'tools/dev_cache.py',
+                          'tools/harness.py', 'tools/build_hybrid.py', 'tools/check_migration.py',
                           'tests/modules/corebase/prepare_benchmark.py', 'tests/modules/corebase/lifecycle_gate.py', 'tests/modules/corebase/supervisor.py']})
         if subprocess.check_output(['git', '-C', str(args.source), 'rev-parse', 'HEAD'], text=True, timeout=30).strip() != COMMIT:
             raise ValueError('Read-only reference must be pinned upstream')

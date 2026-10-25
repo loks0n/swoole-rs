@@ -71,17 +71,11 @@ checkout).
 
 ## Caches
 
-- Native test harnesses cache compiled binaries in `target/cache/native/`. The
-  key covers compiler bytes, flags, compiler-discovered sources and headers,
-  linked archives, host and environment; Rust fixtures also use rustc dep-info
-  plus the toolchain's standard library archives. Binaries are checksum-verified
-  and tests always re-execute. `--no-cache` or `SWOOLE_RS_NO_CACHE=1` disables it.
-- ccache for the PHP extension build: see `tools/shared_cache.py`. It uses
-  content compiler checks, no direct/depend mode, no hard links and empty
-  sloppiness, and keeps exact source paths so `__FILE__` is unchanged. Per-build
-  events go to the build log's `.ccache.log` sibling. `php_swoole.cc` always
-  misses because it embeds `__DATE__`/`__TIME__`.
-- Ad-hoc host commands: `python3 tools/shared_cache.py -- COMMAND`.
+Plain ccache and cargo, with their usual settings (`CCACHE_DIR`, `CCACHE_MAXSIZE`,
+`CARGO_HOME`). The extension builders and C/C++ test harnesses compile through
+`ccache` when it is installed; `--no-ccache` disables it for a build.
+`php_swoole.cc` always misses because it embeds `__DATE__`/`__TIME__`. CI keeps
+the cache in `.ccache`.
 
 ## PHPT runner
 

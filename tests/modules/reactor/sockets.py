@@ -8,7 +8,7 @@ import sys
 import tempfile
 from ordered_gate import ROOT, PIN, block, apply_patch_verified
 from tools.build_upstream import require_build_space
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 from tools.harness import run_isolated
 
 FLAG = '#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED'
@@ -63,7 +63,7 @@ def main():
                     if sys.platform.startswith('linux'):cmd+=['-ldl','-lm']
                     for stage,command in [('compile',cmd),('execute',[binary])]:
                         require_build_space(ROOT);require_build_space(tree)
-                        result=compile_cached(command,output=binary,scratch=tree) if stage=='compile' else vars(run_isolated(list(map(str,command)),cwd=tree,timeout=60))
+                        result=run_compiler(command) if stage=='compile' else vars(run_isolated(list(map(str,command)),cwd=tree,timeout=60))
                         report['commands'].append(dict(variant=variant,standard=standard,stage=stage,command=list(map(str,command)),exit=result['returncode'],stdout=result['stdout'],stderr=result['stderr']))
                         if result['returncode'] or result['stderr']:raise RuntimeError(variant+' '+stage+' failed or warned')
                     report['observations'].append(dict(variant=variant,standard=standard,result=json.loads(result['stdout'])))

@@ -57,7 +57,7 @@ layout, so every selected SDK consumer must rebuild.
 Build the archive, then run a facade gate against the pinned source:
 
 ```sh
-python3 tools/shared_cache.py -- cargo build --locked --offline --release -p swoole-rs-reactor --target-dir PRIVATE_TARGET
+cargo build --locked --release -p swoole-rs-reactor --target-dir PRIVATE_TARGET
 python3 tests/modules/reactor/builtins.py --source PINNED --archive PRIVATE_TARGET/release/libswoole_rs_reactor.a --sanitize --report UNIQUE.json
 ```
 

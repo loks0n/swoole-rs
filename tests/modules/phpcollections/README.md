@@ -19,8 +19,6 @@ push/pop, phase 1 uses the fresh result. `clear_cell`, `channel_next` and
 `table_facade.inc` template); selected sources require
 `--enable-swoole-rs-phpcollections`.
 
-Run ad-hoc commands through `tools/shared_cache.py --`.
-
 ## Body and policy gate (`gate.py`)
 
 ```sh

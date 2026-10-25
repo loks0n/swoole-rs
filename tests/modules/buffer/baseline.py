@@ -15,7 +15,7 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 
 PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
 FILES = ['src/core/buffer.cc', 'src/core/string.cc', 'include/swoole_buffer.h',
@@ -27,7 +27,6 @@ def main():
     parser.add_argument('--source', type=Path, default=ROOT / 'target/upstream/src')
     parser.add_argument('--output', default=str(ROOT / 'target/reports/buffer-baseline.json'))
     parser.add_argument('--sanitize', action='store_true')
-    parser.add_argument('--no-cache', action='store_true', help='Recompile native binary; execution always runs')
     args = parser.parse_args()
     local = Path(__file__).resolve().parent
     report = {'schema_version': 1, 'created_utc': datetime.now(timezone.utc).isoformat(),
@@ -62,7 +61,7 @@ def main():
             command.append('-fsanitize=address,undefined')
         command += ['-o', str(binary)]
         report['compile_command'] = command
-        compiled = compile_cached(command, output=binary, scratch=tree, timeout=45, cache=not args.no_cache)
+        compiled = run_compiler(command, timeout=45)
         report['compile'] = compiled
         if compiled['returncode']:
             write_report(args.output, report)

@@ -36,8 +36,7 @@ alias map changes startup allocation/OOM behaviour.
 ## Body gate (`gate.py`, `phphelpers-policy`)
 
 ```sh
-python3 tools/shared_cache.py -- \
-  python3 tests/modules/phphelpers/gate.py --source PINNED --sanitize --output BODY.json
+python3 tests/modules/phphelpers/gate.py --source PINNED --sanitize --output BODY.json
 ```
 
 Runs complete pinned and selected bodies against modeled native storage and
