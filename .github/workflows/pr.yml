@@ -5,7 +5,7 @@ concurrency:
   group: pr-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 env:
-  DEPS: php-dev php-sqlite3 php-curl php-mbstring libpcre2-dev libssl-dev pkg-config ccache
+  DEPS: php-dev php-sqlite3 php-curl php-mbstring libpcre2-dev libssl-dev zlib1g-dev pkg-config ccache
 jobs:
   rust:
     runs-on: ubuntu-24.04
@@ -48,7 +48,7 @@ jobs:
       # composer; both run in the merge tier.
       - run: >
           python3 corpus/run.py
-          --php-extension pdo --php-extension pdo_sqlite
+          --php-extension pdo --php-extension pdo_sqlite --php-extension curl
           --project 01-hello --project 02-router --project 03-notes --project 04-job-service
           --project 05-coroutines --project 06-websocket --project 07-tcp-framing
           --project 08-timers --project 09-shared-table --project 10-task-workers
