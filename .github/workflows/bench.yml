@@ -1,0 +1,38 @@
+name: Bench
+# Instructions per request (callgrind) for hybrid and upstream. Counts barely vary
+# between runs of the same binaries, so the ratio is usable on shared runners.
+on:
+  workflow_dispatch:
+env:
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: 500M
+jobs:
+  callgrind:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: .devcontainer/install.sh && sudo apt-get install -yq valgrind
+      - id: upstream
+        uses: actions/cache/restore@v4
+        with:
+          path: target/upstream
+          key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
+      - if: steps.upstream.outputs.cache-hit != 'true'
+        run: python3 tools/build_upstream.py
+      - uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-
+      - run: cargo fetch --locked
+      - run: python3 tools/build_hybrid.py --module buffer --module websocket
+      - run: >
+          python3 benchmarks/callgrind.py --requests 1000
+          --engine hybrid=target/hybrid/rust-buffer-websocket/modules/swoole.so
+          --engine upstream=target/upstream/src/modules/swoole.so
+          --output callgrind.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: callgrind
+          path: callgrind.json
