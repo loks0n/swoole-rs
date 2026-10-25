@@ -33,8 +33,6 @@ Gates that need no upstream source:
 - `callback_internal.py --report R`: compares current and control Rust callback metadata operations.
 - `sockets_gnu_source.py --candidate-dir D --report R`: compares the Rust socket store with GNU libstdc++ hashtable bodies (inputs pinned by checksum in `gnu_source_body.py`).
 
-`compile_cached` (from `tools/dev_cache.py`) reuses compile outputs only; every
-run still executes. Set `SWOOLE_RS_NO_CACHE=1` to disable it.
 
 ## Production consumer
 

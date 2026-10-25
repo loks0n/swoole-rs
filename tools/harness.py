@@ -1,11 +1,13 @@
 """Shared process isolation for regression tests, project corpus, and benchmarks."""
 import contextlib
 from dataclasses import dataclass
+import fcntl
 import hashlib
 import http.client
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import socket
 import subprocess
@@ -135,6 +137,36 @@ def stop_process_group(proc):
     except ProcessLookupError:
         pass
     proc.wait()
+
+
+@contextlib.contextmanager
+def exclusive(path):
+    """Fail visibly rather than racing another build or silently waiting on it."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open('a') as handle:
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError(f'Another writer holds {path}; retry after it finishes') from None
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+C_COMPILERS = {'cc', 'c++', 'gcc', 'g++', 'clang', 'clang++'}
+
+
+def run_compiler(command, *, timeout=60):
+    """Run a compile command, through ccache for C/C++ compilers when it is installed."""
+    started = time.monotonic()
+    command = list(map(str, command))
+    if Path(command[0]).name in C_COMPILERS and shutil.which('ccache'):
+        command = ['ccache', *command]
+    result = run_isolated(command, timeout=timeout)
+    return {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr,
+            'seconds': round(time.monotonic() - started, 4)}
 
 
 def run_isolated(command, *, timeout=15, cwd=None, env=None):

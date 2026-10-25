@@ -13,7 +13,6 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.harness import ROOT
-from tools.shared_cache import compiler_settings, compiler_launcher
 from tools.private_copy import copy_private
 
 VERSION = 'v6.2.2'
@@ -66,9 +65,8 @@ def compiler_cache_identity(args):
     if not executable:
         return None
     executable = Path(executable).resolve(strict=True)
-    return {'path': str(executable), 'sha256': hashlib.sha256(executable.read_bytes()).hexdigest(),
-            'version': subprocess.check_output([str(executable), '--version'], text=True).splitlines()[0],
-            **compiler_settings(ROOT)}
+    return {'path': str(executable),
+            'version': subprocess.check_output([str(executable), '--version'], text=True).splitlines()[0]}
 
 
 def compiler_cache_environment(args, env, log_path):
@@ -76,16 +74,13 @@ def compiler_cache_environment(args, env, log_path):
     if identity is None:
         return env
     env = env.copy()
-    # Strict invocation-local settings override inherited ccache configuration.
-    settings = {key: value for key, value in identity.items() if key not in {'path', 'sha256', 'version'}}
-    settings['stats_log'] = str(log_path.with_suffix('.ccache.log').resolve())
     for variable, compiler in [('CC', 'cc'), ('CXX', 'c++')]:
         command = shlex.split(env.get(variable, compiler))
         if not command:
             raise ValueError(f'{variable} must name a compiler')
         if Path(shutil.which(command[0]) or command[0]).resolve() == Path(identity['path']):
             raise ValueError(f'{variable} already invokes the selected ccache')
-        env[variable] = shlex.join([*compiler_launcher(identity['path'], settings, env), *command])
+        env[variable] = shlex.join([identity['path'], *command])
     return env
 
 

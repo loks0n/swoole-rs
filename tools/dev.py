@@ -17,7 +17,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.harness import ROOT, write_report
 from tools.build_hybrid import MODULES, REACTOR_OWNED_CAPABILITIES, HTTP_STORAGE_CAPABILITIES, reactor_owned_capabilities, http_storage_capabilities, storage_suffix, profile_suffix, build_alias
 from tools.build_upstream import require_build_space
-from tools.shared_cache import environment as shared_environment
 from tools.dev_environment import PYTHON_IDENTITY
 from tools.dev_report import read_json
 from tools.private_copy import copy_private
@@ -995,7 +994,6 @@ def main():
     parser.add_argument('--expect', help='Observable outcome that supports the hypothesis')
     parser.add_argument('--benchmark', action='store_true', help='Run isolated benchmarks after all correctness phases pass')
     parser.add_argument('--compare', action='store_true', help='Also rerun upstream controls in the candidate lane (integration always does)')
-    parser.add_argument('--no-cache', action='store_true', help='Recompile native harnesses; tests always run')
     parser.add_argument('--phase', action='append', help='Run named canonical phases only; omitted gates remain explicitly not run and cannot qualify full integration')
     parser.add_argument('--artifacts-from', type=Path, help='Reuse verified exports from an existing same-source report for explicit correctness phases; never reuse test outcomes')
     parser.add_argument('--frozen-source', help='Require this literal 40-hex HEAD and a clean checkout before and after each integration phase')
@@ -1060,7 +1058,7 @@ def main():
               'planned_phases': [name for name, _ in planned], 'selected_phases': [name for name, _ in commands],
               'full_plan_passed': False, 'reused_artifacts': artifact_identity,
               'driver_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
-    environment = {**shared_environment(ROOT), **({'SWOOLE_RS_NO_CACHE': '1'} if args.no_cache else {})}
+    environment = dict(os.environ)
     def frozen_error():
         if args.frozen_source:
             try:

@@ -18,8 +18,7 @@ ABI and open work.
 ## Ordinary modeled comparison (`gate.py`)
 
 ```sh
-python3 tools/shared_cache.py -- \
-  python3 tests/modules/phpevents/gate.py --source PINNED_SOURCE \
+python3 tests/modules/phpevents/gate.py --source PINNED_SOURCE \
   --sanitize --output target/phpevents-ordinary.json
 ```
 

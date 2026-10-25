@@ -16,7 +16,7 @@ sys.path.insert(0,str(ROOT))
 from tools.build_hybrid import apply_patch_verified
 from tools.build_upstream import require_build_space
 from tools.harness import run_isolated
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True);p.add_argument('--report',type=Path,required=True);p.add_argument('--sanitize',action='store_true');a=p.parse_args()
 if a.report.exists():raise ValueError('Choose a unique receipt path')
@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix='swr-handlers-') as tmp:
             if sys.platform.startswith('linux'):cmd+=['-ldl','-lm']
             for stage,command in [('compile',cmd),('execute',[binary])]:
                 require_build_space(ROOT);require_build_space(t)
-                result=compile_cached(command,output=binary,scratch=t,timeout=60) if stage=='compile' else vars(run_isolated(list(map(str,command)),cwd=t,timeout=60))
+                result=run_compiler(command, timeout=60) if stage=='compile' else vars(run_isolated(list(map(str,command)),cwd=t,timeout=60))
                 report['commands'].append(dict(variant=variant,stage=stage,command=list(map(str,command)),exit=result['returncode'],stdout=result['stdout'],stderr=result['stderr'],cache={k:result[k] for k in ['cache_hit','cache_key','cache_reason'] if k in result}))
                 if result['returncode'] or result['stderr']:raise RuntimeError(variant+' '+stage+' failed or warned')
             report['results'].append(dict(variant=variant,observations=json.loads(result['stdout'])))

@@ -11,7 +11,6 @@ import sys
 import uuid
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
-from tools.shared_cache import compiler_launcher, compiler_settings
 PIN = "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e"
 
 def sha(path):
@@ -72,7 +71,7 @@ def main():
         report['archive'] = str(archive)
         report['archive_before'] = sha(archive)
         ccache = shutil.which('ccache')
-        compiler = [*compiler_launcher(ccache, compiler_settings(ROOT)), 'c++'] if ccache else ['c++']
+        compiler = [ccache, 'c++'] if ccache else ['c++']
         run([*compiler, '-std=c++14', '-O2', '-Wall', '-Wextra', '-Werror', '-DSWOOLE_RS_OSSUPPORT', '-I'+str(ROOT/'native/ossupport'),
              '-I'+str(out), ROOT/'tests/modules/ossupport/file_line.cpp', archive,
              *(['-ldl', '-lpthread', '-lm'] if sys.platform == 'linux' else []), '-o', out/'file-line'])

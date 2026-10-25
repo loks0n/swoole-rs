@@ -18,7 +18,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
 from staging import apply_module_patch
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 
 PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
 
@@ -34,7 +34,6 @@ def main():
     parser.add_argument('--build-manifest', type=Path, default=ROOT / 'target/hybrid/rust-buffer-websocket/build-manifest.json')
     parser.add_argument('--archive', type=Path, help='Check a private native candidate without claiming an extension build')
     parser.add_argument('--sanitize', action='store_true')
-    parser.add_argument('--no-cache', action='store_true', help='Recompile fixture and native binaries; all model replays always execute')
     parser.add_argument('--output', default=str(ROOT / 'target/reports/buffer-model.json'))
     args = parser.parse_args()
     manifest = None if args.archive else json.loads(args.build_manifest.read_text())
@@ -94,7 +93,7 @@ def main():
         report['fixture_compile_command'] = rust_command
         # The shared compiler cache does not yet hash --extern rlib contents.
         # Compile this small allocator fixture rather than reuse a stale binary.
-        compiled = compile_cached(rust_command, output=fixture, scratch=tree, timeout=60, cache=False)
+        compiled = run_compiler(rust_command, timeout=60)
         report['fixture_compile'] = compiled
         if compiled['returncode']:
             write_report(args.output, report); print(compiled['stderr'], file=sys.stderr); return 1
@@ -109,7 +108,7 @@ def main():
             if sys.platform.startswith('linux'): command += ['-ldl', '-lpthread', '-lrt', '-lutil']
             if args.sanitize: command += ['-fsanitize=address,undefined', '-fno-sanitize-recover=all']
             command += ['-o', str(binary)]
-            compiled = compile_cached(command, output=binary, scratch=tree, timeout=60, cache=not args.no_cache)
+            compiled = run_compiler(command, timeout=60)
             row = {'compile_command': command, 'compile': compiled}
             report['engines'][name] = row
             if compiled['returncode']:

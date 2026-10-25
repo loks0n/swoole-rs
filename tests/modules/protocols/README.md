@@ -57,8 +57,7 @@ bodies (`adapter.inc`, `native.cc`) with modeled String allocation/socket I/O an
 compares MQTT, SOCKS, RESP, receive traces, MessageBus decisions and pool
 lifecycle steps. A seeded 10,000-wire RESP corpus also runs the exact original PHP
 request-parser loop with modeled Zend parameters against Rust typed events. C++
-ASan/UBSan does not instrument Rust. Failing cases print trial/seed. Read-only
-container mounts need `SWOOLE_RS_NO_CACHE=1` or a private native cache.
+ASan/UBSan does not instrument Rust. Failing cases print trial/seed.
 
 `--allocation-failures` also builds `pool_failure.cc`, which injects C++ allocation
 exceptions around copy/assignment at pool sizes 0/1/31/32/33/97 and checks original

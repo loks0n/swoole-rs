@@ -9,8 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.harness import ROOT, run_isolated
-from tools.dev_cache import exclusive
-from tools.shared_cache import cache_root
+from tools.harness import exclusive
 from tools.private_copy import copy_private
 
 
@@ -90,7 +89,7 @@ revision = os.environ['SWOOLE_RS_SOURCE_COMMIT']
 subprocess.run(['git', '-C', str(target), 'cat-file', '-e', revision + '^{commit}'], check=True)
 subprocess.run(['git', '-C', str(target), 'reset', '--mixed', '-q', revision], check=True)
 '''
-    shared = cache_root()
+    shared = ROOT / 'target/linux-cache'
     shared.mkdir(parents=True, exist_ok=True)
     mounts = ['--mount', f'type=bind,source={shared},target=/shared-cache',
               '--mount', f'type=bind,source={ROOT},target=/repo,readonly',
@@ -118,7 +117,7 @@ subprocess.run(['git', '-C', str(target), 'reset', '--mixed', '-q', revision], c
                                '--env', 'TMPDIR=/work/target/tmp',
                                '--env', 'GIT_CEILING_DIRECTORIES=/work/target',
                                '--env', 'CARGO_HOME=/shared-cache/cargo-linux',
-                               '--env', 'SWOOLE_RS_CACHE_ROOT=/shared-cache',
+                               '--env', 'CCACHE_DIR=/shared-cache/ccache',
                                '--env', 'CCACHE_MAXSIZE=256MiB', tag,
                                'python3', '-c', launcher, sync, *command]).returncode
 

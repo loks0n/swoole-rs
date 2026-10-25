@@ -14,7 +14,7 @@ sys.path.insert(0,str(ROOT))
 from tools.build_hybrid import apply_patch_verified
 from tools.build_upstream import require_build_space
 from tools.harness import run_isolated
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True);p.add_argument('--report',type=Path,required=True);p.add_argument('--sanitize',action='store_true');profile=p.add_mutually_exclusive_group();profile.add_argument('--blocking',action='store_true',help='Separate whole blocking send/writev/sendfile/wait positive facade inventory');profile.add_argument('--iov-progress',action='store_true',help='Separate genuine IOVector Native-array progression inventory');profile.add_argument('--ordinary-io',action='store_true',help='Whole ordinary send/recv/peek/vector and one-shot stream positive source controls');profile.add_argument('--socket-policy',action='store_true',help='Whole positive poll/cork/options with exact source error classifier (only error0 executed)');profile.add_argument('--fd-options',action='store_true',help='Whole positive fcntl bit/short-circuit/publication source controls');profile.add_argument('--socket-options',action='store_true',help='Whole normal buffer/timeout/timeval configuration source controls');profile.add_argument('--forwarding',action='store_true',help='Whole file/event forwarding positive source effects; clean Native effects not executed');profile.add_argument('--datagram',action='store_true',help='Whole positive datagram receive/send/wait sequencing; Native sockaddr custody unchanged');profile.add_argument('--connect',action='store_true',help='Whole connect async/sync source policy; inert positive effects only');a=p.parse_args()
 if a.report.exists():raise ValueError('Choose a unique receipt path')
 fixed=ROOT/'migration/patches/halfclose/0003-send-tls-close-notify.patch';fixed_sha='9f168cde26029e14c0e94fd2542b5bce573c81435cb9b06d521d030640786bf5'
@@ -114,7 +114,7 @@ with tempfile.TemporaryDirectory(prefix='swr-output-') as tmp:
    if sys.platform.startswith('linux'):command+=['-ldl','-lm']
    for stage,cmd in [('compile',command),('execute',[str(binary)])]:
     require_build_space(ROOT);require_build_space(t)
-    result=compile_cached(cmd,output=binary,scratch=t,timeout=60) if stage=='compile' else vars(run_isolated(cmd,cwd=t,timeout=60))
+    result=run_compiler(cmd, timeout=60) if stage=='compile' else vars(run_isolated(cmd,cwd=t,timeout=60))
     report['commands'].append(dict(variant=variant,stage=stage,command=cmd,exit=result['returncode'],stdout=result['stdout'],stderr=result['stderr'],cache={k:result[k] for k in ['cache_hit','cache_key','cache_reason'] if k in result}))
     if result['returncode'] or result['stderr']:raise RuntimeError(variant+' '+stage+' failed/warned')
    report['results'].append(dict(variant=variant,observations=json.loads(result['stdout'])))

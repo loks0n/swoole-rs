@@ -15,7 +15,7 @@ import tempfile
 ROOT=Path(__file__).resolve().parents[3]
 sys.path.insert(0,str(ROOT))
 from tools.build_upstream import require_build_space
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 from tools.harness import run_isolated
 CONTROL='e2c481325ffd35a3a9c6d041151aedb48a64c464'
 HEADER='native/reactor/swoole_rs_reactor_sockets.h'
@@ -45,7 +45,7 @@ def main():
                     if a.sanitize:command+=['-fsanitize=address,undefined','-fno-omit-frame-pointer']
                     if sys.platform.startswith('linux'):command+=['-ldl','-lm']
                     for stage,cmd in [('compile',command),('execute',[str(binary)])]:
-                        result=compile_cached(cmd,output=binary,scratch=tree) if stage=='compile' else vars(run_isolated(cmd,cwd=tree,timeout=30))
+                        result=run_compiler(cmd) if stage=='compile' else vars(run_isolated(cmd,cwd=tree,timeout=30))
                         report['commands'].append(dict(standard=standard,optimization=optimization,stage=stage,command=cmd,**result))
                         if result['returncode'] or result['stderr']:raise RuntimeError(stage+' failed/warned')
                     report['observations'].append(dict(standard=standard,optimization=optimization,result=json.loads(result['stdout'])))

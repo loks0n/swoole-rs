@@ -13,7 +13,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT))
 from tools.build_hybrid import apply_patch_verified
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 from tools.harness import run_isolated
 PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
 
@@ -81,7 +81,7 @@ def main():
         binary=work/engine;cmd+=['-o',str(binary)]
         row=report['profiles'][engine]={'command':cmd}
         guard()
-        row['compile']=compile_cached(cmd,output=binary,scratch=work)
+        row['compile']=run_compiler(cmd)
         if row['compile']['returncode']:save();return 1
         r=run_isolated([str(binary)],timeout=30);row['run']={'returncode':r.returncode,'stdout':r.stdout,'stderr':r.stderr}
         if r.returncode:save();return 1

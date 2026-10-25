@@ -18,8 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.build_upstream import COMMIT, VERSION, add_build_arguments, build_extension, extension_configuration, require_build_space, compiler_cache_identity
 from tools.check_migration import validate, frozen_target_owners
 from tools.harness import ROOT, write_report
-from tools.dev_cache import exclusive
-from tools.shared_cache import environment as shared_environment
+from tools.harness import exclusive
 from tools.private_copy import copy_private
 
 MODULES = {'websocket': ('M02', 1), 'buffer': ('M01', 2), 'timer': ('M03', 4),
@@ -159,7 +158,7 @@ def rust_sources(modules):
                '--manifest-path', str(ROOT / 'crates/ffi/Cargo.toml'), '--no-default-features']
     if modules:
         command += ['--features', ','.join(modules)]
-    metadata = json.loads(subprocess.check_output(command, cwd=ROOT, text=True, env=shared_environment(ROOT)))
+    metadata = json.loads(subprocess.check_output(command, cwd=ROOT, text=True))
     packages = {package['id']: package for package in metadata['packages']}
     nodes = {node['id']: node for node in metadata['resolve']['nodes']}
     pending, selected = [metadata['resolve']['root']], set()
@@ -190,7 +189,7 @@ def rust_archive(modules):
                '--message-format=json-render-diagnostics']
     if modules:
         command += ['--features', ','.join(modules)]
-    result = subprocess.run(command, cwd=ROOT, stdout=subprocess.PIPE, text=True, env=shared_environment(ROOT))
+    result = subprocess.run(command, cwd=ROOT, stdout=subprocess.PIPE, text=True)
     artifacts = []
     for line in result.stdout.splitlines():
         message = json.loads(line)
@@ -434,7 +433,7 @@ def build(args, parser):
     effective_configure, effective_env = extension_configuration(args, switches)
     headers = headers_for(args.module)
     inputs = {'string_direct_fields_requested': getattr(args, 'string_direct_fields', False), 'buffer_typed_requested': getattr(args, 'buffer_typed', False), 'php_sockets_requested': getattr(args, 'php_sockets', False), **{'http_' + name.replace('-', '_') + '_requested': name in http_storage_capabilities(args)
-                 for name in HTTP_STORAGE_CAPABILITIES}, 'cache_helper_sha256': digest(Path(__file__).with_name('shared_cache.py')),
+                 for name in HTTP_STORAGE_CAPABILITIES},
               'compiler_cache': compiler_cache_identity(args), 'fix_halfclose': getattr(args, 'fix_halfclose', False), **{'reactor_' + name + '_owned_requested': name in reactor_owned_capabilities(args)
                  for name in REACTOR_OWNED_CAPABILITIES}, 'modules': args.module, 'builder_sha256': digest(__file__), 'php_builder_sha256': digest(ROOT / 'tools/build_upstream.py'),
               'effective_configure': effective_configure, 'effective_cppflags': effective_env['CPPFLAGS'],
