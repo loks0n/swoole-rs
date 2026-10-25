@@ -774,6 +774,7 @@ class Lanes(unittest.TestCase):
         self.assertIn('--sanitize',commands['coroutine-native-originals'])
         self.assertNotIn('--inventory-only',commands['coroutine-native-originals'])
         self.assertNotIn('--inventory-only',commands['wrappers-originals'])
+        self.assertNotIn('--external-network',commands['wrappers-originals'])
         self.assertIn('framing-originals',commands)
         self.assertEqual(commands['framing-versioned-expectation'].count('--case'), 1)
         self.assertNotIn('--case', commands['framing-originals'])
