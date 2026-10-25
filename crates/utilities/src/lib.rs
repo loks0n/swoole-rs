@@ -71,8 +71,8 @@ fn hash(bytes: &[u8], length: usize, algorithm: u32, signed: bool) -> u64 {
         }
         2 => {
             let mut h = length as u64;
-            let mut chunks = bytes.chunks_exact(4);
-            for part in &mut chunks {
+            let (chunks, tail) = bytes.as_chunks::<4>();
+            for part in chunks {
                 let mut k = promoted(part[0], signed);
                 for (i, byte) in part.iter().enumerate().skip(1) {
                     let shifted =
@@ -84,7 +84,6 @@ fn hash(bytes: &[u8], length: usize, algorithm: u32, signed: bool) -> u64 {
                 k = k.wrapping_mul(0x5bd1e995);
                 h = h.wrapping_mul(0x5bd1e995) ^ k;
             }
-            let tail = chunks.remainder();
             for (i, byte) in tail.iter().enumerate() {
                 h ^= (((promoted(*byte, signed) as u32).wrapping_shl((8 * i) as u32) as i32) as i64)
                     as u64;

@@ -25,7 +25,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_clone(owner: *const JoinOwner
     let references = unsafe { &(*owner).references };
     u8::from(
         references
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
                 count
                     .checked_add(1)
                     .filter(|next| *next <= isize::MAX as usize)

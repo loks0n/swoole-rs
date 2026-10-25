@@ -707,7 +707,7 @@ mod tests {
                 1
             );
             assert_eq!((frame.kind, frame.length), (4, (n - 9) as u32));
-            for item in out[10..n + 1].chunks_exact(6) {
+            for item in out[10..n + 1].as_chunks::<6>().0 {
                 let mut id = 0;
                 let mut value = 0;
                 unsafe { sw_rs_http2_unpack_setting(item.as_ptr(), &mut id, &mut value) };
