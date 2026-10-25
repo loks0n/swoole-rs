@@ -1,7 +1,7 @@
 #!/bin/sh
-# Quick checks (~30s warm). Enable with: git config core.hooksPath .githooks
+# Quick checks (~15s warm). Enable with: git config core.hooksPath .githooks
 set -e
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -q -- -D warnings
 python3 tools/check_migration.py > /dev/null
-python3 -m unittest discover -s tests/dev -q
+tests/dev/run.sh
