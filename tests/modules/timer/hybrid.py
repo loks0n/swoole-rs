@@ -16,7 +16,7 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
 
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 SCENARIOS = ['equal-deadlines', 'self-remove', 'remove-other', 'destructor-remove-other',
              'update-active-repeat', 'destructor-add', 'fork-teardown',
              'delay-active-once', 'nested-select-once']

@@ -19,7 +19,7 @@ from tools.harness import run_isolated, write_report
 from tools.native_core import library_identity, sha, test_outcome, verify_loader
 
 ROOT = Path(__file__).resolve().parents[3]
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 GROUPS = ['coroutine_hook.*', 'coroutine_socket.*', 'coroutine_system.*']
 
 

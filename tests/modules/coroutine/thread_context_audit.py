@@ -7,7 +7,9 @@ import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[3]
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+import sys
+sys.path.insert(0, str(ROOT))
+from tools.build_upstream import COMMIT as PIN
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--source', type=Path, required=True)
 p.add_argument('--output', type=Path, required=True)

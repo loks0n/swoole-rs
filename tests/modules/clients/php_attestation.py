@@ -3,7 +3,10 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import sys
 ROOT=Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+from tools.build_upstream import COMMIT
 
 def sha(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def section(patch,destination):
@@ -22,5 +25,5 @@ def attest(manifest_path,source_ref,identities,destination):
     selected_section=section(source.decode(),destination)
     if selected_section!=section((ROOT/relative).read_text(),destination):raise ValueError('Frozen witnessed source differs from current implementation')
     if selected['sha256']!=manifest['extension_sha256']:raise ValueError('Selected extension does not match manifest')
-    if manifest['inputs']['upstream_commit']!='8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e':raise ValueError('Unexpected upstream')
+    if manifest['inputs']['upstream_commit']!=COMMIT:raise ValueError('Unexpected upstream')
     return dict(source_ref=subprocess.check_output(['git','rev-parse',source_ref],cwd=ROOT,text=True).strip(),destination=destination)

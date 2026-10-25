@@ -8,6 +8,7 @@ import subprocess
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import parse_engines, write_report
+from tools.build_upstream import COMMIT
 ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -53,7 +54,7 @@ def main():
             assert manifest['migrated_feature_bits'] == metadata['rust_feature_bits']
             assert metadata['rust_feature_bits'] & 2097152 and 'httpbindings' in inputs['modules']
             assert inputs['backend'] == 'rust' and '--enable-swoole-rs-httpbindings' in inputs['effective_configure']
-            assert inputs['upstream_commit'] == '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+            assert inputs['upstream_commit'] == COMMIT
             expected_paths = {f'ext-src/swoole_http_{name}.cc' for name in ['cookie', 'request', 'response', 'server', 'server_coro']}
             selected_patches = [p for p in inputs['patches'] if p['path'].startswith('migration/patches/httpbindings/')]
             assert {d for p in selected_patches for d in p['upstream_paths']} == expected_paths

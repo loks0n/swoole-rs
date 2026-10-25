@@ -11,7 +11,7 @@ import sys
 import uuid
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
-PIN = "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e"
+from tools.build_upstream import COMMIT as PIN
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()

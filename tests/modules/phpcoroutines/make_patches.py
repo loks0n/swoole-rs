@@ -25,7 +25,9 @@ from scheduler_slot_bodies import replace_scheduler_slots
 from metadata_bodies import replace_metadata_cpp, replace_metadata_header
 
 ROOT = Path(__file__).resolve().parents[3]
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+import sys
+sys.path.insert(0, str(ROOT))
+from tools.build_upstream import COMMIT as PIN
 DEST = 'ext-src/swoole_coroutine_scheduler.cc'
 SOURCE_SHA = '1138bb9799c96ac6ec75ad027eaa3fc5f40cce63f76939e71d9f753e1d80395c'
 

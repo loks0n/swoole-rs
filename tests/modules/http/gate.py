@@ -15,7 +15,7 @@ import tempfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
 from tools.build_hybrid import apply_patch_verified
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 ORIGINAL_TESTS = ['EncodeDecodeBasic', 'EncodeDecodeWithSpecialChars', 'get_method', 'get_method_str', 'parse_multipart_boundary']
 FUNCTIONS = ['const char *get_status_message(', 'bool parse_multipart_boundary(', 'size_t url_decode(', 'char *url_encode(', 'int get_method(', 'const char *get_method_string(']
 def sha(path): return hashlib.sha256(path.read_bytes()).hexdigest()

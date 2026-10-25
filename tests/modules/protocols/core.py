@@ -21,7 +21,7 @@ import xml.etree.ElementTree as ET
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, stop_process_group, write_report
 
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 ASSERTIONS = ['core-tests/src/protocol/redis.cpp', 'core-tests/src/server/message_bus.cpp', 'core-tests/src/server/mqtt.cpp']
 SELECTED = ['core-tests/src/main.cpp', 'core-tests/src/_lib/redis.cpp', *ASSERTIONS]
 

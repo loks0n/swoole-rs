@@ -20,7 +20,7 @@ from tools.harness import ROOT, run_isolated, write_report
 from tools.build_upstream import require_build_space
 from tools.build_hybrid import apply_patch_verified
 
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 ASSERTIONS = ['core-tests/src/coroutine/base.cpp', 'core-tests/src/coroutine/channel.cpp']
 LIFETIME = 'core-tests/src/coroutine/rust_policy_lifetime.cpp'
 SELECTED = ['core-tests/src/main.cpp', *ASSERTIONS, LIFETIME]
