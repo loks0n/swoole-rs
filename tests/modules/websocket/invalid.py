@@ -12,7 +12,7 @@ from corpus.run import WebSocket, expect
 from tools.harness import ROOT, parse_engines, request, server, write_report
 from close_probe import frame
 
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 
 
 def wire(payload, opcode, final=True, masked=True):

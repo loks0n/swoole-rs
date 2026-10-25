@@ -10,7 +10,7 @@ import tempfile
 from source import definition
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
-PIN='8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 WRAPPERS=r'''
 Result body(const Input&in,size_t fail){
  Oracle local;oracle=&local;HttpContext ctx;setup(ctx,in);

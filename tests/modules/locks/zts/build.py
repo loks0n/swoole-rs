@@ -9,7 +9,9 @@ import subprocess
 import tarfile
 
 ROOT=Path('/work')
-PIN='8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+import sys
+sys.path.insert(0, str(ROOT))
+from tools.build_upstream import COMMIT as PIN
 source=Path('/reference')
 record=json.loads((ROOT/'target/linux-dev/target/hybrid/dev-rust-locks/build-manifest.json').read_text())
 prefix=ROOT/'target/linux-dev'/Path(record['extension']).parents[2].relative_to('/work')/'rust-prefix'

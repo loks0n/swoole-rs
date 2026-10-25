@@ -18,7 +18,7 @@ See corpus/README.md, corpus/upstream/README.md and benchmarks/README.md.
 
 # Agents
 
-Two roles. Coordination state lives in GitHub issues and CI, never in repository
+Three roles. Coordination state lives in GitHub issues and CI, never in repository
 files: no ownership manifests, landing scripts or evidence archives.
 
 ## Goal agent
@@ -36,16 +36,18 @@ beyond a checkout, `gh` with `GH_TOKEN`, and the toolchain. Prefer cloud
 environments to one shared machine. Each executor loops:
 
 1. Claim the highest-priority, oldest `status:ready` issue (see Tickets).
-2. Branch from `main`, commit. The pre-commit hook runs quick checks (~15s);
-   enable it with `git config core.hooksPath .githooks`.
+2. Branch from `main`, commit. The pre-commit hook runs quick checks (~5s warm);
+   enable the hooks with `git config core.hooksPath .githooks`.
 3. Push and open a PR whose body says `Closes #n`. The PR tier runs unit and
    integration CI (target: under 3 minutes).
-4. Call `pr_merge_when_green` for the PR. It waits for the PR tier on the current
-   head and squash-merges when it passes. One call per PR, so each merges as soon
-   as it is green. If it fails, fix and push; if `main` moved and the PR
-   conflicts, rebase and call it again.
+4. Run `python3 tools/ci.py merge <pr>` (in the background; it can take a few
+   minutes). It waits for the PR tier on the current head, follows the head if
+   you push, and squash-merges when it passes. On failure it prints the failing
+   jobs and their log tails: fix, push and run it again. If the PR conflicts,
+   merge `origin/main`, push and run it again.
 5. The merge tier runs on `main`: everything above plus every gate, application
-   and original PHPT for all modules.
+   and original PHPT for all modules. Watch it with the command `ci.py merge`
+   prints, `python3 tools/ci.py wait --commit <merge sha>`.
 6. Validate the change where it lands, comment what was checked on the issue,
    and close it.
 7. File follow-ups as `status:ready` issues with a priority and
@@ -55,6 +57,22 @@ environments to one shared machine. Each executor loops:
 
 Don't stop to ask before routine next steps (merge on green, close, file
 follow-ups). Stop only for destructive or genuinely ambiguous decisions.
+
+## Reviewer agents
+
+Interchangeable and disposable, like executors, but they change no code. Each
+picks an area (a module, a tool, a CI tier, recently merged PRs) and checks that
+the work already there is right: bugs, inconsistencies between code, tests and
+docs, and gaps inside work that claims to be complete.
+
+Judge work against what it set out to do: the issue, the PR description, the
+module's entry in `migration/modules.json`. Work that is explicitly not done,
+out of scope, or already tracked by an open issue is not a finding.
+
+Verify each finding before filing it: a failing test, a command and its output,
+or the exact lines that disagree. Search open and closed issues for duplicates,
+then file it as a `status:ready` issue with a priority, a kind and the evidence.
+Executors fix it.
 
 ## Tickets
 
@@ -81,16 +99,22 @@ compare-and-swap):
    claim with no heartbeat or PR activity for 2 hours returns to `status:ready`.
 4. Comment `release <agent-id>` and restore `status:ready` to give a ticket up.
 
-## Repository MCP server
+## CI CLI
 
-`tools/mcp.py`, registered in `.mcp.json`, is built and improved by the agents
-that use it; it is what makes this loop self-optimising and lets executors scale.
-Add a tool when an agent would otherwise improvise (polling, ad-hoc scripts,
-manual sign-in). Current tools: `workflow_get`, `workflow_wait`,
-`pr_merge_when_green`.
+`tools/ci.py` (`merge`, `wait`, `status`; see `--help`) is the only way agents
+watch CI. It needs a checkout, `gh` and Python, so it works in every session.
+The pre-commit and pre-push hooks remind you of the next command. Agents
+improve it: add a subcommand when an agent would otherwise improvise (polling,
+ad-hoc scripts, `gh run watch`).
 
 ## CI
 
-Three tiers: the pre-commit hook (~15s), the PR tier (`pr.yml`, under 3 minutes
+Three tiers: the pre-commit hook (~5s warm), the PR tier (`pr.yml`, under 3 minutes
 warm) and the merge tier (`merge.yml`, on `main`). Keep them cached and audit
 them regularly for waste and duplicate steps; slow or flaky CI is a ticket.
+
+The merge tier runs one at a time, latest wins: while a run is in progress, each
+push to `main` replaces the pending run, so the next run covers `main`'s head.
+Its result therefore describes the commit it names, which may be several merges
+old. How recent that is depends on run length, which #7 is
+reducing.

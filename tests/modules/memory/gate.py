@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
 from tools.build_hybrid import apply_patch_verified
 
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 SOURCES = ['src/core/heap.cc', 'src/core/channel.cc', 'src/memory/fixed_pool.cc', 'src/memory/global_memory.cc', 'src/memory/ring_buffer.cc', 'src/memory/shared_memory.cc', 'src/memory/table.cc']
 
 

@@ -23,7 +23,7 @@ from coherent_sdk import stage
 from overlay import apply_owned
 from storage_summary import compare
 
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 HEADER = '3e6dd302ac18d32f9a173dcbfca0680f16b9682a5f5031456099cda5b1bbb180'
 
 
