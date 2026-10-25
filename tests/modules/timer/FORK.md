@@ -5,10 +5,9 @@ It is separate from the original PHPT corpus and changes no `after_fork.phpt`
 assertion.
 
 ```sh
-python3 tests/modules/timer/fork_active.py \
+python3 -m pytest tests/modules/timer/test_fork.py \
   --engine upstream=/absolute/upstream/swoole.so \
-  --engine timer=/absolute/timer/swoole.so \
-  --output target/reports/timer-fork-active.json
+  --engine timer=/absolute/timer/swoole.so
 ```
 
 Each engine/case runs in its own process group with a ten-second limit. Repeat

@@ -6,3 +6,9 @@ extern "C" size_t swr_oracle_base64_encode(const unsigned char *in, size_t lengt
 extern "C" size_t swr_oracle_base64_decode(const char *in, size_t length, char *out) {
     return oracle::base64_decode(in, length, out);
 }
+
+#include "swoole_hash.h"
+
+extern "C" uint32_t swr_oracle_crc32(const char *data, size_t size) {
+    return swoole_crc32(data, size);
+}

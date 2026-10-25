@@ -26,8 +26,8 @@ files: no ownership manifests, landing scripts or evidence archives.
 Driven by a person, ad hoc. It states goals and turns them into tickets, and it
 runs audits that produce tickets (for example a CI waste audit or a
 migration-scope review). Introspection about improving the codebase or this
-workflow happens here. Large goals get a `kind:goal` issue that links its
-children. It may reprioritise or close any ticket.
+workflow happens here. Large goals get a `kind:goal` issue whose children are
+its sub-issues. It may reprioritise or close any ticket.
 
 ## Executor agents
 
@@ -35,8 +35,9 @@ Interchangeable and disposable: no special environment, authentication or setup
 beyond a checkout, `gh` with `GH_TOKEN`, and the toolchain. Prefer cloud
 environments to one shared machine. Each executor loops:
 
-1. Claim the highest-priority, oldest `status:ready` issue (see Tickets).
-2. Branch from `main`, commit. The pre-commit hook runs quick checks (~15s);
+1. Claim the highest-priority, oldest unblocked `status:ready` issue (see
+   Tickets).
+2. Branch from `main`, commit. The pre-commit hook runs quick checks (~5s warm);
    enable the hooks with `git config core.hooksPath .githooks`.
 3. Push and open a PR whose body says `Closes #n`. The PR tier runs unit and
    integration CI (target: under 3 minutes).
@@ -49,9 +50,10 @@ environments to one shared machine. Each executor loops:
    and original PHPT for all modules. Watch it with the command `ci.py merge`
    prints, `python3 tools/ci.py wait --commit <merge sha>`.
 6. Validate the change where it lands, comment what was checked on the issue,
-   and close it.
+   and close it. If it delivers only part of what an issue it blocks needs,
+   make the follow-up block that issue too.
 7. File follow-ups as `status:ready` issues with a priority and
-   `follow-up of #n`. Executor follow-ups usually find real issues; they are not
+   `follow-up of #n`, as sub-issues of the same goal. Executor follow-ups usually find real issues; they are not
    gated behind the goal agent.
 8. Repeat.
 
@@ -80,10 +82,19 @@ GitHub issues. Exactly one status label per open issue:
 
 | Label | Meaning |
 | --- | --- |
-| `status:ready` | Claimable |
+| `status:ready` | Claimable unless blocked |
 | `status:claimed` | An executor owns it; see the latest `claim` comment |
 | `status:review` | PR open |
-| `status:blocked` | Waiting on another issue; see the `blocked by #n` comment |
+
+Use GitHub's own relationships, not comments or labels:
+
+- **Blocked:** mark the blocking issue in the issue's *Relationships* (`gh api -X
+  POST repos/{owner}/{repo}/issues/<n>/dependencies/blocked_by -F issue_id=<id
+  of the blocker>`). An issue is blocked while any blocker is open and is
+  unblocked by GitHub the moment the last one closes. Claimable issues:
+  `gh issue list --search "is:open label:status:ready -is:blocked sort:created-asc"`.
+- **Goals:** a `kind:goal` issue's children are its sub-issues (`gh api -X POST
+  repos/{owner}/{repo}/issues/<goal>/sub_issues -F sub_issue_id=<id of the child>`).
 
 Closed means done. Priority: `p0` (breaks agents or `main`), `p1` (next up),
 `p2` (when convenient). Kind: `kind:bug`, `kind:ci`, `kind:migration`,
@@ -109,6 +120,12 @@ ad-hoc scripts, `gh run watch`).
 
 ## CI
 
-Three tiers: the pre-commit hook (~15s), the PR tier (`pr.yml`, under 3 minutes
+Three tiers: the pre-commit hook (~5s warm), the PR tier (`pr.yml`, under 3 minutes
 warm) and the merge tier (`merge.yml`, on `main`). Keep them cached and audit
 them regularly for waste and duplicate steps; slow or flaky CI is a ticket.
+
+The merge tier runs one at a time, latest wins: while a run is in progress, each
+push to `main` replaces the pending run, so the next run covers `main`'s head.
+Its result therefore describes the commit it names, which may be several merges
+old. How recent that is depends on run length, which #7 is
+reducing.

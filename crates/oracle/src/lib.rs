@@ -16,3 +16,16 @@ pub mod base64 {
         pub fn original_test_failures() -> i32;
     }
 }
+
+pub mod crc32 {
+    unsafe extern "C" {
+        /// Upstream `swoole_crc32`.
+        #[link_name = "swr_oracle_crc32"]
+        pub fn crc32(data: *const u8, size: usize) -> u32;
+        /// Runs upstream's `TEST(hash, crc32)` from `core-tests/src/core/hash.cpp`
+        /// against the native adapter; returns the number of failed assertions.
+        /// The caller's binary must link `swr_v1_crc32`.
+        #[link_name = "swr_original_crc32_failures"]
+        pub fn original_test_failures() -> i32;
+    }
+}

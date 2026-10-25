@@ -127,3 +127,19 @@ actual loaded stdext functions; disabled builds report unsupported. A syntax-onl
 SDK profile does not establish actual stdext runtime support. The canonical
 `tools/dev.py integrate --module phphelpers --stdext` plan builds separate genuine
 enabled native/selected worlds before running the official original runner.
+
+## Full baseline on upstream
+
+`.github/workflows/phpt-baseline.yml` (dispatch only) runs every pinned PHPT
+against the upstream reference built with PHP sockets support, in 12 shards:
+
+```sh
+python3 corpus/upstream/inventory.py --shard 3/12 --output manifest.json
+python3 corpus/upstream/run.py --manifest manifest.json --engine upstream=/absolute/swoole.so --output shard-3.json
+python3 corpus/upstream/baseline_summary.py shard-*.json --output baseline.json
+```
+
+`inventory.py` lists every `.phpt` at the pin (family = its `tests/` directory)
+and every other file under `tests/` as a support file. The summary records each
+result and, for skips, the SKIPIF reason and a category (service, network, ZTS,
+stdext, platform, extension, other). Only the runner's PASSED counts as passed.

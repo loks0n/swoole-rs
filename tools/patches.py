@@ -30,24 +30,37 @@ def checkout(module, patches, work):
                                                                      'https://github.com/swoole/swoole-src.git']
     subprocess.run(['git', '-c', 'advice.detachedHead=false', 'clone', '-q', *source, str(work)], check=True)
     git(work, 'checkout', '-q', '-b', 'patches/' + module, COMMIT)
+    baseline = {}
     for patch in json.loads((patches / 'manifest.json').read_text())['patches']:
         git(work, 'apply', '--index', str(patches / patch['path']))
         git(work, 'commit', '-q', '-m', patch['path'])
+        baseline[patch['path']] = git(work, 'diff', '-U1', 'HEAD~', 'HEAD')
+    (work / '.git/patches-baseline.json').write_text(json.dumps(baseline))
     print(work)
 
 
 def export(patches, work):
+    # A commit whose diff is unchanged since checkout keeps its patch file byte for byte, so
+    # frozen and generator-written patches survive a round trip.
+    baseline = json.loads((work / '.git/patches-baseline.json').read_text())
+    manifest = json.loads((patches / 'manifest.json').read_text())
+    previous = {row['path']: row for row in manifest['patches']}
     rows = []
     for commit in git(work, 'rev-list', '--reverse', COMMIT + '..HEAD').split():
         name = git(work, 'log', '-1', '--format=%s', commit).strip()
         # One context line, so patches from different modules to neighbouring lines still stack.
         body = git(work, 'diff', '-U1', commit + '~', commit)
+        if name in previous and baseline.get(name) == body:
+            rows.append(previous[name])
+            continue
         (patches / name).write_text(body)
         rows.append({'path': name, 'sha256': hashlib.sha256(body.encode()).hexdigest(),
                      'upstream_paths': git(work, 'diff', '--name-only', commit + '~', commit).split()})
     for stale in set(patches.glob('*.patch')) - {patches / row['path'] for row in rows}:
         stale.unlink()
-    (patches / 'manifest.json').write_text(json.dumps({'upstream_commit': COMMIT, 'patches': rows}, indent=2) + '\n')
+    updated = {**manifest, 'upstream_commit': COMMIT, 'patches': rows}
+    if updated != manifest:
+        (patches / 'manifest.json').write_text(json.dumps(updated, indent=2) + '\n')
 
 
 def main():

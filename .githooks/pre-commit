@@ -1,5 +1,5 @@
 #!/bin/sh
-# Quick checks (~15s warm). Enable with: git config core.hooksPath .githooks
+# Quick checks (~5s warm). Enable with: git config core.hooksPath .githooks
 set -e
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -q -- -D warnings

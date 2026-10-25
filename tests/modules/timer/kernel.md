@@ -6,11 +6,11 @@ sleep, run PHP, read clocks or register reactor events; it is a queue-kernel
 test, not a PHP timer test.
 
 ```sh
-python3 tests/modules/timer/kernel.py --sanitize
+python3 -m pytest tests/modules/timer/test_kernel.py --sanitize
 ```
 
 By default it builds the release archive with Cargo's lockfile. Use
-`--no-build --archive /absolute/path/libswoole_rs_timer.a` for a prebuilt
+`--archive /absolute/path/libswoole_rs_timer.a` for a prebuilt
 archive, `--output` for the JSON report. `--sanitize` instruments the C/C++
 caller with ASan/UBSan, not the Rust archive (see [RUST_ASAN.md](RUST_ASAN.md)).
 

@@ -195,6 +195,10 @@ version = "0.1.0"
 [[package]]
 name = "swoole-rs-crc32"
 version = "0.1.0"
+dependencies = [
+ "proptest",
+ "swoole-rs-oracle",
+]
 
 [[package]]
 name = "swoole-rs-error"

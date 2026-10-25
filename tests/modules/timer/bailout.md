@@ -26,10 +26,9 @@ isolated process-group limit. Exit code, stdout and stderr must equal the first
 (control) engine's exactly.
 
 ```sh
-python3 tests/modules/timer/bailout.py \
+python3 -m pytest tests/modules/timer/test_bailout.py -k test_callback \
   --engine upstream=/absolute/clean/original/modules/swoole.so \
-  --engine timer=/absolute/immutable/timer/modules/swoole.so \
-  --output target/reports/timer-bailout.json
+  --engine timer=/absolute/immutable/timer/modules/swoole.so
 ```
 
 `test_control_timeout.py` covers the driver's classification without PHP.

@@ -23,10 +23,12 @@ python3 tools/patches.py export phphelpers     # rewrites the patch files and ma
 rm -rf target/patches/phphelpers
 ```
 
-Upstream changes then surface as ordinary rebase conflicts. Export writes
+Upstream changes then surface as ordinary rebase conflicts. Export keeps the
+bytes of every patch whose commit diff is unchanged, writes the others as
 `git diff` output and drops patch files that no longer have a commit; add a
 commit to add a patch. New destinations must be in the module's
-`upstream_patch_targets` in `migration/modules.json`.
+`upstream_patch_targets` in `migration/modules.json`, and an edited patch listed
+in `frozen_upstream_patches` needs its new sha256 there too.
 
 ## Build variants
 
@@ -101,7 +103,7 @@ All default off and get their own alias suffix and manifest input.
 
 ## Timer module
 
-`--module timer` (feature value 4) is opt-in only. `tests/modules/timer/fork_active.py`
+`--module timer` (feature value 4) is opt-in only. `tests/modules/timer/test_fork.py`
 checks forking from an active timer callback, which aborted the child in the
 first adapter.
 

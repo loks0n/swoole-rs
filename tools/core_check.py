@@ -18,14 +18,11 @@ def sha(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--module', choices=['crc32', 'error'], required=True)
+    parser.add_argument('--module', choices=['error'], required=True)
     parser.add_argument('--build-manifest', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--sanitize', action='store_true')
-    parser.add_argument('--positive-only', action='store_true', help='CRC32 sequential defined bytes and original CRC assertion only')
     args = parser.parse_args()
-    if args.positive_only and args.module != 'crc32':
-        parser.error('Positive profile does not match selected module')
     manifest = json.loads(args.build_manifest.read_text())
     if args.module not in manifest['inputs']['modules'] or not manifest['migrated_feature_bits'] & MODULES[args.module][1]:
         parser.error('Selected build does not enable this module')
@@ -37,11 +34,9 @@ def main():
     for patch in manifest['inputs']['patches']:
         if patch['path'].startswith(f'migration/patches/{args.module}/') and sha(ROOT / patch['path']) != patch['sha256']:
             parser.error('Current overlay differs from selected build')
-    runner = 'differential.py' if args.module == 'error' else 'check.py'
-    return subprocess.run([sys.executable, str(ROOT / 'tests/modules' / args.module / runner),
+    return subprocess.run([sys.executable, str(ROOT / 'tests/modules' / args.module / 'differential.py'),
                            '--source', str(ROOT / 'target/upstream/src'), '--archive', str(archive),
-                           '--output', str(args.output), *(['--sanitize'] if args.sanitize else []),
-                           *(['--positive-only'] if args.positive_only else [])], cwd=ROOT).returncode
+                           '--output', str(args.output), *(['--sanitize'] if args.sanitize else [])], cwd=ROOT).returncode
 
 
 if __name__ == '__main__':

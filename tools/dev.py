@@ -93,6 +93,8 @@ def plan(args, reports):
         add(name, python, path, *options, *child)
     def report(name):
         return ['--output', str(reports / (name + '.json'))]
+    def pytest(name, path, *options):
+        add(name, python, '-m', 'pytest', '-q', path, *options, '--junitxml', str(reports / (name + '.xml')))
     php = ['--php', args.php]
     for extension in args.php_extension:
         php += ['--php-extension', extension]
@@ -122,8 +124,8 @@ def plan(args, reports):
     if integrate or args.compare or args.benchmark:
         engines += ['--engine', f'upstream={reference}']
     if integrate:
-        script('timer-model', 'tests/modules/timer/model.py', '--report', str(reports / 'timer-model.json'))
-        script('timer-kernel', 'tests/modules/timer/kernel.py', '--sanitize', *report('timer-kernel'))
+        pytest('timer-model', 'tests/modules/timer/test_model.py')
+        pytest('timer-kernel', 'tests/modules/timer/test_kernel.py', '--sanitize')
         add('format', 'cargo', 'fmt', '--all', '--check')
         add('clippy', 'cargo', 'clippy', '--locked', '--workspace', '--all-targets', '--all-features', '--', '-D', 'warnings')
     script('ownership', 'tools/check_migration.py')
@@ -164,14 +166,9 @@ def plan(args, reports):
         if 'base64' in modules:
             script('base64-originals', 'tests/modules/base64/original.py', '--source', ROOT / 'target/upstream/src',
                    *php, *engines, *report('base64-originals'))
-    for module in ['crc32', 'error']:
-        if module in modules:
-            script(module + '-native', 'tools/core_check.py', '--module', module,
-                   '--build-manifest', manifest, '--sanitize', *report(module + '-native'))
-    for module, phase, flag in [('crc32', 'crc32-positive', '--positive-only')]:
-        if module in modules:
-            script(phase, 'tools/core_check.py', '--module', module, '--build-manifest', manifest,
-                   '--sanitize', flag, *report(phase))
+    if 'error' in modules:
+        script('error-native', 'tools/core_check.py', '--module', 'error',
+               '--build-manifest', manifest, '--sanitize', *report('error-native'))
     if 'error' in modules and integrate:
         script('error-php', 'tests/modules/error/php.py', '--source', ROOT / 'target/upstream/src',
                *php, *engines, *report('error-php'))
@@ -772,18 +769,13 @@ def plan(args, reports):
             script('protocols-originals', 'tests/modules/protocols/phpt.py', '--source', ROOT / 'target/upstream/src',
                    *php, *engines, '--require-all', *report('protocols-originals'))
     if 'timer' in modules:
-        script('timer-fork-active', 'tests/modules/timer/fork_active.py', *php, *engines, *report('timer-fork-active'))
+        pytest('timer-fork-active', 'tests/modules/timer/test_fork.py', *php, *engines)
         if integrate:
-            reference_first = ['--engine', f'upstream={reference}',
-                               '--engine', f'hybrid={hybrid}']
-            script('timer-bailout', 'tests/modules/timer/bailout.py', *php, *reference_first, *report('timer-bailout'))
-            for name, options in [('timer-destructor-bailout', []), ('timer-destructor-clear', ['--idle-clear']),
-                                  ('timer-destructor-event-exit', ['--event-exit'])]:
-                script(name, 'tests/modules/timer/destructor_bailout.py', '--php', args.php,
-                       *reference_first, *options, *report(name))
-            script('timer-native', 'tests/modules/timer/hybrid.py', '--manifest', manifest, *php,
-                   *(['--sanitize'] if sys.platform == 'darwin' else []), *report('timer-native'))
-            script('timer-originals', 'tests/modules/timer/upstream.py', *php, *engines, *report('timer-originals'))
+            pytest('timer-bailout', 'tests/modules/timer/test_bailout.py', *php,
+                   '--engine', f'upstream={reference}', '--engine', f'hybrid={hybrid}')
+            pytest('timer-native', 'tests/modules/timer/test_adapter.py', '--manifest', manifest, *php,
+                   *(['--sanitize'] if sys.platform == 'darwin' else []))
+            pytest('timer-originals', 'tests/modules/timer/test_originals.py', *php, *engines)
     if 'buffer' in modules:
         if getattr(args, 'string_direct_fields', False):
             script('buffer-string-direct-fields', 'tests/modules/buffer/string/compatibility.py',

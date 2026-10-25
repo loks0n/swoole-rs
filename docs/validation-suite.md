@@ -15,8 +15,7 @@ PHPTs (see [hybrid build](hybrid-build.md)). `EXT` is a path to a built
 | WebSocket raw transport | `python3 tests/modules/websocket/close_probe.py --engine upstream=EXT --engine hybrid=EXT` |
 | WebSocket invalid-frame policy | `python3 tests/modules/websocket/invalid.py --engine upstream=EXT --engine hybrid=EXT` |
 | Autobahn RFC suite | `python3 tests/modules/websocket/autobahn.py --engine upstream=EXT --engine hybrid=EXT` |
-| Timer reference model | `python3 tests/modules/timer/model.py --report target/reports/timer-model.json` |
-| Timer kernel / adapter / fork | `python3 tests/modules/timer/kernel.py --sanitize`, `hybrid.py --sanitize`, `fork_active.py --engine timer=EXT` |
+| Timer model / kernel / adapter / fork | `python3 -m pytest tests/modules/timer --sanitize --manifest MANIFEST --engine upstream=EXT --engine timer=EXT` |
 | Pinned Hyperf skeleton | `python3 corpus/thirdparty/hyperf.py --prepare`, then corpus project `12-hyperf-skeleton` ([scope](../corpus/thirdparty/README.md)) |
 
 Tests run in isolated process groups on ephemeral ports. Fixed-port PHPTs and

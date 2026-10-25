@@ -18,10 +18,9 @@ unchanged.
 exit/exception/OOM (12 cases per engine, 5-second isolated limits):
 
 ```sh
-python3 tests/modules/timer/destructor_bailout.py \
+python3 -m pytest tests/modules/timer/test_bailout.py -k test_destructor \
   --engine upstream=/absolute/original/modules/swoole.so \
-  --engine timer=/absolute/candidate/modules/swoole.so \
-  --output target/reports/timer-destructor-bailout.json
+  --engine timer=/absolute/candidate/modules/swoole.so
 ```
 
 Modes (mutually exclusive):
