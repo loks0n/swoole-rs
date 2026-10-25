@@ -105,8 +105,6 @@ void Barrier::destroy() {
             for oldcast in ['sw_atomic_t','sw_atomic_long_t','uint32_t']:
                 text = text.replace(f'*{variable} = ({oldcast}) value;', f'{export}({ptr}, 1, ({word}) value, 0);')
                 text = text.replace(f'*{variable} = ({oldcast}) set_value;', f'{export}({ptr}, 1, ({word}) set_value, 0);')
-        text = text.replace('sw_atomic_futex_wait(atomic, timeout)', 'swr_v1_locks_wait((uint32_t *) atomic, timeout, SWR_LOCKS_HAVE_FUTEX)')
-        text = text.replace('sw_atomic_futex_wakeup(atomic, (int) n)', 'swr_v1_locks_wakeup((uint32_t *) atomic, (int) n, SWR_LOCKS_HAVE_FUTEX)')
         changes[path] = text
     path = 'src/lock/coroutine_lock.cc'
     text = original(path).replace('#include "swoole_lock.h"', '#include "swoole_lock.h"\n#include "swoole_rs_locks.h"')

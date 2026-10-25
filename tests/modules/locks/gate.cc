@@ -105,14 +105,19 @@ static void coroutine_policy() {
 }
 
 static void wait_wake() {
+#ifdef HAVE_FUTEX
     for(int rust: {0,1}) {
+#else
+    sw_atomic_wait_init();
+    for(int rust: {0}) {
+#endif
         auto *word=(uint32_t*)mmap(nullptr,4096,PROT_READ|PROT_WRITE,MAP_SHARED|MAP_ANON,-1,0);CHECK(word!=MAP_FAILED);
         *word=1;
-        CHECK((rust?swr_v1_locks_wait(word,0.01,SWR_LOCKS_HAVE_FUTEX):sw_atomic_futex_wait(word,0.01))==0);CHECK(*word==0);
-        CHECK((rust?swr_v1_locks_wait(word,0.002,SWR_LOCKS_HAVE_FUTEX):sw_atomic_futex_wait(word,0.002))==-1);CHECK(*word==0);
+        CHECK((rust?swr_v1_locks_wait(word,0.01):sw_atomic_futex_wait(word,0.01))==0);CHECK(*word==0);
+        CHECK((rust?swr_v1_locks_wait(word,0.002):sw_atomic_futex_wait(word,0.002))==-1);CHECK(*word==0);
         pid_t pid=fork();CHECK(pid>=0);
-        if(!pid){int r=rust?swr_v1_locks_wait(word,1,SWR_LOCKS_HAVE_FUTEX):sw_atomic_futex_wait(word,1);_exit(r==0?0:21);}
-        usleep(10000);int r=rust?swr_v1_locks_wakeup(word,1,SWR_LOCKS_HAVE_FUTEX):sw_atomic_futex_wakeup(word,1);CHECK(r>=0);
+        if(!pid){int r=rust?swr_v1_locks_wait(word,1):sw_atomic_futex_wait(word,1);_exit(r==0?0:21);}
+        usleep(10000);int r=rust?swr_v1_locks_wakeup(word,1):sw_atomic_futex_wakeup(word,1);CHECK(r>=0);
         int status;CHECK(waitpid(pid,&status,0)==pid);CHECK(WIFEXITED(status)&&WEXITSTATUS(status)==0);munmap(word,4096);
     }
 }

@@ -40,8 +40,16 @@ using sw_atomic_t=volatile uint32_t;
 #define SW_LOOP while(true)
 #define SW_NUM_BILLION 1000000000
 #define SW_NUM_MILLION 1000000
-struct Pool { void *alloc(size_t n){return n<=4096?mmap(nullptr,4096,PROT_READ|PROT_WRITE,MAP_SHARED|MAP_ANON,-1,0):nullptr;} void free(void*p){munmap(p,4096);} };
+struct Pool { static constexpr size_t page=1<<16; void *alloc(size_t n){return n<=page?mmap(nullptr,page,PROT_READ|PROT_WRITE,MAP_SHARED|MAP_ANON,-1,0):nullptr;} void free(void*p){munmap(p,page);} };
 inline Pool *sw_mem_pool(){static Pool pool;return &pool;}
+// Upstream's non-futex wait registry (misc.cc #else branch) needs these.
+#include <thread>
+#include <algorithm>
+#define sw_spinlock_release(lock) __sync_lock_release(lock)
+#define sw_atomic_cpu_pause() std::this_thread::yield()
+#define SW_ERROR_MALLOC_FAIL 501
+inline void swoole_fatal_error(int,const char*){abort();}
+inline void swoole_set_last_error(int e){errno=e;}
 '''
     base=original('src/core/base.cc');wait=base[base.index('bool sw_wait_for('):base.index('\nint swoole_itoa')]
     timer=original('src/os/timer.cc');realtime=timer[timer.index('void realtime_get('):timer.index('}  // namespace swoole')]
