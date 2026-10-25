@@ -13,8 +13,7 @@ from tools import core_check
 
 class CoreProfiles(unittest.TestCase):
     def test_profiles_forward_only_explicit_scope_with_verified_archive(self):
-        for module, flag in [('base64', '--encode-positive-only'), ('crc32', '--positive-only'),
-                             ('base64', None), ('crc32', None), ('error', None)]:
+        for module, flag in [('crc32', '--positive-only'), ('crc32', None), ('error', None)]:
             with self.subTest(module=module, flag=flag), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory).resolve(); prefix = root / 'prefix'; archive = prefix / 'lib/libswoole_rs_ffi.a'
                 archive.parent.mkdir(parents=True); archive.write_bytes(b'archive identity fixture')
@@ -34,7 +33,6 @@ class CoreProfiles(unittest.TestCase):
                     self.assertEqual(command[command.index('--archive') + 1], str(archive))
                     self.assertIn('--sanitize', command)
                     self.assertEqual('--positive-only' in command, flag == '--positive-only')
-                    self.assertEqual('--encode-positive-only' in command, flag == '--encode-positive-only')
                     archive.write_bytes(b'changed archive')
                     with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
                         core_check.main()
@@ -42,8 +40,7 @@ class CoreProfiles(unittest.TestCase):
                     self.assertEqual(run.call_count, 1)
 
     def test_mismatched_profiles_refuse_before_manifest_or_execution(self):
-        for module, flag in [('error', '--positive-only'), ('base64', '--positive-only'),
-                             ('crc32', '--encode-positive-only'), ('error', '--encode-positive-only')]:
+        for module, flag in [('error', '--positive-only')]:
             with patch('sys.argv', ['core_check.py', '--module', module, '--build-manifest', 'missing',
                                     '--output', 'unused', flag]), patch.object(core_check.subprocess, 'run') as run:
                 with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:

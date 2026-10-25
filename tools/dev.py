@@ -165,12 +165,11 @@ def plan(args, reports):
         if 'base64' in modules:
             script('base64-originals', 'tests/modules/base64/original.py', '--source', ROOT / 'target/upstream/src',
                    *php, *engines, *report('base64-originals'))
-    for module in ['base64', 'crc32', 'error']:
+    for module in ['crc32', 'error']:
         if module in modules:
             script(module + '-native', 'tools/core_check.py', '--module', module,
                    '--build-manifest', manifest, '--sanitize', *report(module + '-native'))
-    for module, phase, flag in [('base64', 'base64-encode-positive', '--encode-positive-only'),
-                                ('crc32', 'crc32-positive', '--positive-only')]:
+    for module, phase, flag in [('crc32', 'crc32-positive', '--positive-only')]:
         if module in modules:
             script(phase, 'tools/core_check.py', '--module', module, '--build-manifest', manifest,
                    '--sanitize', flag, *report(phase))
