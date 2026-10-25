@@ -6,7 +6,7 @@ logs=$(mktemp -d)
 pids=
 for test in tests/dev/test_*.py; do
     name=${test##*/}
-    python3 -m unittest discover -s tests/dev -p "$name" -q > "$logs/$name.log" 2>&1 &
+    python3 -m unittest discover -b -s tests/dev -p "$name" -q > "$logs/$name.log" 2>&1 &
     pids="$pids $!:$name"
 done
 status=0
