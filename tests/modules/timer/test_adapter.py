@@ -17,9 +17,9 @@ import sys
 
 import pytest
 
+from tools.build_upstream import COMMIT as PIN
 from tools.harness import run_isolated
 
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
 SCENARIOS = ['equal-deadlines', 'self-remove', 'remove-other', 'destructor-remove-other',
              'update-active-repeat', 'destructor-add', 'fork-teardown',
              'delay-active-once', 'nested-select-once']
