@@ -10,9 +10,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update -q && sudo apt-get install -yq php-dev php-sqlite3 php-curl php-xml php-mbstring composer libclang-dev libpcre2-dev libssl-dev pkg-config cmake libgtest-dev libnghttp2-dev libpq-dev libcurl4-openssl-dev ccache
       - id: upstream
@@ -27,6 +24,7 @@ jobs:
           path: target/shared-cache/ccache
           key: ccache-merge-${{ runner.os }}-${{ github.sha }}
           restore-keys: ccache-merge-${{ runner.os }}-
+      - run: python3 tools/shared_cache.py -- cargo fetch --locked
       - run: python3 corpus/thirdparty/hyperf.py --prepare
       - run: python3 tests/modules/buffer/baseline.py --sanitize
       # Unit, native, ABI, model and PHP gates, every application and original PHPT, upstream as control.

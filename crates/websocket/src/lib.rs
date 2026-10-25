@@ -121,15 +121,15 @@ pub unsafe extern "C" fn swr_v1_ws_mask(data: *mut u8, length: usize, key: *cons
     let mask = key_word.to_ne_bytes();
     let payload = unsafe { std::slice::from_raw_parts_mut(data, length) };
     let word_mask = u64::from(key_word) | (u64::from(key_word) << 32);
-    let mut words = payload.chunks_exact_mut(8);
-    for bytes in &mut words {
+    let (words, tail) = payload.as_chunks_mut::<8>();
+    for bytes in words {
         let word = u64::from_ne_bytes([
             bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
         ]);
         bytes.copy_from_slice(&(word ^ word_mask).to_ne_bytes());
     }
     // Each complete word consumes two whole keys, so the tail restarts at 0.
-    for (index, byte) in words.into_remainder().iter_mut().enumerate() {
+    for (index, byte) in tail.iter_mut().enumerate() {
         *byte ^= mask[index & 3];
     }
     0

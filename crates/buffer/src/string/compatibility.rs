@@ -447,7 +447,7 @@ mod tests {
         assert_eq!(requests, [24, 40, 56]);
         assert_eq!(used, 3);
         assert_eq!(s.length, 51);
-        for part in bytes[..51].chunks_exact(17) {
+        for part in bytes[..51].as_chunks::<17>().0 {
             assert_eq!(part, b"abcdefghijklmnopq");
         }
     }

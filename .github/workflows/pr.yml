@@ -11,9 +11,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -30,7 +27,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: sudo apt-get update -q && sudo apt-get install -yq $DEPS
       - id: upstream
@@ -45,6 +41,8 @@ jobs:
           path: target/shared-cache/ccache
           key: ccache-${{ runner.os }}-${{ github.sha }}
           restore-keys: ccache-${{ runner.os }}-
+      # The builders use their own CARGO_HOME and build offline.
+      - run: python3 tools/shared_cache.py -- cargo fetch --locked
       - run: python3 tools/build_hybrid.py --module buffer --module websocket
       # 11-buffer-lifecycle fails on upstream too (half-close truncation) and 12-hyperf needs
       # composer; both run in the merge tier.

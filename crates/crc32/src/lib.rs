@@ -40,12 +40,11 @@ mod portable {
     /// Return IEEE CRC32 with the upstream initial and final XOR.
     pub(super) fn crc32(input: &[u8]) -> u32 {
         let mut crc = u32::MAX;
-        let mut blocks = input.chunks_exact(8);
-        for block in blocks.by_ref() {
+        let (blocks, tail) = input.as_chunks::<8>();
+        for block in blocks {
             // Exact chunks establish the conversion length. Explicit little-endian
             // decoding retains the same byte recurrence on either host endianness.
-            let bytes =
-                (u64::from_le_bytes(block.try_into().unwrap()) ^ u64::from(crc)).to_le_bytes();
+            let bytes = (u64::from_le_bytes(*block) ^ u64::from(crc)).to_le_bytes();
             crc = TABLES[7][bytes[0] as usize]
                 ^ TABLES[6][bytes[1] as usize]
                 ^ TABLES[5][bytes[2] as usize]
@@ -55,7 +54,7 @@ mod portable {
                 ^ TABLES[1][bytes[6] as usize]
                 ^ TABLES[0][bytes[7] as usize];
         }
-        !blocks.remainder().iter().fold(crc, |crc, &byte| {
+        !tail.iter().fold(crc, |crc, &byte| {
             (crc >> 8) ^ TABLES[0][((crc ^ u32::from(byte)) & 0xff) as usize]
         })
     }
@@ -77,11 +76,10 @@ pub fn crc32(input: &[u8]) -> u32 {
 unsafe fn crc32_instructions(input: &[u8]) -> u32 {
     use core::arch::aarch64::{__crc32b, __crc32d, __crc32h, __crc32w};
     let mut crc = u32::MAX;
-    let mut blocks = input.chunks_exact(8);
-    for block in blocks.by_ref() {
-        crc = __crc32d(crc, u64::from_le_bytes(block.try_into().unwrap()));
+    let (blocks, mut tail) = input.as_chunks::<8>();
+    for block in blocks {
+        crc = __crc32d(crc, u64::from_le_bytes(*block));
     }
-    let mut tail = blocks.remainder();
     if let Some((word, remaining)) = tail.split_first_chunk::<4>() {
         crc = __crc32w(crc, u32::from_le_bytes(*word));
         tail = remaining;

@@ -11,7 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 @unittest.skipUnless(shutil.which('php'), 'PHP tokenizer required')
 class Declarations(unittest.TestCase):
     def tokens(self, source):
-        result = subprocess.run(['php', '-n', str(ROOT/'tools/php_api_inventory.php'), '--tokens'],
+        # Distribution builds ship tokenizer as a shared module, which -n does not load.
+        loaded = 'tokenizer' in subprocess.check_output(['php', '-n', '-m'], text=True).split()
+        result = subprocess.run(['php', '-n', *([] if loaded else ['-d', 'extension=tokenizer']),
+                                 str(ROOT/'tools/php_api_inventory.php'), '--tokens'],
                                 input=json.dumps({'fixture.stub.php': source}), capture_output=True, text=True, check=True)
         return json.loads(result.stdout)['fixture.stub.php']
 

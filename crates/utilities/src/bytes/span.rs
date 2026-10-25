@@ -1,7 +1,7 @@
 //! Complete inline cursor, mutable suffix and pointer-result publication.
-use std::ffi::{CStr, c_char};
+use std::ffi::{CStr, c_char, c_void};
 unsafe extern "C" {
-    fn memcmp(a: *const c_char, b: *const c_char, count: usize) -> i32;
+    fn memcmp(a: *const c_void, b: *const c_void, count: usize) -> i32;
 }
 
 fn whitespace(byte: u8, signed_char: u8) -> bool {
@@ -110,7 +110,7 @@ pub unsafe extern "C" fn swr_v2_utils_search(
                     if mode == 1 {
                         super::strncasecmp(current, needle, count) == 0
                     } else {
-                        memcmp(current, needle, count) == 0
+                        memcmp(current.cast(), needle.cast(), count) == 0
                     }
                 };
             if matched {

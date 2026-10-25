@@ -67,7 +67,12 @@ unsafe fn encode_neon(input: &[u8], output: &mut [MaybeUninit<u8>]) {
             vld1q_u8(ALPHABET.as_ptr().add(48)),
         )
     };
-    for (bytes, slots) in input.chunks_exact(48).zip(output.chunks_exact_mut(64)) {
+    for (bytes, slots) in input
+        .as_chunks::<48>()
+        .0
+        .iter()
+        .zip(output.as_chunks_mut::<64>().0)
+    {
         // Deinterleave sixteen complete triples, calculate their sextets, and
         // interleave four encoded characters per triple into exactly 64 slots.
         let uint8x16x3_t(a, b, c) = unsafe { vld3q_u8(bytes.as_ptr()) };
@@ -96,12 +101,11 @@ unsafe fn encode_neon(input: &[u8], output: &mut [MaybeUninit<u8>]) {
 
 fn encode_scalar(input: &[u8], output: &mut [MaybeUninit<u8>]) -> usize {
     let mut written = 0;
-    let mut chunks = input.chunks_exact(3);
-    for (chunk, slots) in chunks.by_ref().zip(output.chunks_exact_mut(4)) {
+    let (chunks, tail) = input.as_chunks::<3>();
+    for (chunk, slots) in chunks.iter().zip(output.as_chunks_mut::<4>().0) {
         slots.copy_from_slice(&encoded_triplet(chunk[0], chunk[1], chunk[2]));
         written += 4;
     }
-    let tail = chunks.remainder();
     if let Some(&a) = tail.first() {
         let mut group = encoded_triplet(a, tail.get(1).copied().unwrap_or(0), 0);
         group[3].write(b'=');
