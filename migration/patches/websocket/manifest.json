@@ -1,12 +1,12 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-rust-websocket-kernel.patch",
-      "sha256": "837c4eb3f9534fc705749346657c82bd1a134607d49c7735030f81583c7d799c",
+      "sha256": "fb686597997ba9aa82469a641eeb920a0db0e6ea73ce632a14e191537cd12cdb",
       "upstream_paths": [
-        "src/protocol/websocket.cc",
-        "ext-src/swoole_websocket_server.cc"
+        "ext-src/swoole_websocket_server.cc",
+        "src/protocol/websocket.cc"
       ]
     }
   ]

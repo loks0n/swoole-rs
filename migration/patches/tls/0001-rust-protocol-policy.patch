@@ -1,21 +1,15 @@
 diff --git a/src/protocol/dtls.cc b/src/protocol/dtls.cc
-index 3b8b4af..345ea90 100644
+index 3b8b4afb2..345ea9034 100644
 --- a/src/protocol/dtls.cc
 +++ b/src/protocol/dtls.cc
-@@ -15,6 +15,10 @@
- */
- 
+@@ -17,2 +17,6 @@
  #include "swoole_server.h"
 +#ifndef SWOOLE_RS_TLS
 +#error "TLS overlay requires explicit module activation"
 +#endif
 +#include "swoole_rs_tls.h"
  
- #ifdef SW_SUPPORT_DTLS
- namespace swoole {
-@@ -32,89 +36,66 @@ int BIO_read(BIO *b, char *data, int len) {
-     auto *session = (Session *) BIO_get_data(b);
-     BIO_clear_retry_flags(b);
+@@ -34,11 +38,13 @@ int BIO_read(BIO *b, char *data, int len) {
  
 -    if (!session->rxqueue.empty()) {
 -        Buffer *buffer = session->rxqueue.front();
@@ -37,7 +31,7 @@ index 3b8b4af..345ea90 100644
 +        memmove(data, buffer->data, plan.length);
 +        if (plan.consume) {
              session->rxqueue.pop_front();
-             sw_free(buffer);
+@@ -46,8 +52,4 @@ int BIO_read(BIO *b, char *data, int len) {
          }
 -
 -        return n;
@@ -47,7 +41,7 @@ index 3b8b4af..345ea90 100644
      }
 +    return plan.length;
  }
- 
+@@ -55,64 +57,43 @@ int BIO_read(BIO *b, char *data, int len) {
  long BIO_ctrl(BIO *b, int cmd, long lval, void *ptrval) {
 -    long retval = 0;
      auto *session = (Session *) BIO_get_data(b);
@@ -136,11 +130,7 @@ index 3b8b4af..345ea90 100644
 -    return retval;
 +    return plan.result;
  }
- 
- int BIO_create(BIO *b) {
-@@ -145,13 +126,9 @@ BIO_METHOD *BIO_get_methods() {
- 
- #ifdef OPENSSL_IS_BORINGSSL
+@@ -147,9 +128,5 @@ BIO_METHOD *BIO_get_methods() {
      BIO_meth_set_ctrl(_bio_methods, (long (*)(BIO *, int, long, void *)) BIO_ctrl);
 -#else
 -#if OPENSSL_VERSION_NUMBER > 0x1010007fL
@@ -152,11 +142,7 @@ index 3b8b4af..345ea90 100644
 +    // No callback-control leaf is implemented. Leave the native slot unset so
 +    // OpenSSL reports unsupported; its public dispatcher is not a method leaf.
  
-     return _bio_methods;
- }
-@@ -172,24 +149,33 @@ void Session::append(const char *data, ssize_t len) {
- }
- 
+@@ -174,20 +151,29 @@ void Session::append(const char *data, ssize_t len) {
  bool Session::init() {
 -    if (socket->ssl) {
 -        return false;
@@ -203,11 +189,7 @@ index 3b8b4af..345ea90 100644
 -
 -    return true;
  }
- 
- bool Session::listen() {
-@@ -204,9 +190,10 @@ bool Session::listen() {
-     ERR_clear_error();
- 
+@@ -206,5 +192,6 @@ bool Session::listen() {
      int retval = DTLSv1_listen(socket->ssl, nullptr);
 -    if (retval == 0) {
 +    const auto plan = swr_v1_tls_listen(retval);
@@ -216,36 +198,24 @@ index 3b8b4af..345ea90 100644
 -    } else if (retval < 0) {
 +    } else if (plan == 0) {
          int reason = ERR_GET_REASON(ERR_peek_error());
-         swoole_warning("DTLSv1_listen() failed, client[%s:%d], reason=%d, error_string=%s",
-                        socket->get_addr(),
 diff --git a/src/protocol/ssl.cc b/src/protocol/ssl.cc
-index 1af3c1e..f4f14ac 100644
+index e67569348..80ecec2ae 100644
 --- a/src/protocol/ssl.cc
 +++ b/src/protocol/ssl.cc
-@@ -18,6 +18,10 @@
- #include "swoole_socket.h"
- #include "swoole_ssl.h"
+@@ -20,2 +20,6 @@
  #include "swoole_util.h"
 +#ifndef SWOOLE_RS_TLS
 +#error "TLS overlay requires explicit module activation"
 +#endif
 +#include "swoole_rs_tls.h"
  
- using swoole::SSLContext;
- using swoole::network::Address;
-@@ -32,9 +36,6 @@ static int ssl_connection_index = 0;
- static int ssl_port_index = 0;
- 
+@@ -34,5 +38,2 @@ static int ssl_port_index = 0;
  static int swoole_ssl_verify_callback(int ok, X509_STORE_CTX *x509_store);
 -#if OPENSSL_VERSION_NUMBER < 0x10100000L
 -static int swoole_ssl_set_default_dhparam(SSL_CTX *ssl_context);
 -#endif
  
- #ifdef SW_SUPPORT_DTLS
- static int swoole_ssl_generate_cookie(SSL *ssl, uchar *cookie, uint *cookie_len);
-@@ -102,38 +103,44 @@ const char *swoole_ssl_get_error() {
- }
- 
+@@ -104,34 +105,40 @@ const char *swoole_ssl_get_error() {
  static void swoole_ssl_info_callback(const SSL *ssl, int where, int ret) {
 -    Socket *sock;
 -
@@ -315,20 +285,12 @@ index 1af3c1e..f4f14ac 100644
 +            break;
 +        default: return;
          }
-     }
- }
-@@ -141,8 +148,6 @@ static void swoole_ssl_info_callback(const SSL *ssl, int where, int ret) {
- namespace swoole {
- 
+@@ -143,4 +150,2 @@ namespace swoole {
  #define HTTP2_H2_ALPN "\x02h2"
 -#define HTTP2_H2_16_ALPN "\x05h2-16"
 -#define HTTP2_H2_14_ALPN "\x05h2-14"
  #define HTTP1_NPN "\x08http/1.1"
- 
- #define ssl_error(_fmt, ...)                                                                                           \
-@@ -173,34 +178,260 @@ static int ssl_alpn_advertised(SSL *ssl, const uchar **out, uchar *outlen, const
- 
- static int ssl_passwd_callback(char *buf, int num, int verify, void *data) {
+@@ -175,12 +180,241 @@ static int ssl_passwd_callback(char *buf, int num, int verify, void *data) {
      const auto *ctx = static_cast<SSLContext *>(data);
 -    if (!ctx->passphrase.empty()) {
 -        const int len = static_cast<int>(ctx->passphrase.length());
@@ -577,10 +539,7 @@ index 1af3c1e..f4f14ac 100644
  }
 +#pragma pop_macro("__SW_FUNC__")
  
- bool SSLContext::create() {
-     if (!openssl_init) {
-         swoole_ssl_init();
-     }
+@@ -191,14 +425,11 @@ bool SSLContext::create() {
  
 -    const SSL_METHOD *method;
 +    static_assert(SW_SSL_ALL == 0x7e && SW_SSL_DTLS == 0x80, "TLS protocol policy constants");
@@ -602,11 +561,7 @@ index 1af3c1e..f4f14ac 100644
 -    }
 +    protocols = policy.protocols;
      context = SSL_CTX_new(method);
-     if (context == nullptr) {
-         ssl_error("SSL_CTX_new() failed");
-@@ -245,41 +476,38 @@ bool SSLContext::create() {
-     SSL_CTX_set_options(context, SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS);
- #endif
+@@ -254,9 +485,6 @@ bool SSLContext::create() {
  
 -#if OPENSSL_VERSION_NUMBER >= 0x009080dfL
 -    /* only in 0.9.8m+ */
@@ -617,44 +572,32 @@ index 1af3c1e..f4f14ac 100644
 -    if (!(protocols & SW_SSL_SSLv2)) {
 +    if ((policy.disabled & SW_SSL_SSLv2)) {
          SSL_CTX_set_options(context, SSL_OP_NO_SSLv2);
-     }
- #endif
+@@ -265,3 +493,3 @@ bool SSLContext::create() {
  #ifdef SSL_OP_NO_SSLv3
 -    if (!(protocols & SW_SSL_SSLv3)) {
 +    if ((policy.disabled & SW_SSL_SSLv3)) {
          SSL_CTX_set_options(context, SSL_OP_NO_SSLv3);
-     }
- #endif
+@@ -270,3 +498,3 @@ bool SSLContext::create() {
  #ifdef SSL_OP_NO_TLSv1
 -    if (!(protocols & SW_SSL_TLSv1)) {
 +    if ((policy.disabled & SW_SSL_TLSv1)) {
          SSL_CTX_set_options(context, SSL_OP_NO_TLSv1);
-     }
- #endif
- #ifdef SSL_OP_NO_TLSv1_1
+@@ -276,3 +504,3 @@ bool SSLContext::create() {
      SSL_CTX_clear_options(context, SSL_OP_NO_TLSv1_1);
 -    if (!(protocols & SW_SSL_TLSv1_1)) {
 +    if ((policy.disabled & SW_SSL_TLSv1_1)) {
          SSL_CTX_set_options(context, SSL_OP_NO_TLSv1_1);
-     }
- #endif
- #ifdef SSL_OP_NO_TLSv1_2
+@@ -282,3 +510,3 @@ bool SSLContext::create() {
      SSL_CTX_clear_options(context, SSL_OP_NO_TLSv1_2);
 -    if (!(protocols & SW_SSL_TLSv1_2) && !(protocols & SW_SSL_DTLS)) {
 +    if ((policy.disabled & SW_SSL_TLSv1_2)) {
          SSL_CTX_set_options(context, SSL_OP_NO_TLSv1_2);
-     }
- #endif
- #ifdef SSL_OP_NO_TLSv1_3
+@@ -288,3 +516,3 @@ bool SSLContext::create() {
      SSL_CTX_clear_options(context, SSL_OP_NO_TLSv1_3);
 -    if (!(protocols & SW_SSL_TLSv1_3)) {
 +    if ((policy.disabled & SW_SSL_TLSv1_3)) {
          SSL_CTX_set_options(context, SSL_OP_NO_TLSv1_3);
-     }
- #endif
-@@ -301,277 +529,31 @@ bool SSLContext::create() {
-     SSL_CTX_set_read_ahead(context, 1);
-     SSL_CTX_set_info_callback(context, swoole_ssl_info_callback);
+@@ -310,95 +538,4 @@ bool SSLContext::create() {
  
 -    if (!passphrase.empty()) {
 -        SSL_CTX_set_default_passwd_cb_userdata(context, this);
@@ -667,7 +610,7 @@ index 1af3c1e..f4f14ac 100644
 -         */
 -        if (SSL_CTX_use_certificate_file(context, cert_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
 -            ssl_error("SSL_CTX_use_certificate_file(%s) failed", cert_file.c_str());
--            return true;
+-            return false;
 -        }
 -        /*
 -         * if the crt file have many certificate entry ,means certificate chain
@@ -747,10 +690,12 @@ index 1af3c1e..f4f14ac 100644
 -        return false;
 -    }
 -
+-    created = true;
 -    return true;
-+    return ssl_context_setup(this, SWR_TLS_STAGE_PASSWORD, __PRETTY_FUNCTION__);
++    created = ssl_context_setup(this, SWR_TLS_STAGE_PASSWORD, __PRETTY_FUNCTION__);
++    return created;
  }
- 
+@@ -406,20 +543,3 @@ bool SSLContext::create() {
  bool SSLContext::set_capath() const {
 -    if (!cafile.empty() || !capath.empty()) {
 -        const char *_cafile = cafile.empty() ? nullptr : cafile.c_str();
@@ -772,9 +717,7 @@ index 1af3c1e..f4f14ac 100644
 -    return true;
 +    return ssl_context_setup(this, SWR_TLS_STAGE_CA_CONFIG, __PRETTY_FUNCTION__);
  }
- 
- bool SSLContext::set_ciphers() const {
- #ifndef TLS1_2_VERSION
+@@ -429,27 +549,5 @@ bool SSLContext::set_ciphers() const {
      return true;
 +#else
 +    return ssl_context_setup(this, SWR_TLS_STAGE_CIPHER_CONFIG, __PRETTY_FUNCTION__);
@@ -804,7 +747,7 @@ index 1af3c1e..f4f14ac 100644
 -    }
 -    return true;
  }
- 
+@@ -457,24 +555,3 @@ bool SSLContext::set_ciphers() const {
  bool SSLContext::set_client_certificate() const {
 -    const char *_cert_file = client_cert_file.c_str();
 -    int depth = verify_depth;
@@ -830,7 +773,7 @@ index 1af3c1e..f4f14ac 100644
 -    return true;
 +    return ssl_context_setup(this, SWR_TLS_STAGE_CLIENT_VERIFY_CONFIG, __PRETTY_FUNCTION__);
  }
- 
+@@ -482,61 +559,3 @@ bool SSLContext::set_client_certificate() const {
  bool SSLContext::set_ecdh_curve() const {
 -#ifndef OPENSSL_NO_ECDH
 -    /*
@@ -893,7 +836,7 @@ index 1af3c1e..f4f14ac 100644
 -    return true;
 +    return ssl_context_setup(this, SWR_TLS_STAGE_CURVE_CAPABILITY, __PRETTY_FUNCTION__);
  }
- 
+@@ -544,40 +563,3 @@ bool SSLContext::set_ecdh_curve() const {
  bool SSLContext::set_dhparam() const {
 -    const char *file = dhparam.c_str();
 -
@@ -935,11 +878,7 @@ index 1af3c1e..f4f14ac 100644
 -    return true;
 +    return ssl_context_setup(this, SWR_TLS_STAGE_DH_OPEN, __PRETTY_FUNCTION__);
  }
- 
- SSLContext::~SSLContext() {
-@@ -581,32 +563,6 @@ SSLContext::~SSLContext() {
- }  // namespace swoole
- 
+@@ -591,28 +573,2 @@ SSLContext::~SSLContext() {
  static int swoole_ssl_verify_callback(int ok, X509_STORE_CTX *x509_store) {
 -#if 0
 -    char *subject, *issuer;
@@ -968,11 +907,7 @@ index 1af3c1e..f4f14ac 100644
 -    }
 -#endif
  
-     return 1;
- }
-@@ -690,34 +646,3 @@ static int swoole_ssl_verify_cookie(SSL *ssl, const uchar *cookie, uint cookie_l
- }
- #endif
+@@ -700,32 +656 @@ static int swoole_ssl_verify_cookie(SSL *ssl, const uchar *cookie, uint cookie_l
  
 -#if OPENSSL_VERSION_NUMBER < 0x10100000L
 -static int swoole_ssl_set_default_dhparam(SSL_CTX *ssl_context) {

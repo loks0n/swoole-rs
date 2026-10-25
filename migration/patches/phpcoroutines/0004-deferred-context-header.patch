@@ -1,30 +1,21 @@
 diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
+index ae8a1a16b..b9660c0f7 100644
 --- a/ext-src/php_swoole_coroutine.h
 +++ b/ext-src/php_swoole_coroutine.h
-@@ -20,6 +20,9 @@
- #pragma once
- 
+@@ -22,2 +22,5 @@
  #include "swoole_coroutine.h"
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +#include "swoole_rs_phpcoroutines.h"
 +#endif
  #include "swoole_coroutine_system.h"
+@@ -50,2 +53,6 @@ namespace swoole {
  
- #include "zend_vm.h"
-@@ -46,6 +49,10 @@
- }
- 
- namespace swoole {
-+
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +struct PHPCoroutineDeferredTasks;
 +#endif
- 
++
  struct PHPContext {
-     typedef std::function<void(PHPContext *)> SwapCallback;
-@@ -75,29 +82,80 @@
-         unsigned level;
-     } unserialize;
+@@ -79,6 +86,22 @@ struct PHPContext {
      /* for error control `@` */
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    swr_phpcoroutines_scheduler_phase in_silence;
@@ -47,9 +38,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
      int tmp_error_reporting;
 +#endif
      Coroutine *co;
-     zend_fcall_info fci;
-     zend_fcall_info_cache fci_cache;
-     zval return_value;
+@@ -88,3 +111,7 @@ struct PHPContext {
      zend_fiber_context *fiber_context;
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    swr_phpcoroutines_scheduler_phase fiber_init_notified;
@@ -57,8 +46,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
      bool fiber_init_notified;
 +#endif
  #ifdef ZEND_CHECK_STACK_LIMIT
-     void *stack_base;
-     void *stack_limit;
+@@ -93,3 +120,7 @@ struct PHPContext {
  #endif
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    PHPCoroutineDeferredTasks *defer_tasks;
@@ -66,7 +54,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
      std::stack<zend::Function *> *defer_tasks;
 +#endif
      SwapCallback *on_yield;
-     SwapCallback *on_resume;
+@@ -97,6 +128,14 @@ struct PHPContext {
      SwapCallback *on_close;
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    swr_phpcoroutines_parent_cell pcid;
@@ -74,14 +62,15 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
      long pcid;
 +#endif
      zend_object *context;
+     TimerNode *timer_limit;
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    swr_phpcoroutines_clock_cell last_msec;
 +#else
      int64_t last_msec;
 +#endif
      size_t switch_count;
- };
-+
+@@ -104,2 +143,21 @@ struct PHPContext {
+ 
 +
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +static inline swr_phpcoroutines_context_cells php_coroutine_metadata_cells(PHPContext *ctx) {
@@ -100,12 +89,9 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
 +static_assert(sizeof(int64_t) == sizeof(swr_phpcoroutines_clock_cell), "metadata width");
 +static_assert(alignof(int64_t) == alignof(swr_phpcoroutines_clock_cell), "metadata alignment");
 +#endif
- 
++
  class PHPCoroutine {
-   public:
-@@ -160,33 +218,92 @@
-     static void interrupt_thread_stop();
- 
+@@ -165,3 +223,8 @@ class PHPCoroutine {
      static inline long get_cid() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        return is_activated()
@@ -114,7 +100,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
          return sw_likely(activated) ? Coroutine::get_current_cid() : -1;
 +    #endif
      }
- 
+@@ -169,4 +232,12 @@ class PHPCoroutine {
      static inline long get_pcid(long cid = 0) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        const auto route = swr_v1_phpcoroutines_context_route(SWR_CORO_CONTEXT_PARENT, cid, 0);
@@ -127,7 +113,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
          return sw_likely(ctx) ? ctx->pcid : 0;
 +    #endif
      }
- 
+@@ -174,3 +245,8 @@ class PHPCoroutine {
      static inline long get_elapsed(long cid = 0) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        return is_activated()
@@ -136,7 +122,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
          return sw_likely(activated) ? Coroutine::get_elapsed(cid) : -1;
 +    #endif
      }
- 
+@@ -178,4 +254,10 @@ class PHPCoroutine {
      static inline PHPContext *get_context() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        PHPContext *ctx = (PHPContext *) Coroutine::get_current_task();
@@ -147,7 +133,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
          return ctx ? ctx : &main_context;
 +    #endif
      }
- 
+@@ -183,4 +265,10 @@ class PHPCoroutine {
      static inline PHPContext *get_origin_context(PHPContext *ctx) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        Coroutine *co = ctx->co->get_origin();
@@ -158,7 +144,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
          return co ? (PHPContext *) co->get_task() : &main_context;
 +    #endif
      }
- 
+@@ -188,3 +276,8 @@ class PHPCoroutine {
      static inline PHPContext *get_context_by_cid(long cid) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        return swr_v1_phpcoroutines_context_route(SWR_CORO_CONTEXT_BY_ID, cid, 0) == SWR_CORO_CONTEXT_MAIN
@@ -167,7 +153,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
          return cid == -1 ? &main_context : (PHPContext *) Coroutine::get_task_by_cid(cid);
 +    #endif
      }
- 
+@@ -192,2 +285,26 @@ class PHPCoroutine {
      static inline ssize_t get_stack_usage(long cid) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        swr_phpcoroutines_stack_state state = {cid, 0, 0, 0};
@@ -194,15 +180,11 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
 +        }
 +#else
          zend_long current_cid = PHPCoroutine::get_cid();
-         if (cid == 0) {
-             cid = current_cid;
-@@ -204,77 +321,160 @@
-             stack = stack->prev;
-         }
+@@ -209,2 +326,3 @@ class PHPCoroutine {
          return usage;
 +    #endif
      }
- 
+@@ -212,3 +330,7 @@ class PHPCoroutine {
      static inline uint64_t get_max_num() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        return swr_v1_phpcoroutines_config(&config, SWR_CORO_CONFIG_GET_MAX, 0);
@@ -210,7 +192,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
          return config.max_num;
 +    #endif
      }
- 
+@@ -216,3 +338,7 @@ class PHPCoroutine {
      static inline void set_max_num(uint64_t n) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        swr_v1_phpcoroutines_config(&config, SWR_CORO_CONFIG_SET_MAX, n);
@@ -218,7 +200,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
          config.max_num = n;
 +    #endif
      }
- 
+@@ -220,3 +346,7 @@ class PHPCoroutine {
      static inline void set_deadlock_check(bool value = true) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        swr_v1_phpcoroutines_config(&config, SWR_CORO_CONFIG_SET_DEADLOCK, value);
@@ -226,9 +208,15 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
          config.enable_deadlock_check = value;
 +    #endif
      }
- 
+@@ -224,4 +354,25 @@ class PHPCoroutine {
      static inline bool is_schedulable(PHPContext *ctx) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
++        // Coroutine timestamps are maintained only while the preemption thread runs.
++        uint32_t interrupt_stage = 0;
++        if (swr_v1_phpcoroutines_interrupt(&interrupt_thread_running, &interrupt_stage, SWR_CORO_INTERRUPT_RECORD,
++                                           MAX_EXEC_MSEC).action != SWR_CORO_INTERRUPT_CLOCK) {
++            return false;
++        }
 +        const auto cells = php_coroutine_metadata_cells(ctx);
 +        uint32_t stage = 0;
 +        int64_t observation = 0;
@@ -242,10 +230,11 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
 +            }
 +        }
 +#else
-         return ctx->enable_scheduler && (Timer::get_absolute_msec() - ctx->last_msec > MAX_EXEC_MSEC);
+         return interrupt_thread_running && ctx->enable_scheduler &&
+                (Timer::get_absolute_msec() - ctx->last_msec > MAX_EXEC_MSEC);
 +    #endif
      }
- 
+@@ -229,2 +380,8 @@ class PHPCoroutine {
      static inline bool enable_scheduler() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        PHPContext *ctx = (PHPContext *) Coroutine::get_current_task();
@@ -254,14 +243,11 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
 +        return swr_v1_phpcoroutines_metadata(&stage, SWR_CORO_METADATA_ENABLE, &cells, 0, 0).value != 0;
 +#else
          PHPContext *ctx = (PHPContext *) Coroutine::get_current_task();
-         if (ctx && !ctx->enable_scheduler) {
-             ctx->enable_scheduler = true;
-             return true;
-         }
+@@ -235,2 +392,3 @@ class PHPCoroutine {
          return false;
 +    #endif
      }
- 
+@@ -238,2 +396,8 @@ class PHPCoroutine {
      static inline bool disable_scheduler() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        PHPContext *ctx = (PHPContext *) Coroutine::get_current_task();
@@ -270,16 +256,11 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
 +        return swr_v1_phpcoroutines_metadata(&stage, SWR_CORO_METADATA_DISABLE, &cells, 0, 0).value != 0;
 +#else
          PHPContext *ctx = (PHPContext *) Coroutine::get_current_task();
-         if (ctx && ctx->enable_scheduler) {
-             ctx->enable_scheduler = false;
-             return true;
-         }
+@@ -244,2 +408,3 @@ class PHPCoroutine {
          return false;
 +    #endif
      }
- 
-     static void set_hook_flags(uint32_t flags);
- 
+@@ -249,3 +414,7 @@ class PHPCoroutine {
      static inline uint32_t get_hook_flags() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        return static_cast<uint32_t>(swr_v1_phpcoroutines_config(&config, SWR_CORO_CONFIG_GET_HOOKS, 0));
@@ -287,7 +268,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
          return config.hook_flags;
 +    #endif
      }
- 
+@@ -253,3 +422,7 @@ class PHPCoroutine {
      static inline void enable_preemptive_scheduler(bool value) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        swr_v1_phpcoroutines_config(&config, SWR_CORO_CONFIG_SET_PREEMPTIVE, value);
@@ -295,7 +276,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
          config.enable_preemptive_scheduler = value;
 +    #endif
      }
- 
+@@ -257,3 +430,7 @@ class PHPCoroutine {
      static inline bool is_activated() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        return swr_v1_phpcoroutines_scheduler_phase(&activated, SWR_CORO_SCHED_PHASE_READ);
@@ -303,7 +284,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
          return activated;
 +    #endif
      }
- 
+@@ -261,3 +438,8 @@ class PHPCoroutine {
      static inline long get_execute_time(long cid = 0) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        return is_activated()
@@ -312,7 +293,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
          return sw_likely(activated) ? Coroutine::get_execute_time(cid) : -1;
 +    #endif
      }
- 
+@@ -265,2 +447,14 @@ class PHPCoroutine {
      static inline void init_main_context() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -323,20 +304,17 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
 +            uint32_t stage = 0;
 +            swr_v1_phpcoroutines_metadata(&stage, SWR_CORO_METADATA_INIT_FIBER, &cells, 0, 0);
 +        }
++        EG(opline_before_exception) = nullptr;
 +        save_context(&main_context);
 +    #else
          main_context.co = nullptr;
-         main_context.fiber_context = EG(main_fiber_context);
-         main_context.fiber_init_notified = true;
+@@ -270,3 +464,4 @@ class PHPCoroutine {
          save_context(&main_context);
 -    }
 +    #endif
 +}
  
-     static inline void free_main_context() {
-         main_context = {};
-     }
- 
+@@ -277,7 +472,19 @@ class PHPCoroutine {
    protected:
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    static SW_THREAD_LOCAL swr_phpcoroutines_activation_state activated;
@@ -348,20 +326,15 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
 +    static SW_THREAD_LOCAL swr_phpcoroutines_config_state config;
 +#else
      static SW_THREAD_LOCAL Config config;
--
 +#endif
-+
+ 
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    static SW_THREAD_LOCAL swr_phpcoroutines_interrupt_state interrupt_thread_running;
 +#else
-     static SW_THREAD_LOCAL bool interrupt_thread_running;
+     static SW_THREAD_LOCAL std::atomic_bool interrupt_thread_running;
 +#endif
      static SW_THREAD_LOCAL std::thread interrupt_thread;
- 
-     static void activate();
-@@ -306,9 +506,19 @@
- #endif
-     static void interrupt_thread_start();
+@@ -313,2 +520,11 @@ class PHPCoroutine {
      static void record_last_msec(PHPContext *ctx) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +        uint32_t interrupt_stage = 0;
@@ -373,9 +346,7 @@ diff --git a/ext-src/php_swoole_coroutine.h b/ext-src/php_swoole_coroutine.h
 +        }
 +#else
          if (interrupt_thread_running) {
-             ctx->last_msec = Timer::get_absolute_msec();
+@@ -316,2 +532,3 @@ class PHPCoroutine {
          }
 +    #endif
      }
- };
- }  // namespace swoole

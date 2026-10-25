@@ -1,14 +1,223 @@
+diff --git a/include/swoole_string.h b/include/swoole_string.h
+index ea22f034d..fb627d03b 100644
+--- a/include/swoole_string.h
++++ b/include/swoole_string.h
+@@ -20,2 +20,5 @@
+ #include "swoole.h"
++#include "swoole_rs_string.h"
++#include "swoole_rs_string_fields.h"
++#include <type_traits>
+ 
+@@ -36,4 +39,11 @@ class String {
+     void alloc(size_t _size, const Allocator *_allocator);
++    void initialize() noexcept;
++    void initialize_bytes(const char *data, size_t length);
+     void move(String &&src);
+     void copy(const String &src);
++    void dispose() noexcept;
++    void ownership(uint32_t operation, const String *copy_source, String *move_source) noexcept;
++    size_t grown_capacity(size_t minimum) const;
++    size_t format_offset(int flags, size_t formatted);
++    swr_v1_string_format_step_result format_step(uint32_t phase, int flags, size_t formatted, size_t rendered) const;
+ 
+@@ -47,2 +57,5 @@ class String {
+     String() {
++#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
++        initialize();
++#else
+         length = size = offset = 0;
+@@ -50,2 +63,3 @@ class String {
+         allocator = nullptr;
++#endif
+     }
+@@ -57,6 +71,9 @@ class String {
+     String(const char *_str, size_t _length) {
++#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
++        initialize_bytes(_str, _length);
++#else
+         alloc(_length + 1, nullptr);
+-        memcpy(str, _str, _length);
+-        str[_length] = '\0';
+-        length = _length;
++        append(_str, _length);
++        set_null_terminated();
++#endif
+     }
+@@ -77,5 +94,3 @@ class String {
+     ~String() {
+-        if (allocator && str) {
+-            allocator->free(str);
+-        }
++        dispose();
+     }
+@@ -99,4 +114,6 @@ class String {
+     bool contains(const char *needle, size_t l_needle) const {
+-        return swoole_strnstr(str, length, needle, l_needle) != nullptr;
+-    }
++        assert(static_cast<uint32_t>(l_needle) > 0);
++        return swr_v1_string_match(reinterpret_cast<const uint8_t *>(str), static_cast<uint32_t>(length),
++            reinterpret_cast<const uint8_t *>(needle), static_cast<uint32_t>(l_needle), SWR_STRING_CONTAINS) == 1;
++}
+ 
+@@ -107,7 +124,5 @@ class String {
+     bool starts_with(const char *needle, size_t l_needle) const {
+-        if (length < l_needle) {
+-            return false;
+-        }
+-        return memcmp(str, needle, l_needle) == 0;
+-    }
++        return swr_v1_string_match(reinterpret_cast<const uint8_t *>(str), length,
++            reinterpret_cast<const uint8_t *>(needle), l_needle, SWR_STRING_STARTS_WITH) == 1;
++}
+ 
+@@ -118,7 +133,5 @@ class String {
+     bool ends_with(const char *needle, size_t l_needle) const {
+-        if (length < l_needle) {
+-            return false;
+-        }
+-        return memcmp(str + length - l_needle, needle, l_needle) == 0;
+-    }
++        return swr_v1_string_match(reinterpret_cast<const uint8_t *>(str), length,
++            reinterpret_cast<const uint8_t *>(needle), l_needle, SWR_STRING_ENDS_WITH) == 1;
++}
+ 
+@@ -129,14 +142,9 @@ class String {
+     bool equals(const char *data, size_t len) const {
+-        if (length != len) {
+-            return false;
+-        }
+-        return memcmp(str, data, len) == 0;
+-    }
++        return swr_v1_string_match(reinterpret_cast<const uint8_t *>(str), length,
++            reinterpret_cast<const uint8_t *>(data), len, SWR_STRING_EQUALS) == 1;
++}
+ 
+     bool equals(const std::string &data) const {
+-        if (length != data.size()) {
+-            return false;
+-        }
+-        return memcmp(str, data.c_str(), length) == 0;
+-    }
++        return equals(data.c_str(), data.length());
++}
+ 
+@@ -149,9 +157,6 @@ class String {
+ 
+-    void clear() {
+-        length = 0;
+-        offset = 0;
+-    }
++    void clear();
+ 
+     void extend() {
+-        extend(size * 2);
++        extend(grown_capacity(0));
+     }
+@@ -164,8 +169,4 @@ class String {
+     void extend_align(size_t _new_size) {
+-        size_t align_size = SW_MEM_ALIGNED_SIZE(size * 2);
+-        while (align_size < _new_size) {
+-            align_size *= 2;
+-        }
+-        reserve(align_size);
+-    }
++        reserve(grown_capacity(_new_size));
++}
+ 
+@@ -195,8 +196,3 @@ class String {
+ 
+-    void set_null_terminated() {
+-        if (length == size) {
+-            extend(length + 1);
+-        }
+-        str[length] = '\0';
+-    }
++    void set_null_terminated();
+ 
+@@ -212,35 +208,19 @@ class String {
+     size_t format_impl(int flags, const char *format, Args... args) {
+-        size_t _size = sw_snprintf(nullptr, 0, format, args...);
+-        if (_size == 0) {
+-            return 0;
+-        }
+-        // store \0 terminator
+-        ++_size;
+-
+-        size_t new_size = (flags & FORMAT_APPEND) ? length + _size : _size;
+-        if (flags & FORMAT_GROW) {
+-            size_t align_size = SW_MEM_ALIGNED_SIZE(size * 2);
+-            while (align_size < new_size) {
+-                align_size *= 2;
++        const size_t formatted = sw_snprintf(nullptr, 0, format, args...);
++        uint32_t phase = 0;
++        size_t rendered = 0;
++        while (true) {
++            const auto step = format_step(phase, flags, formatted, rendered);
++            switch (step.action) {
++            case SWR_STRING_FORMAT_DONE: return step.result;
++            case SWR_STRING_FORMAT_RESERVE: reserve(step.capacity); break;
++            case SWR_STRING_FORMAT_WRITE:
++                rendered = sw_snprintf(str + step.offset, step.available, format, args...);
++                break;
++            case SWR_STRING_FORMAT_COMMIT: length = step.length; return step.result;
++            default: abort();
+             }
+-            new_size = align_size;
++            phase = step.next;
+         }
+-
+-        size_t n;
+-        if (flags & FORMAT_APPEND) {
+-            if (_size > size - length) {
+-                reserve(new_size);
+-            }
+-            n = sw_snprintf(str + length, size - length, format, args...);
+-            length += n;
+-        } else {
+-            if (_size > size) {
+-                reserve(new_size);
+-            }
+-            n = sw_snprintf(str, size, format, args...);
+-            length = n;
+-        }
+-
+-        return n;
+-    }
++}
+ 
+@@ -261,2 +241,18 @@ class String {
+ 
++#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
++static_assert(std::is_standard_layout<String>::value && !std::is_polymorphic<String>::value, "String storage class");
++static_assert(std::is_same<decltype(String::length), size_t>::value &&
++    std::is_same<decltype(String::size), size_t>::value &&
++    std::is_same<decltype(String::offset), off_t>::value &&
++    std::is_same<decltype(String::str), char *>::value &&
++    std::is_same<decltype(String::allocator), swr_string_allocator_token>::value, "String exact member types");
++static_assert(sizeof(size_t) == 8 && alignof(size_t) == 8 && sizeof(off_t) == 8 &&
++    alignof(off_t) == 8 && std::is_signed<off_t>::value, "String target scalar schema");
++static_assert(sizeof(String) == 40 && alignof(String) == 8 &&
++    sizeof(swr_string_fields_schema) == 40 && alignof(swr_string_fields_schema) == 8, "String schema size alignment");
++static_assert(offsetof(String, length) == 0 && offsetof(String, size) == 8 &&
++    offsetof(String, offset) == 16 && offsetof(String, str) == 24 &&
++    offsetof(String, allocator) == 32, "String field offsets");
++#endif
++
+ inline String *make_string(size_t size, const Allocator *allocator = nullptr) {
 diff --git a/src/core/string.cc b/src/core/string.cc
+index f478fdeed..62131c303 100644
 --- a/src/core/string.cc
 +++ b/src/core/string.cc
-@@ -18,76 +18,176 @@
- #include "swoole_base64.h"
- 
+@@ -20,33 +20,154 @@
  #include <memory>
 +#include <stdexcept>
 +#include "swoole_rs_string.h"
  
  namespace swoole {
+-
+-void String::alloc(size_t _size, const Allocator *_allocator) {
+-    if (_allocator == nullptr) {
+-        _allocator = sw_std_allocator();
 +namespace {
 +void check_string_status(int32_t status) {
 +    if (status == 0) return;
@@ -45,7 +254,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +        // Native effects may change other live fields. Original reserve only
 +        // publishes the returned pointer and capacity after realloc succeeds.
 +        s.str = replacement; s.size = plan.capacity;
-+    }
+     }
 +}
 +int32_t edit_string(String &s, swr_v1_string_edit edit) {
 +    // REDUCE is the sole remaining caller: its frozen v1 byte operation has
@@ -57,7 +266,13 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +    if (status == 0) publish_state(s, state);
 +    return status;
 +}
-+
+ 
+-    _size = SW_MEM_ALIGNED_SIZE(_size);
+-    length = 0;
+-    size = _size;
+-    offset = 0;
+-    str = (char *) _allocator->malloc(_size);
+-    allocator = _allocator;
 +swr_v1_string_edit string_edit(uint32_t operation, const char *data = nullptr, size_t length = 0,
 +                               int64_t offset = 0, size_t count = 0) {
 +    return {operation, reinterpret_cast<const uint8_t *>(data), length, count, offset,
@@ -89,7 +304,9 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +    }
 +}
 +#endif
-+
+ 
+-    if (str == nullptr) {
+-        throw std::bad_alloc();
 +char *compat_string(String &s, swr_v1_string_edit edit, const String *source = nullptr) {
 +#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
 +    return fields_string(s, SWR_FIELDS_EDIT, 0, nullptr, &edit, source);
@@ -117,11 +334,17 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +        case 4: break;
 +        default: std::abort();
 +        }
-+    }
+     }
 +#endif
 +}
-+}
-+
+ }
+ 
+-void String::move(String &&src) {
+-    str = src.str;
+-    length = src.length;
+-    offset = src.offset;
+-    size = src.size;
+-    allocator = src.allocator;
 +void String::initialize() noexcept {
 +#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
 +    fields_string(*this, SWR_FIELDS_INIT);
@@ -129,7 +352,11 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +    length = size = offset = 0; str = nullptr; allocator = nullptr;
 +#endif
 +}
-+
+ 
+-    src.str = nullptr;
+-    src.length = 0;
+-    src.size = 0;
+-    src.offset = 0;
 +void String::initialize_bytes(const char *data, size_t length) {
 +#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
 +    const swr_v1_string_edit edit{0, reinterpret_cast<const uint8_t *>(data), length, 0, 0, SW_DEFAULT_ALIGNMENT, 0};
@@ -138,40 +365,16 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +    alloc(length + 1, nullptr); append(data, length); set_null_terminated();
 +#endif
 +}
- 
- void String::alloc(size_t _size, const Allocator *_allocator) {
--    if (_allocator == nullptr) {
--        _allocator = sw_std_allocator();
--    }
--
--    _size = SW_MEM_ALIGNED_SIZE(_size);
--    length = 0;
--    size = _size;
--    offset = 0;
--    str = (char *) _allocator->malloc(_size);
--    allocator = _allocator;
--
--    if (str == nullptr) {
--        throw std::bad_alloc();
--    }
++
++void String::alloc(size_t _size, const Allocator *_allocator) {
 +#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
 +    fields_string(*this, SWR_FIELDS_ALLOC, _size, _allocator);
 +#else
 +    allocate_string(*this, SWR_STRING_ALLOCATION_INITIAL, nullptr, _size, _allocator);
 +#endif
- }
- 
- void String::move(String &&src) {
--    str = src.str;
--    length = src.length;
--    offset = src.offset;
--    size = src.size;
--    allocator = src.allocator;
--
--    src.str = nullptr;
--    src.length = 0;
--    src.size = 0;
--    src.offset = 0;
++}
++
++void String::move(String &&src) {
 +#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
 +    fields_string(*this, SWR_FIELDS_MOVE, 0, nullptr, nullptr, nullptr, &src);
 +#else
@@ -182,7 +385,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +    publish_state(src, plan.state);
 +#endif
  }
- 
+@@ -54,9 +175,3 @@ void String::move(String &&src) {
  String &String::operator=(const String &src) noexcept {
 -    if (&src == this) {
 -        return *this;
@@ -193,8 +396,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 -    copy(src);
 +    ownership(SWR_STRING_OWNER_COPY, &src, nullptr);
      return *this;
- }
- 
+@@ -65,6 +180,3 @@ String &String::operator=(const String &src) noexcept {
  void String::copy(const String &src) {
 -    alloc(src.size, src.allocator);
 -    memcpy(str, src.str, src.length);
@@ -202,7 +404,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 -    offset = src.offset;
 +    compat_string(*this, string_edit(SWR_STRING_COPY), &src);
  }
- 
+@@ -72,9 +184,3 @@ void String::copy(const String &src) {
  String &String::operator=(String &&src) noexcept {
 -    if (&src == this) {
 -        return *this;
@@ -213,8 +415,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 -    move(std::move(src));
 +    ownership(SWR_STRING_OWNER_MOVE, nullptr, &src);
      return *this;
- }
- 
+@@ -83,9 +189,3 @@ String &String::operator=(String &&src) noexcept {
  void String::append(const String &append_str) {
 -    size_t new_size = length + append_str.length;
 -    if (new_size > size) {
@@ -225,11 +426,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 -    length += append_str.length;
 +    compat_string(*this, string_edit(SWR_STRING_APPEND), &append_str);
  }
- 
- void String::write(off_t _offset, const String &write_str) {
-@@ -95,70 +195,42 @@
- }
- 
+@@ -97,11 +197,3 @@ void String::write(off_t _offset, const String &write_str) {
  void String::write(off_t _offset, const char *write_str, size_t _length) {
 -    size_t new_length = _offset + _length;
 -    if (new_length > size) {
@@ -242,7 +439,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 -    }
 +    compat_string(*this, string_edit(SWR_STRING_WRITE, write_str, _length, _offset));
  }
- 
+@@ -109,6 +201,11 @@ void String::write(off_t _offset, const char *write_str, size_t _length) {
  void String::grow(size_t incr_value) {
 -    length += incr_value;
 -    if (length == size) {
@@ -258,7 +455,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +    if (status == 1) reserve(requested);
 +#endif
  }
- 
+@@ -116,8 +213,6 @@ void String::grow(size_t incr_value) {
  String String::substr(size_t _offset, size_t len) const {
 -    if (_offset + len > length) {
 -        return {};
@@ -271,7 +468,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +    result.append(_offset == 0 ? str : str + _offset, len);
 +    return result;
  }
- 
+@@ -125,22 +220,3 @@ String String::substr(size_t _offset, size_t len) const {
  char *String::pop(size_t init_size) {
 -    assert(length >= (size_t) offset);
 -
@@ -295,10 +492,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 -    return val;
 +    return compat_string(*this, string_edit(SWR_STRING_POP, nullptr, init_size));
  }
- 
- /**
-  * migrate data to head, [offset, length - offset] -> [0, length - offset]
-  */
+@@ -151,12 +227,8 @@ char *String::pop(size_t init_size) {
  void String::reduce(off_t _offset) {
 -    assert(_offset >= 0 && (size_t) _offset <= length);
 -    if (sw_unlikely(_offset == 0)) {
@@ -317,11 +511,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +    check_string_status(edit_string(*this, string_edit(SWR_STRING_REDUCE, nullptr, 0, _offset)));
 +#endif
  }
- 
- void String::print(bool print_value) const {
-@@ -170,95 +242,88 @@
- }
- 
+@@ -172,12 +244,3 @@ void String::print(bool print_value) const {
  void String::append(int value) {
 -    char buf[16];
 -    int s_len = swoole_itoa(buf, value);
@@ -335,7 +525,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 -    length += s_len;
 +    compat_string(*this, string_edit(SWR_STRING_APPEND_I32, nullptr, 0, value));
  }
- 
+@@ -185,9 +248,3 @@ void String::append(int value) {
  void String::append(const char *append_str, size_t _length) {
 -    size_t new_size = length + _length;
 -    if (new_size > size) {
@@ -346,7 +536,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 -    length += _length;
 +    compat_string(*this, string_edit(SWR_STRING_APPEND, append_str, _length));
  }
- 
+@@ -195,28 +252,35 @@ void String::append(const char *append_str, size_t _length) {
  bool String::append_random_bytes(size_t _length, bool base64) {
 -    size_t new_size = length + _length;
 -    size_t base_encode_size;
@@ -369,11 +559,6 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 -        std::unique_ptr<char[]> out(new char[base_encode_size]);
 -        n = base64_encode((uchar *) str + length, _length, out.get());
 -        memcpy(str + length, out.get(), n);
--    }
--
--    length += n;
--
--    return true;
 +    std::unique_ptr<char[]> encoded;
 +    size_t n = 0;
 +    uint32_t phase = 0;
@@ -406,38 +591,32 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +            default: abort();
 +            }
 +        }
-+    }
+     }
+-
+-    length += n;
+-
+-    return true;
  }
- 
+@@ -224,24 +288,35 @@ bool String::append_random_bytes(size_t _length, bool base64) {
  void String::reserve(size_t new_size) {
 -    if (size == 0) {
 -        alloc(new_size, nullptr);
 -        return;
 -    }
--
--    new_size = SW_MEM_ALIGNED_SIZE(new_size);
--    auto new_str = static_cast<char *>(allocator->realloc(str, new_size));
--    if (new_str == nullptr) {
--        throw std::bad_alloc();
--    }
--
--    str = new_str;
--    size = new_size;
 +#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
 +    fields_string(*this, SWR_FIELDS_RESERVE, new_size);
 +#else
 +    const auto source = state_of(*this);
 +    allocate_string(*this, SWR_STRING_ALLOCATION_RESERVE, &source, new_size, nullptr);
 +#endif
- }
++}
  
- char *String::release() {
--    char *tmp = str;
--    str = nullptr;
--    size = 0;
--    length = 0;
--    offset = 0;
--    return tmp;
+-    new_size = SW_MEM_ALIGNED_SIZE(new_size);
+-    auto new_str = static_cast<char *>(allocator->realloc(str, new_size));
+-    if (new_str == nullptr) {
+-        throw std::bad_alloc();
+-    }
++char *String::release() {
 +#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
 +    return fields_string(*this, SWR_FIELDS_RELEASE);
 +#else
@@ -446,7 +625,9 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +    return reinterpret_cast<char *>(plan.owner.data);
 +#endif
 +}
-+
+ 
+-    str = new_str;
+-    size = new_size;
 +void String::set_null_terminated() {
 +#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
 +    const auto edit = string_edit(SWR_STRING_TERMINATE);
@@ -454,8 +635,15 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +#else
 +    compat_string(*this, string_edit(SWR_STRING_TERMINATE, nullptr, 0, 0, str && !allocator ? 1 : 0));
 +#endif
-+}
-+
+ }
+ 
+-char *String::release() {
+-    char *tmp = str;
+-    str = nullptr;
+-    size = 0;
+-    length = 0;
+-    offset = 0;
+-    return tmp;
 +void String::clear() {
 +#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
 +    fields_string(*this, SWR_FIELDS_CLEAR);
@@ -463,8 +651,7 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +    publish_state(*this, transition(*this, SWR_STRING_CLEAR).state);
 +#endif
  }
- 
- void String::repeat(const char *data, size_t len, size_t n) {
+@@ -250,13 +325,3 @@ void String::repeat(const char *data, size_t len, size_t n) {
      assert(n > 0);
 -    if (len == 1) {
 -        if ((size < length + n)) {
@@ -479,14 +666,11 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 -    }
 +    compat_string(*this, string_edit(SWR_STRING_REPEAT, data, len, 0, n));
  }
- 
- /**
-@@ -270,51 +335,77 @@
- ssize_t String::split(const char *delimiter, size_t delimiter_length, const StringExplodeHandler &handler) {
- #ifdef SW_LOG_TRACE_OPEN
+@@ -272,49 +337,75 @@ ssize_t String::split(const char *delimiter, size_t delimiter_length, const Stri
      static int count;
 -    count++;
--#endif
++    ++count;
+ #endif
 -    const char *start_addr = str + offset;
 -    const char *delimiter_addr = swoole_strnstr(start_addr, length - offset, delimiter, delimiter_length);
 -    off_t _offset = offset;
@@ -503,8 +687,6 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 -        swoole_trace_log(SW_TRACE_EOF_PROTOCOL, "#[4] count=%d, length=%zu", count, (size_t) (_length + offset));
 -        if (handler((char *) start_addr - _offset, _length + _offset) == false) {
 -            return -1;
-+    ++count;
-+#endif
 +    swr_v1_string_split_cursor cursor{offset, 0, 0};
 +    bool accepted = true;
 +    swoole_trace_log(SW_TRACE_EOF_PROTOCOL, "#[0] count=%d, length=%ld, size=%ld, offset=%jd",
@@ -527,8 +709,14 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 -        start_addr = str + offset;
 -        delimiter_addr = swoole_strnstr(start_addr, length - offset, delimiter, delimiter_length);
 -        _offset = 0;
--    }
--
++        if (plan.action == 0) return plan.value;
++        cursor = plan.cursor;
++        // Fresh effects are passed to the next plan. No Rust borrow survives.
++        accepted = handler(str + plan.step.begin, plan.step.length);
+     }
++}
++}  // namespace swoole
+ 
 -    /**
 -     * not found eof in str
 -     */
@@ -538,26 +726,6 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 -         * because the length may contain part of eof and the other part in the next recv
 -         */
 -        offset = length - delimiter_length;
--    }
--
--    size_t ret = start_addr - str - _offset;
--    if (ret > 0 && ret < length) {
--        swoole_trace_log(
--            SW_TRACE_EOF_PROTOCOL, "#[5] count=%d, remaining_length=%zu", count, (size_t) (length - offset));
--    } else if (ret >= length) {
--        swoole_trace_log(
--            SW_TRACE_EOF_PROTOCOL, "#[3] length=%ld, size=%zu, offset=%jd", length, size, (intmax_t) offset);
--    }
--
--    return ret;
-+        if (plan.action == 0) return plan.value;
-+        cursor = plan.cursor;
-+        // Fresh effects are passed to the next plan. No Rust borrow survives.
-+        accepted = handler(str + plan.step.begin, plan.step.length);
-+    }
- }
- }  // namespace swoole
-+
 +namespace swoole {
 +void String::ownership(uint32_t operation, const String *copy_source, String *move_source) noexcept {
 +#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
@@ -576,14 +744,22 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +        case SWR_STRING_OWNER_DO_MOVE: move(std::move(*move_source)); break;
 +        default: std::abort();
 +        }
-+    }
+     }
 +#endif
 +}
 +void String::dispose() noexcept {
 +    ownership(SWR_STRING_OWNER_DISPOSE, nullptr, nullptr);
 +}
 +}
-+
+ 
+-    size_t ret = start_addr - str - _offset;
+-    if (ret > 0 && ret < length) {
+-        swoole_trace_log(
+-            SW_TRACE_EOF_PROTOCOL, "#[5] count=%d, remaining_length=%zu", count, (size_t) (length - offset));
+-    } else if (ret >= length) {
+-        swoole_trace_log(
+-            SW_TRACE_EOF_PROTOCOL, "#[3] length=%ld, size=%zu, offset=%jd", length, size, (intmax_t) offset);
+-    }
 +namespace swoole {
 +size_t String::grown_capacity(size_t minimum) const {
 +    size_t capacity = 0;
@@ -596,270 +772,13 @@ diff --git a/src/core/string.cc b/src/core/string.cc
 +                                                 SW_DEFAULT_ALIGNMENT, &result));
 +    return result;
 +}
-+
+ 
+-    return ret;
 +size_t String::format_offset(int flags, size_t formatted) {
 +    swr_v1_string_format_plan_result plan{};
 +    check_string_status(swr_v1_string_format_plan(length, size, formatted, flags, SW_DEFAULT_ALIGNMENT, &plan));
 +    if (plan.capacity != size) reserve(plan.capacity);
 +    return plan.offset;
 +}
-+}
-diff --git a/include/swoole_string.h b/include/swoole_string.h
---- a/include/swoole_string.h
-+++ b/include/swoole_string.h
-@@ -18,6 +18,9 @@
- #pragma once
- 
- #include "swoole.h"
-+#include "swoole_rs_string.h"
-+#include "swoole_rs_string_fields.h"
-+#include <type_traits>
- 
- #include <string>
- 
-@@ -34,8 +37,15 @@
- class String {
-   private:
-     void alloc(size_t _size, const Allocator *_allocator);
-+    void initialize() noexcept;
-+    void initialize_bytes(const char *data, size_t length);
-     void move(String &&src);
-     void copy(const String &src);
-+    void dispose() noexcept;
-+    void ownership(uint32_t operation, const String *copy_source, String *move_source) noexcept;
-+    size_t grown_capacity(size_t minimum) const;
-+    size_t format_offset(int flags, size_t formatted);
-+    swr_v1_string_format_step_result format_step(uint32_t phase, int flags, size_t formatted, size_t rendered) const;
- 
-   public:
-     size_t length;
-@@ -45,9 +55,13 @@
-     const Allocator *allocator;
- 
-     String() {
-+#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
-+        initialize();
-+#else
-         length = size = offset = 0;
-         str = nullptr;
-         allocator = nullptr;
-+#endif
-     }
- 
-     explicit String(size_t _size, const Allocator *_allocator = nullptr) {
-@@ -55,10 +69,13 @@
-     }
- 
-     String(const char *_str, size_t _length) {
-+#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
-+        initialize_bytes(_str, _length);
-+#else
-         alloc(_length + 1, nullptr);
--        memcpy(str, _str, _length);
--        str[_length] = '\0';
--        length = _length;
-+        append(_str, _length);
-+        set_null_terminated();
-+#endif
-     }
- 
-     explicit String(const std::string &_str) : String(_str.c_str(), _str.length()) {}
-@@ -75,9 +92,7 @@
-     String &operator=(String &&src) noexcept;
- 
-     ~String() {
--        if (allocator && str) {
--            allocator->free(str);
--        }
-+        dispose();
-     }
- 
-     char *value() const {
-@@ -97,48 +112,41 @@
-     }
- 
-     bool contains(const char *needle, size_t l_needle) const {
--        return swoole_strnstr(str, length, needle, l_needle) != nullptr;
--    }
-+        assert(static_cast<uint32_t>(l_needle) > 0);
-+        return swr_v1_string_match(reinterpret_cast<const uint8_t *>(str), static_cast<uint32_t>(length),
-+            reinterpret_cast<const uint8_t *>(needle), static_cast<uint32_t>(l_needle), SWR_STRING_CONTAINS) == 1;
-+}
- 
-     bool contains(const std::string &needle) const {
-         return contains(needle.c_str(), needle.size());
-     }
- 
-     bool starts_with(const char *needle, size_t l_needle) const {
--        if (length < l_needle) {
--            return false;
--        }
--        return memcmp(str, needle, l_needle) == 0;
--    }
-+        return swr_v1_string_match(reinterpret_cast<const uint8_t *>(str), length,
-+            reinterpret_cast<const uint8_t *>(needle), l_needle, SWR_STRING_STARTS_WITH) == 1;
-+}
- 
-     bool starts_with(const std::string &needle) const {
-         return starts_with(needle.c_str(), needle.length());
-     }
- 
-     bool ends_with(const char *needle, size_t l_needle) const {
--        if (length < l_needle) {
--            return false;
--        }
--        return memcmp(str + length - l_needle, needle, l_needle) == 0;
--    }
-+        return swr_v1_string_match(reinterpret_cast<const uint8_t *>(str), length,
-+            reinterpret_cast<const uint8_t *>(needle), l_needle, SWR_STRING_ENDS_WITH) == 1;
-+}
- 
-     bool ends_with(const std::string &needle) const {
-         return ends_with(needle.c_str(), needle.length());
-     }
- 
-     bool equals(const char *data, size_t len) const {
--        if (length != len) {
--            return false;
--        }
--        return memcmp(str, data, len) == 0;
--    }
-+        return swr_v1_string_match(reinterpret_cast<const uint8_t *>(str), length,
-+            reinterpret_cast<const uint8_t *>(data), len, SWR_STRING_EQUALS) == 1;
-+}
- 
-     bool equals(const std::string &data) const {
--        if (length != data.size()) {
--            return false;
--        }
--        return memcmp(str, data.c_str(), length) == 0;
--    }
-+        return equals(data.c_str(), data.length());
-+}
- 
-     void grow(size_t incr_value);
-     String substr(size_t offset, size_t len) const;
-@@ -147,13 +155,10 @@
-         return str == nullptr || length == 0;
-     }
- 
--    void clear() {
--        length = 0;
--        offset = 0;
--    }
-+    void clear();
- 
-     void extend() {
--        extend(size * 2);
-+        extend(grown_capacity(0));
-     }
- 
-     void extend(size_t new_size) {
-@@ -162,12 +167,8 @@
-     }
- 
-     void extend_align(size_t _new_size) {
--        size_t align_size = SW_MEM_ALIGNED_SIZE(size * 2);
--        while (align_size < _new_size) {
--            align_size *= 2;
--        }
--        reserve(align_size);
--    }
-+        reserve(grown_capacity(_new_size));
-+}
- 
-     void reserve(size_t new_size);
-     /**
-@@ -193,12 +194,7 @@
-     void write(off_t _offset, const String &write_str);
-     void write(off_t _offset, const char *write_str, size_t _length);
- 
--    void set_null_terminated() {
--        if (length == size) {
--            extend(length + 1);
--        }
--        str[length] = '\0';
--    }
-+    void set_null_terminated();
- 
-     ssize_t split(const char *delimiter, size_t delimiter_length, const StringExplodeHandler &handler);
-     void print(bool print_value = true) const;
-@@ -210,39 +206,23 @@
- 
-     template <typename... Args>
-     size_t format_impl(int flags, const char *format, Args... args) {
--        size_t _size = sw_snprintf(nullptr, 0, format, args...);
--        if (_size == 0) {
--            return 0;
-+        const size_t formatted = sw_snprintf(nullptr, 0, format, args...);
-+        uint32_t phase = 0;
-+        size_t rendered = 0;
-+        while (true) {
-+            const auto step = format_step(phase, flags, formatted, rendered);
-+            switch (step.action) {
-+            case SWR_STRING_FORMAT_DONE: return step.result;
-+            case SWR_STRING_FORMAT_RESERVE: reserve(step.capacity); break;
-+            case SWR_STRING_FORMAT_WRITE:
-+                rendered = sw_snprintf(str + step.offset, step.available, format, args...);
-+                break;
-+            case SWR_STRING_FORMAT_COMMIT: length = step.length; return step.result;
-+            default: abort();
-+            }
-+            phase = step.next;
-         }
--        // store \0 terminator
--        ++_size;
--
--        size_t new_size = (flags & FORMAT_APPEND) ? length + _size : _size;
--        if (flags & FORMAT_GROW) {
--            size_t align_size = SW_MEM_ALIGNED_SIZE(size * 2);
--            while (align_size < new_size) {
--                align_size *= 2;
--            }
--            new_size = align_size;
--        }
--
--        size_t n;
--        if (flags & FORMAT_APPEND) {
--            if (_size > size - length) {
--                reserve(new_size);
--            }
--            n = sw_snprintf(str + length, size - length, format, args...);
--            length += n;
--        } else {
--            if (_size > size) {
--                reserve(new_size);
--            }
--            n = sw_snprintf(str, size, format, args...);
--            length = n;
--        }
--
--        return n;
--    }
-+}
- 
-     // This function replaces the entire string instead of appending content.
-     template <typename... Args>
-@@ -259,6 +239,22 @@
-     void reduce(off_t offset);
- };
- 
-+#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
-+static_assert(std::is_standard_layout<String>::value && !std::is_polymorphic<String>::value, "String storage class");
-+static_assert(std::is_same<decltype(String::length), size_t>::value &&
-+    std::is_same<decltype(String::size), size_t>::value &&
-+    std::is_same<decltype(String::offset), off_t>::value &&
-+    std::is_same<decltype(String::str), char *>::value &&
-+    std::is_same<decltype(String::allocator), swr_string_allocator_token>::value, "String exact member types");
-+static_assert(sizeof(size_t) == 8 && alignof(size_t) == 8 && sizeof(off_t) == 8 &&
-+    alignof(off_t) == 8 && std::is_signed<off_t>::value, "String target scalar schema");
-+static_assert(sizeof(String) == 40 && alignof(String) == 8 &&
-+    sizeof(swr_string_fields_schema) == 40 && alignof(swr_string_fields_schema) == 8, "String schema size alignment");
-+static_assert(offsetof(String, length) == 0 && offsetof(String, size) == 8 &&
-+    offsetof(String, offset) == 16 && offsetof(String, str) == 24 &&
-+    offsetof(String, allocator) == 32, "String field offsets");
-+#endif
-+
- inline String *make_string(size_t size, const Allocator *allocator = nullptr) {
-     return new String(size, allocator);
  }
+-}  // namespace swoole

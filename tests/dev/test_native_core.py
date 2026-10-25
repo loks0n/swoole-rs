@@ -42,7 +42,7 @@ class NativeOriginals(unittest.TestCase):
     def test_loader_requires_expected_library_on_both_platforms(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for system, name in [('Darwin','libswoole.6.2.2.dylib'),('Linux','libswoole.so.6')]:
+            for system, name in [('Darwin','libswoole.6.2.4.dylib'),('Linux','libswoole.so.6')]:
                 library = root/name; library.write_bytes(b'expected')
                 foreign = root/'foreign'/name; foreign.parent.mkdir(exist_ok=True); foreign.write_bytes(b'expected')
                 expected = native_core.library_identity(library)

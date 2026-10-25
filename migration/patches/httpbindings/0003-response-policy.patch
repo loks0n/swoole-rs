@@ -1,9 +1,8 @@
 diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
+index b7e2b144f..bd1a06429 100644
 --- a/ext-src/swoole_http_response.cc
 +++ b/ext-src/swoole_http_response.cc
-@@ -15,6 +15,13 @@
- */
- 
+@@ -17,2 +17,9 @@
  #include "php_swoole_http_server.h"
 +#ifndef SWOOLE_RS_HTTPBINDINGS
 +#error "HTTP PHP binding overlay requires --enable-swoole-rs-httpbindings"
@@ -13,11 +12,7 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +              HTTP_HEADER_DATE == 16 && HTTP_HEADER_CONTENT_TYPE == 32 && HTTP_HEADER_TRANSFER_ENCODING == 64 &&
 +              HTTP_HEADER_CONTENT_ENCODING == 256 && HTTP_HEAD == 2, "Pinned response mapping changed");
  #include "php_swoole_websocket.h"
- #include "swoole_util.h"
- 
-@@ -45,21 +52,7 @@
- } date_cache{};
- 
+@@ -47,17 +54,3 @@ static SW_THREAD_LOCAL struct {
  static inline void http_response_header_key_format(char *key, int length) {
 -    int state = 0;
 -    for (int i = 0; i < length; i++) {
@@ -36,11 +31,7 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 -    }
 +    if (length > 0) swr_v1_httpbindings_response_key(reinterpret_cast<uint8_t *>(key), static_cast<size_t>(length));
  }
- 
- String *HttpContext::get_write_buffer() {
-@@ -239,22 +232,7 @@
- }
- 
+@@ -241,18 +234,3 @@ static PHP_METHOD(swoole_http_response, write) {
  static int http_response_parse_header_name(const char *key, size_t keylen) {
 -    if (SW_STRCASEEQ(key, keylen, "Server")) {
 -        return HTTP_HEADER_SERVER;
@@ -60,11 +51,7 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 -    return 0;
 +    return swr_v1_httpbindings_response_header({reinterpret_cast<const uint8_t *>(key), keylen});
  }
- 
- zend_string *php_swoole_http_get_date() {
-@@ -401,59 +379,60 @@
-         SW_HASHTABLE_FOREACH_END();
-     }
+@@ -403,36 +381,33 @@ void HttpContext::build_header(String *http_buffer, const char *body, size_t len
  
 -    if (!(header_flags & HTTP_HEADER_SERVER)) {
 -        http_buffer->append(ZEND_STRL("Server: " SW_HTTP_SERVER_SOFTWARE "\r\n"));
@@ -131,28 +118,18 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +            break;
 +        case SWR_HTTPBINDINGS_RESPONSE_ENCODING: {
              length = zlib_buffer->length;
-             const char *content_encoding = get_content_encoding();
-             http_buffer->append(ZEND_STRL("Content-Encoding: "));
-             http_buffer->append((char *) content_encoding, strlen(content_encoding));
+@@ -442,7 +417,7 @@ void HttpContext::build_header(String *http_buffer, const char *body, size_t len
              http_buffer->append(ZEND_STRL("\r\n"));
--        }
--#endif
--        if (!(header_flags & HTTP_HEADER_CONTENT_LENGTH)) {
 +            break;
-+        }
-+#endif
+         }
+ #endif
+-        if (!(header_flags & HTTP_HEADER_CONTENT_LENGTH)) {
 +        case SWR_HTTPBINDINGS_RESPONSE_LENGTH: {
              http_buffer->append(ZEND_STRL("Content-Length: "));
 -
              char result[128];
-             int convert_result = swoole_itoa(result, length);
-             http_buffer->append(result, convert_result);
+@@ -451,7 +426,11 @@ void HttpContext::build_header(String *http_buffer, const char *body, size_t len
              http_buffer->append(ZEND_STRL("\r\n"));
--        }
--    }
--
--    http_buffer->append(ZEND_STRL("\r\n"));
--    send_header_ = 1;
 +            break;
 +        }
 +        case SWR_HTTPBINDINGS_RESPONSE_PUBLISH:
@@ -160,26 +137,23 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +            return;
 +        default:
 +            return;
-+        }
-+    }
+         }
+     }
+-
+-    http_buffer->append(ZEND_STRL("\r\n"));
+-    send_header_ = 1;
  }
- 
- ssize_t HttpContext::build_trailer(String *http_buffer) const {
-@@ -515,33 +494,40 @@
- #ifdef SW_HAVE_COMPRESSION
- bool HttpContext::compress(const char *data, size_t length) {
+@@ -517,10 +496,21 @@ bool HttpContext::compress(const char *data, size_t length) {
  #ifdef SW_HAVE_ZLIB
 -    int encoding;
--#endif
--
++    int encoding = 0;
+ #endif
+ 
 -    if (!accept_compression || length < compression_min_length) {
 -        return false;
 -    }
 -
 -    if (false) {
-+    int encoding = 0;
-+#endif
-+
 +    uint32_t capabilities = 0;
 +#ifdef SW_HAVE_ZLIB
 +    capabilities |= 1u;
@@ -197,19 +171,16 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +    if (method < 0) {
 +        swoole_warning("Unknown compression method");
          return false;
-     }
- #ifdef SW_HAVE_ZLIB
+@@ -529,6 +519,6 @@ bool HttpContext::compress(const char *data, size_t length) {
      // gzip: 0x1f
 -    else if (compression_method == HTTP_COMPRESS_GZIP) {
 +    if (method == HTTP_COMPRESS_GZIP) {
          encoding = 0x1f;
      }
-     // deflate: -0xf
 -    else if (compression_method == HTTP_COMPRESS_DEFLATE) {
 +    else if (method == HTTP_COMPRESS_DEFLATE) {
-         encoding = -0xf;
-     }
- #endif
+         encoding = SW_ZLIB_ENCODING_DEFLATE;
+@@ -537,8 +527,4 @@ bool HttpContext::compress(const char *data, size_t length) {
  #ifdef SW_HAVE_BROTLI
 -    else if (compression_method == HTTP_COMPRESS_BR) {
 -        if (compression_level < BROTLI_MIN_QUALITY) {
@@ -220,27 +191,19 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +    if (method == HTTP_COMPRESS_BR) {
 +        compression_level = swr_v1_httpbindings_codec_level(method, compression_level, BROTLI_MIN_QUALITY, BROTLI_MAX_QUALITY);
  
-         size_t memory_size = BrotliEncoderMaxCompressedSize(length);
-         zlib_buffer = std::make_shared<String>(memory_size);
-@@ -568,13 +554,11 @@
-     }
- #endif
+@@ -569,3 +555,3 @@ bool HttpContext::compress(const char *data, size_t length) {
  #ifdef SW_HAVE_ZSTD
 -    else if (compression_method == HTTP_COMPRESS_ZSTD) {
 +    if (method == HTTP_COMPRESS_ZSTD) {
          int zstd_compress_level = compression_level;
-         int zstd_max_level = ZSTD_maxCLevel();
+@@ -573,5 +559,3 @@ bool HttpContext::compress(const char *data, size_t length) {
          int zstd_min_level = ZSTD_minCLevel();
 -        zstd_compress_level = (zstd_compress_level > zstd_max_level)
 -                                  ? zstd_max_level
 -                                  : (zstd_compress_level < zstd_min_level ? zstd_min_level : zstd_compress_level);
 +        zstd_compress_level = swr_v1_httpbindings_codec_level(method, zstd_compress_level, zstd_min_level, zstd_max_level);
  
-         size_t compress_size = ZSTD_compressBound(length);
-         zlib_buffer = std::make_shared<String>(compress_size);
-@@ -591,18 +575,8 @@
-         return true;
-     }
+@@ -592,14 +576,4 @@ bool HttpContext::compress(const char *data, size_t length) {
  #endif
 -    else {
 -        swoole_warning("Unknown compression method");
@@ -256,19 +219,11 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 -    }
 +    compression_level = swr_v1_httpbindings_codec_level(method, compression_level, 0, 0);
  
-     size_t memory_size = ((size_t)((double) length * (double) 1.015)) + 10 + 8 + 4 + 1;
-     zlib_buffer = std::make_shared<String>(memory_size);
-@@ -636,6 +610,7 @@
-     content_compressed = 1;
-     return true;
+@@ -637,2 +611,3 @@ bool HttpContext::compress(const char *data, size_t length) {
  #endif
 +    return false;
  }
- #endif
- 
-@@ -701,70 +676,86 @@
- }
- 
+@@ -703,39 +678,45 @@ void HttpContext::send_trailer(zval *return_value) {
  bool HttpContext::send_file(zend_string *file, off_t offset, size_t length) {
 -    if (http2) {
 -        return swoole_http2_server_send_file(this, file, offset, length);
@@ -309,7 +264,8 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +        case SWR_HTTPBINDINGS_FILE_HEADER: {
  #ifdef SW_HAVE_COMPRESSION
 -        accept_compression = 0;
--#endif
++            accept_compression = 0;
+ #endif
 -        String *http_buffer = get_write_buffer();
 -        http_buffer->clear();
 -
@@ -318,22 +274,6 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 -        if (!send(this, http_buffer->str, http_buffer->length)) {
 -            send_header_ = 0;
 -            return false;
--        }
--    }
--
--    if (length > 0 && !sendfile(this, file, offset, length)) {
--        close(this);
--        return false;
--    }
--
--    end_ = 1;
--
--    if (!keepalive) {
--        close(this);
--    }
--    return true;
-+            accept_compression = 0;
-+#endif
 +            String *http_buffer = get_write_buffer();
 +            http_buffer->clear();
 +            build_header(http_buffer, nullptr, length);
@@ -347,10 +287,22 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +        case SWR_HTTPBINDINGS_FILE_CLOSE_DONE: close(this); return true;
 +        case SWR_HTTPBINDINGS_FILE_DONE: return true;
 +        default: return false;
-+        }
-+    }
+         }
+     }
+-
+-    if (length > 0 && !sendfile(this, file, offset, length)) {
+-        close(this);
+-        return false;
+-    }
+-
+-    end_ = 1;
+-
+-    if (!keepalive) {
+-        close(this);
+-    }
+-    return true;
  }
- 
+@@ -743,12 +724,32 @@ bool HttpContext::send_file(zend_string *file, off_t offset, size_t length) {
  void HttpContext::write(zend_string *sdata, zval *return_value) {
 -    if (http2) {
 -        RETURN_BOOL(swoole_http2_server_write(this, sdata));
@@ -393,7 +345,7 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +            RETURN_FALSE;
 +        case SWR_HTTPBINDINGS_WRITE_HEADER_FAILED:
              send_chunked = 0;
-             send_header_ = 0;
+@@ -756,13 +757,3 @@ void HttpContext::write(zend_string *sdata, zval *return_value) {
              RETURN_FALSE;
 -        }
 -    }
@@ -408,11 +360,7 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 -
 +        case SWR_HTTPBINDINGS_WRITE_CHUNK: {
      http_buffer->clear();
-     char *hex_string = swoole_dec2hex(length, 16);
-     int hex_len = strlen(hex_string);
-@@ -775,41 +766,50 @@
-     http_buffer->append(ZEND_STRL("\r\n"));
-     sw_free(hex_string);
+@@ -777,3 +768,7 @@ void HttpContext::write(zend_string *sdata, zval *return_value) {
  
 -    RETURN_BOOL(send(this, http_buffer->str, http_buffer->length));
 +            RETURN_BOOL(send(this, http_buffer->str, http_buffer->length));
@@ -421,7 +369,7 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +        }
 +    }
  }
- 
+@@ -781,18 +776,28 @@ void HttpContext::write(zend_string *sdata, zval *return_value) {
  void HttpContext::end(zend_string *sdata, zval *return_value) {
 -    if (http2) {
 -        RETURN_BOOL(swoole_http2_server_end(this, sdata));
@@ -432,11 +380,6 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 -            zval retval;
 -            write(sdata, &retval);
 -            if (ZVAL_IS_FALSE(&retval)) {
--                RETURN_FALSE;
--            }
--        }
--        if (send_trailer_) {
--            if (!send(this, ZEND_STRL("0\r\n"))) {
 -                RETURN_FALSE;
 -            }
 +    uint32_t phase = 0;
@@ -457,7 +400,11 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +        case 7: fact = length > SW_HTTP_MAX_APPEND_DATA; break;
 +        case 10: fact = upgrade && !is_co_socket(); break;
 +        case 12: fact = keepalive; break;
-+        }
+         }
+-        if (send_trailer_) {
+-            if (!send(this, ZEND_STRL("0\r\n"))) {
+-                RETURN_FALSE;
+-            }
 +        switch (swr_v1_httpbindings_end(&phase, fact)) {
 +        case 0: break;
 +        case SWR_HTTPBINDINGS_END_HTTP2: RETURN_BOOL(swoole_http2_server_end(this, sdata));
@@ -466,7 +413,8 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +        case SWR_HTTPBINDINGS_END_CHUNK_ZERO: sent = send(this, ZEND_STRL("0\r\n\r\n")); break;
 +        case SWR_HTTPBINDINGS_END_TRAILER:
              send_trailer(return_value);
-             send_trailer_ = 0;
+@@ -802,15 +807,10 @@ void HttpContext::end(zend_string *sdata, zval *return_value) {
+             }
 -        } else {
 -            if (!send(this, ZEND_STRL("0\r\n\r\n"))) {
 -                RETURN_FALSE;
@@ -489,11 +437,7 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +            http_buffer = get_write_buffer();
 +            http_buffer->clear();
  #ifdef SW_HAVE_ZLIB
-         if (upgrade) {
-             Server *serv = nullptr;
-@@ -838,41 +838,33 @@
-         }
- #endif
+@@ -843,5 +843,5 @@ void HttpContext::end(zend_string *sdata, zval *return_value) {
  
 -        build_header(http_buffer, data, length);
 -
@@ -502,10 +446,7 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +            break;
 +        case SWR_HTTPBINDINGS_END_COMPRESSION:
  #ifdef SW_HAVE_COMPRESSION
-             if (content_compressed) {
-                 data = zlib_buffer->str;
-                 length = zlib_buffer->length;
-             }
+@@ -852,20 +852,16 @@ void HttpContext::end(zend_string *sdata, zval *return_value) {
  #endif
 -            // send twice to reduce memory copy
 -            if (length > SW_HTTP_MAX_APPEND_DATA) {
@@ -540,7 +481,7 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +        case SWR_HTTPBINDINGS_END_HEADER_FAILED: send_header_ = 0; RETURN_FALSE;
 +        case SWR_HTTPBINDINGS_END_CLOSE_FAILED:
              end_ = 1;
-             close(this);
+@@ -873,7 +869,3 @@ void HttpContext::end(zend_string *sdata, zval *return_value) {
              RETURN_FALSE;
 -        }
 -    }
@@ -549,18 +490,8 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 -    if (upgrade && !is_co_socket()) {
 +        case SWR_HTTPBINDINGS_END_UPGRADE: {
          auto *serv = get_async_server();
-         auto *conn = serv->get_connection_verify(fd);
- 
-@@ -885,12 +877,14 @@
-                 keepalive = 0;
-             }
+@@ -890,8 +882,10 @@ _skip_copy:
          }
--    }
--    if (!keepalive) {
--        close(this);
--    }
--    end_ = 1;
--    RETURN_TRUE;
 +            break;
 +        }
 +        case SWR_HTTPBINDINGS_END_CLOSE: close(this); break;
@@ -568,13 +499,14 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +        case SWR_HTTPBINDINGS_END_FAILED: RETURN_FALSE;
 +        default: return;
 +        }
-+    }
+     }
+-    if (!keepalive) {
+-        close(this);
+-    }
+-    end_ = 1;
+-    RETURN_TRUE;
  }
- 
- bool HttpContext::set_header(const char *k, size_t klen, const char *v, size_t vlen, bool format) {
-@@ -965,17 +959,19 @@
-         swoole_set_last_error(SW_ERROR_SERVER_IS_NOT_REGULAR_FILE);
-         RETURN_FALSE;
+@@ -970,3 +964,6 @@ static PHP_METHOD(swoole_http_response, sendfile) {
      }
 -    if (file_stat.st_size < offset) {
 +    static_assert(sizeof(off_t) == sizeof(int64_t) && sizeof(zend_long) == sizeof(int64_t), "HTTP file range ABI");
@@ -582,12 +514,12 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +    int32_t range = swr_v1_httpbindings_file_range(file_stat.st_size, offset, length, &resolved_length);
 +    if (range == 1 || range == 3) {
          php_swoole_error(E_WARNING, "parameter $offset[" ZEND_LONG_FMT "] exceeds the file size", offset);
-         RETURN_FALSE;
+@@ -974,3 +971,3 @@ static PHP_METHOD(swoole_http_response, sendfile) {
      }
 -    if (length > file_stat.st_size - offset) {
 +    if (range == 2) {
          php_swoole_error(E_WARNING, "parameter $length[" ZEND_LONG_FMT "] exceeds the file size", length);
-         RETURN_FALSE;
+@@ -978,5 +975,4 @@ static PHP_METHOD(swoole_http_response, sendfile) {
      }
 -    if (length == 0) {
 -        length = file_stat.st_size - offset;
@@ -595,5 +527,3 @@ diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
 +    if (range != 0) RETURN_FALSE;
 +    length = resolved_length;
  
-     if (ctx->onAfterResponse) {
-         ctx->onAfterResponse(ctx);

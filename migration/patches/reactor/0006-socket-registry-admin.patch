@@ -1,9 +1,8 @@
 diff --git a/ext-src/swoole_admin_server.cc b/ext-src/swoole_admin_server.cc
+index 590ed3ab1..af71c113b 100644
 --- a/ext-src/swoole_admin_server.cc
 +++ b/ext-src/swoole_admin_server.cc
-@@ -267,7 +267,12 @@
-         return 0;
-     }
+@@ -269,3 +269,8 @@ static size_t get_socket_out_buffer_total_size() {
      size_t size = 0;
 -    for (auto &s : sw_reactor()->get_sockets()) {
 +#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
@@ -13,11 +12,7 @@ diff --git a/ext-src/swoole_admin_server.cc b/ext-src/swoole_admin_server.cc
 +#endif
 +    {
          size += s.second->get_out_buffer_length();
-     }
-     return size;
-@@ -286,7 +291,11 @@
-         {"message_bus",
-          is_thread ? serv->get_thread(SwooleTG.id)->message_bus.get_memory_size()
+@@ -288,3 +293,7 @@ static std::string handle_get_memory_info(Server *serv, const std::string &msg)
                     : serv->message_bus.get_memory_size()},
 +#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
 +        {"socket_list", sw_reactor() ? sw_reactor()->get_event_num() * sizeof(network::Socket) : 0},
@@ -25,5 +20,3 @@ diff --git a/ext-src/swoole_admin_server.cc b/ext-src/swoole_admin_server.cc
          {"socket_list", sw_reactor() ? sw_reactor()->get_sockets().size() * sizeof(network::Socket) : 0},
 +#endif
          {"socket_out_buffer", get_socket_out_buffer_total_size()},
-         {"php_memory", is_thread ? 0 : zend_memory_usage(true)},
-     };

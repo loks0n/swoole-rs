@@ -1,19 +1,18 @@
 diff --git a/src/memory/table.cc b/src/memory/table.cc
+index 571828090..b2ea7d637 100644
 --- a/src/memory/table.cc
 +++ b/src/memory/table.cc
-@@ -19,37 +19,47 @@
- #include "swoole_util.h"
-
+@@ -21,33 +21,43 @@
  #include <thread>
 +#include <memory>
-
+ 
  namespace swoole {
 +namespace {
 +swr_v1_memory_table_iterator_fields iterator_fields(TableIterator &iterator) {
 +    return {&iterator.absolute_index, &iterator.collision_index, iterator.current_, iterator.row_memory_size_};
 +}
 +}  // namespace
-
+ 
  Table *Table::make(uint32_t rows_size, float conflict_proportion) {
 -    if (rows_size >= SW_TABLE_MAX_ROW_SIZE) {
 -        rows_size = SW_TABLE_MAX_ROW_SIZE;
@@ -24,18 +23,13 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 -        }
 -        rows_size = 1 << i;
 -    }
--
++    return make_impl(rows_size, conflict_proportion, true);
++}
+ 
 -    if (conflict_proportion > 1.0) {
 -        conflict_proportion = 1.0;
 -    } else if (conflict_proportion < SW_TABLE_CONFLICT_PROPORTION) {
 -        conflict_proportion = SW_TABLE_CONFLICT_PROPORTION;
--    }
--
--    auto table = static_cast<Table *>(sw_mem_pool()->alloc(sizeof(Table)));
--    if (table == nullptr) {
-+    return make_impl(rows_size, conflict_proportion, true);
-+}
-+
 +Table *Table::make_impl(uint32_t rows_size, float conflict_proportion, bool legacy_columns) {
 +    swr_v1_memory_table_factory state{};
 +    state.rows = rows_size;
@@ -56,7 +50,10 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +        case 3: columns = std::make_unique<std::vector<TableColumn *>>(); state.list = columns.get(); break;
 +        default: abort();
 +        }
-+    }
+     }
+-
+-    auto table = static_cast<Table *>(sw_mem_pool()->alloc(sizeof(Table)));
+-    if (table == nullptr) {
 +    if (status != 0) {
 +        if (table) sw_mem_pool()->free(table);
          return nullptr;
@@ -72,11 +69,7 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +    table->mutex = mutex.release();
 +    table->column_list = columns.release();
  #ifdef SW_TABLE_USE_PHP_HASH
-     table->hash_func = swoole_hash_php;
- #else
-@@ -60,27 +70,33 @@
- }
-
+@@ -62,13 +72,23 @@ Table *Table::make(uint32_t rows_size, float conflict_proportion) {
  bool Table::add_column(const std::string &_name, enum TableColumn::Type _type, size_t _size) {
 -    if (_type < TableColumn::TYPE_INT || _type > TableColumn::TYPE_STRING) {
 -        swoole_warning("unknown column type");
@@ -109,8 +102,7 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 -
 +    column.release();
      return true;
- }
-
+@@ -77,8 +97,4 @@ bool Table::add_column(const std::string &_name, enum TableColumn::Type _type, s
  TableColumn *Table::get_column(const std::string &key) const {
 -    auto i = column_map->find(key);
 -    if (i == column_map->end()) {
@@ -121,11 +113,7 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +    return static_cast<TableColumn *>(swr_v1_memory_table_columns_get(column_map,
 +        reinterpret_cast<const uint8_t *>(key.data()), key.size()));
  }
-
- bool Table::exists(const char *key, uint16_t keylen) const {
-@@ -91,57 +107,49 @@
- }
-
+@@ -93,7 +109,9 @@ bool Table::exists(const char *key, uint16_t keylen) const {
  TableIterator::TableIterator(size_t row_size) {
 -    current_ = (TableRow *) sw_malloc(row_size);
 -    if (!current_) {
@@ -140,9 +128,7 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +    current_ = current.release();
 +    mutex_ = mutex.release();
      row_memory_size_ = row_size;
-     reset();
- }
-
+@@ -103,5 +121,6 @@ TableIterator::TableIterator(size_t row_size) {
  void TableIterator::reset() {
 -    absolute_index = 0;
 -    collision_index = 0;
@@ -152,12 +138,10 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +    assert(status == 0);
 +    (void) status;
  }
-
+@@ -109,6 +128,18 @@ void TableIterator::reset() {
  TableIterator::~TableIterator() {
 -    if (current_) {
 -        sw_free(current_);
--    }
--    delete mutex_;
 +    swr_v1_memory_table_iterator_release state{current_, mutex_, 0};
 +    swr_v1_memory_table_teardown_effect effect{};
 +    int status;
@@ -171,11 +155,12 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +        case 2: delete static_cast<Mutex *>(effect.token); break;
 +        default: assert(false); break;
 +        }
-+    }
+     }
+-    delete mutex_;
 +    assert(status == 0);
 +    (void) status;
  }
-
+@@ -116,30 +147,7 @@ TableIterator::~TableIterator() {
  size_t Table::calc_memory_size() const {
 -    /**
 -     * table size + conflict size
@@ -211,11 +196,7 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +                 static_cast<size_t>(size * (1 + conflict_proportion)), plan.row_size);
 +    return plan.total;
  }
-
- size_t Table::get_memory_size() const {
-@@ -160,39 +168,41 @@
- }
-
+@@ -162,31 +170,29 @@ uint32_t Table::get_total_slice_num() const {
  bool Table::create() {
 -    if (created) {
 -        return false;
@@ -274,42 +255,32 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +    (void) next_pool.release();
 +    (void) next_iterator.release();
      return true;
- }
-
+@@ -195,2 +201,6 @@ bool Table::create() {
  void Table::destroy() {
 +    destroy_impl(true);
 +}
 +
 +void Table::destroy_impl(bool legacy_columns) {
  #ifdef SW_TABLE_DEBUG
-     printf("swoole_table: size=%ld, conflict_count=%d, conflict_max_level=%d, insert_count=%d\n",
-            size,
-@@ -201,21 +211,35 @@
-            insert_count);
- #endif
-
+@@ -203,17 +213,31 @@ void Table::destroy() {
+ 
 -    auto i = column_map->begin();
 -    while (i != column_map->end()) {
 -        delete i->second;
 -        column_map->erase(i++);
--    }
--    delete column_map;
--    delete column_list;
--    delete iterator;
--    delete pool;
--    if (memory) {
--        sw_shm_free(memory);
--    }
--    memory = nullptr;
--    delete mutex;
--    sw_mem_pool()->free(this);
 +    swr_v1_memory_table_teardown cursor{};
 +    if (legacy_columns) {
 +        cursor.index = column_map;
 +        cursor.columns = column_list->data();
 +        cursor.count = column_list->size();
 +        cursor.list = column_list;
-+    }
+     }
+-    delete column_map;
+-    delete column_list;
+-    delete iterator;
+-    delete pool;
+-    if (memory) {
+-        sw_shm_free(memory);
 +    cursor.iterator = iterator;
 +    cursor.pool = pool;
 +    cursor.memory = &memory;
@@ -329,15 +300,14 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +        case 7: sw_mem_pool()->free(effect.token); break;
 +        default: assert(false); break;
 +        }
-+    }
+     }
+-    memory = nullptr;
+-    delete mutex;
+-    sw_mem_pool()->free(this);
 +    assert(status == 0);
 +    (void) status;
  }
-
- void TableRow::lock() {
-@@ -271,239 +295,113 @@
-
- void Table::forward() const {
+@@ -273,35 +297,12 @@ void Table::forward() const {
      iterator->lock();
 -    for (; iterator->absolute_index < size; iterator->absolute_index++) {
 -        TableRow *row = get_by_index(iterator->absolute_index);
@@ -370,8 +340,6 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 -            }
 -        }
 -        row->unlock();
--    }
--    sw_memset_zero(iterator->current_, sizeof(TableRow));
 +    const auto fields = iterator_fields(*iterator);
 +    uint32_t index = 0;
 +    int status = swr_v1_memory_table_iterator_step(&fields, size, nullptr, 0, &index);
@@ -380,11 +348,11 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +        if (row) row->lock();
 +        status = swr_v1_memory_table_iterator_step(&fields, size, row, 1, &index);
 +        if (row) row->unlock();
-+    }
+     }
+-    sw_memset_zero(iterator->current_, sizeof(TableRow));
 +    assert(status == 0);
      iterator->unlock();
- }
-
+@@ -310,24 +311,6 @@ void Table::forward() const {
  TableRow *Table::get(const char *key, uint16_t keylen, TableRow **rowlock) const {
 -    check_key_length(&keylen);
 -
@@ -413,7 +381,7 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +    root->lock();
 +    return static_cast<TableRow *>(swr_v1_memory_table_get(root, reinterpret_cast<const uint8_t *>(key), keylen));
  }
-
+@@ -335,48 +318,20 @@ TableRow *Table::get(const char *key, uint16_t keylen, TableRow **rowlock) const
  TableRow *Table::set(const char *key, uint16_t keylen, TableRow **rowlock, int *out_flags) {
 -    check_key_length(&keylen);
 -
@@ -448,19 +416,6 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 -    } else {
 -        init_row(row, key, keylen);
 -        _out_flags |= SW_TABLE_FLAG_NEW_ROW;
--    }
--
--    if (out_flags) {
--        *out_flags = _out_flags;
--    }
--
--    if (_out_flags & SW_TABLE_FLAG_NEW_ROW) {
--        sw_atomic_fetch_add(&(insert_count), 1);
--    } else {
--        sw_atomic_fetch_add(&(update_count), 1);
--    }
--
--    return row;
 +    TableRow *root = hash(key, &keylen);
 +    *rowlock = root;
 +    root->lock();
@@ -476,11 +431,23 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +        mutation.row = alloc_row();
 +        if (!mutation.row) return nullptr;
 +        status = swr_v1_memory_table_mutation_step(&mutation);
-+    }
+     }
+-
+-    if (out_flags) {
+-        *out_flags = _out_flags;
+-    }
+-
+-    if (_out_flags & SW_TABLE_FLAG_NEW_ROW) {
+-        sw_atomic_fetch_add(&(insert_count), 1);
+-    } else {
+-        sw_atomic_fetch_add(&(update_count), 1);
+-    }
+-
+-    return row;
 +    assert(status == 0);
 +    return mutation.row;
  }
-
+@@ -384,55 +339,20 @@ TableRow *Table::set(const char *key, uint16_t keylen, TableRow **rowlock, int *
  bool Table::del(const char *key, uint16_t keylen) {
 -    check_key_length(&keylen);
 -
@@ -488,7 +455,22 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 -    // no exists
 -    if (!row->active) {
 -        return false;
--    }
++    TableRow *root = hash(key, &keylen);
++    if (!root->active) return false;
++    root->lock();
++    swr_v1_memory_table_mutation mutation{};
++    mutation.counters = {&row_num, &insert_count, &delete_count, &update_count, &conflict_count, &conflict_max_level};
++    mutation.root = root;
++    mutation.key = reinterpret_cast<const uint8_t *>(key);
++    mutation.key_length = keylen;
++    mutation.item_size = item_size;
++    mutation.mode = 1;
++    int status = swr_v1_memory_table_mutation_step(&mutation);
++    assert(status >= 0);
++    if (status == 1) {
++        free_row(mutation.removed);
++        status = swr_v1_memory_table_mutation_step(&mutation);
+     }
 -
 -    TableRow *tmp, *prev = nullptr;
 -
@@ -535,29 +517,10 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 -    row->unlock();
 -
 -    return true;
-+    TableRow *root = hash(key, &keylen);
-+    if (!root->active) return false;
-+    root->lock();
-+    swr_v1_memory_table_mutation mutation{};
-+    mutation.counters = {&row_num, &insert_count, &delete_count, &update_count, &conflict_count, &conflict_max_level};
-+    mutation.root = root;
-+    mutation.key = reinterpret_cast<const uint8_t *>(key);
-+    mutation.key_length = keylen;
-+    mutation.item_size = item_size;
-+    mutation.mode = 1;
-+    int status = swr_v1_memory_table_mutation_step(&mutation);
-+    assert(status >= 0);
-+    if (status == 1) {
-+        free_row(mutation.removed);
-+        status = swr_v1_memory_table_mutation_step(&mutation);
-+    }
 +    root->unlock();
 +    return status == 0;
  }
-
- TableColumn::TableColumn(const std::string &_name, Type _type, size_t _size) {
-     index = 0;
-     name = _name;
+@@ -443,16 +363,3 @@ TableColumn::TableColumn(const std::string &_name, Type _type, size_t _size) {
      type = _type;
 -    switch (_type) {
 -    case TYPE_INT:
@@ -575,7 +538,7 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 -    }
 +    if (swr_v1_memory_table_column_size(_type, _size, &size) != 0) abort();
  }
-
+@@ -460,11 +367,5 @@ TableColumn::TableColumn(const std::string &_name, Type _type, size_t _size) {
  void TableColumn::clear(TableRow *row) const {
 -    if (type == TYPE_STRING) {
 -        row->set_value(this, nullptr, 0);
@@ -590,7 +553,7 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +    assert(status == 0);
 +    (void) status;
  }
-
+@@ -472,23 +373,13 @@ void TableColumn::clear(TableRow *row) const {
  void TableRow::set_value(const TableColumn *col, const void *value, size_t vlen) {
 -    switch (col->type) {
 -    case TableColumn::TYPE_INT:
@@ -612,7 +575,6 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 -            memcpy(data + col->index + sizeof(TableStringLength), value, vlen);
 -        }
 -        break;
--    }
 +    swr_v1_memory_table_value state{this, value, vlen, col->index, col->size, static_cast<uint32_t>(col->type), 0};
 +    int status = swr_v1_memory_table_value_step(&state);
 +    if (status == 1) {
@@ -621,25 +583,25 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +        state.width = col->size;
 +        state.kind = static_cast<uint32_t>(col->type);
 +        status = swr_v1_memory_table_value_step(&state);
-+    }
+     }
 +    assert(status == 0);
 +    (void) status;
  }
-
+@@ -496,3 +387,5 @@ void TableRow::set_value(const TableColumn *col, const void *value, size_t vlen)
  void TableRow::get_value(const TableColumn *col, double *dval) const {
 -    memcpy(dval, data + col->index, sizeof(*dval));
 +    const auto status = swr_v1_memory_table_get_number(this, col->index, dval);
 +    assert(status == 0);
 +    (void) status;
  }
-
+@@ -500,3 +393,5 @@ void TableRow::get_value(const TableColumn *col, double *dval) const {
  void TableRow::get_value(const TableColumn *col, long *lval) const {
 -    memcpy(lval, data + col->index, sizeof(*lval));
 +    const auto status = swr_v1_memory_table_get_number(this, col->index, lval);
 +    assert(status == 0);
 +    (void) status;
  }
-
+@@ -504,4 +399,7 @@ void TableRow::get_value(const TableColumn *col, long *lval) const {
  void TableRow::get_value(const TableColumn *col, char **value, TableStringLength *len) {
 -    memcpy(len, data + col->index, sizeof(*len));
 -    *value = data + col->index + sizeof(*len);
@@ -649,5 +611,3 @@ diff --git a/src/memory/table.cc b/src/memory/table.cc
 +    (void) status;
 +    *value = reinterpret_cast<char *>(data);
  }
-
- }  // namespace swoole

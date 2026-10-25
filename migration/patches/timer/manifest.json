@@ -1,40 +1,40 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-timer-header.patch",
-      "sha256": "a375db37a443cdd80d932d0d2564d449a8b61f38795e79907e807ff4a3d820ef",
+      "sha256": "5d6c9c309b69fc4cd1f4ff74aca5dfbb3d53e08a6ee32c45562a03c98588b56e",
       "upstream_paths": [
         "include/swoole_timer.h"
       ]
     },
     {
       "path": "0002-timer-body.patch",
-      "sha256": "c9c5ce1296f045a8cf5af5d5b60ff5b65c03edbb198d486ed26f5566d0414589",
+      "sha256": "b6192376b5ad906121eefb95f86ca43734d79c85e1558dc917f4b5038221be6e",
       "upstream_paths": [
         "src/core/timer.cc"
       ]
     },
     {
       "path": "0003-timer-php.patch",
-      "sha256": "c85f445020db9fe73d2580deb30ab7ecc7b5530a119d59b1b3371280c5f1c808",
+      "sha256": "e87c28e21ad19dbd006bcd49a4175b358539c9dfe4010ecf575b799befd8e7f1",
       "upstream_paths": [
         "ext-src/swoole_timer.cc"
       ]
     },
     {
       "path": "0004-timer-wrapper.patch",
-      "sha256": "dfc11de97cd98400d0e77a8cd6b5b26ce409449ba2bc316d1719aa9c5b08f2e2",
+      "sha256": "90f2f1607441f4248ed2dccc637676f4d047b04301a638b4d969f93fb32d56d3",
       "upstream_paths": [
         "src/wrapper/timer.cc"
       ]
     },
     {
       "path": "0005-timer-clock.patch",
+      "sha256": "9275086cb59d652b5219988543cd5af996f5ecf55fa5d70f07b9f510c1b23931",
       "upstream_paths": [
         "src/os/timer.cc"
-      ],
-      "sha256": "42626ff5cd09d11f00ab68405d63959af400342aadb693ee8eedfb163464973e"
+      ]
     }
   ]
 }

@@ -56,7 +56,7 @@ jobs:
           --engine hybrid=target/hybrid/rust-buffer-websocket-halfclose/modules/swoole.so
           --engine upstream=target/upstream/src/modules/swoole.so
           --output target/reports/corpus.json
-      # Upstream 6.2.2 truncates queued responses after a client half-close; --fix-halfclose repairs it.
+      # Upstream truncates queued responses after a client half-close; --fix-halfclose repairs it.
       - run: >
           python3 corpus/run.py --project 11-buffer-lifecycle
           --engine hybrid=target/hybrid/rust-buffer-websocket-halfclose/modules/swoole.so

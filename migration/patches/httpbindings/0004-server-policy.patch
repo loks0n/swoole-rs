@@ -1,26 +1,19 @@
 diff --git a/ext-src/swoole_http_server.cc b/ext-src/swoole_http_server.cc
+index a534dffc8..67899ec04 100644
 --- a/ext-src/swoole_http_server.cc
 +++ b/ext-src/swoole_http_server.cc
-@@ -15,6 +15,10 @@
- */
- 
+@@ -17,2 +17,6 @@
  #include "php_swoole_http_server.h"
 +#ifndef SWOOLE_RS_HTTPBINDINGS
 +#error "HTTP PHP binding overlay requires --enable-swoole-rs-httpbindings"
 +#endif
 +#include "swoole_rs_httpbindings.h"
  #include "swoole_process_pool.h"
- 
- BEGIN_EXTERN_C()
-@@ -60,105 +64,99 @@
- int php_swoole_http_server_onReceive(Server *serv, RecvData *req) {
-     auto session_id = req->info.fd;
+@@ -62,3 +66,2 @@ int php_swoole_http_server_onReceive(Server *serv, RecvData *req) {
      auto server_fd = req->info.server_fd;
 -
      Connection *conn = serv->get_connection_verify_no_ssl(session_id);
-     if (!conn) {
-         swoole_error_log(SW_LOG_TRACE, SW_ERROR_SESSION_NOT_EXIST, "session[%ld] is closed", session_id);
-         return SW_ERR;
+@@ -68,95 +71,90 @@ int php_swoole_http_server_onReceive(Server *serv, RecvData *req) {
      }
 -
      auto *port = serv->get_port_by_server_fd(server_fd);
@@ -113,7 +106,18 @@ diff --git a/ext-src/swoole_http_server.cc b/ext-src/swoole_http_server.cc
 +            break;
 +        case SWR_HTTPBINDINGS_RECV_NOTICE_INCOMPLETE:
              swoole_notice("Incomplete HTTP request: parsed successfully but missing required components");
--        }
++            break;
++        case SWR_HTTPBINDINGS_RECV_POPULATE_HOOK: {
++            zval *zserver = ctx->request.zserver;
++            HashTable *ht = Z_ARR_P(zserver);
++            swoole_http_server_populate_ip_and_port(serv, ht, conn, session_id, ctx->keepalive);
++            http_server_add_server_array(ht, SW_ZSTR_KNOWN(SW_ZEND_STR_MASTER_TIME), (zend_long) conn->last_recv_time);
++            if (swoole_isset_hook(static_cast<swGlobalHookType>(PHP_SWOOLE_HOOK_BEFORE_REQUEST))) {
++                swoole_call_hook(static_cast<swGlobalHookType>(PHP_SWOOLE_HOOK_BEFORE_REQUEST), ctx);
++            }
++            result = conn->websocket_status == WebSocket::STATUS_CONNECTION;
++            break;
+         }
 -        goto _dtor_and_return;
 -    }
 -
@@ -133,18 +137,6 @@ diff --git a/ext-src/swoole_http_server.cc b/ext-src/swoole_http_server.cc
 -        zend::Callable *cb = nullptr;
 -
 -        if (conn->websocket_status == WebSocket::STATUS_CONNECTION) {
-+            break;
-+        case SWR_HTTPBINDINGS_RECV_POPULATE_HOOK: {
-+            zval *zserver = ctx->request.zserver;
-+            HashTable *ht = Z_ARR_P(zserver);
-+            swoole_http_server_populate_ip_and_port(serv, ht, conn, session_id, ctx->keepalive);
-+            http_server_add_server_array(ht, SW_ZSTR_KNOWN(SW_ZEND_STR_MASTER_TIME), (zend_long) conn->last_recv_time);
-+            if (swoole_isset_hook(static_cast<swGlobalHookType>(PHP_SWOOLE_HOOK_BEFORE_REQUEST))) {
-+                swoole_call_hook(static_cast<swGlobalHookType>(PHP_SWOOLE_HOOK_BEFORE_REQUEST), ctx);
-+            }
-+            result = conn->websocket_status == WebSocket::STATUS_CONNECTION;
-+            break;
-+        }
 +        case SWR_HTTPBINDINGS_RECV_PROBE_HANDSHAKE:
              cb = php_swoole_server_get_callback(serv, server_fd, SW_SERVER_CB_onHandshake);
 -            if (cb == nullptr) {
@@ -167,15 +159,6 @@ diff --git a/ext-src/swoole_http_server.cc b/ext-src/swoole_http_server.cc
 -        ctx->private_data_2 = cb;
 -        if (ctx->onBeforeRequest && !ctx->onBeforeRequest(ctx)) {
 -            return SW_OK;
--        }
--        http_server_process_request(serv, cb, ctx);
--    } while (false);
--
--_dtor_and_return:
--    zval_ptr_dtor(zrequest_object);
--    zval_ptr_dtor(zresponse_object);
--
--    return SW_OK;
 +            result = cb != nullptr;
 +            break;
 +        case SWR_HTTPBINDINGS_RECV_PUBLISH_HANDSHAKE:
@@ -196,8 +179,14 @@ diff --git a/ext-src/swoole_http_server.cc b/ext-src/swoole_http_server.cc
 +            break;
 +        case SWR_HTTPBINDINGS_RECV_DONE: return SW_OK;
 +        default: return SW_ERR;
-+        }
+         }
+-        http_server_process_request(serv, cb, ctx);
+-    } while (false);
+-
+-_dtor_and_return:
+-    zval_ptr_dtor(zrequest_object);
+-    zval_ptr_dtor(zresponse_object);
+-
+-    return SW_OK;
 +    }
  }
- 
- void php_swoole_http_server_onClose(Server *serv, DataHead *info) {

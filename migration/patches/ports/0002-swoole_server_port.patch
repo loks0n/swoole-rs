@@ -572,7 +572,7 @@ diff --git a/ext-src/swoole_server_port.cc b/ext-src/swoole_server_port.cc
 -                if (Z_TYPE_P(current) != IS_ARRAY) {
 +                if (item.status == 3) {
                      php_swoole_fatal_error(E_WARNING, "invalid SNI_cert setting");
-@@ -571,41 +531,38 @@
+@@ -570,41 +530,38 @@
 
 -    bool found = false;
 -    for (auto &i : server_port_event_map) {
@@ -648,7 +648,7 @@ diff --git a/ext-src/swoole_server_port.cc b/ext-src/swoole_server_port.cc
 +        break;
 +    default: break;
      }
-@@ -622,10 +579,8 @@
+@@ -621,10 +578,8 @@
      zend::String _event_name_ori(name);
 -    zend::String _event_name_tolower(zend_string_tolower(_event_name_ori.get()), false);
 -    auto i = server_port_event_map.find(_event_name_tolower.to_std_string());

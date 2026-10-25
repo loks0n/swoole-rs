@@ -167,7 +167,7 @@ class Phpt(unittest.TestCase):
     def test_manifest_lists_every_pinned_timer_original(self):
         tests = json.loads((ROOT / 'corpus/upstream/manifest.json').read_text())['tests']
         timer = {Path(case['path']).stem: case for case in tests if case['path'].startswith('tests/swoole_timer/')}
-        self.assertEqual(len(timer), 33)
+        self.assertEqual(len(timer), 35)
         self.assertEqual({name for name, case in timer.items() if case.get('network')},
                          {'bug_4794_3', 'bug_4794_5', 'bug_4794_6', 'bug_4794_7'})
         self.assertTrue(all(case['module'] == 'timers' for case in timer.values()))

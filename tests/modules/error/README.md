@@ -1,6 +1,6 @@
 # Error handling
 
-Reference: Swoole v6.2.2, commit `8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e`.
+Reference: Swoole v6.2.4, commit `c7e514509451beafd4d70ce5b78943d51e76381c`.
 The opt-in error overlay (feature bit 32) replaces first-party message lookup,
 error classification, unknown-message formatting and ignored-error membership
 in `src/core/error.cc`.

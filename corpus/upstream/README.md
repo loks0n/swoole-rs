@@ -1,7 +1,7 @@
 # Original upstream Swoole tests
 
-This selection runs **90 original PHPT tests** from Swoole **v6.2.2**, commit
-`8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e`. The manifest records each source path,
+This selection runs **92 original PHPT tests** from Swoole **v6.2.4**, commit
+`c7e514509451beafd4d70ce5b78943d51e76381c`. The manifest records each source path,
 SHA-256, subsystem, and required PHP APIs. The PHPT files are extracted with
 `git archive` from the pinned Git object and checked against these hashes before
 execution. Local checkout edits cannot silently change the selected tests.
@@ -32,7 +32,7 @@ Each manifest entry has `path`, `sha256`, `module` (its selection group),
 `requires` (engine capabilities) and optionally `network: true` for cases that
 need DNS or external routes. Network cases are left out and listed as
 `unmeasured_cases` unless `--external-network` is given, which runs them online.
-The `timers` group holds all 33 pinned `tests/swoole_timer` cases. Cases that
+The `timers` group holds all 35 pinned `tests/swoole_timer` cases. Cases that
 bind a fixed address (`FIXED_PORTS` in `run.py`) fail without running if a live
 listener holds it.
 

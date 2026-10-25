@@ -2,7 +2,7 @@
 
 ## Original PHPTs
 
-All 33 `tests/swoole_timer/*.phpt` files are in the `timers` group of
+All 35 `tests/swoole_timer/*.phpt` files are in the `timers` group of
 `corpus/upstream/manifest.json` and run one per process group with PHP's
 official runner (`corpus/upstream/run.py`). Assertions, expected output, skip
 probes and real sleeps are unchanged.
@@ -13,7 +13,7 @@ python3 corpus/upstream/run.py --module timers --require-all \
   --engine timer=/absolute/path/to/timer/swoole.so
 ```
 
-By default the 29 local cases run and the four network-dependent cases
+By default the 31 local cases run and the four network-dependent cases
 (`bug_4794_3` qq.com, `bug_4794_5` negative DNS, `bug_4794_6` baidu.com,
 `bug_4794_7` 11.11.11.11 timeout) are listed as `unmeasured_cases`, not passes.
 `--external-network` runs them online (`--online` or `SKIP_ONLINE_TESTS=0`,
@@ -25,8 +25,9 @@ missing result.
 and records an occupied port as a failure without touching the listener. Run no
 other 9601 workload concurrently.
 
-All 33 pass per engine on macOS PHP 8.5 and Linux PHP 8.2 (with
-`--external-network`).
+At v6.2.2, all 33 then-pinned cases passed per engine on macOS PHP 8.5 and Linux
+PHP 8.2 (with `--external-network`). v6.2.4 added `clear_all_destructor_clears`
+and `memory_limit_fatal_error`.
 
 ### Known failure: `bug_4794_4` output order
 

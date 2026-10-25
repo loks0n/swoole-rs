@@ -1,9 +1,8 @@
 diff --git a/ext-src/swoole_timer.cc b/ext-src/swoole_timer.cc
+index bcc5774fd..935626ec7 100644
 --- a/ext-src/swoole_timer.cc
 +++ b/ext-src/swoole_timer.cc
-@@ -110,9 +110,22 @@
-
- static void timer_dtor(TimerNode *tnode) {
+@@ -112,5 +112,18 @@ static void timer_dtor(TimerNode *tnode) {
      auto *fci = static_cast<Function *>(tnode->data);
 -    sw_zend_fci_params_discard(&fci->fci);
 -    sw_zend_fci_cache_discard(&fci->fci_cache);
@@ -24,39 +23,25 @@ diff --git a/ext-src/swoole_timer.cc b/ext-src/swoole_timer.cc
 +        timer->abandon_selection([] { zend_bailout(); });
 +    }
  }
-
- bool php_swoole_timer_clear(TimerNode *tnode) {
-@@ -124,20 +137,12 @@
-         return false;
-     }
-
--    size_t num = sw_timer()->count(), index = 0;
--    auto **list = static_cast<TimerNode **>(emalloc(num * sizeof(TimerNode *)));
+@@ -128,13 +141,6 @@ bool php_swoole_timer_clear_all() {
+     // a fatal error here would leave the PHP timers to swoole_clean() after the request heap is released
+-    std::vector<long> list;
 -    for (auto &kv : sw_timer()->get_map()) {
--        TimerNode *tnode = kv.second;
--        if (tnode->type == TimerNode::TYPE_PHP) {
--            list[index++] = tnode;
+-        if (kv.second->type == TimerNode::TYPE_PHP) {
+-            list.push_back(kv.first);
 -        }
 -    }
 -
--    while (index--) {
--        swoole_timer_del(list[index]);
--    }
--
--    efree(list);
-+    // Snapshot IDs, then resolve again after destructors may mutate the queue.
-+    for (auto id : sw_timer()->get_ids()) {
-+        if (auto *tnode = sw_timer()->get(id, TimerNode::TYPE_PHP)) {
-+            swoole_timer_del(tnode);
-+        }
-+    }
-
-     return true;
- }
-@@ -145,8 +150,20 @@
- static void timer_callback(Timer *timer, TimerNode *tnode) {
-     auto *fci = static_cast<Function *>(tnode->data);
-
+     // a destructor can clear other timers of the list so look each one up again
+-    for (auto iter = list.rbegin(); iter != list.rend(); iter++) {
+-        TimerNode *tnode = swoole_timer_get(*iter);
+-        if (tnode) {
++    auto ids = sw_timer()->get_ids();
++    for (auto iter = ids.rbegin(); iter != ids.rend(); iter++) {
++        if (auto *tnode = sw_timer()->get(*iter, TimerNode::TYPE_PHP)) {
+             swoole_timer_del(tnode);
+@@ -149,4 +155,16 @@ static void timer_callback(Timer *timer, TimerNode *tnode) {
+ 
 -    if (UNEXPECTED(!fci->call(nullptr, php_swoole_is_enable_coroutine()))) {
 -        php_swoole_error(E_WARNING, "%s->onTimeout handler error", ZSTR_VAL(swoole_timer_ce->name));
 +    bool bailed_out = false;
@@ -74,11 +59,7 @@ diff --git a/ext-src/swoole_timer.cc b/ext-src/swoole_timer.cc
 +        timer->abandon_selection();
 +        zend_bailout();
      }
- }
-
-@@ -276,9 +293,9 @@
-     zval zlist;
-     array_init(&zlist);
+@@ -280,5 +298,5 @@ static PHP_FUNCTION(swoole_timer_list) {
      if (EXPECTED(SwooleTG.timer)) {
 -        for (auto &kv : SwooleTG.timer->get_map()) {
 -            TimerNode *tnode = kv.second;
@@ -87,5 +68,3 @@ diff --git a/ext-src/swoole_timer.cc b/ext-src/swoole_timer.cc
 +            auto *tnode = SwooleTG.timer->get(id);
 +            if (tnode && tnode->type == TimerNode::TYPE_PHP) {
                  add_next_index_long(&zlist, tnode->id);
-             }
-         }

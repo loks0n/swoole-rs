@@ -1,10 +1,9 @@
 diff --git a/include/swoole_heap.h b/include/swoole_heap.h
+index c43632570..7cb6776cb 100644
 --- a/include/swoole_heap.h
 +++ b/include/swoole_heap.h
-@@ -16,8 +16,16 @@
-
- #pragma once
-
+@@ -18,4 +18,12 @@
+ 
 +#ifdef HAVE_CONFIG_H
 +#include "config.h"
 +#endif
@@ -15,23 +14,15 @@ diff --git a/include/swoole_heap.h b/include/swoole_heap.h
 +#error "Memory overlay requires --enable-swoole-rs-memory"
 +#endif
 +#include "swoole_rs_memory.h"
-
- namespace swoole {
-
-@@ -38,8 +46,8 @@
-     ~Heap();
-
+ 
+@@ -40,4 +48,4 @@ class Heap {
      size_t count() const {
 -        return num - 1;
 -    }
 +        return swr_v1_memory_heap_count(rust_);
 +}
-
-     HeapNode *push(uint64_t priority, void *data);
-     void *pop();
-@@ -50,20 +58,10 @@
-     int compare(uint64_t a, uint64_t b) const;
-
+ 
+@@ -52,17 +60,7 @@ class Heap {
      HeapNode *top() const {
 -        if (num == 1) {
 -            return nullptr;
@@ -40,7 +31,7 @@ diff --git a/include/swoole_heap.h b/include/swoole_heap.h
 -    }
 +        return reinterpret_cast<HeapNode *>(swr_v1_memory_heap_at(rust_, 0));
 +}
-
+ 
    private:
 -    uint32_t num;
 -    uint32_t size;
@@ -52,4 +43,3 @@ diff --git a/include/swoole_heap.h b/include/swoole_heap.h
 -    void percolate_down(uint32_t i) const;
 +    void *rust_;
  };
- }  // namespace swoole

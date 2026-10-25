@@ -1,23 +1,23 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-php_swoole_cxx.patch",
-      "sha256": "cda6d33460a436b63a52f53b2da19219e561939d6751bf0b8cbe1026ec7f4c7b",
+      "sha256": "0baa94e166c828b9f74d519fd5c18c84ced6c345edbacf9a23c19cc998288b07",
       "upstream_paths": [
         "ext-src/php_swoole_cxx.cc"
       ]
     },
     {
       "path": "0002-swoole_stdext.patch",
-      "sha256": "b8bcb38d90e8bfe2e527ee9859b260c2ea89fb73b10656b91fff2be9a56eb4f9",
+      "sha256": "504860c8968ac33035f3ca9f010eefb328d42541af2fbb4b3dad953f9149f791",
       "upstream_paths": [
         "ext-src/swoole_stdext.cc"
       ]
     },
     {
       "path": "0003-php_swoole_cxx.patch",
-      "sha256": "bfd97fe3453a3e25cabc87480fb035f2fa3966599cc6b4cfa27a78424399280f",
+      "sha256": "6fd722e9ce4c92cacaf8977b7a51c1bbc8cf8dcec205f4bef7ee2385be340689",
       "upstream_paths": [
         "ext-src/php_swoole_cxx.h"
       ]

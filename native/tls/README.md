@@ -96,5 +96,4 @@ by tests.
 - On macOS, separately compiled protocol TUs and the prebuilt DSO Socket use
   different ex_data indices (1 vs 0) under two-level binding, so module tests
   compile the pinned `network/socket.cc` with the protocol TUs.
-- Alternate SDKs (e.g. BoringSSL) are untested; see
-  [optional-config-readiness.json](optional-config-readiness.json).
+- Alternate SDKs (e.g. BoringSSL) are untested.

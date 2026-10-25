@@ -1,9 +1,8 @@
 diff --git a/src/os/async_thread.cc b/src/os/async_thread.cc
+index 096c5f5d0..9f299b5a6 100644
 --- a/src/os/async_thread.cc
 +++ b/src/os/async_thread.cc
-@@ -15,6 +15,13 @@
-  */
-
+@@ -17,2 +17,9 @@
  #include "swoole_socket.h"
 +
 +#ifndef SWOOLE_RS_OSSUPPORT
@@ -13,21 +12,13 @@ diff --git a/src/os/async_thread.cc b/src/os/async_thread.cc
 +#include "swoole_rs_ossupport.h"
 +#endif
  #include "swoole_reactor.h"
- #include "swoole_pipe.h"
- #include "swoole_async.h"
-@@ -27,7 +34,9 @@
- #include <chrono>
- #include <condition_variable>
+@@ -29,3 +36,5 @@
  #include <mutex>
 +#ifndef SWOOLE_RS_OSSUPPORT
  #include <queue>
 +#endif
  #include <system_error>
-
- static std::mutex async_thread_lock;
-@@ -40,6 +49,48 @@
- namespace swoole {
- namespace async {
+@@ -42,2 +51,44 @@ namespace async {
  //-------------------------------------------------------------------------------
 +#ifdef SWOOLE_RS_OSSUPPORT
 +class EventQueue {
@@ -72,19 +63,13 @@ diff --git a/src/os/async_thread.cc b/src/os/async_thread.cc
 +
 +#else
  class EventQueue {
-   public:
-     void push(AsyncEvent *event) {
-@@ -75,15 +126,25 @@
-     std::queue<AsyncEvent *> queue_;
- };
-
+@@ -77,2 +128,4 @@ class EventQueue {
+ 
 +#endif
 +
  class ThreadPool {
-   public:
-     ThreadPool(size_t _core_worker_num, size_t _worker_num, double _max_wait_time, double _max_idle_time) {
-         running = false;
-
+@@ -82,2 +135,9 @@ class ThreadPool {
+ 
 +#ifdef SWOOLE_RS_OSSUPPORT
 +        const auto config = swr_v1_os_pool_config(SW_CPU_NUM, _core_worker_num, _worker_num, _max_wait_time, _max_idle_time);
 +        core_worker_num = config.core;
@@ -93,43 +78,20 @@ diff --git a/src/os/async_thread.cc b/src/os/async_thread.cc
 +        max_idle_time = config.idle;
 +#else
          core_worker_num = _core_worker_num == 0 ? SW_CPU_NUM : SW_MAX(1, _core_worker_num);
-         worker_num = _worker_num == 0 ? SW_CPU_NUM * SW_AIO_THREAD_NUM_MULTIPLE : SW_MAX(core_worker_num, _worker_num);
-         max_wait_time = _max_wait_time == 0 ? SW_AIO_TASK_MAX_WAIT_TIME : _max_wait_time;
+@@ -86,2 +146,3 @@ class ThreadPool {
          max_idle_time = _max_idle_time == 0 ? SW_AIO_THREAD_MAX_IDLE_TIME : _max_idle_time;
 +#endif
      }
-
-     ~ThreadPool() {
-@@ -128,6 +189,10 @@
-     void schedule() {
-         if (n_waiting == 0 && threads.size() < worker_num && max_wait_time > 0) {
-             double _max_wait_time = queue_.get_max_wait_time();
+@@ -142,3 +203,8 @@ class ThreadPool {
+         const double queue_wait_time = queue_.get_max_wait_time();
 +#ifdef SWOOLE_RS_OSSUPPORT
-+            const size_t n = swr_v1_os_pool_expand(n_waiting, threads.size(), worker_num, max_wait_time, _max_wait_time);
-+            if (n != 0) {
++        const bool waited_too_long =
++            swr_v1_os_pool_expand(0, thread_count, worker_num, max_wait_time, queue_wait_time) != 0;
 +#else
-             if (_max_wait_time > max_wait_time) {
-                 size_t n = 1;
-                 /**
-@@ -136,12 +201,14 @@
-                 if (threads.size() + n > worker_num) {
-                     n = worker_num - threads.size();
-                 }
+         const bool waited_too_long = max_wait_time > 0 && queue_wait_time > max_wait_time;
 +#endif
-                 swoole_trace_log(SW_TRACE_AIO,
-                                  "Create %zu thread due to wait %fs, we will have %zu threads",
-                                  n,
-                                  _max_wait_time,
-                                  threads.size() + n);
--                while (n--) {
-+                size_t remaining = n;
-+                while (remaining--) {
-                     create_thread();
-                 }
-             }
-@@ -241,11 +308,23 @@
-         AsyncEvent *event = queue_.pop();
-         lock.unlock();
+         if (!insufficient_idle_workers && !waited_too_long) {
+@@ -265,7 +331,19 @@ void ThreadPool::main_func(const bool is_core_worker) {
          swoole_debug("%s: %f", event ? "pop 1 event" : "no event", microtime());
 +#ifdef SWOOLE_RS_OSSUPPORT
 +        const auto action = swr_v1_os_worker_action(event != nullptr,
@@ -149,31 +111,71 @@ diff --git a/src/os/async_thread.cc b/src/os/async_thread.cc
              } else if (sw_unlikely(event->canceled)) {
 +#endif
                  event->error = SW_ERROR_AIO_CANCELED;
-                 event->retval = -1;
-             } else {
-@@ -268,11 +347,15 @@
-                 --n_closing;
-                 break;
+@@ -292,2 +370,5 @@ void ThreadPool::main_func(const bool is_core_worker) {
              }
 +#ifdef SWOOLE_RS_OSSUPPORT
 +        } else if (action == 4) {
 +#else
          } else if (timeout) {
-             if (n_closing != 0) {
-                 // wait for the next round
-                 continue;
+@@ -297,2 +378,3 @@ void ThreadPool::main_func(const bool is_core_worker) {
              }
 +#endif
              /* notifies the main thread to release this thread */
-             event = new AsyncEvent;
-             event->object = new std::thread::id(std::this_thread::get_id());
+diff --git a/src/os/base.cc b/src/os/base.cc
+index d9907a05e..3e1cf1bea 100644
+--- a/src/os/base.cc
++++ b/src/os/base.cc
+@@ -19,2 +19,9 @@
+ #include "swoole_socket.h"
++
++#ifndef SWOOLE_RS_OSSUPPORT
++#error "OS support overlay requires --enable-swoole-rs-ossupport"
++#endif
++#ifdef SWOOLE_RS_OSSUPPORT
++#include "swoole_rs_ossupport.h"
++#endif
+ #include "swoole_async.h"
+@@ -162,18 +169,21 @@ int pthread_getname_np(pthread_t thread, char *buf, size_t len) {
+ size_t swoole_random_bytes(char *buf, size_t size) {
+-    size_t read_bytes = 0;
+-
+-    while (read_bytes < size) {
+-        size_t amount_to_read = size - read_bytes;
+-        ssize_t n = getrandom(buf + read_bytes, amount_to_read, 0);
+-        if (n == -1) {
+-            if (errno == EINTR || errno == EAGAIN) {
+-                continue;
+-            } else {
+-                break;
++    swr_v1_os_random_bytes_state state{};
++    ssize_t n = 0;
++    bool retry = false;
++    for (;;) {
++        switch (swr_v1_os_random_bytes_next(&state, size, n, retry)) {
++        case 1:
++            n = getrandom(buf + state.completed, size - state.completed, 0);
++            retry = false;
++            if (n == -1) {
++                const int error = errno;
++                retry = error == EINTR || error == EAGAIN;
+             }
++            break;
++        case 0:
++            return state.completed;
++        default:
++            std::abort();
+         }
+-        read_bytes += (size_t) n;
+     }
+-
+-    return read_bytes;
+ }
 diff --git a/src/os/file.cc b/src/os/file.cc
+index 56e78fcbe..22760c05f 100644
 --- a/src/os/file.cc
 +++ b/src/os/file.cc
-@@ -16,6 +16,13 @@
-
- #include "swoole_file.h"
-
+@@ -18,2 +18,9 @@
+ 
 +#ifndef SWOOLE_RS_OSSUPPORT
 +#error "OS support overlay requires --enable-swoole-rs-ossupport"
 +#endif
@@ -182,11 +184,7 @@ diff --git a/src/os/file.cc b/src/os/file.cc
 +#endif
 +
  int swoole_tmpfile(char *filename) {
- #if defined(HAVE_MKOSTEMP) && defined(HAVE_EPOLL)
-     int tmp_fd = mkostemp(filename, O_WRONLY | O_CREAT);
-@@ -49,12 +56,10 @@
-
- ssize_t file_get_size(int fd) {
+@@ -51,8 +58,6 @@ ssize_t file_get_size(int fd) {
      FileStatus file_stat;
 -    if (fstat(fd, &file_stat) < 0) {
 -        swoole_set_last_error(errno);
@@ -199,11 +197,7 @@ diff --git a/src/os/file.cc b/src/os/file.cc
 +    if (action != 0) {
 +        swoole_set_last_error(action == 1 ? errno : EISDIR);
          return -1;
-     }
-     return file_stat.st_size;
-@@ -62,27 +67,40 @@
-
- std::shared_ptr<String> file_get_contents(const std::string &filename) {
+@@ -64,23 +69,36 @@ std::shared_ptr<String> file_get_contents(const std::string &filename) {
      File fp(filename, O_RDONLY);
 -    if (!fp.ready()) {
 -        swoole_sys_warning("open('%s') failed", filename.c_str());
@@ -219,13 +213,6 @@ diff --git a/src/os/file.cc b/src/os/file.cc
 -    } else if (filesize > SwooleG.max_file_content) {
 -        swoole_error_log(SW_LOG_WARNING, SW_ERROR_FILE_TOO_LARGE, "file[%s] is too large", filename.c_str());
 -        return nullptr;
--    }
--
--    std::shared_ptr<String> content = std::make_shared<String>(filesize + 1);
--    ssize_t read_bytes = fp.read_all(content->str, filesize);
--    content->length = read_bytes;
--    content->str[read_bytes] = '\0';
--    return content;
 +    swr_v1_os_file_content_state state{};
 +    const bool ready = fp.ready();
 +    ssize_t filesize = 0;
@@ -259,13 +246,15 @@ diff --git a/src/os/file.cc b/src/os/file.cc
 +        default:
 +            std::abort();
 +        }
-+    }
+     }
+-
+-    std::shared_ptr<String> content = std::make_shared<String>(filesize + 1);
+-    ssize_t read_bytes = fp.read_all(content->str, filesize);
+-    content->length = read_bytes;
+-    content->str[read_bytes] = '\0';
+-    return content;
  }
-
- File make_tmpfile() {
-@@ -97,11 +115,20 @@
- }
-
+@@ -99,3 +117,8 @@ File make_tmpfile() {
  bool file_put_contents(const std::string &filename, const char *content, size_t length) {
 +#ifdef SWOOLE_RS_OSSUPPORT
 +    const auto content_action = swr_v1_os_content(length, SwooleG.max_file_content);
@@ -274,7 +263,7 @@ diff --git a/src/os/file.cc b/src/os/file.cc
      if (length == 0) {
 +#endif
          swoole_error_log(SW_LOG_WARNING, SW_ERROR_FILE_EMPTY, "content is empty");
-         return false;
+@@ -103,3 +126,7 @@ bool file_put_contents(const std::string &filename, const char *content, size_t
      }
 +#ifdef SWOOLE_RS_OSSUPPORT
 +    if (content_action == 2) {
@@ -282,12 +271,8 @@ diff --git a/src/os/file.cc b/src/os/file.cc
      if (length > SwooleG.max_file_content) {
 +#endif
          swoole_error_log(SW_LOG_WARNING, SW_ERROR_FILE_TOO_LARGE, "content is too large");
-         return false;
-     }
-@@ -164,63 +191,73 @@
-     }
- }
-
+@@ -166,34 +193,29 @@ File::~File() {
+ 
 -static swReturnCode catch_fs_error(const ssize_t rv, const int error) {
 -    if (rv == 0) {
 -        return SW_CLOSE;
@@ -325,17 +310,13 @@ diff --git a/src/os/file.cc b/src/os/file.cc
 +                n = write((char *) data + state.completed, len - state.completed);
 +            } else {
 +                n = pwrite((char *) data + state.completed, len - state.completed, state.completed);
-             }
--            break;
--        }
--    }
--    return written_bytes;
++            }
 +            retry = false;
 +            if (n < 0) {
 +                const int error = errno;
 +                retry = error == EINTR || error == EAGAIN || error == EWOULDBLOCK;
-+            }
-+            break;
+             }
+             break;
 +        case 2:
 +            swoole_sys_warning("pwrite(%d, %p, %lu, %lu) failed", fd_, data, len - state.completed, state.completed);
 +            return state.completed;
@@ -343,10 +324,11 @@ diff --git a/src/os/file.cc b/src/os/file.cc
 +            return state.completed;
 +        default:
 +            std::abort();
-+        }
-+    }
+         }
+     }
+-    return written_bytes;
  }
-
+@@ -201,18 +223,24 @@ size_t File::write_all(const void *data, size_t len) const {
  size_t File::read_all(void *buf, size_t len) const {
 -    size_t read_bytes = 0;
 -    while (read_bytes < len) {
@@ -372,9 +354,6 @@ diff --git a/src/os/file.cc b/src/os/file.cc
 +                retry = error == EINTR || error == EAGAIN || error == EWOULDBLOCK;
              }
              break;
--        }
--    }
--    return read_bytes;
 +        case 2:
 +            swoole_sys_warning("pread(%d, %p, %lu, %lu) failed", fd_, buf, len - state.completed, state.completed);
 +            return state.completed;
@@ -382,13 +361,11 @@ diff --git a/src/os/file.cc b/src/os/file.cc
 +            return state.completed;
 +        default:
 +            std::abort();
-+        }
-+    }
+         }
+     }
+-    return read_bytes;
  }
-
- ssize_t File::read_line(void *_buf, size_t _n) const {
-     char *buf = (char *) _buf;
-     auto offset = get_offset();
+@@ -223,2 +251,11 @@ ssize_t File::read_line(void *_buf, size_t _n) const {
      ssize_t read_bytes = read(buf, _n - 1);
 +#ifdef SWOOLE_RS_OSSUPPORT
 +    const auto result = swr_v1_os_file_line_result(reinterpret_cast<const unsigned char *>(buf), read_bytes);
@@ -400,19 +377,15 @@ diff --git a/src/os/file.cc b/src/os/file.cc
 +#else
 +
      if (read_bytes <= 0) {
-         return read_bytes;
-     }
-@@ -234,19 +271,27 @@
-     buf[read_bytes] = '\0';
-     set_offset(offset + read_bytes + 1);
+@@ -236,2 +273,3 @@ ssize_t File::read_line(void *_buf, size_t _n) const {
      return read_bytes;
 +#endif
  }
-
- std::shared_ptr<String> File::read_content() const {
-     ssize_t n = 0;
+@@ -241,10 +279,17 @@ std::shared_ptr<String> File::read_content() const {
      auto data = std::make_shared<String>(SW_BUFFER_SIZE_STD);
 -    while (true) {
+-        n = read(data->str + data->length, data->size - data->length);
+-        if (n <= 0) {
 +    swr_v1_os_read_content_state state{};
 +    for (;;) {
 +        switch (swr_v1_os_read_content_next(&state, n)) {
@@ -420,30 +393,23 @@ diff --git a/src/os/file.cc b/src/os/file.cc
 +            return data;
 +        case 2:
 +            data->grow((size_t) n);
-+            break;
+             break;
 +        case 1:
 +            break;
 +        default:
 +            std::abort();
-+        }
-         n = read(data->str + data->length, data->size - data->length);
--        if (n <= 0) {
--            break;
--        }
+         }
 -        data->grow((size_t) n);
--    }
++        n = read(data->str + data->length, data->size - data->length);
+     }
 -    return data;
-+    }
  }
-
- }  // namespace swoole
 diff --git a/src/os/msg_queue.cc b/src/os/msg_queue.cc
+index 2ed0f0113..9fc03418d 100644
 --- a/src/os/msg_queue.cc
 +++ b/src/os/msg_queue.cc
-@@ -16,6 +16,13 @@
-
- #include "swoole_msg_queue.h"
-
+@@ -18,2 +18,9 @@
+ 
 +#ifndef SWOOLE_RS_OSSUPPORT
 +#error "OS support overlay requires --enable-swoole-rs-ossupport"
 +#endif
@@ -452,37 +418,27 @@ diff --git a/src/os/msg_queue.cc b/src/os/msg_queue.cc
 +#endif
 +
  namespace swoole {
- #ifdef HAVE_MSGQUEUE
- #include <sys/ipc.h>
-@@ -31,17 +38,25 @@
- }
-
+@@ -33,2 +40,5 @@ bool MsgQueue::destroy() {
  void MsgQueue::set_blocking(const bool blocking) {
 +#ifdef SWOOLE_RS_OSSUPPORT
 +    flags_ = swr_v1_os_queue_flags(flags_, blocking, IPC_NOWAIT);
 +#else
      if (blocking == 0) {
-         flags_ = flags_ | IPC_NOWAIT;
-     } else {
-         flags_ = flags_ & (~IPC_NOWAIT);
+@@ -38,2 +48,3 @@ void MsgQueue::set_blocking(const bool blocking) {
      }
 +#endif
  }
-
+@@ -41,2 +52,5 @@ void MsgQueue::set_blocking(const bool blocking) {
  MsgQueue::MsgQueue(key_t msg_key, bool blocking, int perms) {
 +#ifdef SWOOLE_RS_OSSUPPORT
 +    perms = swr_v1_os_permissions(perms);
 +#else
      if (perms <= 0 || perms >= 01000) {
-         perms = 0666;
+@@ -44,2 +58,3 @@ MsgQueue::MsgQueue(key_t msg_key, bool blocking, int perms) {
      }
 +#endif
      msg_key_ = msg_key;
-     flags_ = 0;
-     perms_ = perms;
-@@ -77,10 +92,18 @@
-         if (msgsnd(msg_id_, in, mdata_length, flags_) == 0) {
-             return true;
+@@ -79,2 +94,9 @@ bool MsgQueue::push(const QueueNode *in, size_t mdata_length) const {
          }
 +#ifdef SWOOLE_RS_OSSUPPORT
 +        const auto action = swr_v1_os_queue_error(errno == EINTR, errno == EAGAIN);
@@ -492,92 +448,26 @@ diff --git a/src/os/msg_queue.cc b/src/os/msg_queue.cc
 +        if (action == 3) {
 +#else
          if (errno == EINTR) {
-             continue;
-         }
+@@ -83,2 +105,3 @@ bool MsgQueue::push(const QueueNode *in, size_t mdata_length) const {
          if (errno != EAGAIN) {
 +#endif
              swoole_sys_warning("msgsnd(%d, %lu, %ld) failed", msg_id_, mdata_length, in->mtype);
-         }
-         swoole_set_last_error(errno);
-diff --git a/src/os/base.cc b/src/os/base.cc
---- a/src/os/base.cc
-+++ b/src/os/base.cc
-@@ -17,6 +17,13 @@
-  */
-
- #include "swoole_socket.h"
-+
-+#ifndef SWOOLE_RS_OSSUPPORT
-+#error "OS support overlay requires --enable-swoole-rs-ossupport"
-+#endif
-+#ifdef SWOOLE_RS_OSSUPPORT
-+#include "swoole_rs_ossupport.h"
-+#endif
- #include "swoole_async.h"
- #include "swoole_signal.h"
- #include "swoole_api.h"
-@@ -160,22 +167,25 @@
- #endif
-
- size_t swoole_random_bytes(char *buf, size_t size) {
--    size_t read_bytes = 0;
--
--    while (read_bytes < size) {
--        size_t amount_to_read = size - read_bytes;
--        ssize_t n = getrandom(buf + read_bytes, amount_to_read, 0);
--        if (n == -1) {
--            if (errno == EINTR || errno == EAGAIN) {
--                continue;
--            } else {
--                break;
-+    swr_v1_os_random_bytes_state state{};
-+    ssize_t n = 0;
-+    bool retry = false;
-+    for (;;) {
-+        switch (swr_v1_os_random_bytes_next(&state, size, n, retry)) {
-+        case 1:
-+            n = getrandom(buf + state.completed, size - state.completed, 0);
-+            retry = false;
-+            if (n == -1) {
-+                const int error = errno;
-+                retry = error == EINTR || error == EAGAIN;
-             }
--        }
--        read_bytes += (size_t) n;
--    }
--
--    return read_bytes;
-+            break;
-+        case 0:
-+            return state.completed;
-+        default:
-+            std::abort();
-+        }
-+    }
- }
-
- bool swoole_is_root_user() {
 diff --git a/src/os/sendfile.cc b/src/os/sendfile.cc
+index 97be4e66d..6d6a0eea2 100644
 --- a/src/os/sendfile.cc
 +++ b/src/os/sendfile.cc
-@@ -15,6 +15,13 @@
- */
-
- #include "swoole_socket.h"
-+
+@@ -18,2 +18,9 @@
+ 
 +#ifndef SWOOLE_RS_OSSUPPORT
 +#error "OS support overlay requires --enable-swoole-rs-ossupport"
 +#endif
 +#ifdef SWOOLE_RS_OSSUPPORT
 +#include "swoole_rs_ossupport.h"
 +#endif
-
++
  #if defined(__linux__)
- #include <sys/sendfile.h>
-@@ -56,13 +63,23 @@
-     *offset += sent_bytes;
- #endif
-
+@@ -58,4 +65,10 @@ _do_sendfile:
+ 
 +#ifdef SWOOLE_RS_OSSUPPORT
 +    const auto action = swr_v1_os_sendfile_action(ret, errno == EINTR);
 +    if (action == 1 || action == 2) {
@@ -587,8 +477,7 @@ diff --git a/src/os/sendfile.cc b/src/os/sendfile.cc
          if (errno == EINTR) {
 +#endif
              goto _do_sendfile;
-         } else {
-             return ret;
+@@ -64,3 +77,7 @@ _do_sendfile:
          }
 +#ifdef SWOOLE_RS_OSSUPPORT
 +    } else if (action == 0) {
@@ -596,11 +485,7 @@ diff --git a/src/os/sendfile.cc b/src/os/sendfile.cc
      } else if (ret == 0) {
 +#endif
          return size;
-     } else {
-         swoole_sys_warning("sendfile failed");
-@@ -72,21 +89,32 @@
- }
- #elif !defined(HAVE_SENDFILE)
+@@ -74,17 +91,28 @@ _do_sendfile:
  ssize_t swoole_sendfile(int out_fd, int in_fd, off_t *offset, size_t size) {
 +    static_assert(SW_ERR == -1, "fallback Rust error convention");
      char buf[SW_BUFFER_SIZE_BIG];
@@ -641,5 +526,3 @@ diff --git a/src/os/sendfile.cc b/src/os/sendfile.cc
 -        swoole_sys_warning("pread() failed");
 -        return SW_ERR;
      }
- }
- #endif

@@ -3,7 +3,7 @@
 Gates for the Rust `swoole::Buffer` queue (`crates/buffer`) and `swoole::String`
 storage (`crates/buffer/src/string`, gates in [string/](string/profiles.md)).
 Native runners extract sources from pinned upstream
-`8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e` into a disposable tree, apply the
+`c7e514509451beafd4d70ce5b78943d51e76381c` into a disposable tree, apply the
 patches from `migration/patches/buffer/manifest.json` (checksum and destinations
 checked by `staging.py`) and link a supplied Rust archive. They never rebuild the
 archive. `--sanitize` adds C++ ASan/UBSan; the Rust archive is not instrumented
@@ -37,7 +37,7 @@ checkout (`target/upstream/src`).
   4 MiB plain WebSocket frame, then repeats it under a memory limit so the real
   Zend String allocator fails. Exit code, stdout and stderr must match the first
   engine.
-- Original PHPTs (`originals.json`, seven Swoole v6.2.2 tests plus
+- Original PHPTs (`originals.json`, seven Swoole v6.2.4 tests plus
   `examples/test.jpg`):
   `python3 corpus/upstream/run.py --manifest tests/modules/buffer/originals.json --source S --engine upstream=SO --engine hybrid=SO --require-all --isolate-cases`.
   On Linux PHP 8.2 add `--php-extension curl --php-extension sockets` for both engines.

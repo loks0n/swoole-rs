@@ -1,4 +1,4 @@
-// upstream/ holds unmodified files from Swoole v6.2.2 (8e8c4991); see src/lib.rs.
+// upstream/ holds unmodified files from Swoole v6.2.4 (c7e51450); see src/lib.rs.
 use std::{env, fs, path::PathBuf};
 
 fn out(name: &str) -> PathBuf {

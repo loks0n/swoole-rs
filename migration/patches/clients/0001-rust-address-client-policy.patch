@@ -1,10 +1,8 @@
 diff --git a/ext-src/swoole_client.cc b/ext-src/swoole_client.cc
-index f861adb..ff48dc1 100644
+index e340dc2f1..512b579e7 100644
 --- a/ext-src/swoole_client.cc
 +++ b/ext-src/swoole_client.cc
-@@ -15,12 +15,15 @@
- */
-
+@@ -17,2 +17,7 @@
  #include "php_swoole_cxx.h"
 +#ifndef SWOOLE_RS_CLIENTS
 +#error "Clients overlay requires --enable-swoole-rs-clients"
@@ -12,26 +10,17 @@ index f861adb..ff48dc1 100644
 +#include "swoole_rs_clients.h"
 +#include "swoole_rs_clients_pool.h"
  #include "php_swoole_client.h"
- #include "swoole_mqtt.h"
-
+@@ -21,4 +26,2 @@
  #include <string>
 -#include <queue>
 -#include <unordered_map>
-
- BEGIN_EXTERN_C()
- #include "stubs/php_swoole_client_arginfo.h"
-@@ -36,7 +39,7 @@ using swoole::network::Address;
- using swoole::network::Client;
- using swoole::network::Socket;
-
+ 
+@@ -38,3 +41,3 @@ using swoole::network::Socket;
+ 
 -static std::unordered_map<std::string, std::queue<Client *> *> long_connections;
 +static SwooleRustClientPool long_connections;
-
- zend_class_entry *swoole_client_ce;
- zend_object_handlers swoole_client_handlers;
-@@ -445,37 +448,44 @@ bool php_swoole_client_check_setting(Client *cli, const zval *zset) {
- }
-
+ 
+@@ -447,33 +450,40 @@ bool php_swoole_client_check_setting(Client *cli, const zval *zset) {
  void php_swoole_client_free(const zval *zobject, Client *cli) {
 -    if (cli->timer) {
 -        swoole_timer_del(cli->timer);
@@ -100,21 +89,13 @@ index f861adb..ff48dc1 100644
 +        stage = plan.stage;
 +    }
  }
-
- ssize_t php_swoole_length_func(const Protocol *protocol, Socket *_socket, PacketLength *pl) {
-@@ -512,7 +522,7 @@ static Client *php_swoole_client_new(zval *zobject, char *host, int host_len, in
-         return nullptr;
-     }
-
+@@ -514,3 +524,3 @@ static Client *php_swoole_client_new(zval *zobject, char *host, int host_len, in
+ 
 -    Client *cli;
 +    Client *cli = nullptr;
      std::string conn_key;
-     zval *zconnection_id =
-         sw_zend_read_property_not_null_ex(Z_OBJCE_P(zobject), zobject, SW_ZSTR_KNOWN(SW_ZEND_STR_ID), 1);
-@@ -524,48 +534,53 @@ static Client *php_swoole_client_new(zval *zobject, char *host, int host_len, in
-         conn_key = std::string(sw_tg_buffer()->str, size);
-     }
-
+@@ -526,24 +536,35 @@ static Client *php_swoole_client_new(zval *zobject, char *host, int host_len, in
+ 
 -    // keep the tcp connection
 -    if (type & SW_FLAG_KEEP) {
 -        auto i = long_connections.find(conn_key);
@@ -170,8 +151,7 @@ index f861adb..ff48dc1 100644
 +        case SWR_CLIENTS_PERSISTENT_CREATE: cli = new Client(php_swoole_client_get_type(type), false); break;
 +        case SWR_CLIENTS_PERSISTENT_CREATE_FAILED:
              php_swoole_sys_error(E_WARNING, "Client_create() failed");
-             zend_update_property_long(Z_OBJCE_P(zobject), SW_Z8_OBJ_P(zobject), ZEND_STRL("errCode"), errno);
-             delete cli;
+@@ -552,18 +573,12 @@ static Client *php_swoole_client_new(zval *zobject, char *host, int host_len, in
              return nullptr;
 +        case SWR_CLIENTS_PERSISTENT_SET_IDENTITY: cli->server_id = std::string(conn_key.c_str(), conn_key.length()); break;
 +        case SWR_CLIENTS_PERSISTENT_PUBLISH_SOCKET:
@@ -198,11 +178,7 @@ index f861adb..ff48dc1 100644
 -
 -    return cli;
  }
-
- static PHP_METHOD(swoole_client, __construct) {
-@@ -1093,15 +1108,7 @@ static PHP_METHOD(swoole_client, close) {
-         php_swoole_client_free(ZEND_THIS, cli);
-     } else {
+@@ -1096,11 +1111,3 @@ static PHP_METHOD(swoole_client, close) {
          if (cli->keep) {
 -            std::queue<Client *> *q;
 -            auto i = long_connections.find(cli->server_id);
@@ -215,15 +191,11 @@ index f861adb..ff48dc1 100644
 -            q->push(cli);
 +            long_connections.push(cli->server_id, cli);
          }
-         // unset object
-         php_swoole_client_set_cli(ZEND_THIS, nullptr);
 diff --git a/ext-src/swoole_client_async.cc b/ext-src/swoole_client_async.cc
-index 2593ab9..d0f7b0f 100644
+index 2593ab9f3..d0f7b0f3e 100644
 --- a/ext-src/swoole_client_async.cc
 +++ b/ext-src/swoole_client_async.cc
-@@ -15,6 +15,12 @@
- */
-
+@@ -17,2 +17,8 @@
  #include "php_swoole_client.h"
 +#ifndef SWOOLE_RS_CLIENTS
 +#error "Clients overlay requires --enable-swoole-rs-clients"
@@ -232,12 +204,8 @@ index 2593ab9..d0f7b0f 100644
 +#include <algorithm>
 +#include <cctype>
  #include "swoole_mqtt.h"
-
- BEGIN_EXTERN_C()
-@@ -48,6 +54,19 @@ enum AsyncClientCallbackType {
-     CLIENT_CB_onSSLReady,
- };
-
+@@ -50,2 +56,15 @@ enum AsyncClientCallbackType {
+ 
 +static zend::Callable **clients_async_slot(const ClientObject *object, uint32_t slot) {
 +    switch (slot) {
 +    case 1: return &object->async->onConnect;
@@ -252,11 +220,7 @@ index 2593ab9..d0f7b0f 100644
 +}
 +
  static void client_onConnect(Client *cli);
- static void client_onReceive(const Client *cli, const char *data, size_t length);
- static void client_onClose(Client *cli);
-@@ -59,70 +78,33 @@ zend_class_entry *swoole_client_async_ce;
- static zend_object_handlers swoole_client_async_handlers;
-
+@@ -61,24 +80,14 @@ static zend_object_handlers swoole_client_async_handlers;
  void php_swoole_client_async_free_object(const ClientObject *client_obj) {
 -    if (client_obj->async->onConnect) {
 -        sw_callable_free(client_obj->async->onConnect);
@@ -292,8 +256,7 @@ index 2593ab9..d0f7b0f 100644
      }
 -    delete client_obj->async;
  }
-
- static sw_inline void client_execute_callback(zval *zobject, AsyncClientCallbackType type) {
+@@ -87,31 +96,4 @@ static sw_inline void client_execute_callback(zval *zobject, AsyncClientCallback
      auto client_obj = php_swoole_client_fetch_object(zobject);
 -    const char *callback_name;
 -    zend::Callable *cb;
@@ -327,38 +290,29 @@ index 2593ab9..d0f7b0f 100644
 +    const auto meta = swr_v1_clients_async_meta(type);
 +    if (meta.slot == 0 || meta.slot == CLIENT_CB_onReceive) {
          abort();
-         return;
+@@ -119,3 +101,4 @@ static sw_inline void client_execute_callback(zval *zobject, AsyncClientCallback
      }
 -
 +    const char *callback_name = reinterpret_cast<const char *>(meta.name);
 +    zend::Callable *cb = *clients_async_slot(client_obj, meta.slot);
      if (!cb) {
-         php_swoole_fatal_error(E_WARNING, "%s has no %s callback", SW_Z_OBJCE_NAME_VAL_P(zobject), callback_name);
-         return;
+@@ -124,3 +107,2 @@ static sw_inline void client_execute_callback(zval *zobject, AsyncClientCallback
      }
 -
      if (UNEXPECTED(sw_zend_call_function_ex2(nullptr, cb->ptr(), 1, zobject, nullptr) != SUCCESS)) {
-         php_swoole_fatal_error(E_WARNING, "%s->%s handler error", SW_Z_OBJCE_NAME_VAL_P(zobject), callback_name);
-     }
-@@ -185,7 +167,8 @@ static void client_onReceive(const Client *cli, const char *data, size_t length)
-
- static void client_onConnect(Client *cli) {
+@@ -187,3 +169,4 @@ static void client_onConnect(Client *cli) {
      auto zobject = static_cast<zval *>(cli->object);
 -    if (cli->ssl_wait_handshake) {
 +    const auto plan = swr_v1_clients_async_next(1, 0, cli->ssl_wait_handshake);
 +    if (plan.action == 4) {
          cli->ssl_wait_handshake = false;
-         client_execute_callback(zobject, CLIENT_CB_onSSLReady);
-         return;
-@@ -300,101 +283,86 @@ static PHP_METHOD(swoole_client_async, connect) {
-     Z_PARAM_LONG(sock_flag)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-
+@@ -302,3 +285,4 @@ static PHP_METHOD(swoole_client_async, connect) {
+ 
 -    if (host_len == 0) {
 +    // Keep the original host guard before even fetching the object.
 +    if (swr_v1_clients_async_next(2, 0, host_len != 0).action == 32) {
          php_swoole_fatal_error(E_WARNING, "The host is empty");
-         RETURN_FALSE;
+@@ -306,93 +290,77 @@ static PHP_METHOD(swoole_client_async, connect) {
      }
 -
      auto client_obj = php_swoole_client_fetch_object(ZEND_THIS);
@@ -517,12 +471,8 @@ index 2593ab9..d0f7b0f 100644
      }
 -    RETURN_TRUE;
  }
-
- static PHP_METHOD(swoole_client_async, isConnected) {
-@@ -436,47 +404,24 @@ static PHP_METHOD(swoole_client_async, on) {
-         client_obj->async = new AsyncClientObject();
-     }
-
+@@ -438,39 +406,9 @@ static PHP_METHOD(swoole_client_async, on) {
+ 
 -    if (strncasecmp("connect", cb_name, cb_name_len) == 0) {
 -        zend_update_property(swoole_client_async_ce, Z_OBJ_P(ZEND_THIS), ZEND_STRL("onConnect"), zcallback);
 -        if (client_obj->async->onConnect) {
@@ -568,8 +518,7 @@ index 2593ab9..d0f7b0f 100644
 +    const auto slot = swr_v1_clients_async_event(folded, folded_length, cb_name_len);
 +    if (!slot) {
          php_swoole_fatal_error(E_WARNING, "Unknown event callback type name '%s'", cb_name);
-         sw_callable_free(cb);
-         RETURN_FALSE;
+@@ -479,2 +417,9 @@ static PHP_METHOD(swoole_client_async, on) {
      }
 +    const auto meta = swr_v1_clients_async_meta(slot);
 +    zend_update_property(swoole_client_async_ce, Z_OBJ_P(ZEND_THIS), reinterpret_cast<const char *>(meta.name), meta.length, zcallback);
@@ -579,26 +528,18 @@ index 2593ab9..d0f7b0f 100644
 +    }
 +    *clients_async_slot(client_obj, slot) = cb;
      RETURN_TRUE;
- }
-
 diff --git a/ext-src/swoole_client_coro.cc b/ext-src/swoole_client_coro.cc
-index 9ed23f2..cc0c946 100644
+index 40673b572..f2439bc65 100644
 --- a/ext-src/swoole_client_coro.cc
 +++ b/ext-src/swoole_client_coro.cc
-@@ -15,6 +15,10 @@
- */
-
+@@ -17,2 +17,6 @@
  #include "php_swoole_client.h"
 +#ifndef SWOOLE_RS_CLIENTS
 +#error "Clients overlay requires --enable-swoole-rs-clients"
 +#endif
 +#include "swoole_rs_clients.h"
-
- #include "swoole_string.h"
- #include "swoole_socket.h"
-@@ -187,28 +191,44 @@ void php_swoole_client_coro_minit(int module_number) {
-
- static sw_inline SocketImpl *client_coro_get_socket_for_connect(zval *zobject, int port) {
+ 
+@@ -189,24 +193,40 @@ static sw_inline SocketImpl *client_coro_get_socket_for_connect(zval *zobject, i
      auto client = client_coro_get_client(zobject);
 -    if (client->socket) {
 -        php_swoole_socket_set_error_properties(zobject, EISCONN, strerror(EISCONN));
@@ -660,12 +601,8 @@ index 9ed23f2..cc0c946 100644
      }
 -    return sock;
  }
-
- static PHP_METHOD(swoole_client_coro, __construct) {
-@@ -271,24 +291,32 @@ static PHP_METHOD(swoole_client_coro, connect) {
-     Z_PARAM_LONG(sock_flag)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-
+@@ -274,20 +294,28 @@ static PHP_METHOD(swoole_client_coro, connect) {
+ 
 -    if (host_len == 0) {
 -        php_swoole_fatal_error(E_WARNING, "The host is empty");
 -        RETURN_FALSE;
@@ -710,16 +647,12 @@ index 9ed23f2..cc0c946 100644
 -    zend_update_property_bool(swoole_client_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("connected"), 1);
 -    RETURN_TRUE;
  }
-
- static PHP_METHOD(swoole_client_coro, send) {
-@@ -302,26 +330,35 @@ static PHP_METHOD(swoole_client_coro, send) {
-     Z_PARAM_DOUBLE(timeout)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-
+@@ -305,3 +333,3 @@ static PHP_METHOD(swoole_client_coro, send) {
+ 
 -    if (data_len == 0) {
 +    if (swr_v1_clients_coro_next(2, 0, 0, 0, data_len).action == SWR_CLIENTS_CC_DATA_WARNING) {
          php_swoole_fatal_error(E_WARNING, "data to send is empty");
-         RETURN_FALSE;
+@@ -309,8 +337,8 @@ static PHP_METHOD(swoole_client_coro, send) {
      }
 -
      CLIENT_CORO_GET_SOCKET_SAFE(cli);
@@ -731,16 +664,14 @@ index 9ed23f2..cc0c946 100644
 +    const auto plan = swr_v1_clients_coro_next(2, 1, facts, ret, data_len);
 +    if (plan.action == SWR_CLIENTS_CC_ERROR_FALSE) {
          php_swoole_socket_set_error_properties(ZEND_THIS, cli);
-         RETURN_FALSE;
+@@ -318,4 +346,3 @@ static PHP_METHOD(swoole_client_coro, send) {
      }
 -
 -    if ((size_t) ret < data_len && cli->errCode) {
 +    if (plan.action == SWR_CLIENTS_CC_ERROR_LONG) {
          php_swoole_socket_set_error_properties(ZEND_THIS, cli);
-     }
-     RETURN_LONG(ret);
- }
-
+@@ -325,2 +352,12 @@ static PHP_METHOD(swoole_client_coro, send) {
+ 
 +static SocketImpl *clients_coro_datagram_socket(zval *zobject) {
 +    auto client = client_coro_get_client(zobject);
 +    const auto plan = swr_v1_clients_coro_next(5, 1, client->socket != nullptr, 0, 0);
@@ -752,17 +683,13 @@ index 9ed23f2..cc0c946 100644
 +}
 +
  static PHP_METHOD(swoole_client_coro, sendto) {
-     char *host;
-     size_t host_len;
-@@ -335,28 +372,23 @@ static PHP_METHOD(swoole_client_coro, sendto) {
-     Z_PARAM_STRING(data, len)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-
+@@ -338,3 +375,3 @@ static PHP_METHOD(swoole_client_coro, sendto) {
+ 
 -    if (len == 0) {
 +    if (swr_v1_clients_coro_next(5, 0, 0, 0, len).action == SWR_CLIENTS_CC_FALSE) {
          RETURN_FALSE;
-     }
-
+@@ -342,9 +379,3 @@ static PHP_METHOD(swoole_client_coro, sendto) {
+ 
 -    SocketImpl *socket = nullptr;
 -    const auto client = client_coro_get_client(ZEND_THIS);
 -    if (client->socket == nullptr) {
@@ -772,31 +699,24 @@ index 9ed23f2..cc0c946 100644
 -    }
 +    SocketImpl *socket = clients_coro_datagram_socket(ZEND_THIS);
      if (!socket) {
-         RETURN_FALSE;
-     }
-
+@@ -353,3 +384,4 @@ static PHP_METHOD(swoole_client_coro, sendto) {
+ 
 -    if (socket->get_socket()->is_tcp() && !Address::verify_port(port, true)) {
 +    if (swr_v1_clients_coro_next(5, 2, socket->get_socket()->is_tcp(), 0, 0).action == SWR_CLIENTS_CC_VERIFY_PORT &&
 +        swr_v1_clients_coro_next(5, 3, Address::verify_port(port, true), 0, 0).action == SWR_CLIENTS_CC_PORT_WARNING) {
          php_swoole_fatal_error(E_WARNING, "The port is invalid");
-         RETURN_FALSE;
-     }
-
+@@ -359,3 +391,3 @@ static PHP_METHOD(swoole_client_coro, sendto) {
      auto ret = socket->sendto(std::string(host, host_len), port, data, len);
 -    if (ret < 0) {
 +    if (swr_v1_clients_coro_next(5, 4, 0, ret, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
          php_swoole_socket_set_error_properties(ZEND_THIS, socket);
-         RETURN_FALSE;
-     }
-@@ -371,31 +403,25 @@ static PHP_METHOD(swoole_client_coro, recvfrom) {
-         RETURN_FALSE;
-     }
-
+@@ -374,3 +406,3 @@ static PHP_METHOD(swoole_client_coro, recvfrom) {
+ 
 -    if (length <= 0) {
 +    if (swr_v1_clients_coro_next(6, 0, 0, length, 0).action == SWR_CLIENTS_CC_FALSE) {
          RETURN_FALSE;
-     }
-
+@@ -378,9 +410,3 @@ static PHP_METHOD(swoole_client_coro, recvfrom) {
+ 
 -    SocketImpl *socket = nullptr;
 -    auto client = client_coro_get_client(ZEND_THIS);
 -    if (client->socket == nullptr) {
@@ -806,32 +726,22 @@ index 9ed23f2..cc0c946 100644
 -    }
 +    SocketImpl *socket = clients_coro_datagram_socket(ZEND_THIS);
      if (!socket) {
-         RETURN_FALSE;
-     }
-
-     zend_string *retval = zend_string_alloc(length, false);
+@@ -391,3 +417,3 @@ static PHP_METHOD(swoole_client_coro, recvfrom) {
      ssize_t n_bytes = socket->recvfrom(ZSTR_VAL(retval), length);
 -    if (n_bytes < 0) {
 +    if (swr_v1_clients_coro_next(6, 1, 0, n_bytes, 0).action == SWR_CLIENTS_CC_FREE) {
          zend_string_free(retval);
-         php_swoole_socket_set_error_properties(ZEND_THIS, socket);
-         RETURN_FALSE;
-     } else {
-         zval_ptr_dtor(address);
+@@ -398,3 +424,3 @@ static PHP_METHOD(swoole_client_coro, recvfrom) {
          ZVAL_STRING(address, socket->get_addr());
 -        if (port) {
 +        if (swr_v1_clients_coro_next(6, 2, port != nullptr, 0, 0).action == SWR_CLIENTS_CC_TRUE) {
              zval_ptr_dtor(port);
-             ZVAL_LONG(port, socket->get_port());
-         }
-@@ -415,22 +441,19 @@ static PHP_METHOD(swoole_client_coro, sendfile) {
-     if (zend_parse_parameters(ZEND_NUM_ARGS(), "s|ll", &file, &file_len, &offset, &length) == FAILURE) {
-         RETURN_FALSE;
+@@ -418,3 +444,3 @@ static PHP_METHOD(swoole_client_coro, sendfile) {
      }
 -    if (file_len == 0) {
 +    if (swr_v1_clients_coro_next(4, 0, 0, 0, file_len).action == SWR_CLIENTS_CC_FILE_WARNING) {
          php_swoole_fatal_error(E_WARNING, "file to send is empty");
-         RETURN_FALSE;
+@@ -422,14 +448,11 @@ static PHP_METHOD(swoole_client_coro, sendfile) {
      }
 -
      CLIENT_CORO_GET_SOCKET_SAFE(cli);
@@ -851,11 +761,7 @@ index 9ed23f2..cc0c946 100644
 +    const bool sent = cli->sendfile(file, offset, length);
 +    if (swr_v1_clients_coro_next(4, 2, sent, 0, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
          php_swoole_socket_set_error_properties(ZEND_THIS, cli);
-         RETVAL_FALSE;
-     } else {
-@@ -447,15 +470,14 @@ static PHP_METHOD(swoole_client_coro, recv) {
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-
+@@ -450,11 +473,10 @@ static PHP_METHOD(swoole_client_coro, recv) {
      CLIENT_CORO_GET_SOCKET_SAFE(cli);
 -
      ssize_t retval;
@@ -871,16 +777,12 @@ index 9ed23f2..cc0c946 100644
 -            if (strval == nullptr) {
 +            if (swr_v1_clients_coro_next(3, 2, strval != nullptr, 0, 0).action == SWR_CLIENTS_CC_NOMEM) {
                  retval = -1;
-                 cli->set_err(ENOMEM);
-             } else {
-@@ -466,14 +488,15 @@ static PHP_METHOD(swoole_client_coro, recv) {
-         result = zend_string_alloc(SW_PHP_CLIENT_BUFFER_SIZE - sizeof(zend_string), false);
-         SocketImpl::TimeoutSetter ts(cli, timeout, SW_TIMEOUT_READ);
+@@ -469,3 +491,3 @@ static PHP_METHOD(swoole_client_coro, recv) {
          retval = cli->recv(ZSTR_VAL(result), SW_PHP_CLIENT_BUFFER_SIZE - sizeof(zend_string));
 -        if (retval <= 0) {
 +        if (swr_v1_clients_coro_next(3, 3, 0, retval, 0).action == SWR_CLIENTS_CC_FREE) {
              zend_string_free(result);
-         }
+@@ -473,6 +495,7 @@ static PHP_METHOD(swoole_client_coro, recv) {
      }
 -    if (retval < 0) {
 +    const auto outcome = swr_v1_clients_coro_next(3, 4, 0, retval, 0);
@@ -890,73 +792,45 @@ index 9ed23f2..cc0c946 100644
 -    } else if (retval == 0) {
 +    } else if (outcome.action == SWR_CLIENTS_CC_EMPTY) {
          RETURN_EMPTY_STRING();
-     } else {
-         ZSTR_VAL(result)[retval] = '\0';
-@@ -495,7 +518,7 @@ static PHP_METHOD(swoole_client_coro, peek) {
-
-     buf = static_cast<char *>(emalloc((size_t) buf_len + 1));
+@@ -498,3 +521,3 @@ static PHP_METHOD(swoole_client_coro, peek) {
      auto ret = cli->peek(buf, buf_len);
 -    if (ret < 0) {
 +    if (swr_v1_clients_coro_next(7, 0, 0, ret, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
          php_swoole_socket_set_error_properties(ZEND_THIS, cli);
-         efree(buf);
-         RETURN_FALSE;
-@@ -508,7 +531,8 @@ static PHP_METHOD(swoole_client_coro, peek) {
-
- static PHP_METHOD(swoole_client_coro, isConnected) {
+@@ -511,3 +534,4 @@ static PHP_METHOD(swoole_client_coro, isConnected) {
      SocketImpl *cli = client_coro_get_socket(ZEND_THIS);
 -    if (cli && cli->is_connected()) {
 +    if (swr_v1_clients_coro_next(8, 0, cli != nullptr, 0, 0).action != SWR_CLIENTS_CC_FALSE &&
 +        swr_v1_clients_coro_next(8, 1, cli->is_connected(), 0, 0).action == SWR_CLIENTS_CC_TRUE) {
          RETURN_TRUE;
-     } else {
-         RETURN_FALSE;
-@@ -518,7 +542,7 @@ static PHP_METHOD(swoole_client_coro, isConnected) {
- static PHP_METHOD(swoole_client_coro, getsockname) {
-     CLIENT_CORO_GET_SOCKET_SAFE(cli);
-
+@@ -521,3 +545,3 @@ static PHP_METHOD(swoole_client_coro, getsockname) {
+ 
 -    if (!cli->getsockname()) {
 +    if (swr_v1_clients_coro_next(9, 0, cli->getsockname(), 0, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
          php_swoole_socket_set_error_properties(ZEND_THIS, cli);
-         RETURN_FALSE;
-     }
-@@ -543,7 +567,7 @@ static PHP_METHOD(swoole_client_coro, getpeername) {
-     CLIENT_CORO_GET_SOCKET_SAFE(cli);
-
+@@ -546,3 +570,3 @@ static PHP_METHOD(swoole_client_coro, getpeername) {
      Address sa;
 -    if (!cli->getpeername(&sa)) {
 +    if (swr_v1_clients_coro_next(9, 0, cli->getpeername(&sa), 0, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
          php_swoole_socket_set_error_properties(ZEND_THIS, cli);
-         RETURN_FALSE;
-     }
-@@ -560,7 +584,7 @@ static PHP_METHOD(swoole_client_coro, getpeername) {
- static PHP_METHOD(swoole_client_coro, close) {
-     CLIENT_CORO_GET_SOCKET_SAFE(_socket);
+@@ -563,3 +587,3 @@ static PHP_METHOD(swoole_client_coro, close) {
      zend_update_property_bool(Z_OBJCE_P(ZEND_THIS), SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("connected"), 0);
 -    if (!_socket->close()) {
 +    if (swr_v1_clients_coro_next(10, 0, _socket->close(), 0, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
          php_swoole_socket_set_error_properties(ZEND_THIS, _socket);
-         RETURN_FALSE;
-     }
 diff --git a/ext-src/swoole_http_client_coro.cc b/ext-src/swoole_http_client_coro.cc
-index b50e860..e57fa9c 100644
+index e7f60d217..2869d05d8 100644
 --- a/ext-src/swoole_http_client_coro.cc
 +++ b/ext-src/swoole_http_client_coro.cc
-@@ -18,6 +18,10 @@
-  */
-
+@@ -20,2 +20,6 @@
  #include "php_swoole_cxx.h"
 +#ifndef SWOOLE_RS_CLIENTS
 +#error "Clients overlay requires --enable-swoole-rs-clients"
 +#endif
 +#include "swoole_rs_clients.h"
  #include "php_swoole_http.h"
- #include "php_swoole_websocket.h"
-
-@@ -77,6 +81,19 @@ static constexpr llhttp_settings_t http_parser_settings =
- };
- // clang-format on
-
+@@ -79,2 +83,15 @@ static constexpr llhttp_settings_t http_parser_settings =
+ 
 +static swr_v1_clients_format_span clients_format_span(const char *data, size_t length) {
 +    return {reinterpret_cast<const uint8_t *>(data), length};
 +}
@@ -971,20 +845,12 @@ index b50e860..e57fa9c 100644
 +}
 +
  namespace swoole {
- namespace coroutine {
- namespace http {
-@@ -175,7 +192,7 @@ class Client {
-
-     static void add_content_length(String *buf, size_t length) {
+@@ -177,3 +194,3 @@ class Client {
          char content_length_str[64];
 -        size_t n = sw_snprintf(SW_STRS(content_length_str), "Content-Length: %zu\r\n\r\n", length);
 +        size_t n = clients_format_request(0, {}, {}, {}, {}, length, SW_STRS(content_length_str));
          buf->append(content_length_str, n);
-     }
-
-@@ -364,24 +381,10 @@ static const zend_function_entry swoole_http_client_coro_methods[] =
- // clang-format on
-
+@@ -406,20 +423,6 @@ static const zend_function_entry swoole_http_client_coro_methods[] =
  void php_swoole_http_parse_set_cookies(const char *at, size_t length, zval *zcookies, zval *zset_cookie_headers) {
 -    const char *eof = at + length;
 -    size_t key_len = 0, value_len = 0;
@@ -1008,11 +874,7 @@ index b50e860..e57fa9c 100644
 -    }
 -    value_len = eof - p;
      if (value_len != 0) {
-         ZVAL_STRINGL(&zvalue, p, value_len);
-         Z_STRLEN(zvalue) = php_url_decode(Z_STRVAL(zvalue), value_len);
-@@ -794,56 +797,68 @@ void Client::add_header(const char *key, size_t key_len, const char *str, size_t
- }
-
+@@ -853,52 +856,64 @@ void Client::add_header(const char *key, size_t key_len, const char *str, size_t
  bool Client::connect() {
 -    if (socket) {
 -        return true;
@@ -1122,11 +984,7 @@ index b50e860..e57fa9c 100644
 -    zend_update_property_bool(swoole_http_client_coro_ce, SW_Z8_OBJ_P(zobject), ZEND_STRL("connected"), 1);
 -    return true;
  }
-
- void Client::set_error(int error, const char *msg, int status) const {
-@@ -855,21 +870,30 @@ void Client::set_error(int error, const char *msg, int status) const {
- }
-
+@@ -914,5 +929,16 @@ void Client::set_error(int error, const char *msg, int status) const {
  bool Client::keep_liveness() {
 -    if (!socket || !socket->check_liveness()) {
 -        if (socket) {
@@ -1146,7 +1004,7 @@ index b50e860..e57fa9c 100644
 +        case SWR_CLIENTS_HC_LIVENESS: effect_result = socket->check_liveness(); break;
 +        case SWR_CLIENTS_HC_CLOSE_DEAD:
              socket->check_bound_co(SW_EVENT_RDWR);
-             set_error(socket->errCode, socket->errMsg, HTTP_ESTATUS_SERVER_RESET);
+@@ -920,11 +946,9 @@ bool Client::keep_liveness() {
              close(false);
 +            break;
 +        case SWR_CLIENTS_HC_RETRY_CONNECT: effect_result = connect(); break;
@@ -1163,11 +1021,7 @@ index b50e860..e57fa9c 100644
      }
 -    return true;
  }
-
- bool Client::send_request() {
-@@ -963,11 +987,8 @@ bool Client::send_request() {
-         }
-         size_t proxy_uri_len = path.length() + _host_len + strlen(pre) + 10;
+@@ -1022,7 +1046,4 @@ bool Client::send_request() {
          char *proxy_uri = (char *) emalloc(proxy_uri_len);
 -        if (nullptr == memchr(_host, ':', _host_len)) {
 -            proxy_uri_len = sw_snprintf(proxy_uri, proxy_uri_len, "%s%s:%u%s", pre, _host, port, path.c_str());
@@ -1177,11 +1031,7 @@ index b50e860..e57fa9c 100644
 +        proxy_uri_len = clients_format_request(1, clients_format_span(_host, _host_len),
 +            clients_format_span(path.data(), path.length()), {}, {}, port, proxy_uri, proxy_uri_len);
          buffer->append(proxy_uri, proxy_uri_len);
-         if (!socket->http_proxy->password.empty()) {
-             require_proxy_authentication = true;
-@@ -1118,11 +1139,8 @@ bool Client::send_request() {
-         memcpy(boundary_str, SW_HTTP_CLIENT_BOUNDARY_PREKEY, sizeof(SW_HTTP_CLIENT_BOUNDARY_PREKEY) - 1);
-         swoole_random_string(boundary_str + sizeof(SW_HTTP_CLIENT_BOUNDARY_PREKEY) - 1,
+@@ -1177,7 +1198,4 @@ bool Client::send_request() {
                               sizeof(boundary_str) - sizeof(SW_HTTP_CLIENT_BOUNDARY_PREKEY));
 -        ssize_t n = sw_snprintf(header_buf,
 -                                sizeof(header_buf),
@@ -1191,11 +1041,7 @@ index b50e860..e57fa9c 100644
 +        ssize_t n = clients_format_request(2, clients_format_span(boundary_str, sizeof(boundary_str) - 1),
 +            {}, {}, {}, 0, SW_STRS(header_buf));
          buffer->append(header_buf, n);
-
-         // ============ content-length ============
-@@ -1185,13 +1203,8 @@ bool Client::send_request() {
-                     continue;
-                 }
+@@ -1244,9 +1262,4 @@ bool Client::send_request() {
                  zend::String str_value(zvalue);
 -                n = sw_snprintf(header_buf,
 -                                sizeof(header_buf),
@@ -1207,11 +1053,7 @@ index b50e860..e57fa9c 100644
 +                n = clients_format_request(3, clients_format_span(boundary_str, sizeof(boundary_str) - 1),
 +                    clients_format_span(key, keylen), {}, {}, 0, SW_STRS(header_buf));
                  buffer->append(header_buf, n);
-                 buffer->append(str_value.val(), str_value.len());
-                 buffer->append(ZEND_STRL("\r\n"));
-@@ -1238,17 +1251,10 @@ bool Client::send_request() {
-                 /**
-                  * part header
+@@ -1297,13 +1310,6 @@ bool Client::send_request() {
                   */
 -                n = sw_snprintf(header_buf,
 -                                sizeof(header_buf),
@@ -1229,20 +1071,12 @@ index b50e860..e57fa9c 100644
 +                    clients_format_span(Z_STRVAL_P(zfilename), Z_STRLEN_P(zfilename)),
 +                    clients_format_span(Z_STRVAL_P(ztype), Z_STRLEN_P(ztype)), 0, SW_STRS(header_buf));
                  /**
-                  * from memory
-                  */
-@@ -1280,7 +1286,7 @@ bool Client::send_request() {
-             SW_HASHTABLE_FOREACH_END();
-         }
-
+@@ -1339,3 +1345,3 @@ bool Client::send_request() {
+ 
 -        n = sw_snprintf(header_buf, sizeof(header_buf), "--%.*s--\r\n", (int) (sizeof(boundary_str) - 1), boundary_str);
 +        n = clients_format_request(5, clients_format_span(boundary_str, sizeof(boundary_str) - 1), {}, {}, {}, 0, SW_STRS(header_buf));
          if (socket->send_all(header_buf, n) != n) {
-             goto _send_fail;
-         }
-@@ -1349,28 +1355,36 @@ bool Client::exec(const std::string &_path) {
-     if (use_default_port) {
-         resolve_context_.with_port = true;
+@@ -1408,20 +1414,28 @@ bool Client::exec(const std::string &_path) {
      }
 -    SW_LOOP_N(max_retries + 1) {
 -        if (send_request() == false) {
@@ -1285,24 +1119,19 @@ index b50e860..e57fa9c 100644
      }
 -    return false;
  }
-
+@@ -1429,3 +1443,3 @@ bool Client::exec(const std::string &_path) {
  bool Client::recv_response(double timeout) {
 -    if (!wait_response) {
 +    if (swr_v1_clients_http_response_next(0, wait_response, 0, 0, 0).action == SWR_CLIENTS_HR_FALSE) {
          return false;
-     }
-     ssize_t retval = 0;
-@@ -1378,111 +1392,82 @@ bool Client::recv_response(double timeout) {
-     String *buffer = socket->get_read_buffer();
-     bool header_completed = false;
+@@ -1437,6 +1451,3 @@ bool Client::recv_response(double timeout) {
      off_t header_crlf_offset = 0;
 -
 -    // re-init http response parser
      swoole_llhttp_parser_init(&parser, HTTP_RESPONSE, (void *) this);
 -
      if (timeout == 0) {
-         timeout = response_timeout == 0 ? network::Socket::default_read_timeout : response_timeout;
-     }
+@@ -1445,103 +1456,80 @@ bool Client::recv_response(double timeout) {
      Socket::TimeoutController tc(socket, timeout, SW_TIMEOUT_READ);
 -    bool success = false;
 +    uint32_t stage = 1;
@@ -1412,31 +1241,8 @@ index b50e860..e57fa9c 100644
 +            swoole_error_log(SW_LOG_TRACE, SW_ERROR_HTTP_INVALID_PROTOCOL, "Http header too large");
              socket->set_err(SW_ERROR_HTTP_INVALID_PROTOCOL);
              break;
-+        case SWR_CLIENTS_HR_HEADER_CONTINUE: header_crlf_offset = plan.offset; break;
-+        case SWR_CLIENTS_HR_PROTOCOL_ERROR: socket->set_err(SW_ERROR_HTTP_INVALID_PROTOCOL); break;
-+        case SWR_CLIENTS_HR_UPGRADE_BUFFER:
-+            buffer->length = retval;
-+            buffer->offset = parsed_n;
-+            buffer->reduce(parsed_n);
-+            break;
-+        case SWR_CLIENTS_HR_WEBSOCKET:
-+            socket->open_length_check = true;
-+            socket->protocol.package_length_size = SW_WEBSOCKET_HEADER_LEN;
-+            socket->protocol.package_length_offset = 0;
-+            socket->protocol.package_body_offset = 0;
-+            socket->protocol.get_package_length = websocket::get_package_length;
-+            break;
-+        case SWR_CLIENTS_HR_FAIL:
-+            php_swoole_socket_set_error_properties(zobject, socket);
-+            zend::object_set(zobject, ZEND_STRL("statusCode"), socket->errCode == ETIMEDOUT ? HTTP_ESTATUS_REQUEST_TIMEOUT : HTTP_ESTATUS_SERVER_RESET);
-+            close();
-+            return false;
-+        case SWR_CLIENTS_HR_CLOSE_SUCCESS: close(); return true;
-+        case SWR_CLIENTS_HR_RESET_SUCCESS: reset(); return true;
-+        default: return false;
-         }
-+        stage = plan.stage;
-     }
+-        }
+-    }
 -
 -    if (!success) {
 -        php_swoole_socket_set_error_properties(zobject, socket);
@@ -1446,16 +1252,48 @@ index b50e860..e57fa9c 100644
 -        close();
 -        return false;
 -    }
--    /**
--     * TODO: Sec-WebSocket-Accept check
--     */
 -    if (websocket) {
+-        if (sw_unlikely(!websocket_verify_server_handshake(zobject))) {
+-            set_error(SW_ERROR_WEBSOCKET_HANDSHAKE_FAILED,
+-                      "websocket handshake failed: invalid Upgrade/Connection/Sec-WebSocket-Accept headers",
+-                      HTTP_ESTATUS_SERVER_RESET);
++        case SWR_CLIENTS_HR_HEADER_CONTINUE: header_crlf_offset = plan.offset; break;
++        case SWR_CLIENTS_HR_PROTOCOL_ERROR: socket->set_err(SW_ERROR_HTTP_INVALID_PROTOCOL); break;
++        case SWR_CLIENTS_HR_UPGRADE_BUFFER:
++            buffer->length = retval;
++            buffer->offset = parsed_n;
++            buffer->reduce(parsed_n);
++            break;
++        case SWR_CLIENTS_HR_WEBSOCKET:
++            if (sw_unlikely(!websocket_verify_server_handshake(zobject))) {
++                set_error(SW_ERROR_WEBSOCKET_HANDSHAKE_FAILED,
++                          "websocket handshake failed: invalid Upgrade/Connection/Sec-WebSocket-Accept headers",
++                          HTTP_ESTATUS_SERVER_RESET);
++                close();
++                return false;
++            }
++            socket->open_length_check = true;
++            socket->protocol.package_length_size = SW_WEBSOCKET_HEADER_LEN;
++            socket->protocol.package_length_offset = 0;
++            socket->protocol.package_body_offset = 0;
++            socket->protocol.get_package_length = websocket::get_package_length;
++            break;
++        case SWR_CLIENTS_HR_FAIL:
++            php_swoole_socket_set_error_properties(zobject, socket);
++            zend::object_set(zobject, ZEND_STRL("statusCode"), socket->errCode == ETIMEDOUT ? HTTP_ESTATUS_REQUEST_TIMEOUT : HTTP_ESTATUS_SERVER_RESET);
+             close();
+             return false;
++        case SWR_CLIENTS_HR_CLOSE_SUCCESS: close(); return true;
++        case SWR_CLIENTS_HR_RESET_SUCCESS: reset(); return true;
++        default: return false;
+         }
 -        socket->open_length_check = true;
 -        socket->protocol.package_length_size = SW_WEBSOCKET_HEADER_LEN;
 -        socket->protocol.package_length_offset = 0;
 -        socket->protocol.package_body_offset = 0;
 -        socket->protocol.get_package_length = websocket::get_package_length;
--    }
++        stage = plan.stage;
+     }
 -    // handler keep alive
 -    if (!websocket && (!keep_alive || connection_close)) {
 -        close();
@@ -1465,11 +1303,7 @@ index b50e860..e57fa9c 100644
 -
 -    return true;
  }
-
- void Client::recv_websocket_frame(zval *return_value, double timeout) {
-@@ -1623,23 +1608,34 @@ void Client::socket_dtor() {
-  */
- bool Client::close(const bool should_be_reset) {
+@@ -1696,19 +1684,30 @@ bool Client::close(const bool should_be_reset) {
      SocketImpl *_socket = socket;
 -    if (!_socket) {
 -        return false;
@@ -1516,26 +1350,18 @@ index b50e860..e57fa9c 100644
      }
 -    return true;
  }
-
- Client::~Client() {
 diff --git a/ext-src/swoole_name_resolver.cc b/ext-src/swoole_name_resolver.cc
-index e959b5e..fe217f5 100644
+index e959b5edc..fe217f5cc 100644
 --- a/ext-src/swoole_name_resolver.cc
 +++ b/ext-src/swoole_name_resolver.cc
-@@ -15,6 +15,10 @@
-  */
-
+@@ -17,2 +17,6 @@
  #include "php_swoole_cxx.h"
 +#ifndef SWOOLE_RS_CLIENTS
 +#error "Clients overlay requires --enable-swoole-rs-clients"
 +#endif
 +#include "swoole_rs_clients.h"
-
- BEGIN_EXTERN_C()
- #include "stubs/php_swoole_name_resolver_arginfo.h"
-@@ -175,17 +179,36 @@ bool php_swoole_name_resolver_add(zval *zresolver) {
- }
-
+ 
+@@ -177,13 +181,32 @@ bool php_swoole_name_resolver_add(zval *zresolver) {
  std::string php_swoole_name_resolver_lookup(const std::string &name, NameResolver::Context *ctx, void *_resolver) {
 -    zval *zcluster_object;
 +    zval *zcluster_object = nullptr, *zhost = nullptr, *zport = nullptr;
@@ -1577,22 +1403,18 @@ index e959b5e..fe217f5 100644
 +            break;
 +        case SWR_CLIENTS_RESOLVER_STORE_CLUSTER:
              ctx->private_data = zcluster_object = (zval *) ecalloc(1, sizeof(zval));
-             ctx->dtor = [](NameResolver::Context *ctx) {
-                 zval *_zcluster_object = (zval *) ctx->private_data;
-@@ -195,45 +218,46 @@ std::string php_swoole_name_resolver_lookup(const std::string &name, NameResolve
-             *zcluster_object = retval;
-             ctx->cluster_ = true;
+@@ -197,3 +220,4 @@ std::string php_swoole_name_resolver_lookup(const std::string &name, NameResolve
              ctx->final_ = false;
 -        } else if (Z_TYPE(retval) == IS_STRING) {
 +            break;
 +        case SWR_CLIENTS_RESOLVER_STRING:
              ctx->final_ = true;
-             ctx->cluster_ = false;
+@@ -201,3 +225,3 @@ std::string php_swoole_name_resolver_lookup(const std::string &name, NameResolve
              return {Z_STRVAL(retval), Z_STRLEN(retval)};
 -        } else {
 +        case SWR_CLIENTS_RESOLVER_RESET:
              ctx->final_ = false;
-             ctx->cluster_ = false;
+@@ -205,33 +229,33 @@ std::string php_swoole_name_resolver_lookup(const std::string &name, NameResolve
              return "";
 -        }
 -    } else {
@@ -1652,16 +1474,12 @@ index e959b5e..fe217f5 100644
 -    zval_ptr_dtor(&retval);
 -    return result;
  }
-
- NameResolver::Context *php_swoole_name_resolver_get_context(zval *zobject) {
 diff --git a/src/network/address.cc b/src/network/address.cc
-index 04e0462..23ca259 100644
+index 04e04624d..23ca25959 100644
 --- a/src/network/address.cc
 +++ b/src/network/address.cc
-@@ -16,15 +16,39 @@
-
- #include "swoole_socket.h"
-
+@@ -18,7 +18,7 @@
+ 
 -#include <regex>
 -
 -static bool IN_IS_ADDR_LOOPBACK(const in_addr *a) {
@@ -1672,9 +1490,8 @@ index 04e0462..23ca259 100644
 +#endif
 +#include "swoole_rs_clients.h"
 +#include <locale>
-
- namespace swoole {
- namespace network {
+ 
+@@ -27,2 +27,26 @@ namespace network {
  static thread_local char tmp_address[INET6_ADDRSTRLEN];
 +static int clients_parse_ip(int family, const std::string &host, void *destination) {
 +    if (family != AF_INET && family != AF_INET6) {
@@ -1700,17 +1517,13 @@ index 04e0462..23ca259 100644
 +    return 1;
 +}
 +
-
- const char *Address::addr_str(int family, const void *addr) {
-     if (inet_ntop(family, addr, tmp_address, sizeof(tmp_address))) {
-@@ -34,17 +58,11 @@ const char *Address::addr_str(int family, const void *addr) {
- }
-
+ 
+@@ -36,3 +60,3 @@ const char *Address::addr_str(int family, const void *addr) {
  bool Address::verify_ip(int family, const std::string &str) {
 -    return inet_pton(family, str.c_str(), tmp_address) == 1;
 +    return clients_parse_ip(family, str, tmp_address) == 1;
  }
-
+@@ -40,9 +64,3 @@ bool Address::verify_ip(int family, const std::string &str) {
  bool Address::verify_port(const int port, const bool for_connect) {
 -    if (port < 0 || port > 65535) {
 -        return false;
@@ -1721,29 +1534,17 @@ index 04e0462..23ca259 100644
 -    return true;
 +    return swr_v1_clients_port(port, for_connect);
  }
-
- const char *Address::get_addr() const {
-@@ -96,7 +114,7 @@ bool Address::assign(SocketType _type, const std::string &_host, int _port, bool
-         addr.inet_v4.sin_port = htons(_port);
-         len = sizeof(addr.inet_v4);
-
+@@ -98,3 +116,3 @@ bool Address::assign(SocketType _type, const std::string &_host, int _port, bool
+ 
 -        if (inet_pton(AF_INET, host, &addr.inet_v4.sin_addr.s_addr) != 1) {
 +        if (clients_parse_ip(AF_INET, _host, &addr.inet_v4.sin_addr.s_addr) != 1) {
              if (!_resolve_name) {
-                 swoole_set_last_error(SW_ERROR_BAD_HOST_ADDR);
-                 return false;
-@@ -110,7 +128,7 @@ bool Address::assign(SocketType _type, const std::string &_host, int _port, bool
-         addr.inet_v6.sin6_family = AF_INET6;
-         addr.inet_v6.sin6_port = htons(_port);
+@@ -112,3 +130,3 @@ bool Address::assign(SocketType _type, const std::string &_host, int _port, bool
          len = sizeof(addr.inet_v6);
 -        if (inet_pton(AF_INET6, host, addr.inet_v6.sin6_addr.s6_addr) != 1) {
 +        if (clients_parse_ip(AF_INET6, _host, addr.inet_v6.sin6_addr.s6_addr) != 1) {
              if (!_resolve_name) {
-                 swoole_set_last_error(SW_ERROR_BAD_HOST_ADDR);
-                 return false;
-@@ -151,30 +169,31 @@ const char *Address::type_str(SocketType type) {
- }
-
+@@ -153,26 +171,27 @@ const char *Address::type_str(SocketType type) {
  bool Address::assign(const std::string &url) {
 -    static const std::regex unix_pattern(R"(^(unix|udg)://(/[^?#]+))");
 -    static const std::regex inet4_pattern(R"(^(tcp|udp)://([^:\[]+):(\d+)$)");
@@ -1795,11 +1596,7 @@ index 04e0462..23ca259 100644
 +            return assign(type, host, port);
 +        }
      }
-     swoole_error_log(SW_LOG_NOTICE, SW_ERROR_BAD_HOST_ADDR, "Invalid address '%s'", url.c_str());
-     return false;
-@@ -182,10 +201,10 @@ bool Address::assign(const std::string &url) {
-
- bool Address::is_loopback_addr() const {
+@@ -184,6 +203,6 @@ bool Address::is_loopback_addr() const {
      if (Socket::is_inet4(type)) {
 -        return IN_IS_ADDR_LOOPBACK(&addr.inet_v4.sin_addr);
 +        return swr_v1_clients_loopback(4, reinterpret_cast<const uint8_t *>(&addr.inet_v4.sin_addr));
@@ -1808,26 +1605,18 @@ index 04e0462..23ca259 100644
 -        return IN6_IS_ADDR_LOOPBACK(&addr.inet_v6.sin6_addr);
 +        return swr_v1_clients_loopback(6, addr.inet_v6.sin6_addr.s6_addr);
      }
-     return false;
- }
 diff --git a/src/network/client.cc b/src/network/client.cc
-index 56678c7..54b4c87 100644
+index 56678c753..54b4c87e7 100644
 --- a/src/network/client.cc
 +++ b/src/network/client.cc
-@@ -23,6 +23,10 @@
- #include "swoole_async.h"
-
+@@ -25,2 +25,6 @@
  #include <cassert>
 +#ifndef SWOOLE_RS_CLIENTS
 +#error "Clients overlay requires --enable-swoole-rs-clients"
 +#endif
 +#include "swoole_rs_clients.h"
-
- namespace swoole {
- namespace network {
-@@ -65,42 +69,50 @@ void Client::init_reactor(Reactor *reactor) {
- }
-
+ 
+@@ -67,38 +71,46 @@ void Client::init_reactor(Reactor *reactor) {
  Client::Client(SocketType _type, bool _async) : async(_async) {
 -    fd_type = Socket::is_stream(_type) ? SW_FD_STREAM_CLIENT : SW_FD_DGRAM_CLIENT;
 -    socket = make_socket(_type, fd_type, (async ? SW_SOCK_NONBLOCK : 0) | SW_SOCK_CLOEXEC);
@@ -1909,17 +1698,12 @@ index 56678c7..54b4c87 100644
 -    protocol.package_max_length = SW_INPUT_BUFFER_SIZE;
 -    protocol.onPackage = Client_onPackage;
  }
-
- int Client::bind(const std::string &addr, int port) const {
-@@ -186,35 +198,32 @@ int Client::get_peer_name(Address *addr) const {
- }
-
+@@ -188,2 +200,4 @@ int Client::get_peer_name(Address *addr) const {
  int Client::shutdown(int _how) {
 +    const uint32_t request = _how == SHUT_RD ? 0 : (_how == SHUT_WR ? 1 : (_how == SHUT_RDWR ? 2 : 3));
 +    // Do not observe any shutdown flag until the original live guard passed.
      if (!socket || closed) {
-         return SW_ERR;
-     }
+@@ -192,24 +206,5 @@ int Client::shutdown(int _how) {
      swoole_trace_log(SW_TRACE_CLIENT, "how=%d, fd=%d", _how, socket->fd);
 -    if (_how == SHUT_RD) {
 -        if (shutdown_read || shutdown_rw || ::shutdown(socket->fd, SHUT_RD)) {
@@ -1947,7 +1731,7 @@ index 56678c7..54b4c87 100644
 +        (shutdown_write ? 2u : 0u) | (shutdown_rw ? 4u : 0u), request);
 +    if (action == 4) {
          swoole_set_last_error(EINVAL);
-         return SW_ERR;
+@@ -217,2 +212,16 @@ int Client::shutdown(int _how) {
      }
 +    if (action == 0) {
 +        return SW_ERR;
@@ -1964,11 +1748,7 @@ index 56678c7..54b4c87 100644
 +    }
 +    return SW_OK;
  }
-
- bool Client::socks5_handshake(const char *recv_data, size_t length) {
-@@ -334,25 +343,26 @@ static int Client_inet_addr(Client *cli, const char *host, int port) {
- }
-
+@@ -336,21 +345,22 @@ static int Client_inet_addr(Client *cli, const char *host, int port) {
  Client::~Client() {
 -    if (!socket) {
 -        return;
@@ -2010,11 +1790,7 @@ index 56678c7..54b4c87 100644
 +        }
 +        stage = plan.stage;
      }
- }
-
-@@ -361,117 +371,107 @@ Client::~Client() {
-  * connection. 2 Received readable or writable, close event, and executed the close function at the underlying level
-  */
+@@ -363,46 +373,39 @@ Client::~Client() {
  int Client::close() {
 -    if (socket == nullptr || closed) {
 -        return SW_ERR;
@@ -2097,7 +1873,7 @@ index 56678c7..54b4c87 100644
 -
 -    return ::close(fd);
  }
-
+@@ -410,66 +413,63 @@ int Client::close() {
  static int Client_tcp_connect_sync(Client *cli, const char *host, int port, double timeout, int nonblock) {
 -    cli->set_timeout(timeout);
 -    if (timeout > 0) {
@@ -2221,11 +1997,7 @@ index 56678c7..54b4c87 100644
 -
 -    return ret;
  }
-
- static int Client_dns_lookup(Client *cli) {
-@@ -486,82 +486,73 @@ static int Client_dns_lookup(Client *cli) {
- }
-
+@@ -488,60 +488,44 @@ static int Client_dns_lookup(Client *cli) {
  static int Client_tcp_connect_async(Client *cli, const char *host, int port, double timeout, int nonblock) {
 -    int ret;
 -
@@ -2326,7 +2098,7 @@ index 56678c7..54b4c87 100644
 +        stage = plan.stage;
 +    }
  }
-
+@@ -549,17 +533,24 @@ static int Client_tcp_connect_async(Client *cli, const char *host, int port, dou
  static ssize_t Client_tcp_send_async(Client *cli, const char *data, size_t length, int flags) {
 +    uint32_t stage = 100;
      ssize_t n = length;
@@ -2363,11 +2135,7 @@ index 56678c7..54b4c87 100644
 -    }
 -    return n;
  }
-
- static ssize_t Client_tcp_send_sync(Client *cli, const char *data, size_t length, int flags) {
-@@ -601,103 +592,71 @@ static ssize_t Client_tcp_recv_sync(Client *cli, char *data, size_t len, int fla
- }
-
+@@ -603,89 +594,61 @@ static ssize_t Client_tcp_recv_sync(Client *cli, char *data, size_t len, int fla
  static int Client_udp_connect(Client *cli, const char *host, int port, double timeout, int udp_connect) {
 -    cli->set_timeout(timeout);
 -    if (!cli->async && timeout > 0) {
@@ -2512,8 +2280,7 @@ index 56678c7..54b4c87 100644
 -        return SW_ERR;
 +        stage = plan.stage;
      }
- }
-
+@@ -694,8 +657,4 @@ static int Client_udp_connect(Client *cli, const char *host, int port, double ti
  static ssize_t Client_udp_send(Client *cli, const char *data, size_t len, int flags) {
 -    ssize_t n = cli->socket->sendto(cli->server_addr, data, len, 0);
 -    if (n < 0 || n < (ssize_t) len) {
@@ -2524,11 +2291,7 @@ index 56678c7..54b4c87 100644
 +    const ssize_t result = cli->socket->sendto(cli->server_addr, data, len, 0);
 +    return swr_v1_clients_datagram_send(result, static_cast<ssize_t>(len));
  }
-
- static ssize_t Client_udp_recv(Client *cli, char *data, size_t length, int flags) {
-@@ -715,116 +674,82 @@ static int Client_onPackage(const Protocol *proto, Socket *conn, const RecvData
- }
-
+@@ -717,112 +676,78 @@ static int Client_onPackage(const Protocol *proto, Socket *conn, const RecvData
  static int Client_onStreamRead(Reactor *reactor, Event *event) {
 -    ssize_t n;
      auto *cli = (Client *) event->socket->object;
@@ -2710,11 +2473,7 @@ index 56678c7..54b4c87 100644
      }
 -    return SW_OK;
  }
-
- static int Client_onDgramRead(Reactor *reactor, Event *event) {
-@@ -902,81 +827,78 @@ static void Client_onResolveCompleted(AsyncEvent *event) {
-
- static int Client_onWrite(Reactor *reactor, Event *event) {
+@@ -904,77 +829,74 @@ static int Client_onWrite(Reactor *reactor, Event *event) {
      auto *cli = (Client *) event->socket->object;
 -    Socket *_socket = cli->socket;
 -    int ret;
@@ -2855,15 +2614,11 @@ index 56678c7..54b4c87 100644
 -
 -    return SW_OK;
  }
-
- }  // namespace network
 diff --git a/src/network/dns.cc b/src/network/dns.cc
-index 6f2945e..6682166 100644
+index 9d40a7cb0..15b8f7cfa 100644
 --- a/src/network/dns.cc
 +++ b/src/network/dns.cc
-@@ -20,11 +20,16 @@
- #include "swoole_util.h"
-
+@@ -22,7 +22,12 @@
  #include <string>
 -#include <iostream>
  #include <vector>
@@ -2877,12 +2632,8 @@ index 6f2945e..6682166 100644
 +#include <locale>
 +#include <limits>
 +#include <algorithm>
-
- #define SW_PATH_HOSTS "/etc/hosts"
-
-@@ -37,45 +42,38 @@ using swoole::coroutine::System;
- using swoole::network::Address;
-
+ 
+@@ -39,7 +44,4 @@ using swoole::network::Address;
  SW_API bool swoole_load_resolv_conf() {
 -    FILE *fp;
 -    char line[100];
@@ -2892,7 +2643,7 @@ index 6f2945e..6682166 100644
 +    FILE *fp = fopen(SwooleG.dns_resolvconf_path.c_str(), "rt");
 +    if (!fp) {
          swoole_sys_warning("fopen(%s) failed", SwooleG.dns_resolvconf_path.c_str());
-         return false;
+@@ -47,16 +49,17 @@ SW_API bool swoole_load_resolv_conf() {
      }
 -
 -    while (fgets(line, 100, fp)) {
@@ -2921,8 +2672,7 @@ index 6f2945e..6682166 100644
 +    if (server[0] == 0) return false;
 +    swoole_set_dns_server(server);
      return true;
- }
-
+@@ -65,15 +68,10 @@ SW_API bool swoole_load_resolv_conf() {
  SW_API void swoole_set_dns_server(const std::string &server) {
 -    char *_port;
 -    int dns_server_port = SW_DNS_SERVER_PORT;
@@ -2946,20 +2696,12 @@ index 6f2945e..6682166 100644
 +    SwooleG.dns_server.host.assign(server.data(), plan.host_length);
 +    SwooleG.dns_server.port = port;
  }
-
- SW_API swoole::DnsServer swoole_get_dns_server() {
-@@ -179,7 +177,7 @@ struct RR_FLAGS {
- static uint16_t dns_request_id = 1;
-
+@@ -181,3 +179,3 @@ static uint16_t dns_request_id = 1;
  static int domain_encode(const char *src, int n, char *dest);
 -static void domain_decode(char *str);
 +static void domain_decode(char *str, size_t capacity);
  static std::string parse_ip_address(void *vaddr, int type);
-
- std::string get_ip_by_hosts(const std::string &search_domain) {
-@@ -189,68 +187,35 @@ std::string get_ip_by_hosts(const std::string &search_domain) {
-     }
-
+@@ -191,41 +189,20 @@ std::string get_ip_by_hosts(const std::string &search_domain) {
      std::string line;
 -    std::string domain;
 -    std::string txtaddr;
@@ -3014,8 +2756,7 @@ index 6f2945e..6682166 100644
      }
 -
      return "";
- }
-
+@@ -234,21 +211,9 @@ std::string get_ip_by_hosts(const std::string &search_domain) {
  static std::string parse_ip_address(void *vaddr, int type) {
 -    auto addr = static_cast<unsigned char *>(vaddr);
 -    std::string ip_addr;
@@ -3042,52 +2783,31 @@ index 6f2945e..6682166 100644
 +    const auto plan = swr_v1_clients_ip_text(version, static_cast<const uint8_t *>(vaddr));
 +    return std::string(reinterpret_cast<const char *>(plan.bytes), plan.length);
  }
-
- std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int family, double timeout) {
-@@ -297,6 +262,8 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
-     qflags->qtype = htons(family == AF_INET6 ? SW_DNS_AAAA_RECORD : SW_DNS_A_RECORD);
-     qflags->qclass = htons(0x0001);
+@@ -299,2 +264,4 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
      steps += sizeof(Q_FLAGS);
 +    const size_t query_initialized = std::min(sizeof(packet), std::max(static_cast<size_t>(steps),
 +        sizeof(RecordHeader) + static_cast<size_t>(len) + 3));
-
-     Socket _sock(SW_SOCK_UDP);
-     if (timeout > 0) {
-@@ -330,11 +297,12 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
-     }
-
+ 
+@@ -332,2 +299,3 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
      packet[ret] = 0;
 +    const size_t initialized_size = std::max(query_initialized, static_cast<size_t>(ret) + 1);
      header = reinterpret_cast<RecordHeader *>(packet);
-     steps = sizeof(RecordHeader);
-
+@@ -336,3 +304,3 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
      _domain_name = &packet[steps];
 -    domain_decode(_domain_name);
 +    domain_decode(_domain_name, initialized_size > static_cast<size_t>(steps) ? initialized_size - steps : 0);
      steps = steps + (strlen(_domain_name) + 2);
-
-     qflags = reinterpret_cast<Q_FLAGS *>(&packet[steps]);
-@@ -363,7 +331,7 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
-         }
-         name[i][j] = '\0';
-
+@@ -365,3 +333,3 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
+ 
 -        domain_decode(name[i]);
 +        domain_decode(name[i], std::min(sizeof(name[i]), static_cast<size_t>(j) + 1));
          steps = steps + 2;
-
-         /* Parsing the RR flags of the RR */
-@@ -391,7 +359,7 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
-                 }
-             }
+@@ -393,3 +361,3 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
              rdata[i][j] = '\0';
 -            domain_decode((char *) rdata[i]);
 +            domain_decode((char *) rdata[i], sizeof(rdata[i]));
              type[i] = ntohs(rrflags->type);
-         }
-         steps = steps + ntohs(rrflags->rdlength);
-@@ -420,44 +388,26 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
-  * (i.e. www.apple.com into 3www5apple3com0)
-  */
+@@ -422,23 +390,10 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
  static int domain_encode(const char *src, int n, char *dest) {
 -    if (src[n] == '.') {
 +    // This helper's sole destination is packet + sizeof(RecordHeader).
@@ -3117,10 +2837,7 @@ index 6f2945e..6682166 100644
 +    return swr_v1_clients_domain_encode(reinterpret_cast<const uint8_t *>(src), n,
 +        reinterpret_cast<uint8_t *>(dest), capacity);
  }
-
- /**
-  * This function converts a DNS-based hostname into dot-based format
-  * (i.e. 3www5apple3com0 into www.apple.com)
+@@ -449,13 +404,8 @@ static int domain_encode(const char *src, int n, char *dest) {
   */
 -static void domain_decode(char *str) {
 -    size_t i;
@@ -3140,5 +2857,3 @@ index 6f2945e..6682166 100644
 +    swr_v1_clients_domain_decode(reinterpret_cast<uint8_t *>(str), capacity,
 +        std::numeric_limits<char>::is_signed);
  }
-
- #ifdef SW_USE_CARES

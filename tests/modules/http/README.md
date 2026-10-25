@@ -17,7 +17,7 @@ cargo build --locked -p swoole-rs-ffi --no-default-features --features http --re
 
 ## Native differential gates
 
-Each gate extracts the pinned (v6.2.2, `8e8c49915ca5`) and patched native method
+Each gate extracts the pinned (v6.2.4, `c7e514509451`) and patched native method
 bodies into separate namespaces, applies the owned overlay through
 `apply_patch_verified` in a temporary tree, compiles the whole selected native
 translation unit as C++14, and compares outcomes, effect traces, errno and

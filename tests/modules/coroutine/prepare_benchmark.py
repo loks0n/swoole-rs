@@ -37,7 +37,7 @@ for engine in ['upstream', 'rust']:
         subprocess.run(['codesign', '--force', '--sign', '-', str(frozen)], check=True, capture_output=True)
     else:
         # Match the original SONAME without mutating ELF contents.
-        (dest / 'libswoole.so.6.2.2').symlink_to(frozen.name)
+        (dest / 'libswoole.so.6.2.4').symlink_to(frozen.name)
     binary = dest / 'benchmark'
     includes = shlex.split(next(line.split('=', 1)[1] for line in flags.splitlines() if line.startswith('CXX_INCLUDES =')))
     native_link = shlex.split((core / 'build/CMakeFiles/core-tests.dir/link.txt').read_text())

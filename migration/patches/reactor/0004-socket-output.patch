@@ -1,4 +1,5 @@
 diff --git a/src/network/socket.cc b/src/network/socket.cc
+index ed3945714..eeef82ed0 100644
 --- a/src/network/socket.cc
 +++ b/src/network/socket.cc
 @@ -21,2 +21,7 @@
@@ -9,7 +10,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +#include "swoole_rs_reactor.h"
 +#include <limits>
  
-@@ -35,2 +40,10 @@
+@@ -35,2 +40,10 @@ uint32_t Socket::default_buffer_size = SW_SOCKET_BUFFER_SIZE;
  IOVector::IOVector(const iovec *_iov, int _iovcnt) {
 +#if defined(SWOOLE_RS_REACTOR_IOV_OWNED) && SWOOLE_RS_REACTOR_IOV_OWNED
 +    auto allocation = swr_v1_reactor_iov_owned_new(_iov, _iovcnt);
@@ -20,11 +21,11 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +    count = remain_count = _iovcnt;
 +#else
      iov = new iovec[_iovcnt + _iovcnt];
-@@ -41,2 +54,3 @@
+@@ -41,2 +54,3 @@ IOVector::IOVector(const iovec *_iov, int _iovcnt) {
      memcpy(iov_iterator, _iov, sizeof(*_iov) * _iovcnt);
 +#endif
  }
-@@ -44,3 +58,7 @@
+@@ -44,3 +58,7 @@ IOVector::IOVector(const iovec *_iov, int _iovcnt) {
  IOVector::~IOVector() {
 +#if defined(SWOOLE_RS_REACTOR_IOV_OWNED) && SWOOLE_RS_REACTOR_IOV_OWNED
 +    swr_v1_reactor_iov_owned_free(iov);
@@ -32,7 +33,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
      delete[] iov;
 +#endif
  }
-@@ -48,39 +66,27 @@
+@@ -48,39 +66,27 @@ IOVector::~IOVector() {
  void IOVector::update_iterator(ssize_t _n) {
 -    size_t total_bytes = 0;
 -    size_t _offset_bytes = 0;
@@ -61,7 +62,8 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        iov_iterator->iov_base = static_cast<char *>(iov_iterator->iov_base) + reply.consumed;
 +        iov_iterator->iov_len = iov_iterator->iov_len - reply.consumed;
          return;
--    }
++    default: std::abort();
+     }
 -
 -    SW_LOOP_N(remain_count) {
 -        total_bytes += iov_iterator[i].iov_len;
@@ -92,11 +94,9 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -
 -    // represents the length of _n greater than total_bytes
 -    abort();
-+    default: std::abort();
-+    }
 +#endif
  }
-@@ -89,31 +95,24 @@
+@@ -89,31 +95,24 @@ static bool check_sendfile_parameters(const File *file, off_t begin, size_t leng
      auto filename = file->get_path().c_str();
 -    if (!file->ready()) {
 -        swoole_sys_warning("open('%s') failed", filename);
@@ -124,9 +124,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -        swoole_error_log(
 -            SW_LOG_WARNING, SW_ERROR_INVALID_PARAMS, "length[%ld] or offset[%ld] is invalid", length, (long) begin);
 -        return false;
--    }
--
--    return true;
 +    swr_v1_reactor_output_workflow_state state{};
 +    int64_t observed = 0;
 +    for (;;) {
@@ -147,21 +144,21 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 25: observed = *end; break;
 +        default: std::abort();
 +        }
-+    }
+     }
+-
+-    return true;
  }
-@@ -121,4 +120,4 @@
+@@ -121,4 +120,4 @@ static bool check_sendfile_parameters(const File *file, off_t begin, size_t leng
  static size_t get_sendfile_chunk_size(off_t begin, off_t end) {
 -    size_t real_length = end - begin;
 -    return real_length > SW_SENDFILE_CHUNK_SIZE ? SW_SENDFILE_CHUNK_SIZE : real_length;
 +    static_assert(std::numeric_limits<off_t>::is_signed && sizeof(off_t) <= sizeof(int64_t), "off_t scalar domain");
 +    return swr_v1_reactor_output_chunk(begin, end, SW_SENDFILE_CHUNK_SIZE);
  }
-@@ -126,6 +125,14 @@
+@@ -126,6 +125,14 @@ static size_t get_sendfile_chunk_size(off_t begin, off_t end) {
  int Socket::what_event_want(int default_event) const {
 -    if (ssl && (ssl_want_write || ssl_want_read)) {
 -        return ssl_want_write ? SW_EVENT_WRITE : SW_EVENT_READ;
--    }
--    return default_event;
 +    static_assert(SW_EVENT_READ == 512 && SW_EVENT_WRITE == 1024, "Native event constants");
 +    uint32_t phase = 0, observed = ssl != nullptr;
 +    for (;;) {
@@ -173,9 +170,10 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 2: observed = ssl_want_read; break;
 +        default: std::abort();
 +        }
-+    }
+     }
+-    return default_event;
  }
-@@ -144,53 +151,52 @@
+@@ -144,53 +151,52 @@ int Socket::what_event_want(int default_event) const {
  bool Socket::wait_for(const std::function<ReturnCode()> &fn, int event, int timeout_msec) {
 -    double began_at = 0;
 -    if (timeout_msec > 0) {
@@ -214,20 +212,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -        auto rv = wait_event(timeout_msec, what_event_want(event));
 -        if (rv == SW_ERR && ((errno == EINTR && dont_restart) || errno != EINTR)) {
 -            return false;
--        }
--
--        if (timeout_msec > 0) {
--            timeout_msec -= sec2msec(microtime() - began_at);
--            swoole_trace_log(SW_TRACE_CLIENT, "timeout_ms=%d", timeout_msec);
--            if (timeout_msec <= 0) {
--                swoole_set_last_error(ETIMEDOUT);
--                errno = ETIMEDOUT;
--                return false;
--            }
--        }
--    }
--
--    return false;
 +    static_assert(SW_READY == 5 && SW_CONTINUE == 1 && SW_ERROR == 4 && SW_ERR == -1, "Native return constants");
 +    swr_v1_reactor_blocking_wait_state state{0, timeout_msec, 0};
 +    int observed = 0;
@@ -251,10 +235,18 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 14: swoole_trace_log(SW_TRACE_CLIENT, "timeout_ms=%d", state.timeout_msec); break;
 +        case 15: swoole_set_last_error(ETIMEDOUT); errno = ETIMEDOUT; return false;
 +        default: std::abort();
-+        }
+         }
 +    }
 +}
-+
+ 
+-        if (timeout_msec > 0) {
+-            timeout_msec -= sec2msec(microtime() - began_at);
+-            swoole_trace_log(SW_TRACE_CLIENT, "timeout_ms=%d", timeout_msec);
+-            if (timeout_msec <= 0) {
+-                swoole_set_last_error(ETIMEDOUT);
+-                errno = ETIMEDOUT;
+-                return false;
+-            }
 +// Native effects only; the synchronous callback remains outside every Rust
 +// frame. File offset facts are requested only after its actual send returns.
 +template<class Effect>
@@ -276,10 +268,12 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 5: bytes = reply.value; break;
 +        case 6: begin_fact = *offset; end_fact = end; break;
 +        default: std::abort();
-+        }
-+    }
+         }
+     }
+-
+-    return false;
  }
-@@ -200,27 +206,25 @@
+@@ -200,27 +206,25 @@ int Socket::sendfile_sync(const char *filename, off_t offset, size_t length) {
      File file(filename, O_RDONLY);
 -
 -    if (!check_sendfile_parameters(&file, offset, length, &end)) {
@@ -303,9 +297,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -
 -    if (corked) {
 -        uncork();
--    }
--
--    return rv ? SW_OK : SW_ERR;
 +    swr_v1_reactor_blocking_file_state state{0, 0};
 +    int observed = 0;
 +    int64_t begin_fact = 0, end_fact = 0;
@@ -328,9 +319,11 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 5: begin_fact = offset; end_fact = end; break;
 +        default: std::abort();
 +        }
-+    }
+     }
+-
+-    return rv ? SW_OK : SW_ERR;
  }
-@@ -229,14 +233,8 @@
+@@ -229,14 +233,8 @@ ssize_t Socket::writev_sync(const struct iovec *iov, size_t iovcnt) {
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -351,7 +344,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +    }, SW_EVENT_WRITE, sec2msec(write_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -244,40 +242,45 @@
+@@ -244,15 +242,17 @@ ssize_t Socket::writev_sync(const struct iovec *iov, size_t iovcnt) {
  swReturnCode Socket::connect_async(const Address &sa) {
 -    set_nonblock();
 -    while (true) {
@@ -380,17 +373,31 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
      }
 -    return SW_READY;
  }
--
-+
+@@ -260,24 +260,27 @@ swReturnCode Socket::connect_async(const Address &sa) {
  int Socket::connect_sync(const Address &sa) {
 -    auto rc = connect_async(sa);
 -    if (rc != SW_WAIT) {
 -        return rc == SW_READY ? SW_OK : SW_ERR;
+-    }
+-    double timeout = connect_timeout;
+-    if (wait_event(timeout > 0 ? sec2msec(timeout) : timeout, SW_EVENT_WRITE) < 0) {
+-        swoole_set_last_error(ETIMEDOUT);
+-        return SW_ERR;
+-    }
 +    static_assert(SW_OK == 0 && SW_ERR == -1, "Native connect result codes");
 +    uint32_t phase = 0;
 +    int observed = 0, timeout_msec = 0;
 +    double timeout = 0;
-+    int err;
+     int err;
+-    socklen_t len = sizeof(len);
+-    int ret = get_option(SOL_SOCKET, SO_ERROR, &err, &len);
+-    if (ret < 0) {
+-        swoole_set_last_error(errno);
+-        return SW_ERR;
+-    }
+-    if (err != 0) {
+-        swoole_set_last_error(err);
+-        return SW_ERR;
 +    socklen_t len;
 +    for (;;) {
 +        auto reply = swr_v1_reactor_socket_connect(1, phase, observed, timeout);
@@ -411,26 +418,10 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        default: std::abort();
 +        }
      }
--    double timeout = connect_timeout;
--    if (wait_event(timeout > 0 ? sec2msec(timeout) : timeout, SW_EVENT_WRITE) < 0) {
--        swoole_set_last_error(ETIMEDOUT);
--        return SW_ERR;
--    }
--    int err;
--    socklen_t len = sizeof(len);
--    int ret = get_option(SOL_SOCKET, SO_ERROR, &err, &len);
--    if (ret < 0) {
--        swoole_set_last_error(errno);
--        return SW_ERR;
--    }
--    if (err != 0) {
--        swoole_set_last_error(err);
--        return SW_ERR;
--    }
 -    set_block();
 -    return SW_OK;
  }
-@@ -289,4 +292,13 @@
+@@ -289,4 +292,13 @@ void Socket::clean() const {
      char buf[2048];
 -    while (::recv(fd, buf, sizeof(buf), MSG_DONTWAIT) > 0) {
 -    };
@@ -446,7 +437,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        }
 +    }
  }
-@@ -300,30 +312,20 @@
+@@ -300,30 +312,20 @@ int Socket::wait_event(int timeout_ms, int _events) const {
      event.events = translate_events_to_poll(_events);
 -
 -    if (timeout_ms < 0) {
@@ -471,11 +462,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -            }
 -            swoole_signal_dispatch();
 -            continue;
--        }
--        return SW_OK;
--    }
--
--    return SW_OK;
 +    uint32_t phase = 0;
 +    int result = 0, observed = 0;
 +    for (;;) {
@@ -492,10 +478,13 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 7: observed = dont_restart; break;
 +        case 8: swoole_signal_dispatch(); break;
 +        default: std::abort();
-+        }
-+    }
+         }
+-        return SW_OK;
+     }
+-
+-    return SW_OK;
  }
-@@ -332,14 +334,8 @@
+@@ -332,14 +334,8 @@ ssize_t Socket::send_sync(const void *_data, size_t _len, int flags) {
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -516,7 +505,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +    }, SW_EVENT_WRITE, sec2msec(write_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -348,23 +344,8 @@
+@@ -348,23 +344,8 @@ ssize_t Socket::recv_sync(void *_data, size_t _len, int flags) {
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -546,7 +535,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +    }, SW_EVENT_READ, sec2msec(read_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -400,14 +381,8 @@
+@@ -400,14 +381,8 @@ ssize_t Socket::sendto_sync(const Address &sa, const void *_buf, size_t _n, int
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -567,17 +556,13 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +    }, SW_EVENT_WRITE, sec2msec(write_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -415,11 +390,18 @@
+@@ -415,11 +390,18 @@ ssize_t Socket::sendto_sync(const Address &sa, const void *_buf, size_t _n, int
  ssize_t Socket::recvfrom(char *buf, size_t len, int flags, sockaddr *addr, socklen_t *addr_len) const {
 -    ssize_t n = 0;
 -    SW_LOOP_N(SW_SOCKET_RETRY_COUNT) {
 -        n = ::recvfrom(fd, buf, len, flags, addr, addr_len);
 -        if (n < 0 && errno == EINTR) {
 -            continue;
--        }
--        break;
--    }
--    return n;
 +    uint32_t phase = 0;
 +    ssize_t result = 0, attempt = 0;
 +    int observed = 0;
@@ -592,10 +577,12 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +            break;
 +        case 4: observed = errno; break;
 +        default: std::abort();
-+        }
-+    }
+         }
+-        break;
+     }
+-    return n;
  }
-@@ -432,14 +414,8 @@
+@@ -432,14 +414,8 @@ ssize_t Socket::recvfrom_sync(char *buf, size_t len, int flags, sockaddr *addr,
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -616,7 +603,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +    }, SW_EVENT_READ, sec2msec(read_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -498,11 +474,20 @@
+@@ -498,11 +474,20 @@ int Socket::set_tcp_nopush(int nopush) {
  #ifdef TCP_CORK
 -    if (set_option(IPPROTO_TCP, TCP_CORK, nopush) == SW_ERR) {
 -        return -1;
@@ -627,7 +614,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +    const uint32_t available = 1;
  #else
 -    return -1;
--#endif
 +    const uint32_t available = 0;
 +#endif
 +    uint32_t phase = 0;
@@ -639,13 +625,13 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 0: return static_cast<int>(reply.value);
 +#ifdef TCP_CORK
 +        case 1: observed = set_option(IPPROTO_TCP, TCP_CORK, nopush); break;
-+#endif
+ #endif
 +        case 2: tcp_nopush = nopush; break;
 +        default: std::abort();
 +        }
 +    }
  }
-@@ -534,3 +519,14 @@
+@@ -534,3 +519,14 @@ int Socket::listen(int backlog) {
  bool Socket::set_buffer_size(uint32_t _buffer_size) const {
 -    return set_send_buffer_size(_buffer_size) && set_recv_buffer_size(_buffer_size);
 +    uint32_t phase = 0;
@@ -661,7 +647,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        }
 +    }
  }
-@@ -538,3 +534,13 @@
+@@ -538,3 +534,13 @@ bool Socket::set_buffer_size(uint32_t _buffer_size) const {
  bool Socket::set_recv_buffer_size(uint32_t _buffer_size) const {
 -    return set_option(SOL_SOCKET, SO_RCVBUF, _buffer_size) == 0;
 +    uint32_t phase = 0;
@@ -676,7 +662,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        }
 +    }
  }
-@@ -542,3 +548,13 @@
+@@ -542,3 +548,13 @@ bool Socket::set_recv_buffer_size(uint32_t _buffer_size) const {
  bool Socket::set_send_buffer_size(uint32_t _buffer_size) const {
 -    return set_option(SOL_SOCKET, SO_SNDBUF, _buffer_size) == 0;
 +    uint32_t phase = 0;
@@ -691,7 +677,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        }
 +    }
  }
-@@ -547,5 +563,16 @@
+@@ -547,5 +563,16 @@ bool Socket::check_liveness() {
      char buf;
 -    errno = 0;
 -    ssize_t retval = peek(&buf, sizeof(buf), MSG_DONTWAIT);
@@ -711,7 +697,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        }
 +    }
  }
-@@ -553,7 +580,18 @@
+@@ -553,7 +580,18 @@ bool Socket::check_liveness() {
  bool Socket::set_tcp_nodelay(int nodelay) {
 -    if (set_option(IPPROTO_TCP, TCP_NODELAY, nodelay) == SW_ERR) {
 -        return false;
@@ -735,7 +721,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        default: std::abort();
 +        }
      }
-@@ -562,16 +600,23 @@
+@@ -562,16 +600,23 @@ bool Socket::set_tcp_nodelay(int nodelay) {
  bool Socket::cork() {
 -    if (tcp_nopush) {
 -        return false;
@@ -745,16 +731,13 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -        swoole_sys_warning("set_tcp_nopush(fd=%d, ON) failed", fd);
 -        return false;
 -    }
--#endif
--    // Need to turn off tcp nodelay when using nopush
--    if (tcp_nodelay && !set_tcp_nodelay(0)) {
--        swoole_sys_warning("set_tcp_nodelay(fd=%d, OFF) failed", fd);
--    }
--    return true;
 +    const uint32_t available = 1;
 +#else
 +    const uint32_t available = 0;
-+#endif
+ #endif
+-    // Need to turn off tcp nodelay when using nopush
+-    if (tcp_nodelay && !set_tcp_nodelay(0)) {
+-        swoole_sys_warning("set_tcp_nodelay(fd=%d, OFF) failed", fd);
 +    uint32_t phase = 0;
 +    int observed = 0;
 +    for (;;) {
@@ -770,9 +753,10 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 6: swoole_sys_warning("set_tcp_nodelay(fd=%d, OFF) failed", fd); break;
 +        default: std::abort();
 +        }
-+    }
+     }
+-    return true;
  }
-@@ -579,17 +624,24 @@
+@@ -579,17 +624,24 @@ bool Socket::cork() {
  bool Socket::uncork() {
 -    if (!tcp_nopush) {
 -        return false;
@@ -782,17 +766,14 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -        swoole_sys_warning("set_tcp_nopush(fd=%d, OFF) failed", fd);
 -        return false;
 -    }
--#endif
++    const uint32_t available = 1;
++#else
++    const uint32_t available = 0;
+ #endif
 -    // Restore tcp_nodelay setting
 -    if (enable_tcp_nodelay && tcp_nodelay == 0 && !set_tcp_nodelay(1)) {
 -        swoole_sys_warning("set_tcp_nodelay(fd=%d, ON) failed", fd);
 -        return false;
--    }
--    return true;
-+    const uint32_t available = 1;
-+#else
-+    const uint32_t available = 0;
-+#endif
 +    uint32_t phase = 0;
 +    int observed = 0;
 +    for (;;) {
@@ -809,9 +790,10 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 7: observed = tcp_nodelay; break;
 +        default: std::abort();
 +        }
-+    }
+     }
+-    return true;
  }
-@@ -605,10 +657,18 @@
+@@ -605,10 +657,18 @@ static bool _set_timeout(int fd, int type, double timeout) {
      timeval timeo;
 -    timeo.tv_sec = (int) timeout;
 -    timeo.tv_usec = (int) ((timeout - timeo.tv_sec) * 1000 * 1000);
@@ -838,7 +820,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        default: std::abort();
 +        }
      }
-@@ -617,57 +677,28 @@
+@@ -617,57 +677,28 @@ static bool _set_timeout(int fd, int type, double timeout) {
  static bool _fcntl_set_option(int sock, int nonblock, int cloexec) {
 -    int opts, ret;
 -
@@ -890,11 +872,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -        if (ret < 0) {
 -            swoole_sys_warning("fcntl(%d, SETFD, opts) failed", sock);
 -            return false;
--        }
--    }
--#endif
--
--    return true;
 +    const uint32_t available = 1;
 +#else
 +    const uint32_t available = 0;
@@ -918,10 +895,13 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 9: swoole_sys_warning("fcntl(%d, SETFD, opts) failed", sock); break;
 +#endif
 +        default: std::abort();
-+        }
-+    }
+         }
+     }
+-#endif
+-
+-    return true;
  }
-@@ -675,8 +706,13 @@
+@@ -675,8 +706,13 @@ static bool _fcntl_set_option(int sock, int nonblock, int cloexec) {
  bool Socket::set_fd_option(int _nonblock, int _cloexec) {
 -    if (_fcntl_set_option(fd, _nonblock, _cloexec)) {
 -        nonblock = _nonblock;
@@ -941,7 +921,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        default: std::abort();
 +        }
      }
-@@ -685,16 +721,20 @@
+@@ -685,16 +721,20 @@ bool Socket::set_fd_option(int _nonblock, int _cloexec) {
  void Socket::set_timeout(double timeout, int type) {
 -    if (timeout == 0) {
 -        return;
@@ -976,7 +956,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        default: std::abort();
 +        }
      }
-@@ -704,13 +744,14 @@
+@@ -704,13 +744,14 @@ double Socket::get_timeout(TimeoutType type) const {
      SW_ASSERT_1BYTE(type);
 -    if (type == SW_TIMEOUT_DNS) {
 -        return dns_timeout;
@@ -1002,7 +982,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +    case 6: assert(0); return -1;
 +    default: std::abort();
      }
-@@ -719,3 +760,15 @@
+@@ -719,3 +760,15 @@ double Socket::get_timeout(TimeoutType type) const {
  bool Socket::has_timedout() const {
 -    return errno == EAGAIN || errno == ETIMEDOUT || swoole_get_last_error() == SW_ERROR_SOCKET_POLL_TIMEOUT;
 +    static_assert(SW_ERROR_SOCKET_POLL_TIMEOUT == 6002, "Pinned poll timeout error");
@@ -1019,7 +999,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        }
 +    }
  }
-@@ -727,7 +780,13 @@
+@@ -727,7 +780,13 @@ bool Socket::has_kernel_nobufs() {
  bool Socket::set_kernel_read_timeout(double timeout) {
 -    if (_set_timeout(fd, SO_SNDTIMEO, timeout)) {
 -        write_timeout = timeout;
@@ -1038,7 +1018,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        default: std::abort();
 +        }
      }
-@@ -736,7 +795,13 @@
+@@ -736,7 +795,13 @@ bool Socket::set_kernel_read_timeout(double timeout) {
  bool Socket::set_kernel_write_timeout(double timeout) {
 -    if (_set_timeout(fd, SO_RCVTIMEO, timeout)) {
 -        read_timeout = timeout;
@@ -1057,7 +1037,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        default: std::abort();
 +        }
      }
-@@ -745,14 +810,21 @@
+@@ -745,14 +810,21 @@ bool Socket::set_kernel_write_timeout(double timeout) {
  int Socket::handle_sendfile() {
 +    static_assert(SW_WAIT == 2 && SW_CLOSE == 3 && SW_ERROR == 4, "Native write classifications");
      Buffer *buffer = out_buffer;
@@ -1088,7 +1068,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 2: task->corked = static_cast<int>(reply.value); break;
 +        case 3: {
      size_t sendn = get_sendfile_chunk_size(task->begin, task->end);
-@@ -761,34 +833,20 @@
+@@ -761,34 +833,20 @@ int Socket::handle_sendfile() {
      swoole_trace("rv=%ld|begin=%ld|sendn=%lu|end=%lu", rv, (long) task->begin, sendn, task->end);
 -
 -    if (rv <= 0) {
@@ -1111,19 +1091,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -    } else {
 -        if (send_timer) {
 -            last_sent_time = time<std::chrono::milliseconds>(true);
--        }
--    }
--
--    // sendfile completed
--    if (task->begin == task->end) {
--        if (task->corked == 1) {
--            uncork();
--            task->corked = 0;
--        }
--        buffer->pop();
--    }
--
--    return SW_OK;
 +        case 4: observed = catch_write_error(errno); break;
 +        case 5: swoole_sys_warning("sendfile(%s, %ld, %zu) failed", task->get_filename(), (long) task->begin, requested); break;
 +        case 6: close_wait = 1; return SW_ERR;
@@ -1136,10 +1103,21 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 20: observed = task->end; break;
 +        case 21: observed = send_timer != nullptr; break;
 +        default: std::abort();
-+        }
-+    }
+         }
+     }
+-
+-    // sendfile completed
+-    if (task->begin == task->end) {
+-        if (task->corked == 1) {
+-            uncork();
+-            task->corked = 0;
+-        }
+-        buffer->pop();
+-    }
+-
+-    return SW_OK;
  }
-@@ -799,42 +857,61 @@
+@@ -799,42 +857,61 @@ int Socket::handle_sendfile() {
  int Socket::handle_send() {
 +    static_assert(SW_WAIT == 2 && SW_CLOSE == 3 && SW_ERROR == 4, "Native write classifications");
      Buffer *buffer = out_buffer;
@@ -1159,6 +1137,14 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -        switch (catch_write_error(errno)) {
 -        case SW_ERROR:
 -            swoole_sys_warning("send to fd[%d] failed", fd);
+-            break;
+-        case SW_CLOSE:
+-            close_wait = 1;
+-            return SW_ERR;
+-        case SW_WAIT:
+-            send_wait = 1;
+-            return SW_ERR;
+-        default:
 +#endif
 +    swr_v1_reactor_output_workflow_state state{};
 +    int64_t observed = 0;
@@ -1174,14 +1160,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +            observed = send(chunk->value.str + chunk->offset, static_cast<uint32_t>(reply.value), 0);
 +#endif
              break;
--        case SW_CLOSE:
--            close_wait = 1;
--            return SW_ERR;
--        case SW_WAIT:
--            send_wait = 1;
--            return SW_ERR;
--        default:
--            break;
 -        }
 -        return SW_OK;
 -    }
@@ -1194,11 +1172,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -        if (ret < sendn) {
 -            send_wait = 1;
 -            return SW_ERR;
--        }
--    }
--    return SW_OK;
--}
--
 +        case 2: buffer->pop(); return SW_OK;
 +        case 3: observed = catch_write_error(errno); break;
 +        case 4: swoole_sys_warning("send to fd[%d] failed", fd); return SW_OK;
@@ -1226,10 +1199,11 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 17: observed = chunk->offset; break;
 +#endif
 +        default: std::abort();
-+        }
-+    }
-+}
-+
+         }
+     }
+-    return SW_OK;
+ }
+ 
 +#if defined(SWOOLE_RS_BUFFER_TYPED) && SWOOLE_RS_BUFFER_TYPED
 +extern "C" void swr_socket_dispose_typed_sendfile(void *token) {
 +    delete static_cast<SendfileRequest *>(token);
@@ -1238,7 +1212,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +
 +#if !defined(SWOOLE_RS_BUFFER_TYPED) || !SWOOLE_RS_BUFFER_TYPED
  static void Socket_sendfile_destructor(BufferChunk *chunk) {
-@@ -843,8 +920,18 @@
+@@ -843,8 +920,18 @@ static void Socket_sendfile_destructor(BufferChunk *chunk) {
  }
 +#endif
  
@@ -1261,7 +1235,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        default: std::abort();
 +        }
      }
-@@ -853,17 +940,29 @@
+@@ -853,17 +940,29 @@ ssize_t Socket::sendfile(const File &fp, off_t *offset, size_t length) {
  int Socket::sendfile_async(const char *filename, off_t offset, size_t length) {
 -    std::unique_ptr<SendfileRequest> task(new SendfileRequest(filename, offset));
 -
@@ -1271,13 +1245,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -
 -    if (out_buffer == nullptr) {
 -        out_buffer = new Buffer(SW_SEND_BUFFER_SIZE);
--    }
--
--    BufferChunk *chunk = out_buffer->alloc(BufferChunk::TYPE_SENDFILE, 0);
--    chunk->value.ptr = task.release();
--    chunk->destroy = Socket_sendfile_destructor;
--
--    return SW_OK;
 +    std::unique_ptr<SendfileRequest> task;
 +#if !defined(SWOOLE_RS_BUFFER_TYPED) || !SWOOLE_RS_BUFFER_TYPED
 +    BufferChunk *chunk = nullptr;
@@ -1304,9 +1271,15 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 22: observed = out_buffer != nullptr; break;
 +        default: std::abort();
 +        }
-+    }
+     }
+-
+-    BufferChunk *chunk = out_buffer->alloc(BufferChunk::TYPE_SENDFILE, 0);
+-    chunk->value.ptr = task.release();
+-    chunk->destroy = Socket_sendfile_destructor;
+-
+-    return SW_OK;
  }
-@@ -871,41 +970,28 @@
+@@ -871,41 +970,28 @@ int Socket::sendfile_async(const char *filename, off_t offset, size_t length) {
  ssize_t Socket::recv(void *_buf, size_t _n, int _flags) {
 -    ssize_t total_bytes = 0;
 -
@@ -1336,17 +1309,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -        total_recv_bytes += total_bytes;
 -        if (recv_timer) {
 -            last_received_time = time<std::chrono::milliseconds>(true);
--        }
--    }
--
--    // The POLLHUP event is triggered, but Socket::recv returns EAGAIN
--    if (total_bytes < 0 && catch_read_error(errno) == SW_WAIT && event_hup) {
--        total_bytes = 0;
--    }
--
--    swoole_trace_log(SW_TRACE_SOCKET, "recv %ld/%ld bytes, errno=%d", total_bytes, _n, errno);
--
--    return total_bytes;
 +    uint32_t phase = 0;
 +    int observed = 0;
 +    ssize_t result = 0, total = 0;
@@ -1371,10 +1333,19 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 16: total += static_cast<ssize_t>(reply.value); break;
 +        case 12: swoole_trace_log(SW_TRACE_SOCKET, "recv %ld/%ld bytes, errno=%d", total, _n, errno); break;
 +        default: std::abort();
-+        }
-+    }
+         }
+     }
+-
+-    // The POLLHUP event is triggered, but Socket::recv returns EAGAIN
+-    if (total_bytes < 0 && catch_read_error(errno) == SW_WAIT && event_hup) {
+-        total_bytes = 0;
+-    }
+-
+-    swoole_trace_log(SW_TRACE_SOCKET, "recv %ld/%ld bytes, errno=%d", total_bytes, _n, errno);
+-
+-    return total_bytes;
  }
-@@ -913,22 +999,22 @@
+@@ -913,22 +999,22 @@ ssize_t Socket::recv(void *_buf, size_t _n, int _flags) {
  ssize_t Socket::send(const void *_buf, size_t _n, int _flags) {
 -    ssize_t retval;
 -
@@ -1390,12 +1361,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -        total_send_bytes += retval;
 -        if (send_timer) {
 -            last_sent_time = time<std::chrono::milliseconds>(true);
--        }
--    }
--
--    swoole_trace_log(SW_TRACE_SOCKET, "send %ld/%ld bytes, errno=%d", retval, _n, errno);
--
--    return retval;
 +    uint32_t phase = 0;
 +    int observed = 0;
 +    ssize_t result = 0, total = 0;
@@ -1414,10 +1379,14 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 8: last_sent_time = time<std::chrono::milliseconds>(true); break;
 +        case 12: swoole_trace_log(SW_TRACE_SOCKET, "send %ld/%ld bytes, errno=%d", result, _n, errno); break;
 +        default: std::abort();
-+        }
-+    }
+         }
+     }
+-
+-    swoole_trace_log(SW_TRACE_SOCKET, "send %ld/%ld bytes, errno=%d", retval, _n, errno);
+-
+-    return retval;
  }
-@@ -936,6 +1022,15 @@
+@@ -936,6 +1022,15 @@ ssize_t Socket::send(const void *_buf, size_t _n, int _flags) {
  ssize_t Socket::send_async(const void *_buf, size_t _n) {
 -    if (!swoole_event_is_available()) {
 -        return send_sync(_buf, _n, 0);
@@ -1437,7 +1406,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        default: std::abort();
 +        }
      }
-@@ -945,14 +1040,8 @@
+@@ -945,14 +1040,8 @@ ssize_t Socket::read_sync(void *_buf, size_t _len) {
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -1458,7 +1427,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +    }, SW_EVENT_READ, sec2msec(read_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -961,14 +1050,8 @@
+@@ -961,14 +1050,8 @@ ssize_t Socket::write_sync(const void *_buf, size_t _len) {
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -1479,7 +1448,7 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +    }, SW_EVENT_WRITE, sec2msec(write_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -976,14 +1059,20 @@
+@@ -976,14 +1059,20 @@ ssize_t Socket::write_sync(const void *_buf, size_t _len) {
  ssize_t Socket::readv(IOVector *io_vector) {
 -    ssize_t retval;
 -
@@ -1489,10 +1458,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -        } else {
 -            retval = ::readv(fd, io_vector->get_iterator(), io_vector->get_remain_count());
 -            io_vector->update_iterator(retval);
--        }
--    } while (retval < 0 && errno == EINTR);
--
--    return retval;
 +    uint32_t phase = 0;
 +    int observed = 0;
 +    ssize_t result = 0, total = 0;
@@ -1509,10 +1474,13 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +            break;
 +        case 4: observed = errno; break;
 +        default: std::abort();
-+        }
+         }
+-    } while (retval < 0 && errno == EINTR);
+-
+-    return retval;
 +    }
  }
-@@ -991,14 +1080,20 @@
+@@ -991,14 +1080,20 @@ ssize_t Socket::readv(IOVector *io_vector) {
  ssize_t Socket::writev(IOVector *io_vector) {
 -    ssize_t retval;
 -
@@ -1522,10 +1490,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -        } else {
 -            retval = ::writev(fd, io_vector->get_iterator(), io_vector->get_remain_count());
 -            io_vector->update_iterator(retval);
--        }
--    } while (retval < 0 && errno == EINTR);
--
--    return retval;
 +    uint32_t phase = 0;
 +    int observed = 0;
 +    ssize_t result = 0, total = 0;
@@ -1542,10 +1506,13 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +            break;
 +        case 4: observed = errno; break;
 +        default: std::abort();
-+        }
+         }
+-    } while (retval < 0 && errno == EINTR);
+-
+-    return retval;
 +    }
  }
-@@ -1006,15 +1101,19 @@
+@@ -1006,15 +1101,19 @@ ssize_t Socket::writev(IOVector *io_vector) {
  ssize_t Socket::peek(void *_buf, size_t _n, int _flags) const {
 -    ssize_t retval;
 -    _flags |= MSG_PEEK;
@@ -1554,12 +1521,6 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 -            retval = SSL_peek(ssl, _buf, _n);
 -        } else {
 -            retval = ::recv(fd, _buf, _n, _flags);
--        }
--    } while (retval < 0 && errno == EINTR);
--
--    swoole_trace_log(SW_TRACE_SOCKET, "peek %ld/%ld bytes, errno=%d", retval, _n, errno);
--
--    return retval;
 +    uint32_t phase = 0;
 +    int observed = 0;
 +    ssize_t result = 0, total = 0;
@@ -1575,10 +1536,15 @@ diff --git a/src/network/socket.cc b/src/network/socket.cc
 +        case 4: observed = errno; break;
 +        case 12: swoole_trace_log(SW_TRACE_SOCKET, "peek %ld/%ld bytes, errno=%d", result, _n, errno); break;
 +        default: std::abort();
-+        }
+         }
+-    } while (retval < 0 && errno == EINTR);
+-
+-    swoole_trace_log(SW_TRACE_SOCKET, "peek %ld/%ld bytes, errno=%d", retval, _n, errno);
+-
+-    return retval;
 +    }
  }
-@@ -1022,33 +1121,10 @@
+@@ -1022,33 +1121,10 @@ ssize_t Socket::peek(void *_buf, size_t _n, int _flags) const {
  int Socket::catch_error(const int err) {
 -    switch (err) {
 -    case EFAULT:

@@ -64,7 +64,7 @@ python3 -m pytest tests/modules/timer --sanitize \
 
 The gates are pytest files (`pip install pytest`); options and fixtures are in
 `tests/conftest.py`, and the first `--engine` is the control. Tests that need an
-engine or `--manifest` are skipped without one. The 33 original timer PHPTs run in the `phpt` phase (`corpus/upstream/run.py --module timers`); they are listed in
+engine or `--manifest` are skipped without one. The 35 original timer PHPTs run in the `phpt` phase (`corpus/upstream/run.py --module timers`); they are listed in
 [UPSTREAM.md](../tests/modules/timer/UPSTREAM.md); four need external DNS/network
 and are opt-in. `tests/modules/timer/FORK.md` describes the fork cases.
 

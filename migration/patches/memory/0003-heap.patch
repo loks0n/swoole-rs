@@ -1,10 +1,9 @@
 diff --git a/src/core/heap.cc b/src/core/heap.cc
+index 905e72bc9..1810fcd12 100644
 --- a/src/core/heap.cc
 +++ b/src/core/heap.cc
-@@ -17,152 +17,48 @@
- #include "swoole.h"
- #include "swoole_heap.h"
-
+@@ -19,150 +19,46 @@
+ 
 -#define left(i) ((i) << 1)
 -#define right(i) (((i) << 1) + 1)
 -#define parent(i) ((i) >> 1)
@@ -24,14 +23,7 @@ diff --git a/src/core/heap.cc b/src/core/heap.cc
 -    num = 1;
 -    size = (_n + 1);
 -    type = _type;
-+static_assert(std::is_standard_layout<HeapNode>::value, "heap node POD");
-+static_assert(sizeof(HeapNode) == sizeof(swr_v1_memory_heap_node), "heap node size");
-+static_assert(offsetof(HeapNode, priority) == offsetof(swr_v1_memory_heap_node, priority), "heap priority");
-+static_assert(offsetof(HeapNode, position) == offsetof(swr_v1_memory_heap_node, position), "heap position");
-+static_assert(offsetof(HeapNode, data) == offsetof(swr_v1_memory_heap_node, data), "heap token");
-+Heap::Heap(size_t capacity, Type type) {
-+    if (swr_v1_memory_heap_create(capacity, type == MAX_HEAP, &rust_) != 0) throw std::bad_alloc();
- }
+-}
 -
 -Heap::~Heap() {
 -    for (uint32_t i = 1; i < num; i++) {
@@ -40,41 +32,15 @@ diff --git a/src/core/heap.cc b/src/core/heap.cc
 -        }
 -    }
 -    sw_free(nodes);
-+Heap::~Heap() { swr_v1_memory_heap_release(rust_); }
-+int Heap::compare(uint64_t a, uint64_t b) const { return swr_v1_memory_heap_compare(rust_, a, b); }
-+HeapNode *Heap::push(uint64_t priority, void *data) {
-+    return reinterpret_cast<HeapNode *>(swr_v1_memory_heap_push(rust_, priority, data));
- }
+-}
 -
 -int Heap::compare(uint64_t a, uint64_t b) const {
 -    if (type == MIN_HEAP) {
 -        return a > b;
 -    } else {
 -        return a < b;
-+void Heap::change_priority(uint64_t priority, HeapNode *node) const {
-+    const int status = swr_v1_memory_heap_update(rust_, priority, reinterpret_cast<swr_v1_memory_heap_node *>(node));
-+    assert(status == 0);
-+    (void) status;
-+}
-+void Heap::remove(HeapNode *node) {
-+    const int status = swr_v1_memory_heap_remove(rust_, reinterpret_cast<swr_v1_memory_heap_node *>(node));
-+    assert(status == 0);
-+    (void) status;
-+}
-+void *Heap::pop() { return swr_v1_memory_heap_pop(rust_); }
-+void *Heap::peek() const {
-+    size_t index = 0;
-+    swr_v1_memory_heap_node record{};
-+    (void) swr_v1_memory_heap_debug_step(rust_, &index, &record);
-+    return record.data;
-+}
-+void Heap::print() const {
-+    size_t index = 0;
-+    swr_v1_memory_heap_node record{};
-+    while (swr_v1_memory_heap_debug_step(rust_, &index, &record) == 1) {
-+        printf("#%zu\tpriority=%ld, data=%p\n", index, (long) record.priority, record.data);
-     }
- }
+-    }
+-}
 -
 -uint32_t Heap::maxchild(uint32_t i) const {
 -    uint32_t child_i = left(i);
@@ -114,9 +80,18 @@ diff --git a/src/core/heap.cc b/src/core/heap.cc
 -
 -    nodes[i] = moving_node;
 -    moving_node->position = i;
--}
++static_assert(std::is_standard_layout<HeapNode>::value, "heap node POD");
++static_assert(sizeof(HeapNode) == sizeof(swr_v1_memory_heap_node), "heap node size");
++static_assert(offsetof(HeapNode, priority) == offsetof(swr_v1_memory_heap_node, priority), "heap priority");
++static_assert(offsetof(HeapNode, position) == offsetof(swr_v1_memory_heap_node, position), "heap position");
++static_assert(offsetof(HeapNode, data) == offsetof(swr_v1_memory_heap_node, data), "heap token");
++Heap::Heap(size_t capacity, Type type) {
++    if (swr_v1_memory_heap_create(capacity, type == MAX_HEAP, &rust_) != 0) throw std::bad_alloc();
+ }
 -
--HeapNode *Heap::push(uint64_t priority, void *data) {
++Heap::~Heap() { swr_v1_memory_heap_release(rust_); }
++int Heap::compare(uint64_t a, uint64_t b) const { return swr_v1_memory_heap_compare(rust_, a, b); }
+ HeapNode *Heap::push(uint64_t priority, void *data) {
 -    HeapNode **tmp;
 -    uint32_t i;
 -
@@ -136,7 +111,8 @@ diff --git a/src/core/heap.cc b/src/core/heap.cc
 -    nodes[i] = node;
 -    bubble_up(i);
 -    return node;
--}
++    return reinterpret_cast<HeapNode *>(swr_v1_memory_heap_push(rust_, priority, data));
+ }
 -
 -void Heap::change_priority(uint64_t new_priority, HeapNode *node) const {
 -    uint32_t pos = node->position;
@@ -148,9 +124,13 @@ diff --git a/src/core/heap.cc b/src/core/heap.cc
 -    } else {
 -        percolate_down(pos);
 -    }
--}
++void Heap::change_priority(uint64_t priority, HeapNode *node) const {
++    const int status = swr_v1_memory_heap_update(rust_, priority, reinterpret_cast<swr_v1_memory_heap_node *>(node));
++    assert(status == 0);
++    (void) status;
+ }
 -
--void Heap::remove(HeapNode *node) {
+ void Heap::remove(HeapNode *node) {
 -    uint32_t pos = node->position;
 -    nodes[pos] = nodes[--num];
 -
@@ -174,9 +154,13 @@ diff --git a/src/core/heap.cc b/src/core/heap.cc
 -    void *data = head->data;
 -    delete head;
 -    return data;
--}
++    const int status = swr_v1_memory_heap_remove(rust_, reinterpret_cast<swr_v1_memory_heap_node *>(node));
++    assert(status == 0);
++    (void) status;
+ }
 -
--void *Heap::peek() const {
++void *Heap::pop() { return swr_v1_memory_heap_pop(rust_); }
+ void *Heap::peek() const {
 -    if (num == 1) {
 -        return nullptr;
 -    }
@@ -185,12 +169,20 @@ diff --git a/src/core/heap.cc b/src/core/heap.cc
 -        return nullptr;
 -    }
 -    return node->data;
--}
++    size_t index = 0;
++    swr_v1_memory_heap_node record{};
++    (void) swr_v1_memory_heap_debug_step(rust_, &index, &record);
++    return record.data;
+ }
 -
--void Heap::print() const {
+ void Heap::print() const {
 -    for (uint32_t i = 1; i < num; i++) {
 -        printf("#%u\tpriority=%ld, data=%p\n", i, (long) nodes[i]->priority, nodes[i]->data);
--    }
--}
++    size_t index = 0;
++    swr_v1_memory_heap_node record{};
++    while (swr_v1_memory_heap_debug_step(rust_, &index, &record) == 1) {
++        printf("#%zu\tpriority=%ld, data=%p\n", index, (long) record.priority, record.data);
+     }
+ }
 -}  // namespace swoole
 +} // namespace swoole

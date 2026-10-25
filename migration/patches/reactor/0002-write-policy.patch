@@ -1,13 +1,13 @@
 diff --git a/src/reactor/base.cc b/src/reactor/base.cc
+index 505aaf7ce..fca457314 100644
 --- a/src/reactor/base.cc
 +++ b/src/reactor/base.cc
 @@ -22,2 +22,3 @@
  #include "swoole_api.h"
 +#include <memory>
  
-@@ -25,2 +26,169 @@
- using network::Socket;
-+
+@@ -26,2 +27,169 @@ using network::Socket;
+ 
 +// Native payload effects only. No Rust frame survives allocation, callbacks or
 +// deletion; append/delete/invoke return without another owner observation.
 +static void swr_reactor_enqueue_defer(Reactor *reactor, const Callback &cb, void *data) {
@@ -174,8 +174,9 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 +    return *this;
 +}
 +
- 
-@@ -59,22 +227,23 @@
++
+ #ifdef SW_USE_MALLOC_TRIM
+@@ -59,22 +227,23 @@ void ReactorImpl::after_removal_failure(const Socket *_socket) const {
  Reactor::Reactor(int max_event, Type _type) {
 -    if (_type == TYPE_AUTO) {
 +    static_assert(TYPE_AUTO == 0 && TYPE_EPOLL == 1 && TYPE_KQUEUE == 2 && TYPE_POLL == 3, "backend type ABI");
@@ -194,30 +195,27 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 -        if (SwooleG.enable_kqueue) {
 -            type_ = TYPE_KQUEUE;
 -        }
--#endif
--#endif
--    } else {
--        type_ = _type;
--    }
--
--    switch (type_) {
 +    caps |= 2;
 +
-+#endif
+ #endif
 +#ifdef SW_USE_MALLOC_TRIM
 +    trim_compiled = 1;
-+#endif
+ #endif
+-    } else {
+-        type_ = _type;
 +    auto backend = swr_v1_reactor_backend_type(_type, caps, 0, 0);
 +#ifdef HAVE_KQUEUE
 +    if (backend.observe_kqueue) {
 +        uint32_t kqueue_enabled = SwooleG.enable_kqueue;
 +        backend = swr_v1_reactor_backend_type(_type, caps, 1, kqueue_enabled);
-+    }
+     }
+-
+-    switch (type_) {
 +#endif
 +    type_ = static_cast<Type>(backend.selected);
 +    switch (backend.factory) {
  #ifdef HAVE_EPOLL
-@@ -94,7 +263,9 @@
+@@ -94,7 +263,9 @@ Reactor::Reactor(int max_event, Type _type) {
  
 -    ready_ = impl->ready();
 -    if (!ready_) {
@@ -232,7 +230,7 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 +        case 1: ready_ = impl->ready(); break;
 +        case 2: {
      timeout_msec = -1;
-@@ -109,37 +280,16 @@
+@@ -109,37 +280,16 @@ Reactor::Reactor(int max_event, Type _type) {
  
 -    if (swoole_isset_hook(SW_GLOBAL_HOOK_ON_REACTOR_CREATE)) {
 -        swoole_call_hook(SW_GLOBAL_HOOK_ON_REACTOR_CREATE, this);
@@ -263,11 +261,10 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 -    set_end_callback(PRIORITY_TRY_EXIT, [](Reactor *reactor) {
 -        if (reactor->wait_exit && reactor->if_exit()) {
 -            reactor->running = false;
--        }
++            break;
+         }
 -    });
 -
-+            break;
-+        }
 +        case 3: hook = swoole_isset_hook(SW_GLOBAL_HOOK_ON_REACTOR_CREATE); break;
 +        case 4: swoole_call_hook(SW_GLOBAL_HOOK_ON_REACTOR_CREATE, this); break;
 +        case 5: set_end_callback(PRIORITY_DEFER_TASK, [](Reactor *reactor) { swr_reactor_run_defer(reactor); }); break;
@@ -283,21 +280,20 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 -        set_end_callback(PRIORITY_MALLOC_TRIM, [](Reactor *reactor) {
 +        case 12: set_end_callback(PRIORITY_MALLOC_TRIM, [](Reactor *reactor) {
              time_t now = ::time(nullptr);
-@@ -149,7 +299,8 @@
+@@ -149,7 +299,8 @@ Reactor::Reactor(int max_event, Type _type) {
              }
 -        });
 -    }
--#endif
++        }); break;
+ #endif
 -
 -    set_exit_condition(EXIT_CONDITION_DEFAULT, [](Reactor *, size_t &event_num) -> bool { return event_num == 0; });
-+        }); break;
-+#endif
 +        case 13: set_exit_condition(EXIT_CONDITION_DEFAULT, [](Reactor *, size_t &event_num) -> bool { return swr_reactor_exit_predicate(5, 0, event_num); }); break;
 +        default: std::abort();
 +        }
 +    }
  }
-@@ -157,10 +308,7 @@
+@@ -157,10 +308,7 @@ Reactor::Reactor(int max_event, Type _type) {
  void Reactor::set_handler(const int fd_type, const int event, const ReactorHandler handler) {
 -    if (isset_read_event(event)) {
 -        read_handler[fd_type] = handler;
@@ -313,7 +309,7 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 +    case 3: error_handler[fd_type] = handler; break;
 +    default: assert(0);
      }
-@@ -169,11 +317,3 @@
+@@ -169,11 +317,3 @@ void Reactor::set_handler(const int fd_type, const int event, const ReactorHandl
  bool Reactor::isset_handler(const int fd_type, const int event) const {
 -    if (isset_read_event(event)) {
 -        return read_handler[fd_type] != nullptr;
@@ -326,7 +322,7 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 -    }
 +    return swr_reactor_resolve_handler(this, fd_type, event, 1) != nullptr;
  }
-@@ -181,9 +321,4 @@
+@@ -181,9 +321,4 @@ bool Reactor::isset_handler(const int fd_type, const int event) const {
  bool Reactor::if_exit() {
 -    size_t _event_num = get_event_num();
 -    for (auto &kv : exit_conditions) {
@@ -338,7 +334,7 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 +    size_t event_num = get_event_num();
 +    return callbacks_.if_exit(this, event_num);
  }
-@@ -202,55 +337,22 @@
+@@ -202,55 +337,22 @@ ssize_t Reactor::write_func(const Reactor *reactor,
      Buffer *buffer = socket->out_buffer;
 -
 -    if (socket->buffer_size == 0) {
@@ -413,18 +409,13 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 -        if (buffer->length() + _len > socket->buffer_size) {
 +        case 8:
              swoole_error_log(SW_LOG_WARNING,
-@@ -258,11 +360,19 @@
+@@ -258,11 +360,19 @@ ssize_t Reactor::write_func(const Reactor *reactor,
                               "socket#%d output buffer overflow: (%u/%u)",
 -                             socket->get_fd(),
 -                             buffer->length(),
 -                             socket->buffer_size);
 +                             socket->get_fd(), buffer->length(), socket->buffer_size);
              return SW_ERR;
--        }
--    _append_buffer:
--        append_fn(buffer);
--    }
--    return _len;
 +        case 9: swoole_set_last_error(errno); return SW_ERR;
 +        case 10: facts.capacity = socket->buffer_size; break;
 +        case 11: socket->set_memory_buffer_size(Socket::default_buffer_size); break;
@@ -438,23 +429,26 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 +        case 19: facts.flags |= static_cast<uint32_t>(socket->isset_writable_event()) << 3; break;
 +        case 20: facts.interrupted = errno == EINTR; break;
 +        default: return SW_ERR;
-+        }
-+    }
+         }
+-    _append_buffer:
+-        append_fn(buffer);
+     }
+-    return _len;
  }
-@@ -276,4 +386,4 @@
+@@ -276,4 +386,4 @@ ssize_t Reactor::_write(Reactor *reactor, Socket *socket, const void *buf, size_
      auto append_fn = [&send_bytes, buf, n](Buffer *buffer) {
 -        ssize_t offset = send_bytes > 0 ? send_bytes : 0;
 -        buffer->append(static_cast<const char *>(buf) + offset, n - offset);
 +        auto args = swr_v1_reactor_write_append(0, n, send_bytes);
 +        buffer->append(static_cast<const char *>(buf) + args.offset, args.length);
      };
-@@ -283,3 +393,4 @@
+@@ -283,3 +393,4 @@ ssize_t Reactor::_write(Reactor *reactor, Socket *socket, const void *buf, size_
  ssize_t Reactor::_writev(Reactor *reactor, Socket *socket, const iovec *iov, size_t iovcnt) {
 -    if (socket->ssl) {
 +    auto args = swr_v1_reactor_write_prepare(socket->ssl ? 1 : 0, iov, iovcnt);
 +    if (args.status != 0) {
          swoole_error_log(SW_LOG_WARNING, SW_ERROR_OPERATION_NOT_SUPPORT, "does not support SSL");
-@@ -289,6 +400,3 @@
+@@ -289,6 +400,3 @@ ssize_t Reactor::_writev(Reactor *reactor, Socket *socket, const iovec *iov, siz
      ssize_t send_bytes = 0;
 -    size_t n = 0;
 -    SW_LOOP_N(iovcnt) {
@@ -462,14 +456,14 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 -    }
 +    size_t n = args.length;
      auto send_fn = [&send_bytes, socket, iov, iovcnt]() -> ssize_t {
-@@ -298,4 +406,4 @@
+@@ -298,4 +406,4 @@ ssize_t Reactor::_writev(Reactor *reactor, Socket *socket, const iovec *iov, siz
      auto append_fn = [&send_bytes, iov, iovcnt](Buffer *buffer) {
 -        ssize_t offset = send_bytes > 0 ? send_bytes : 0;
 -        buffer->append(iov, iovcnt, offset);
 +        auto args = swr_v1_reactor_write_append(1, 0, send_bytes);
 +        buffer->append(iov, iovcnt, static_cast<ssize_t>(args.offset));
      };
-@@ -305,37 +413,27 @@
+@@ -305,37 +413,27 @@ ssize_t Reactor::_writev(Reactor *reactor, Socket *socket, const iovec *iov, siz
  int Reactor::_writable_callback(Reactor *reactor, Event *ev) {
 -    int ret;
 -
@@ -492,20 +486,6 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 -            } else if (socket->send_wait) {
 -                return SW_OK;
 -            }
--        }
--    }
--
--    if (socket->send_timer) {
--        swoole_timer_del(socket->send_timer);
--        socket->send_timer = nullptr;
--    }
--
--    // remove EPOLLOUT event
--    if (Buffer::empty(buffer)) {
--        reactor->remove_write_event(ev->socket);
--    }
--
--    return SW_OK;
 +    swr_v1_reactor_flush_state state{};
 +    int observed = SW_OK;
 +    for (;;) {
@@ -527,10 +507,22 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 +        case 13: observed = socket->send_wait; break;
 +        case 14: observed = socket->send_timer != nullptr; break;
 +        default: return SW_ERR;
-+        }
-+    }
+         }
+     }
+-
+-    if (socket->send_timer) {
+-        swoole_timer_del(socket->send_timer);
+-        socket->send_timer = nullptr;
+-    }
+-
+-    // remove EPOLLOUT event
+-    if (Buffer::empty(buffer)) {
+-        reactor->remove_write_event(ev->socket);
+-    }
+-
+-    return SW_OK;
  }
-@@ -346,10 +444,13 @@
+@@ -346,10 +444,13 @@ void Reactor::drain_write_buffer(Socket *socket) {
      event.fd = socket->fd;
 -
 -    while (!Buffer::empty(socket->out_buffer)) {
@@ -552,22 +544,22 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 +        case 15: observed = socket->removed; break;
 +        default: return;
          }
-@@ -363,3 +464,3 @@
+@@ -363,3 +464,3 @@ void Reactor::add_destroy_callback(const Callback &cb, void *data) {
  void Reactor::set_end_callback(const EndCallback _id, const std::function<void(Reactor *)> &fn) {
 -    end_callbacks[_id] = fn;
 +    callbacks_.set_end(_id, fn);
  }
-@@ -367,3 +468,3 @@
+@@ -367,3 +468,3 @@ void Reactor::set_end_callback(const EndCallback _id, const std::function<void(R
  void Reactor::erase_end_callback(const EndCallback _id) {
 -    end_callbacks.erase(_id);
 +    callbacks_.erase_end(_id);
  }
-@@ -375,3 +476,3 @@
+@@ -375,3 +476,3 @@ void Reactor::erase_end_callback(const EndCallback _id) {
  void Reactor::set_exit_condition(const ExitCondition _id, const std::function<bool(Reactor *, size_t &)> &fn) {
 -    exit_conditions[_id] = fn;
 +    callbacks_.set_exit(_id, fn);
  }
-@@ -379,6 +480,3 @@
+@@ -379,6 +480,3 @@ void Reactor::set_exit_condition(const ExitCondition _id, const std::function<bo
  void Reactor::defer(const Callback &cb, void *data) {
 -    if (defer_tasks == nullptr) {
 -        defer_tasks = new CallbackManager;
@@ -575,14 +567,14 @@ diff --git a/src/reactor/base.cc b/src/reactor/base.cc
 -    defer_tasks->append(cb, data);
 +    swr_reactor_enqueue_defer(this, cb, data);
  }
-@@ -387,5 +485,3 @@
+@@ -387,5 +485,3 @@ void Reactor::execute_end_callbacks(bool _timed_out) {
      timed_out = _timed_out;
 -    for (auto &kv : end_callbacks) {
 -        kv.second(this);
 -    }
 +    callbacks_.execute_end(this);
  }
-@@ -393,5 +489,3 @@
+@@ -393,5 +489,3 @@ void Reactor::execute_end_callbacks(bool _timed_out) {
  void Reactor::execute_begin_callback() const {
 -    if (future_task.callback) {
 -        future_task.callback(future_task.data);

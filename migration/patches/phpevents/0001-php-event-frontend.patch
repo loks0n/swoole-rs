@@ -1,9 +1,8 @@
 diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
+index 0892ebadf..2b49da22e 100644
 --- a/ext-src/swoole_event.cc
 +++ b/ext-src/swoole_event.cc
-@@ -19,6 +19,19 @@
- #include "php_swoole_cxx.h"
- #include "swoole_server.h"
+@@ -21,2 +21,15 @@
  #include "swoole_signal.h"
 +#ifdef SWOOLE_RS_PHPEVENTS
 +#include "swoole_rs_phpevents.h"
@@ -18,13 +17,9 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +}
 +#endif
-
- BEGIN_EXTERN_C()
- #include "stubs/php_swoole_event_arginfo.h"
-@@ -27,16 +40,48 @@
- using namespace swoole;
- using swoole::network::Socket;
-
+ 
+@@ -29,3 +42,24 @@ using swoole::network::Socket;
+ 
 +#ifdef SWOOLE_RS_PHPEVENTS
 +// M28 sole registry adapter: metadata is owned in Rust, pointees remain native.
 +class PhpeventsRegistry {
@@ -47,11 +42,8 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +#else
  static std::unordered_map<int, Socket *> event_socket_map;
 +#endif
-
- zend_class_entry *swoole_event_ce;
- static zend_object_handlers swoole_event_handlers;
-
- struct EventObject {
+ 
+@@ -36,5 +70,16 @@ struct EventObject {
      zval zsocket;
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    SwrPhpEventCallback readable_callback;
@@ -67,12 +59,8 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +static_assert(sizeof(EventObject) == sizeof(EventObjectNativeLayout) && alignof(EventObject) == alignof(EventObjectNativeLayout), "Event object ABI");
 +static_assert(offsetof(EventObject, zsocket) == offsetof(EventObjectNativeLayout, zsocket) && offsetof(EventObject, readable_callback) == offsetof(EventObjectNativeLayout, readable_callback) && offsetof(EventObject, writable_callback) == offsetof(EventObjectNativeLayout, writable_callback), "Event object offsets");
 +#endif
-
- static int event_readable_callback(Reactor *reactor, Event *event);
- static int event_writable_callback(Reactor *reactor, Event *event);
-@@ -59,6 +104,27 @@
- SW_EXTERN_C_END
-
+ 
+@@ -61,2 +106,23 @@ SW_EXTERN_C_END
  // clang-format off
 +#ifdef SWOOLE_RS_PHPEVENTS
 +struct PhpEventMethodBinding {
@@ -96,15 +84,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +static zend_function_entry swoole_event_methods[12]{};
 +#else
  static const zend_function_entry swoole_event_methods[] =
- {
-     ZEND_FENTRY(add,       ZEND_FN(swoole_event_add),       arginfo_swoole_event_add,       ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
-@@ -74,9 +140,32 @@
-     ZEND_FENTRY(exit,      ZEND_FN(swoole_event_exit),      arginfo_swoole_event_exit,      ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
-     PHP_FE_END
+@@ -76,2 +142,3 @@ static const zend_function_entry swoole_event_methods[] =
  };
 +#endif
  // clang-format on
-
+@@ -79,2 +146,24 @@ static const zend_function_entry swoole_event_methods[] =
  void php_swoole_event_minit(int module_number) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    SwrPhpEventMethod method;
@@ -129,15 +113,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      SW_INIT_CLASS_ENTRY(swoole_event, "Swoole\\Event", nullptr, swoole_event_methods);
-     SW_SET_CLASS_CREATE(swoole_event, sw_zend_create_object_deny);
-
-@@ -124,17 +213,61 @@
-                       CG(function_table),
-                       "swoole_event_rshutdown",
+@@ -126,2 +215,3 @@ void php_swoole_event_minit(int module_number) {
                        arginfo_swoole_event_rshutdown);
 +#endif
  }
-
+@@ -129,2 +219,15 @@ void php_swoole_event_minit(int module_number) {
  static void event_object_free(void *data) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    auto *peo = static_cast<EventObject *>(data);
@@ -153,13 +133,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    efree(peo);
 +#else
      auto *peo = static_cast<EventObject *>(data);
-     delete peo->readable_callback;
-     delete peo->writable_callback;
-     zval_ptr_dtor((&peo->zsocket));
+@@ -134,2 +237,3 @@ static void event_object_free(void *data) {
      efree(peo);
 +#endif
  }
-
+@@ -137,2 +241,31 @@ static void event_object_free(void *data) {
  static int event_readable_callback(Reactor *reactor, Event *event) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +
@@ -191,15 +169,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      auto *peo = static_cast<EventObject *>(event->socket->object);
-
-     zval argv[1];
-@@ -153,9 +286,39 @@
-     }
-
+@@ -155,2 +288,3 @@ static int event_readable_callback(Reactor *reactor, Event *event) {
      return SW_OK;
 +#endif
  }
-
+@@ -158,2 +292,31 @@ static int event_readable_callback(Reactor *reactor, Event *event) {
  static int event_writable_callback(Reactor *reactor, Event *event) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +
@@ -231,19 +205,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      auto *peo = static_cast<EventObject *>(event->socket->object);
-
-     zval argv[1];
-@@ -174,6 +337,7 @@
-     }
-
+@@ -176,2 +339,3 @@ static int event_writable_callback(Reactor *reactor, Event *event) {
      return SW_OK;
 +#endif
  }
-
- static int event_error_callback(Reactor *reactor, Event *event) {
-@@ -202,21 +366,87 @@
- }
-
+@@ -204,2 +368,17 @@ static int event_error_callback(Reactor *reactor, Event *event) {
  static void event_defer_callback(void *data) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +
@@ -261,13 +227,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      auto *cb = static_cast<zend::Callable *>(data);
-     if (UNEXPECTED(!zend::function::call(cb, 0, nullptr, nullptr, php_swoole_is_enable_coroutine()))) {
-         php_swoole_error(E_WARNING, "%s::defer callback handler error", ZSTR_VAL(swoole_event_ce->name));
-     }
+@@ -209,2 +388,3 @@ static void event_defer_callback(void *data) {
      delete cb;
 +#endif
  }
-
+@@ -212,2 +392,17 @@ static void event_defer_callback(void *data) {
  static void event_cycle_callback(void *data) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +
@@ -285,12 +249,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      auto *cb = static_cast<zend::Callable *>(data);
-     if (UNEXPECTED(!zend::function::call(cb, 0, nullptr, nullptr, php_swoole_is_enable_coroutine()))) {
-         php_swoole_error(E_WARNING, "%s::end callback handler error", ZSTR_VAL(swoole_event_ce->name));
+@@ -216,2 +411,3 @@ static void event_cycle_callback(void *data) {
      }
 +#endif
  }
-
+@@ -219,2 +415,36 @@ static void event_cycle_callback(void *data) {
  int php_swoole_reactor_init() {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    uint32_t phase = 0;
@@ -327,15 +290,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      if (!SWOOLE_G(cli)) {
-         php_swoole_fatal_error(E_ERROR, "async-io must be used in PHP CLI mode");
-         return SW_ERR;
-@@ -250,9 +480,42 @@
-     }
-
+@@ -252,2 +482,3 @@ int php_swoole_reactor_init() {
      return SW_OK;
 +#endif
  }
-
+@@ -255,2 +486,34 @@ int php_swoole_reactor_init() {
  void php_swoole_event_wait() {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    uint32_t phase = 0;
@@ -370,15 +329,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      if (php_swoole_is_fatal_error() || !sw_reactor()) {
-         return;
-     }
-@@ -277,16 +540,92 @@
- #endif
-     }
+@@ -279,2 +542,3 @@ void php_swoole_event_wait() {
      swoole_event_free();
 +#endif
  }
-
+@@ -282,2 +546,14 @@ void php_swoole_event_wait() {
  void php_swoole_event_exit() {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    uint32_t phase = 0;
@@ -393,12 +348,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      if (sw_reactor()) {
-         php_swoole_timer_clear_all();
-         sw_reactor()->running = false;
+@@ -286,2 +562,3 @@ void php_swoole_event_exit() {
      }
 +#endif
  }
-
+@@ -289,2 +566,64 @@ void php_swoole_event_exit() {
  int php_swoole_convert_to_fd(zval *zsocket) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    int fd = -1;
@@ -463,15 +417,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      int fd = -1;
-
-     switch (Z_TYPE_P(zsocket)) {
-@@ -337,9 +676,51 @@
-         php_swoole_fatal_error(E_WARNING, "invalid file descriptor passed");
-         return SW_ERR;
+@@ -339,2 +678,3 @@ int php_swoole_convert_to_fd(zval *zsocket) {
      }
 +#endif
  }
-
+@@ -342,2 +682,43 @@ int php_swoole_convert_to_fd(zval *zsocket) {
  int php_swoole_convert_to_fd_ex(zval *zsocket, int *async) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    *async = 0;
@@ -515,19 +465,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      int fd;
-
-     *async = 0;
-@@ -366,6 +747,7 @@
-     }
-     php_swoole_fatal_error(E_WARNING, "fd argument must be either valid PHP stream or valid PHP socket resource");
+@@ -368,2 +749,3 @@ int php_swoole_convert_to_fd_ex(zval *zsocket, int *async) {
      return SW_ERR;
 +#endif
  }
-
- #ifdef SWOOLE_SOCKETS_SUPPORT
-@@ -384,6 +766,24 @@
- #endif
-
+@@ -386,2 +768,20 @@ php_socket *php_swoole_convert_to_socket(int sock) {
  static void event_check_reactor() {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    uint32_t phase = 0;
@@ -548,99 +490,36 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      php_swoole_check_reactor();
-
-     if (!swoole_event_isset_handler(SW_FD_USER, SW_EVENT_READ)) {
-@@ -391,22 +791,27 @@
-         swoole_event_set_handler(SW_FD_USER, SW_EVENT_WRITE, event_writable_callback);
-         swoole_event_set_handler(SW_FD_USER, SW_EVENT_ERROR, event_error_callback);
+@@ -393,2 +793,3 @@ static void event_check_reactor() {
      }
 +#endif
  }
-
+@@ -396,2 +797,5 @@ static void event_check_reactor() {
  static Socket *event_get_socket(int socket_fd) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    return event_socket_map.get(socket_fd);
 +#else
      auto i = event_socket_map.find(socket_fd);
-     if (i == event_socket_map.end()) {
-         return nullptr;
-     }
+@@ -401,2 +805,3 @@ static Socket *event_get_socket(int socket_fd) {
      return i->second;
 +#endif
  }
-
+@@ -404,2 +809,76 @@ static Socket *event_get_socket(int socket_fd) {
  static PHP_FUNCTION(swoole_event_add) {
 +#ifdef SWOOLE_RS_PHPEVENTS
-     zval *zfd;
-     zend_long events = SW_EVENT_READ;
-     zval *zreadable_callback = nullptr;
-     zval *zwritable_callback = nullptr;
--
-     ZEND_PARSE_PARAMETERS_START(1, 4)
-     Z_PARAM_ZVAL(zfd)
-     Z_PARAM_OPTIONAL
-@@ -416,106 +821,68 @@
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-
-     event_check_reactor();
--
--    int socket_fd = php_swoole_convert_to_fd(zfd);
--    if (socket_fd < 0) {
--        php_swoole_fatal_error(E_WARNING, "unknown fd type");
--        RETURN_FALSE;
--    }
--    if (socket_fd == 0 && (events & SW_EVENT_WRITE)) {
--        php_swoole_fatal_error(E_WARNING, "invalid socket fd [%d]", socket_fd);
--        RETURN_FALSE;
--    }
--    if (event_socket_map.find(socket_fd) != event_socket_map.end()) {
--        php_swoole_fatal_error(E_WARNING, "already exist");
--        RETURN_FALSE;
--    }
--    if (!(events & (SW_EVENT_WRITE | SW_EVENT_READ))) {
--        php_swoole_fatal_error(E_WARNING, "invalid events");
--        RETURN_FALSE;
--    }
--
--    auto readable_callback = sw_callable_create_ex(zreadable_callback, "readable_callback", true);
--    if ((events & SW_EVENT_READ) && readable_callback == nullptr) {
--        php_swoole_fatal_error(
--            E_WARNING, "%s: unable to find readable callback of fd [%d]", ZSTR_VAL(swoole_event_ce->name), socket_fd);
--        RETURN_FALSE;
--    }
--
--    auto writable_callback = sw_callable_create_ex(zwritable_callback, "writable_callback", true);
--    if ((events & SW_EVENT_WRITE) && writable_callback == nullptr) {
--        php_swoole_fatal_error(
--            E_WARNING, "%s: unable to find writable callback of fd [%d]", ZSTR_VAL(swoole_event_ce->name), socket_fd);
--        delete readable_callback;
--        RETURN_FALSE;
--    }
--
--    auto *peo = static_cast<EventObject *>(ecalloc(1, sizeof(EventObject)));
--
--    Z_TRY_ADDREF_P(zfd);
--    peo->zsocket = *zfd;
--    peo->readable_callback = readable_callback;
--    peo->writable_callback = writable_callback;
--
--    Socket *socket = make_socket(socket_fd, SW_FD_USER);
--    socket->set_nonblock();
--    socket->object = peo;
--
--    if (swoole_event_add(socket, events) < 0) {
--        php_swoole_fatal_error(E_WARNING, "swoole_event_add failed");
--        socket->free();
--        event_object_free(peo);
--        RETURN_FALSE;
--    }
--
--    event_socket_map[socket_fd] = socket;
--
--    RETURN_LONG(socket_fd);
--}
--
--static PHP_FUNCTION(swoole_event_write) {
++    zval *zfd;
++    zend_long events = SW_EVENT_READ;
++    zval *zreadable_callback = nullptr;
++    zval *zwritable_callback = nullptr;
++    ZEND_PARSE_PARAMETERS_START(1, 4)
++    Z_PARAM_ZVAL(zfd)
++    Z_PARAM_OPTIONAL
++    Z_PARAM_ZVAL(zreadable_callback)
++    Z_PARAM_ZVAL(zwritable_callback)
++    Z_PARAM_LONG(events)
++    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
++
++    event_check_reactor();
 +    const int socket_fd = php_swoole_convert_to_fd(zfd);
 +    zend::Callable *readable_callback = nullptr, *writable_callback = nullptr;
 +    EventObject *peo = nullptr;
@@ -702,115 +581,12 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      zval *zfd;
--    char *data;
--    size_t len;
--
--    ZEND_PARSE_PARAMETERS_START(2, 2)
--    Z_PARAM_ZVAL(zfd)
--    Z_PARAM_STRING(data, len)
--    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
--
--    if (len == 0) {
--        php_swoole_fatal_error(E_WARNING, "data empty");
--        RETURN_FALSE;
--    }
--
--    int socket_fd = php_swoole_convert_to_fd(zfd);
--    if (socket_fd < 0) {
--        php_swoole_fatal_error(E_WARNING, "unknown type");
--        RETURN_FALSE;
--    }
--
--    Socket *socket = event_get_socket(socket_fd);
--    if (socket == nullptr) {
--        php_swoole_fatal_error(E_WARNING, "socket[%d] is not found in the reactor", socket_fd);
--        RETURN_FALSE;
--    }
--
--    event_check_reactor();
--    if (swoole_event_write(socket, data, len) < 0) {
--        RETURN_FALSE;
--    } else {
--        RETURN_TRUE;
--    }
--}
--
--static PHP_FUNCTION(swoole_event_set) {
--    if (!sw_reactor()) {
--        php_swoole_fatal_error(E_WARNING, "reactor is not ready, cannot call swoole_event_set");
--        RETURN_FALSE;
--    }
--
--    zval *zfd;
--    zend_long events = 0;
-+    zend_long events = SW_EVENT_READ;
-     zval *zreadable_callback = nullptr;
-     zval *zwritable_callback = nullptr;
-
-@@ -527,6 +894,213 @@
-     Z_PARAM_LONG(events)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-
-+    event_check_reactor();
-+
-+    int socket_fd = php_swoole_convert_to_fd(zfd);
-+    if (socket_fd < 0) {
-+        php_swoole_fatal_error(E_WARNING, "unknown fd type");
-+        RETURN_FALSE;
-+    }
-+    if (socket_fd == 0 && (events & SW_EVENT_WRITE)) {
-+        php_swoole_fatal_error(E_WARNING, "invalid socket fd [%d]", socket_fd);
-+        RETURN_FALSE;
-+    }
-+    if (event_socket_map.find(socket_fd) != event_socket_map.end()) {
-+        php_swoole_fatal_error(E_WARNING, "already exist");
-+        RETURN_FALSE;
-+    }
-+    if (!(events & (SW_EVENT_WRITE | SW_EVENT_READ))) {
-+        php_swoole_fatal_error(E_WARNING, "invalid events");
-+        RETURN_FALSE;
-+    }
-+
-+    auto readable_callback = sw_callable_create_ex(zreadable_callback, "readable_callback", true);
-+    if ((events & SW_EVENT_READ) && readable_callback == nullptr) {
-+        php_swoole_fatal_error(
-+            E_WARNING, "%s: unable to find readable callback of fd [%d]", ZSTR_VAL(swoole_event_ce->name), socket_fd);
-+        RETURN_FALSE;
-+    }
-+
-+    auto writable_callback = sw_callable_create_ex(zwritable_callback, "writable_callback", true);
-+    if ((events & SW_EVENT_WRITE) && writable_callback == nullptr) {
-+        php_swoole_fatal_error(
-+            E_WARNING, "%s: unable to find writable callback of fd [%d]", ZSTR_VAL(swoole_event_ce->name), socket_fd);
-+        delete readable_callback;
-+        RETURN_FALSE;
-+    }
-+
-+    auto *peo = static_cast<EventObject *>(ecalloc(1, sizeof(EventObject)));
-+
-+    Z_TRY_ADDREF_P(zfd);
-+    peo->zsocket = *zfd;
-+    peo->readable_callback = readable_callback;
-+    peo->writable_callback = writable_callback;
-+
-+    Socket *socket = make_socket(socket_fd, SW_FD_USER);
-+    socket->set_nonblock();
-+    socket->object = peo;
-+
-+    if (swoole_event_add(socket, events) < 0) {
-+        php_swoole_fatal_error(E_WARNING, "swoole_event_add failed");
-+        socket->free();
-+        event_object_free(peo);
-+        RETURN_FALSE;
-+    }
-+
-+    event_socket_map[socket_fd] = socket;
-+
-+    RETURN_LONG(socket_fd);
+@@ -473,2 +952,3 @@ static PHP_FUNCTION(swoole_event_add) {
+     RETURN_LONG(socket_fd);
 +#endif
-+}
-+
-+static PHP_FUNCTION(swoole_event_write) {
+ }
+@@ -476,2 +956,34 @@ static PHP_FUNCTION(swoole_event_add) {
+ static PHP_FUNCTION(swoole_event_write) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +
 +    zval *zfd;
@@ -843,42 +619,13 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +        }
 +    }
 +#else
-+    zval *zfd;
-+    char *data;
-+    size_t len;
-+
-+    ZEND_PARSE_PARAMETERS_START(2, 2)
-+    Z_PARAM_ZVAL(zfd)
-+    Z_PARAM_STRING(data, len)
-+    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-+
-+    if (len == 0) {
-+        php_swoole_fatal_error(E_WARNING, "data empty");
-+        RETURN_FALSE;
-+    }
-+
-+    int socket_fd = php_swoole_convert_to_fd(zfd);
-+    if (socket_fd < 0) {
-+        php_swoole_fatal_error(E_WARNING, "unknown type");
-+        RETURN_FALSE;
-+    }
-+
-+    Socket *socket = event_get_socket(socket_fd);
-+    if (socket == nullptr) {
-+        php_swoole_fatal_error(E_WARNING, "socket[%d] is not found in the reactor", socket_fd);
-+        RETURN_FALSE;
-+    }
-+
-+    event_check_reactor();
-+    if (swoole_event_write(socket, data, len) < 0) {
-+        RETURN_FALSE;
-+    } else {
-+        RETURN_TRUE;
-+    }
+     zval *zfd;
+@@ -508,2 +1020,3 @@ static PHP_FUNCTION(swoole_event_write) {
+     }
 +#endif
-+}
-+
-+static PHP_FUNCTION(swoole_event_set) {
+ }
+@@ -511,2 +1024,63 @@ static PHP_FUNCTION(swoole_event_write) {
+ static PHP_FUNCTION(swoole_event_set) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +
 +    if (!sw_reactor()) {
@@ -940,34 +687,12 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +        }
 +    }
 +#else
-+    if (!sw_reactor()) {
-+        php_swoole_fatal_error(E_WARNING, "reactor is not ready, cannot call swoole_event_set");
-+        RETURN_FALSE;
-+    }
-+
-+    zval *zfd;
-+    zend_long events = 0;
-+    zval *zreadable_callback = nullptr;
-+    zval *zwritable_callback = nullptr;
-+
-+    ZEND_PARSE_PARAMETERS_START(1, 4)
-+    Z_PARAM_ZVAL(zfd)
-+    Z_PARAM_OPTIONAL
-+    Z_PARAM_ZVAL(zreadable_callback)
-+    Z_PARAM_ZVAL(zwritable_callback)
-+    Z_PARAM_LONG(events)
-+    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-+
-     int socket_fd = php_swoole_convert_to_fd(zfd);
-     if (socket_fd < 0) {
-         RETURN_FALSE;
-@@ -569,9 +1143,42 @@
-     }
-
+     if (!sw_reactor()) {
+@@ -571,2 +1145,3 @@ static PHP_FUNCTION(swoole_event_set) {
      RETURN_TRUE;
 +#endif
  }
-
+@@ -574,2 +1149,34 @@ static PHP_FUNCTION(swoole_event_set) {
  static PHP_FUNCTION(swoole_event_del) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    zval *zfd = nullptr;
@@ -1002,19 +727,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      zval *zfd;
-
-     if (!sw_reactor()) {
-@@ -599,6 +1206,7 @@
-     socket->fd = -1;
-     socket->free();
+@@ -601,2 +1208,3 @@ static PHP_FUNCTION(swoole_event_del) {
      RETURN_BOOL(retval == SW_OK);
 +#endif
  }
-
- static PHP_FUNCTION(swoole_event_defer) {
-@@ -616,6 +1224,40 @@
- }
-
+@@ -618,2 +1226,36 @@ static PHP_FUNCTION(swoole_event_defer) {
  static PHP_FUNCTION(swoole_event_cycle) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +
@@ -1051,19 +768,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      zval *zcallback;
-     zend_bool before = false;
-
-@@ -647,6 +1289,7 @@
-     }
-
+@@ -649,2 +1291,3 @@ static PHP_FUNCTION(swoole_event_cycle) {
      RETURN_TRUE;
 +#endif
  }
-
- static PHP_FUNCTION(swoole_event_exit) {
-@@ -661,6 +1304,26 @@
- }
-
+@@ -663,2 +1306,22 @@ static PHP_FUNCTION(swoole_event_wait) {
  static PHP_FUNCTION(swoole_event_rshutdown) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    /* Native bailout boundary: Rust returns before every Zend/effect call. */
@@ -1086,15 +795,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    zend_end_try();
 +#else
      /* prevent the program from jumping out of the rshutdown */
-     zend_try {
-         // when throw Exception, do not show the info
-@@ -672,9 +1335,26 @@
-         }
-     }
+@@ -674,2 +1337,3 @@ static PHP_FUNCTION(swoole_event_rshutdown) {
      zend_end_try();
 +#endif
  }
-
+@@ -677,2 +1341,18 @@ static PHP_FUNCTION(swoole_event_rshutdown) {
  static PHP_FUNCTION(swoole_event_dispatch) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    uint32_t phase = 0;
@@ -1113,15 +818,11 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      if (!sw_reactor()) {
-         RETURN_FALSE;
-     }
-@@ -684,9 +1364,38 @@
-     }
-     sw_reactor()->once = false;
+@@ -686,2 +1366,3 @@ static PHP_FUNCTION(swoole_event_dispatch) {
      RETURN_TRUE;
 +#endif
  }
-
+@@ -689,2 +1370,30 @@ static PHP_FUNCTION(swoole_event_dispatch) {
  static PHP_FUNCTION(swoole_event_isset) {
 +#ifdef SWOOLE_RS_PHPEVENTS
 +    zval *zfd = nullptr;
@@ -1152,12 +853,7 @@ diff --git a/ext-src/swoole_event.cc b/ext-src/swoole_event.cc
 +    }
 +#else
      if (!sw_reactor()) {
-         RETURN_FALSE;
+@@ -715,2 +1424,3 @@ static PHP_FUNCTION(swoole_event_isset) {
      }
-@@ -713,4 +1422,5 @@
-     } else {
-         RETURN_FALSE;
-     }
--}
 +#endif
-+}
+ }

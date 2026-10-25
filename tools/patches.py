@@ -34,7 +34,7 @@ def checkout(module, patches, work):
     for patch in json.loads((patches / 'manifest.json').read_text())['patches']:
         git(work, 'apply', '--index', str(patches / patch['path']))
         git(work, 'commit', '-q', '-m', patch['path'])
-        baseline[patch['path']] = git(work, 'diff', 'HEAD~', 'HEAD')
+        baseline[patch['path']] = git(work, 'diff', '-U1', 'HEAD~', 'HEAD')
     (work / '.git/patches-baseline.json').write_text(json.dumps(baseline))
     print(work)
 
@@ -48,7 +48,8 @@ def export(patches, work):
     rows = []
     for commit in git(work, 'rev-list', '--reverse', COMMIT + '..HEAD').split():
         name = git(work, 'log', '-1', '--format=%s', commit).strip()
-        body = git(work, 'diff', commit + '~', commit)
+        # One context line, so patches from different modules to neighbouring lines still stack.
+        body = git(work, 'diff', '-U1', commit + '~', commit)
         if name in previous and baseline.get(name) == body:
             rows.append(previous[name])
             continue
@@ -57,8 +58,9 @@ def export(patches, work):
                      'upstream_paths': git(work, 'diff', '--name-only', commit + '~', commit).split()})
     for stale in set(patches.glob('*.patch')) - {patches / row['path'] for row in rows}:
         stale.unlink()
-    if rows != manifest['patches']:
-        (patches / 'manifest.json').write_text(json.dumps({**manifest, 'patches': rows}, indent=2) + '\n')
+    updated = {**manifest, 'upstream_commit': COMMIT, 'patches': rows}
+    if updated != manifest:
+        (patches / 'manifest.json').write_text(json.dumps(updated, indent=2) + '\n')
 
 
 def main():

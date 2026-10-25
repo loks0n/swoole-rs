@@ -1,9 +1,8 @@
 diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
+index f9313ea48..bbe925aba 100644
 --- a/ext-src/swoole_http_request.cc
 +++ b/ext-src/swoole_http_request.cc
-@@ -15,6 +15,11 @@
- */
- 
+@@ -17,2 +17,7 @@
  #include "php_swoole_http_server.h"
 +#ifndef SWOOLE_RS_HTTPBINDINGS
 +#error "HTTP PHP binding overlay requires --enable-swoole-rs-httpbindings"
@@ -11,11 +10,7 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 +#include "swoole_rs_httpbindings.h"
 +static_assert(HTTP_DELETE == 0 && HTTP_POST == 3 && HTTP_PUT == 4 && HTTP_PATCH == 28, "Pinned llhttp method mapping changed");
  
- SW_EXTERN_C_BEGIN
- #include "ext/standard/url.h"
-@@ -63,30 +68,10 @@
- }
- 
+@@ -68,26 +73,6 @@ static HttpContext *http_request_get_and_check_context(const zval *zobject) {
  static inline char *http_trim_double_quote(char *ptr, size_t *len) {
 -    size_t i;
 -    char *tmp = ptr;
@@ -46,11 +41,7 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 +    *len = result.length;
 +    return ptr + result.offset;
  }
- 
- // clang-format off
-@@ -253,19 +238,20 @@
- }
- 
+@@ -287,4 +272,5 @@ void php_swoole_http_request_minit(int module_number) {
  static int http_request_on_url(llhttp_t *parser, const char *at, size_t length) {
 -    const char *query_start = (const char *) memchr(at, '?', length);
 -    size_t path_len = query_start ? (size_t) (query_start - at) : length;
@@ -58,34 +49,28 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 +    if (swr_v1_httpbindings_request_url({reinterpret_cast<const uint8_t *>(at), length}, &parts) != 0) return -1;
 +    size_t path_len = parts.path_length;
  
-     auto *ctx = static_cast<HttpContext *>(parser->data);
-     ctx->request.path = estrndup(at, path_len);
-     ctx->request.path_len = path_len;
+@@ -294,3 +280,3 @@ static int http_request_on_url(llhttp_t *parser, const char *at, size_t length)
  
 -    if (!query_start || (length - path_len) <= 1) {
--        return 0;
--    }
--
++    if (parts.query_length == 0) {
+         return 0;
+@@ -298,4 +284,4 @@ static int http_request_on_url(llhttp_t *parser, const char *at, size_t length)
+ 
 -    const char *query_str = query_start + 1;
 -    size_t query_len = length - path_len - 1;
-+    if (parts.query_length == 0) {
-+        return 0;
-+    }
-+
 +    const char *query_str = at + parts.query_offset;
 +    size_t query_len = parts.query_length;
  
-     zval tmp;
-     HashTable *ht = Z_ARR_P(ctx->request.zserver);
-@@ -327,32 +313,14 @@
- }
- 
- bool swoole_http_token_list_contains_value(const char *at, size_t length, const char *value) {
+@@ -407,31 +393,11 @@ static void http_request_add_upload_file(HttpContext *ctx, const char *file, siz
+ int swoole_http_token_list_contains_value(const char *at, size_t length, const char *value) {
 -    if (0 == length) {
--        return false;
+-        return 0;
+-    }
+-    if (length >= SW_STACK_BUFFER_SIZE || length >= sw_tg_buffer()->size) {
+-        return -1;
 -    }
 -    if (SW_STRCASEEQ(at, length, value)) {
--        return true;
+-        return 1;
 -    }
 -
 -    char *var;
@@ -102,25 +87,22 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 -        var_len = swoole::ltrim(&var, strlen(var));
 -        var_len = swoole::rtrim(var, var_len);
 -        if (swoole_strcaseeq(var, var_len, value, strlen(value))) {
--            return true;
+-            return 1;
 -        }
 -        var = php_strtok_r(nullptr, separator, &strtok_buf);
 -    }
--    return false;
+-    return 0;
 +    int32_t result = swr_v1_httpbindings_tokens(reinterpret_cast<uint8_t *>(const_cast<char *>(at)), length,
 +        reinterpret_cast<const uint8_t *>(value), sizeof(value) - 1, 0);
-+    if (result != 2) return result == 1;
++    if (result != 2) return result == 1 ? 1 : 0;
++    if (length >= SW_STACK_BUFFER_SIZE || length >= sw_tg_buffer()->size) return -1;
 +    char *scratch = sw_tg_buffer()->str;
 +    memcpy(scratch, at, length);
 +    scratch[length] = '\0';
 +    return swr_v1_httpbindings_tokens(reinterpret_cast<uint8_t *>(scratch), length,
-+        reinterpret_cast<const uint8_t *>(value), sizeof(value) - 1, 1) == 1;
++        reinterpret_cast<const uint8_t *>(value), sizeof(value) - 1, 1) == 1 ? 1 : 0;
  }
- 
- static int http_request_on_header_value(llhttp_t *parser, const char *at, size_t length) {
-@@ -360,83 +328,70 @@
-     zval *zheader = ctx->request.zheader;
-     const char *header_name = ctx->current_header_name;
+@@ -443,4 +409,13 @@ static int http_request_on_header_value(llhttp_t *parser, const char *at, size_t
      size_t header_len = ctx->current_header_name_len;
 -
 -    if (ctx->parse_cookie && SW_STRCASEEQ(header_name, header_len, "cookie")) {
@@ -128,17 +110,25 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 +#ifdef SW_HAVE_COMPRESSION
 +    if (ctx->enable_compression) flags |= 2u;
 +#endif
++    // QUERY carries a request body like POST; the policy only knows the original body methods.
++    const uint32_t method = parser->method == HTTP_QUERY ? HTTP_POST : parser->method;
 +    auto action = swr_v1_httpbindings_request_header(
 +        {reinterpret_cast<const uint8_t *>(header_name), header_len},
-+        {reinterpret_cast<const uint8_t *>(at), length}, parser->method, flags);
++        {reinterpret_cast<const uint8_t *>(at), length}, method, flags);
 +    switch (action) {
 +    case SWR_HTTPBINDINGS_HEADER_COOKIE: {
          zval *zcookie = swoole_http_init_and_read_property(
-             swoole_http_request_ce, ctx->request.zobject, &ctx->request.zcookie, SW_ZSTR_KNOWN(SW_ZEND_STR_COOKIE));
-         swoole_http_parse_cookie(zcookie, at, length);
+@@ -449,3 +424,4 @@ static int http_request_on_header_value(llhttp_t *parser, const char *at, size_t
          return 0;
--    } else if (SW_STRCASEEQ(header_name, header_len, "upgrade") &&
--               swoole_http_token_list_contains_value(at, length, "websocket")) {
+-    } else if (SW_STRCASEEQ(header_name, header_len, "upgrade")) {
++    }
++    case SWR_HTTPBINDINGS_HEADER_UPGRADE: {
+         constexpr size_t max_length = SW_STACK_BUFFER_SIZE - 1;
+@@ -461,64 +437,46 @@ static int http_request_on_header_value(llhttp_t *parser, const char *at, size_t
+         }
+-        if (!contains_websocket) {
+-            goto _add_header;
+-        }
 -        ctx->websocket = 1;
 -        if (ctx->is_co_socket()) {
 -            goto _add_header;
@@ -154,7 +144,7 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 -            conn->websocket_status = swoole::websocket::STATUS_CONNECTION;
 -        }
 -    } else if ((parser->method == HTTP_POST || parser->method == HTTP_PUT || parser->method == HTTP_DELETE ||
--                parser->method == HTTP_PATCH) &&
+-                parser->method == HTTP_PATCH || parser->method == HTTP_QUERY) &&
 -               SW_STRCASEEQ(header_name, header_len, "content-type")) {
 -        if (SW_STR_ISTARTS_WITH(at, length, "application/x-www-form-urlencoded")) {
 -            ctx->request.post_form_urlencoded = 1;
@@ -164,9 +154,7 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 -            int boundary_len;
 -            if (!ctx->get_multipart_boundary(at, length, offset, &boundary_str, &boundary_len)) {
 -                return -1;
-+    }
-+    case SWR_HTTPBINDINGS_HEADER_UPGRADE:
-+        if (swoole_http_token_list_contains_value(at, length, "websocket")) {
++        if (contains_websocket) {
 +            ctx->websocket = 1;
 +            if (!ctx->is_co_socket()) {
 +                auto *serv = ctx->get_async_server();
@@ -180,9 +168,12 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
              }
 -            swoole_trace_log(SW_TRACE_HTTP, "form_data, boundary_str=%s", boundary_str);
 -            ctx->init_multipart_parser(boundary_str, boundary_len);
--        }
-+        }
+         }
 +        break;
+     }
+-#ifdef SW_HAVE_COMPRESSION
+-    else if (ctx->enable_compression && SW_STRCASEEQ(header_name, header_len, "accept-encoding")) {
+-        ctx->set_compression_method(at, length);
 +    case SWR_HTTPBINDINGS_HEADER_FORM: ctx->request.post_form_urlencoded = 1; break;
 +    case SWR_HTTPBINDINGS_HEADER_MULTIPART: {
 +        char *boundary_str;
@@ -192,19 +183,12 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 +        ctx->init_multipart_parser(boundary_str, boundary_len);
 +        break;
      }
- #ifdef SW_HAVE_COMPRESSION
--    else if (ctx->enable_compression && SW_STRCASEEQ(header_name, header_len, "accept-encoding")) {
--        ctx->set_compression_method(at, length);
--    }
--#endif
--    else if (SW_STRCASEEQ(header_name, header_len, "transfer-encoding") && SW_STR_ISTARTS_WITH(at, length, "chunked")) {
--        ctx->recv_chunked = 1;
--    }
--
--_add_header:
++#ifdef SW_HAVE_COMPRESSION
 +    case SWR_HTTPBINDINGS_HEADER_COMPRESSION: ctx->set_compression_method(at, length); break;
-+#endif
-+    case SWR_HTTPBINDINGS_HEADER_CHUNKED: ctx->recv_chunked = 1; break;
+ #endif
+-_add_header:
++    // Chunked transfer is taken from llhttp's F_CHUNKED flag when the headers complete.
++    case SWR_HTTPBINDINGS_HEADER_CHUNKED:
 +    case SWR_HTTPBINDINGS_HEADER_APPEND: break;
 +    default: return -1;
 +    }
@@ -242,21 +226,15 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 +    case 7: zend_hash_update(Z_ARR_P(zheader), SW_ZSTR_KNOWN(SW_ZEND_STR_ACCEPT_ENCODING), &tmp); break;
 +    default: {
          char *new_header_name = estrndup(header_name, header_len);
-         zend_str_tolower_copy(new_header_name, header_name, header_len);
-         zend::array_add_or_merge(zheader, new_header_name, header_len, &tmp);
+@@ -527,4 +485,5 @@ _add_header:
          efree(new_header_name);
--    }
--
 +        break;
 +    }
-+    }
-     return 0;
- }
- 
-@@ -788,16 +743,10 @@
      }
- 
-     if (ctx->mt_parser != nullptr) {
+-
+     return 0;
+@@ -882,12 +841,6 @@ static int http_request_on_body(llhttp_t *parser, const char *at, size_t length)
+     if (ctx->mt_parser != nullptr && !ctx->recv_chunked) {
 -        if (is_beginning) {
 -            /* Compatibility: some clients may send extra EOL */
 -            do {
@@ -272,11 +250,19 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 +        at += prefix;
 +        length -= prefix;
          if (!ctx->parse_multipart_data(at, length)) {
-             return -1;
-         }
-@@ -810,14 +759,18 @@
-     auto *ctx = static_cast<HttpContext *>(parser->data);
-     size_t content_length = ctx->request.chunked_body ? ctx->request.chunked_body->length : ctx->request.body_length;
+@@ -909,7 +862,6 @@ static int http_request_message_complete(llhttp_t *parser) {
+         size_t length = ctx->request.chunked_body->length;
+-        /* Compatibility: some clients may send extra EOL */
+-        while (length != 0 && (*at == '\r' || *at == '\n')) {
+-            at++;
+-            length--;
+-        }
++        size_t prefix = 0;
++        swr_v1_httpbindings_body_prefix({reinterpret_cast<const uint8_t *>(at), length}, 1, &prefix);
++        at += prefix;
++        length -= prefix;
+         if (!ctx->parse_multipart_data(at, length)) {
+@@ -919,3 +871,7 @@ static int http_request_message_complete(llhttp_t *parser) {
  
 -    if (ctx->request.chunked_body != nullptr && ctx->parse_body && ctx->request.post_form_urlencoded) {
 +    int form_source = swr_v1_httpbindings_form_source(
@@ -285,43 +271,23 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 +        (ctx->request.body_at != nullptr ? 16u : 0u));
 +    if (form_source == 1) {
          /* parse dechunked content */
-         swoole_php_treat_data(
-             PARSE_STRING,
-             estrndup(ctx->request.chunked_body->str, content_length),  // do not free, it will be freed by treat_data
-             swoole_http_init_and_read_property(
+@@ -926,3 +882,3 @@ static int http_request_message_complete(llhttp_t *parser) {
                  swoole_http_request_ce, ctx->request.zobject, &ctx->request.zpost, SW_ZSTR_KNOWN(SW_ZEND_STR_POST)));
 -    } else if (!ctx->recv_chunked && ctx->parse_body && ctx->request.post_form_urlencoded && ctx->request.body_at) {
 +    } else if (form_source == 2) {
          swoole_php_treat_data(
-             PARSE_STRING,
-             estrndup(ctx->request.body_at, ctx->request.body_length),  // do not free, it will be freed by treat_data
-@@ -842,54 +795,32 @@
- }
- 
+@@ -951,27 +907,23 @@ static int http_request_message_complete(llhttp_t *parser) {
  #ifdef SW_HAVE_COMPRESSION
-+static uint32_t http_request_compression_capabilities() {
-+    return 0
-+#ifdef SW_HAVE_ZLIB
-+        | 1u
-+#endif
-+#ifdef SW_HAVE_BROTLI
-+        | 2u
-+#endif
-+#ifdef SW_HAVE_ZSTD
-+        | 4u
-+#endif
-+        ;
-+}
-+static_assert(HTTP_COMPRESS_NONE == 0 && HTTP_COMPRESS_GZIP == 1 && HTTP_COMPRESS_DEFLATE == 2 &&
-+              HTTP_COMPRESS_BR == 3 && HTTP_COMPRESS_ZSTD == 4, "Pinned compression mapping changed");
- void HttpContext::set_compression_method(const char *accept_encoding, size_t length) {
+-void HttpContext::set_compression_method(const char *accept_encoding, size_t length) {
 -#ifdef SW_HAVE_BROTLI
 -    if (swoole_strnpos(accept_encoding, length, ZEND_STRL("br")) >= 0) {
 -        accept_compression = 1;
 -        compression_method = HTTP_COMPRESS_BR;
 -    } else
 -#endif
--#ifdef SW_HAVE_ZLIB
++static uint32_t http_request_compression_capabilities() {
++    return 0
+ #ifdef SW_HAVE_ZLIB
 -        if (swoole_strnpos(accept_encoding, length, ZEND_STRL("gzip")) >= 0) {
 -        accept_compression = 1;
 -        compression_method = HTTP_COMPRESS_GZIP;
@@ -329,23 +295,33 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 -        accept_compression = 1;
 -        compression_method = HTTP_COMPRESS_DEFLATE;
 -    } else
--#endif
--#ifdef SW_HAVE_ZSTD
++        | 1u
++#endif
++#ifdef SW_HAVE_BROTLI
++        | 2u
+ #endif
+ #ifdef SW_HAVE_ZSTD
 -        if (swoole_strnpos(accept_encoding, length, ZEND_STRL("zstd")) >= 0) {
 -        accept_compression = 1;
 -        compression_method = HTTP_COMPRESS_ZSTD;
 -    } else
--#endif
++        | 4u
+ #endif
 -    {
 -        accept_compression = 0;
 -    }
++        ;
++}
++static_assert(HTTP_COMPRESS_NONE == 0 && HTTP_COMPRESS_GZIP == 1 && HTTP_COMPRESS_DEFLATE == 2 &&
++              HTTP_COMPRESS_BR == 3 && HTTP_COMPRESS_ZSTD == 4, "Pinned compression mapping changed");
++void HttpContext::set_compression_method(const char *accept_encoding, size_t length) {
 +    int method = swr_v1_httpbindings_compression(
 +        {reinterpret_cast<const uint8_t *>(accept_encoding), static_cast<uint32_t>(length)},
 +        http_request_compression_capabilities());
 +    accept_compression = method > 0;
 +    if (method > 0) compression_method = static_cast<swHttpCompressMethod>(method);
  }
- 
+@@ -979,22 +931,4 @@ void HttpContext::set_compression_method(const char *accept_encoding, size_t len
  const char *HttpContext::get_content_encoding() const {
 -#ifdef SW_HAVE_ZLIB
 -    if (compression_method == HTTP_COMPRESS_GZIP) {
@@ -370,11 +346,7 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 +    auto encoding = swr_v1_httpbindings_encoding(compression_method, http_request_compression_capabilities());
 +    return reinterpret_cast<const char *>(encoding.data);
  }
- #endif
- 
-@@ -961,27 +892,25 @@
-         zval *zvalue;
- 
+@@ -1071,23 +1005,21 @@ static PHP_METHOD(swoole_http_request, create) {
          SW_HASHTABLE_FOREACH_START2(Z_ARRVAL_P(zoptions), key, keylen, keytype, zvalue) {
 -            if (SW_STRCASEEQ(key, keylen, "parse_cookie")) {
 -                ctx->parse_cookie = zval_is_true(zvalue);
@@ -396,9 +368,6 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 -            else if (SW_STRCASEEQ(key, keylen, "websocket_compression")) {
 -                ctx->websocket_compression = zval_is_true(zvalue);
 -            }
--#endif
--            else if (SW_STRCASEEQ(key, keylen, "upload_tmp_dir")) {
--                ctx->upload_tmp_dir = zend::String(zvalue).to_std_string();
 +            capabilities |= 2u;
 +#endif
 +            switch (swr_v1_httpbindings_request_option({reinterpret_cast<const uint8_t *>(key), keylen}, capabilities)) {
@@ -411,8 +380,8 @@ diff --git a/ext-src/swoole_http_request.cc b/ext-src/swoole_http_request.cc
 +#endif
 +#ifdef SW_HAVE_ZLIB
 +            case 6: ctx->websocket_compression = zval_is_true(zvalue); break;
-+#endif
+ #endif
+-            else if (SW_STRCASEEQ(key, keylen, "upload_tmp_dir")) {
+-                ctx->upload_tmp_dir = zend::String(zvalue).to_std_string();
 +            case 7: ctx->upload_tmp_dir = zend::String(zvalue).to_std_string(); break;
              }
-             (void) keytype;
-         }

@@ -262,7 +262,7 @@ pub extern "C" fn swr_v1_tls_setup(stage: u32, facts: u32, result: i32) -> Setup
         0 => (SetupAction::Observe, 1),
         1 if facts & 2 != 0 => (SetupAction::Cert, 2),
         1 => (SetupAction::Observe, 4),
-        2 if result <= 0 => (SetupAction::True, 17), // Original certificate failure is success/early-stop.
+        2 if result <= 0 => (SetupAction::False, 17),
         2 => (SetupAction::Chain, 3),
         3 if result <= 0 => (SetupAction::False, 17),
         3 => (SetupAction::Observe, 4),
@@ -613,7 +613,7 @@ mod tests {
             vec![2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 1]
         );
         assert_eq!(trace(0, 99, 0), vec![8, 9, 14, 1]);
-        assert_eq!(trace(255, 3, 0), vec![2, 3, 1]);
+        assert_eq!(trace(255, 3, 0), vec![2, 3, 0]);
         assert_eq!(trace(255, 4, 0), vec![2, 3, 4, 0]);
         assert_eq!(trace(255, 5, 0), vec![2, 3, 4, 5, 0]);
         assert_eq!(trace(255, 6, 0), vec![2, 3, 4, 5, 6, 0]);

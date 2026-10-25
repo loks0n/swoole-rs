@@ -1,18 +1,12 @@
 diff --git a/ext-src/swoole_websocket_server.cc b/ext-src/swoole_websocket_server.cc
-index ed29431..4969425 100644
+index 6f4ae420b..7af3efece 100644
 --- a/ext-src/swoole_websocket_server.cc
 +++ b/ext-src/swoole_websocket_server.cc
-@@ -23,6 +23,7 @@ SW_EXTERN_C_BEGIN
- SW_EXTERN_C_END
- 
+@@ -25,2 +25,3 @@ SW_EXTERN_C_END
  #include "swoole_base64.h"
 +#include "swoole_rs_websocket_codec.h"
  
- using swoole::Connection;
- using swoole::ListenPort;
-@@ -148,15 +149,9 @@ bool FrameObject::pack(String *buffer) {
-     swoole_warning("Unable to compress websocket data frame, the `zlib` supports is required");
-     return false;
+@@ -150,11 +151,5 @@ bool FrameObject::pack(String *buffer) {
  #else
 -    bool need_compress = ((flags & WebSocket::FLAG_COMPRESS) && len > 0);
 -    if (opcode == WebSocket::OPCODE_CLOSE || opcode == WebSocket::OPCODE_PING || opcode == WebSocket::OPCODE_PONG) {
@@ -27,11 +21,7 @@ index ed29431..4969425 100644
 +    flags = policy & 0xff;
 +    const bool need_compress = policy & 0x100;
  
-     if (need_compress) {
-         String *zlib_buffer = sw_tg_buffer();
-@@ -480,10 +475,12 @@ int swoole_websocket_onMessage(Server *serv, RecvData *req) {
- 
-     WebSocket::parse_ext_flags(req->info.ext_flags, &opcode, &flags);
+@@ -486,6 +481,8 @@ int swoole_websocket_onMessage(Server *serv, RecvData *req) {
  
 -    if ((opcode == WebSocket::OPCODE_CLOSE && !port->websocket_settings.open_close_frame) ||
 -        (opcode == WebSocket::OPCODE_PING && !port->websocket_settings.open_ping_frame) ||
@@ -44,15 +34,11 @@ index ed29431..4969425 100644
 +    if (delivery) {
 +        if (delivery == 2) {
              String frame(SW_WEBSOCKET_FRAME_HEADER_SIZE + req->info.len, sw_php_allocator());
-             WebSocket::encode(&frame, req->data, req->info.len, WebSocket::OPCODE_PONG, WebSocket::FLAG_FIN);
-             serv->send(fd, frame.str, frame.length);
 diff --git a/src/protocol/websocket.cc b/src/protocol/websocket.cc
-index a4580b0..0b63709 100644
+index 465dd3b2c..2fce77839 100644
 --- a/src/protocol/websocket.cc
 +++ b/src/protocol/websocket.cc
-@@ -17,6 +17,12 @@
- #include "swoole_server.h"
- #include "swoole_websocket.h"
+@@ -19,2 +19,8 @@
  
 +#ifndef SWOOLE_RS_WEBSOCKET
 +#error "WebSocket overlay requires --enable-swoole-rs-websocket"
@@ -61,11 +47,7 @@ index a4580b0..0b63709 100644
 +#include "swoole_rs_websocket_codec.h"
 +
  using swoole::Connection;
- using swoole::Protocol;
- using swoole::Server;
-@@ -47,46 +53,8 @@ namespace websocket {
-  +---------------------------------------------------------------+
-  */
+@@ -49,42 +55,4 @@ namespace websocket {
  static ssize_t get_package_length_impl(PacketLength *pl) {
 -    // need more data
 -    if (pl->buf_size < SW_WEBSOCKET_HEADER_LEN) {
@@ -110,11 +92,7 @@ index a4580b0..0b63709 100644
 +    return static_cast<ssize_t>(swr_v1_ws_frame_length(
 +        reinterpret_cast<const uint8_t *>(pl->buf), pl->buf_size, &pl->header_len));
  }
- 
- ssize_t get_package_length(const Protocol *protocol, Socket *conn, PacketLength *pl) {
-@@ -94,127 +62,74 @@ ssize_t get_package_length(const Protocol *protocol, Socket *conn, PacketLength
- }
- 
+@@ -96,21 +64,25 @@ ssize_t get_package_length(const Protocol *protocol, Socket *conn, PacketLength
  void mask(char *data, size_t len, const char *mask_key) {
 -    size_t n = len / 8;
 -    uint64_t mask_key64 = ((uint64_t) (*((uint32_t *) mask_key)) << 32) | *((uint32_t *) mask_key);
@@ -122,17 +100,38 @@ index a4580b0..0b63709 100644
 -
 -    for (i = 0; i < n; i++) {
 -        ((uint64_t *) data)[i] ^= mask_key64;
--    }
--
--    for (i = n * 8; i < len; i++) {
--        data[i] ^= mask_key[i % SW_WEBSOCKET_MASK_LEN];
 +    if (swr_v1_ws_mask(reinterpret_cast<uint8_t *>(data), len,
 +                       reinterpret_cast<const uint8_t *>(mask_key)) != 0) {
 +        swoole_warning("Rust WebSocket mask rejected input");
      }
++}
+ 
+-    for (i = n * 8; i < len; i++) {
+-        data[i] ^= mask_key[i % SW_WEBSOCKET_MASK_LEN];
++// Storage and exceptions remain native; Rust only borrows the reserved output.
++static char *reserve_frame(String *buffer, size_t size) {
++    if (size == 0 || size > SIZE_MAX - buffer->length) {
++        return nullptr;
++    }
++    if (buffer->length + size > buffer->size) {
++        buffer->reserve(buffer->length + size);
+     }
++    return buffer->str + buffer->length;
  }
  
 -bool encode(String *buffer, const char *data, size_t length, uint8_t opcode, uint8_t _flags) {
++bool encode(String *buffer, const char *data, size_t length, uint8_t opcode, uint8_t flags) {
+     if (sw_unlikely(is_control_frame(opcode) &&
+-                    ((_flags & FLAG_FIN) == 0 || length > SW_WEBSOCKET_CONTROL_FRAME_PAYLOAD_MAX_LEN))) {
++                    ((flags & FLAG_FIN) == 0 || length > SW_WEBSOCKET_CONTROL_FRAME_PAYLOAD_MAX_LEN))) {
+         swoole_warning("invalid websocket control frame: opcode=%u, fin=%u, payload_length=%zu",
+                        opcode,
+-                       !!(_flags & FLAG_FIN),
++                       !!(flags & FLAG_FIN),
+                        length);
+@@ -118,49 +90,11 @@ bool encode(String *buffer, const char *data, size_t length, uint8_t opcode, uin
+     }
+-
 -    int pos = 0;
 -    char frame_header[16];
 -    auto *header = (Header *) frame_header;
@@ -156,11 +155,7 @@ index a4580b0..0b63709 100644
 -        auto *length_ptr = (uint64_t *) (frame_header + pos);
 -        *length_ptr = swoole_hton64(length);
 -        pos += sizeof(*length_ptr);
-+// Storage and exceptions remain native; Rust only borrows the reserved output.
-+static char *reserve_frame(String *buffer, size_t size) {
-+    if (size == 0 || size > SIZE_MAX - buffer->length) {
-+        return nullptr;
-     }
+-    }
 -    buffer->append(frame_header, pos);
 -    /**
 -     * frame body
@@ -180,25 +175,19 @@ index a4580b0..0b63709 100644
 -        if (length > 0 and !(_flags & FLAG_ENCODE_HEADER_ONLY)) {
 -            buffer->append(data, length);
 -        }
-+    if (buffer->length + size > buffer->size) {
-+        buffer->reserve(buffer->length + size);
-     }
-+    return buffer->str + buffer->length;
-+}
- 
--    return true;
-+bool encode(String *buffer, const char *data, size_t length, uint8_t opcode, uint8_t flags) {
 +    const size_t size = swr_v1_ws_encoded_size(length, flags);
 +    auto *output = reserve_frame(buffer, size);
 +    if (!output || swr_v1_ws_encode(reinterpret_cast<const uint8_t *>(data), length, opcode, flags,
 +                                    reinterpret_cast<uint8_t *>(output), size) != size) {
 +        return false;
-+    }
+     }
+-
+-    return true;
 +    buffer->length += size;
 +    // Upstream appends the mask key before rejecting masked header-only output.
 +    return !((flags & FLAG_MASK) && (flags & FLAG_ENCODE_HEADER_ONLY));
  }
- 
+@@ -168,24 +102,18 @@ bool encode(String *buffer, const char *data, size_t length, uint8_t opcode, uin
  bool decode(Frame *frame, char *data, size_t length) {
 -    frame->header.OPCODE = data[0] & 0xf;
 -    frame->header.RSV1 = (data[0] >> 6) & 0x1;
@@ -234,6 +223,12 @@ index a4580b0..0b63709 100644
 -    frame->payload_length = total_length - pl.header_len;
 -    frame->header_length = pl.header_len;
 -
++    frame->header_length = decoded.header_length;
++    frame->payload_length = decoded.payload_length;
+     if (sw_unlikely(frame->header.RSV1 && is_control_frame(frame->header.OPCODE))) {
+@@ -194,19 +122,8 @@ bool decode(Frame *frame, char *data, size_t length) {
+     }
+-
 -    swoole_trace_log(SW_TRACE_WEBSOCKET,
 -                     "decode frame, payload_length=%ld, mask=%d, opcode=%d",
 -                     frame->payload_length,
@@ -248,8 +243,6 @@ index a4580b0..0b63709 100644
 -            memcpy(frame->mask_key, frame->payload - SW_WEBSOCKET_MASK_LEN, SW_WEBSOCKET_MASK_LEN);
 -            mask(frame->payload, frame->payload_length, frame->mask_key);
 -        }
-+    frame->header_length = decoded.header_length;
-+    frame->payload_length = decoded.payload_length;
 +    swoole_trace_log(SW_TRACE_WEBSOCKET, "decode frame, payload_length=%ld, mask=%d, opcode=%d",
 +                     static_cast<long>(frame->payload_length), frame->header.MASK, frame->header.OPCODE);
 +    frame->payload = decoded.payload_length == 0 ? nullptr : data + decoded.header_length;
@@ -258,13 +251,12 @@ index a4580b0..0b63709 100644
      }
 -
      return true;
- }
- 
+@@ -215,3 +132,3 @@ bool decode(Frame *frame, char *data, size_t length) {
  bool pack_close_frame(String *buffer, int code, const char *reason, size_t length, uint8_t flags) {
 -    if (sw_unlikely(length > SW_WEBSOCKET_CLOSE_REASON_MAX_LEN)) {
 +    if (length > SW_WEBSOCKET_CLOSE_REASON_MAX_LEN) {
          swoole_warning("the max length of close reason is %d", SW_WEBSOCKET_CLOSE_REASON_MAX_LEN);
-         return false;
+@@ -219,14 +136,17 @@ bool pack_close_frame(String *buffer, int code, const char *reason, size_t lengt
      }
 -
 -    char payload[SW_WEBSOCKET_HEADER_LEN + SW_WEBSOCKET_CLOSE_CODE_LEN + SW_WEBSOCKET_CLOSE_REASON_MAX_LEN];
@@ -272,7 +264,13 @@ index a4580b0..0b63709 100644
 -    payload[1] = (char) ((code & 0xFF));
 -    if (length > 0) {
 -        memcpy(payload + SW_WEBSOCKET_CLOSE_CODE_LEN, reason, length);
--    }
++    if (sw_unlikely(SW_WEBSOCKET_CLOSE_CODE_LEN + length > SW_WEBSOCKET_CONTROL_FRAME_PAYLOAD_MAX_LEN)) {
++        swoole_warning("invalid websocket control frame: opcode=%u, fin=%u, payload_length=%zu",
++                       OPCODE_CLOSE,
++                       1,
++                       SW_WEBSOCKET_CLOSE_CODE_LEN + length);
++        return false;
+     }
 -    flags |= FLAG_FIN;
 -    if (!encode(buffer, payload, SW_WEBSOCKET_CLOSE_CODE_LEN + length, OPCODE_CLOSE, flags)) {
 +    const size_t size = swr_v1_ws_encoded_size(length + SW_WEBSOCKET_CLOSE_CODE_LEN, flags | FLAG_FIN);
@@ -285,11 +283,7 @@ index a4580b0..0b63709 100644
 +    buffer->length += size;
 +    return !((flags & FLAG_MASK) && (flags & FLAG_ENCODE_HEADER_ONLY));
  }
- 
- void print_frame(const Frame *frame) {
-@@ -232,126 +147,92 @@ void print_frame(const Frame *frame) {
-     }
- }
+@@ -248,13 +168,7 @@ void print_frame(const Frame *frame) {
  
 -int dispatch_frame(const Protocol *proto, Socket *_socket, const RecvData *rdata) {
 -    auto *serv = (Server *) proto->private_data_2;
@@ -307,8 +301,7 @@ index a4580b0..0b63709 100644
 -
 +    const size_t length = rdata->info.len;
      Frame ws;
-     if (!decode(&ws, const_cast<char *>(data), length)) {
-         return SW_ERR;
+@@ -263,107 +177,79 @@ int dispatch_frame(const Protocol *proto, Socket *_socket, const RecvData *rdata
      }
 -
 -    String *frame_buffer;
@@ -487,5 +480,3 @@ index a4580b0..0b63709 100644
 +    case SWR_WS_UNKNOWN:
 +        swoole_warning("unknown opcode [%d]", frame.opcode);
          break;
-     }
-     return SW_OK;

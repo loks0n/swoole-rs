@@ -1,6 +1,6 @@
 # Coroutine validation
 
-Reference pin: `8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e`. `PINNED_TREE` below is
+Reference pin: `c7e514509451beafd4d70ce5b78943d51e76381c`. `PINNED_TREE` below is
 the pinned upstream Git checkout (`target/upstream/src`); `ARCHIVE` is the real
 Rust FFI static archive. Most gates refuse an existing `--report` path.
 

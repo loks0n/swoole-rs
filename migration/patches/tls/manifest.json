@@ -1,12 +1,12 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-rust-protocol-policy.patch",
-      "sha256": "3cea2c2e13a9f5004d7de4c6c8beaf4d5c2453ab204a0749ae0197bd2a959d59",
+      "sha256": "449a662cad062581b720f710ca7d754816e4ae76f327629d0ae2cb935a3e6ae2",
       "upstream_paths": [
-        "src/protocol/ssl.cc",
-        "src/protocol/dtls.cc"
+        "src/protocol/dtls.cc",
+        "src/protocol/ssl.cc"
       ]
     }
   ]

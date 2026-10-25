@@ -46,10 +46,8 @@ matching PHP curl and sockets packages first where separate. These explicit modu
 recorded in report metadata. Homebrew PHP builds them in and needs no extra flags; do not add dynamic
 module flags for those built-in modules.
 
-The reference is **v6.2.2**, commit
-`8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e`. Version 6.2.3 failed to compile on this
-Mac because `src/core/misc.cc` references undefined `sw_usleep` in its non-Linux
-fallback. We selected the previous release rather than patching the baseline.
+The reference is **v6.2.4**, commit
+`c7e514509451beafd4d70ce5b78943d51e76381c`.
 `tools/build_upstream.py` verifies the checkout's commit and writes
 `target/upstream/build.log`; it never runs `make install` or changes php.ini.
 
@@ -75,7 +73,7 @@ a release gate for replacing production Swoole.
 
 ## Original Swoole PHPT tests
 
-A separate [upstream selection](upstream/README.md) runs 90 original tests through
+A separate [upstream selection](upstream/README.md) runs 92 original tests through
 PHP's official PHPT runner, with source checksums and unchanged assertions.
 Use `python3 corpus/upstream/run.py --engine upstream=target/upstream/src/modules/swoole.so --require-all`.
 This complements the twelve external application e2e projects for 81 total cases; unsupported APIs and
