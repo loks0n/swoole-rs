@@ -112,3 +112,9 @@ ad-hoc scripts, `gh run watch`).
 Three tiers: the pre-commit hook (~15s), the PR tier (`pr.yml`, under 3 minutes
 warm) and the merge tier (`merge.yml`, on `main`). Keep them cached and audit
 them regularly for waste and duplicate steps; slow or flaky CI is a ticket.
+
+The merge tier runs one at a time, latest wins: while a run is in progress, each
+push to `main` replaces the pending run, so the next run covers `main`'s head.
+Its result therefore describes the commit it names, which may be several merges
+old. How recent that is depends on run length, which #7 is
+reducing.

@@ -6,6 +6,8 @@ on:
 env:
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   CCACHE_MAXSIZE: 500M
+# Latest wins: one run at a time; GitHub keeps only the newest push pending, so the
+# next run always covers main's head. Never cancel-in-progress, or no run finishes.
 concurrency:
   group: merge-${{ github.ref }}
 jobs:
