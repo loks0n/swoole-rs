@@ -23,10 +23,12 @@ python3 tools/patches.py export phphelpers     # rewrites the patch files and ma
 rm -rf target/patches/phphelpers
 ```
 
-Upstream changes then surface as ordinary rebase conflicts. Export writes
+Upstream changes then surface as ordinary rebase conflicts. Export keeps the
+bytes of every patch whose commit diff is unchanged, writes the others as
 `git diff` output and drops patch files that no longer have a commit; add a
 commit to add a patch. New destinations must be in the module's
-`upstream_patch_targets` in `migration/modules.json`.
+`upstream_patch_targets` in `migration/modules.json`, and an edited patch listed
+in `frozen_upstream_patches` needs its new sha256 there too.
 
 ## Build variants
 
