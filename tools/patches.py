@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""Edit a module's upstream patches as a Git branch: one commit per patch file.
+
+  patches.py checkout MODULE   clone the pin to target/patches/MODULE and commit each patch
+  patches.py export MODULE     write each commit back to migration/patches/MODULE
+"""
+import argparse
+import hashlib
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from tools.build_upstream import COMMIT, VERSION
+from tools.harness import ROOT
+
+
+def git(work, *args):
+    return subprocess.run(['git', '-C', str(work), '-c', 'user.name=patches', '-c', 'user.email=patches@localhost', *args],
+                          check=True, capture_output=True, text=True).stdout
+
+
+def checkout(module, patches, work):
+    if work.exists():
+        raise SystemExit(f'{work} exists; export or delete it first')
+    reference = ROOT / 'target/upstream/src'
+    source = [str(reference)] if (reference / '.git').exists() else ['--depth', '1', '--branch', VERSION,
+                                                                     'https://github.com/swoole/swoole-src.git']
+    subprocess.run(['git', '-c', 'advice.detachedHead=false', 'clone', '-q', *source, str(work)], check=True)
+    git(work, 'checkout', '-q', '-b', 'patches/' + module, COMMIT)
+    for patch in json.loads((patches / 'manifest.json').read_text())['patches']:
+        git(work, 'apply', '--index', str(patches / patch['path']))
+        git(work, 'commit', '-q', '-m', patch['path'])
+    print(work)
+
+
+def export(patches, work):
+    rows = []
+    for commit in git(work, 'rev-list', '--reverse', COMMIT + '..HEAD').split():
+        name = git(work, 'log', '-1', '--format=%s', commit).strip()
+        body = git(work, 'diff', commit + '~', commit)
+        (patches / name).write_text(body)
+        rows.append({'path': name, 'sha256': hashlib.sha256(body.encode()).hexdigest(),
+                     'upstream_paths': git(work, 'diff', '--name-only', commit + '~', commit).split()})
+    for stale in set(patches.glob('*.patch')) - {patches / row['path'] for row in rows}:
+        stale.unlink()
+    (patches / 'manifest.json').write_text(json.dumps({'upstream_commit': COMMIT, 'patches': rows}, indent=2) + '\n')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('command', choices=['checkout', 'export'])
+    parser.add_argument('module')
+    args = parser.parse_args()
+    patches, work = ROOT / 'migration/patches' / args.module, ROOT / 'target/patches' / args.module
+    if not patches.is_dir():
+        raise SystemExit(f'No patch directory: {patches}')
+    checkout(args.module, patches, work) if args.command == 'checkout' else export(patches, work)
+
+
+if __name__ == '__main__':
+    main()

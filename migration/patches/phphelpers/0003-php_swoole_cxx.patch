@@ -1,19 +1,20 @@
 diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
+index 32b8a0f..90dff7e 100644
 --- a/ext-src/php_swoole_cxx.h
 +++ b/ext-src/php_swoole_cxx.h
 @@ -17,6 +17,9 @@
  #pragma once
-
+ 
  #include "php_swoole_private.h"
 +#ifdef SWOOLE_RS_PHPHELPERS
 +#include "swoole_rs_phphelpers.h"
 +#endif
  #include "php_swoole_coroutine.h"
-
+ 
  #include "swoole_socket_impl.h"
-@@ -194,12 +197,25 @@
+@@ -194,12 +197,25 @@ std::unordered_map<std::string, uint64_t> sw_socket_parse_tcp_info(tcp_info *inf
  #endif
-
+ 
  static inline bool php_swoole_async(bool blocking, const std::function<void(void)> &fn) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    uint32_t phase = 0;
@@ -35,11 +36,11 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
      }
 +#endif
  }
-
+ 
  namespace zend {
-@@ -223,11 +239,25 @@
+@@ -223,11 +239,25 @@ class String {
      }
-
+ 
      String(zend_string *v, bool copy) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        str = nullptr;
@@ -61,11 +62,11 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      String(const String &o) {
-@@ -240,25 +270,66 @@
+@@ -240,25 +270,66 @@ class String {
      }
-
+ 
      String &operator=(zval *v) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -84,7 +85,7 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      String &operator=(String &&o) noexcept {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -105,7 +106,7 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      String &operator=(const String &o) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -128,11 +129,11 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      char *val() const {
-@@ -282,18 +353,36 @@
+@@ -282,18 +353,36 @@ class String {
      }
-
+ 
      char *dup() const {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        return sw_likely(!swr_v1_phphelpers_empty(len())) ? sw_strndup(val(), len()) : nullptr;
@@ -141,7 +142,7 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      char *edup() const {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        return sw_likely(!swr_v1_phphelpers_empty(len())) ? estrndup(val(), len()) : nullptr;
@@ -150,7 +151,7 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      void release() {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        if (!swr_v1_phphelpers_empty(str != nullptr)) {
@@ -165,11 +166,11 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      ~String() {
-@@ -311,24 +400,75 @@
+@@ -311,24 +400,75 @@ class KeyValue {
      zval zvalue;
-
+ 
      KeyValue(zend_ulong _index, zend_string *_key, zval *_zvalue) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        index = _index;
@@ -197,7 +198,7 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      void add_to(zval *zarray) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        HashTable *ht = Z_ARRVAL_P(zarray);
@@ -220,7 +221,7 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      ~KeyValue() {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -242,9 +243,9 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +#endif
      }
  };
-
-@@ -378,6 +518,25 @@
-
+ 
+@@ -378,6 +518,25 @@ class ArrayIterator {
+ 
    private:
      void skipUndefBucket() {
 +#ifdef SWOOLE_RS_PHPHELPERS
@@ -269,18 +270,18 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
          while (_ptr != pe) {
              _val = &_ptr->val;
              if (_val && Z_TYPE_P(_val) == IS_INDIRECT) {
-@@ -396,6 +555,8 @@
+@@ -396,6 +555,8 @@ class ArrayIterator {
              }
              break;
          }
 +    
 +#endif
      }
-
+ 
      zval *_val;
-@@ -419,11 +580,21 @@
+@@ -419,11 +580,21 @@ class Array {
      }
-
+ 
      bool set(zend_ulong index, zval *value) const {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        return swr_v1_phphelpers_call_success(add_index_zval(arr, index, value), 0) != 0;
@@ -289,7 +290,7 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      bool append(zval *value) const {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        return swr_v1_phphelpers_call_success(add_next_index_zval(arr, value), 0) != 0;
@@ -298,11 +299,11 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      bool set(zend_ulong index, zend_resource *res) const {
-@@ -466,13 +637,41 @@
+@@ -466,13 +637,41 @@ class Variable {
      }
-
+ 
      Variable(const Variable &&src) noexcept {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        value = {};
@@ -321,7 +322,7 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      Variable(Variable &&src) noexcept {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        value = {};
@@ -340,11 +341,11 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      Variable &operator=(zval *zvalue) {
-@@ -481,14 +680,40 @@
+@@ -481,14 +680,40 @@ class Variable {
      }
-
+ 
      Variable &operator=(const Variable &src) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -363,7 +364,7 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      void assign(zval *zvalue) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -381,11 +382,11 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      zval *ptr() {
-@@ -535,20 +760,54 @@
+@@ -535,20 +760,54 @@ class CharPtr {
      }
-
+ 
      void release() {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        if (!swr_v1_phphelpers_empty(str_ != nullptr)) {
@@ -400,7 +401,7 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      void assign(const char *str, size_t len) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -418,7 +419,7 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      void assign_tolower(const char *str, size_t len) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -436,11 +437,11 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +    
 +#endif
      }
-
+ 
      ~CharPtr() {
-@@ -586,6 +845,23 @@
+@@ -586,6 +845,23 @@ class Callable {
      }
-
+ 
      Callable *dup() const {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        auto copy = new Callable();
@@ -462,14 +463,14 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
          auto copy = new Callable();
          copy->fcc = fcc;
          copy->zfn = zfn;
-@@ -594,10 +870,17 @@
+@@ -594,10 +870,17 @@ class Callable {
              copy->fn_name = estrdup(fn_name);
          }
          return copy;
 +    
 +#endif
      }
-
+ 
      bool call(uint32_t argc, zval *argv, zval *retval) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        return swr_v1_phphelpers_call_success(sw_zend_call_function_ex(&zfn, &fcc, argc, argv, retval), 0) != 0;
@@ -479,10 +480,10 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
 +#endif
      }
  };
-
-@@ -828,6 +1111,19 @@
+ 
+@@ -828,6 +1111,19 @@ static inline void sw_callable_free(void *ptr) {
  }
-
+ 
  static inline zend::Callable *sw_callable_create(zval *zfn) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    auto fn = new zend::Callable(zfn);
@@ -500,13 +501,13 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
      auto fn = new zend::Callable(zfn);
      if (fn->ready()) {
          return fn;
-@@ -835,9 +1131,31 @@
+@@ -835,9 +1131,31 @@ static inline zend::Callable *sw_callable_create(zval *zfn) {
          delete fn;
          return nullptr;
      }
 +#endif
  }
-
+ 
  static inline zend::Callable *sw_callable_create_ex(zval *zfn, const char *fname, bool allow_null = true) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    uint32_t phase = 0;
@@ -532,10 +533,9 @@ diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
      if (zfn == nullptr || ZVAL_IS_NULL(zfn)) {
          if (!allow_null) {
              zend_throw_exception_ex(
-@@ -855,4 +1173,5 @@
+@@ -855,4 +1173,5 @@ static inline zend::Callable *sw_callable_create_ex(zval *zfn, const char *fname
          return nullptr;
      }
      return cb;
--}
 +#endif
-+}
+ }
