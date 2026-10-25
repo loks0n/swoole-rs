@@ -33,7 +33,15 @@ int main() {
                 const bool accepted = reference::encode(&oracle, reinterpret_cast<const char *>(payload.data()), length, opcode, flags);
                 const size_t size = swr_v1_ws_encoded_size(length, flags);
                 std::vector<uint8_t> wire(size + 2, 0xa5);
-                assert(swr_v1_ws_encode(payload.data(), length, opcode, flags, wire.data() + 1, size) == size);
+                const size_t written = swr_v1_ws_encode(payload.data(), length, opcode, flags, wire.data() + 1, size);
+                // Close/ping/pong must be final and at most 125 bytes; both sides reject before writing.
+                if (swr_v1_ws_control_invalid(opcode, flags, length)) {
+                    assert(!accepted && oracle.length == 0 && written == 0);
+                    assert(std::all_of(wire.begin(), wire.end(), [](uint8_t b) { return b == 0xa5; }));
+                    ++encoded;
+                    continue;
+                }
+                assert(written == size);
                 assert(wire.front() == 0xa5 && wire.back() == 0xa5);
                 assert(oracle.length == size && std::memcmp(oracle.str, wire.data() + 1, size) == 0);
                 assert(accepted == !((flags & 32) && (flags & 64)));
@@ -80,7 +88,8 @@ int main() {
                 std::array<uint8_t, 144> wire;
                 wire.fill(0xa5);
                 const size_t size = swr_v1_ws_encode_close(code, reason.data(), length, flags, wire.data() + 1, wire.size() - 2);
-                if (length > 125) { assert(size == 0 && oracle.length == 0); }
+                // Code plus reason is a control payload: at most 125 bytes.
+                if (length > 123) { assert(size == 0 && oracle.length == 0 && !accepted); }
                 else {
                     assert(size == oracle.length && std::memcmp(wire.data() + 1, oracle.str, size) == 0);
                     assert(accepted == !((flags & 32) && (flags & 64)));
@@ -98,8 +107,13 @@ int main() {
             reference::Frame expected{};
             swr_ws_decoded actual{};
             const size_t length = second ? 6 : 2;
-            assert(reference::decode(&expected, native.data(), length));
-            assert(swr_v1_ws_decode(reinterpret_cast<uint8_t *>(rust.data()), length, &actual) == int64_t(length));
+            // Compressed (RSV1) close/ping/pong frames are rejected before unmasking.
+            const unsigned opcode = first & 15;
+            const bool invalid = (first & 64) && opcode >= 8 && opcode <= 10;
+            assert(reference::decode(&expected, native.data(), length) == !invalid);
+            assert(swr_v1_ws_decode(reinterpret_cast<uint8_t *>(rust.data()), length, &actual) ==
+                   (invalid ? SWR_WS_INVALID_CONTROL : int64_t(length)));
+            assert(native == rust);
             assert(actual.flags == expected.get_flags() && actual.opcode == expected.header.OPCODE);
             ++decoded;
         }

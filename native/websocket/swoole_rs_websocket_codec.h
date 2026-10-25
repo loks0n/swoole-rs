@@ -1,5 +1,6 @@
 #ifndef SWOOLE_RS_WEBSOCKET_CODEC_H
 #define SWOOLE_RS_WEBSOCKET_CODEC_H
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
@@ -15,10 +16,14 @@ typedef struct {
     uint8_t length_code;
     uint8_t mask_key[4];
 } swr_ws_decoded;
-/* Positive expected frame length; 0 incomplete header; -1 invalid/overflow.
+/* Positive expected frame length; 0 incomplete header; -1 invalid/overflow;
+ * SWR_WS_INVALID_CONTROL for a complete compressed control frame (left masked).
  * Incomplete bodies return expected size without changing payload bytes.
  * Output is initialized on valid arguments, including incomplete frames. */
+#define SWR_WS_INVALID_CONTROL (-2)
 int64_t swr_v1_ws_decode(uint8_t *data, size_t length, swr_ws_decoded *output);
+/* Close, ping and pong frames must be final and at most 125 bytes; encode enforces it. */
+bool swr_v1_ws_control_invalid(uint8_t opcode, uint8_t flags, size_t length);
 /* Actual bytes written, including header/key only when FLAG_ENCODE_HEADER_ONLY.
  * 0 rejects overflow. No input/output overlap is permitted for encoding. */
 size_t swr_v1_ws_encoded_size(size_t payload_length, uint8_t flags);

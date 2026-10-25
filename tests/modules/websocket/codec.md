@@ -22,13 +22,16 @@ Native allocation/exceptions complete before a Rust output borrow begins.
   input/overflow/insufficient capacity returns zero without writes. Input and
   output are disjoint. Null input is allowed for empty/header-only encoding.
   Header opcode truncation and FIN/RSV1/MASK mapping preserve the existing kernel.
+- `control_invalid` is upstream's encoder rule since v6.2.4: close, ping and
+  pong (opcodes 8-10) must be final and at most 125 bytes. `encode` rejects such
+  frames before writing; the native caller logs the warning.
 - `encode_close` packs the signed native code modulo 65536, forces FIN and uses
-  the same encoder. Its maximum *reason* length remains 125, so 124/125-byte
-  reasons produce 126/127-byte payloads. This intentionally preserves upstream,
-  rather than silently enforcing an RFC payload limit.
+  the same encoder, so reasons over 123 bytes are rejected.
 - `decode` accepts an exclusive mutable buffer and disjoint aligned output.
   It returns the expected positive total length, zero for incomplete header,
-  or minus one for invalid pointers/signed-size overflow. An incomplete body
+  minus one for invalid pointers/signed-size overflow, or
+  `SWR_WS_INVALID_CONTROL` (-2) for a complete compressed (RSV1) close, ping or
+  pong frame, whose payload stays masked as upstream rejects it first. An incomplete body
   returns its expected length without changing input. Only a complete nonempty
   masked payload is XORed; trailing bytes are untouched. Metadata is initialized
   on valid arguments, including incomplete frames. Zero length permits null.
