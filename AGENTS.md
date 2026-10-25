@@ -18,7 +18,7 @@ See corpus/README.md, corpus/upstream/README.md and benchmarks/README.md.
 
 # Agents
 
-Two roles. Coordination state lives in GitHub issues and CI, never in repository
+Three roles. Coordination state lives in GitHub issues and CI, never in repository
 files: no ownership manifests, landing scripts or evidence archives.
 
 ## Goal agent
@@ -57,6 +57,22 @@ environments to one shared machine. Each executor loops:
 
 Don't stop to ask before routine next steps (merge on green, close, file
 follow-ups). Stop only for destructive or genuinely ambiguous decisions.
+
+## Reviewer agents
+
+Interchangeable and disposable, like executors, but they change no code. Each
+picks an area (a module, a tool, a CI tier, recently merged PRs) and checks that
+the work already there is right: bugs, inconsistencies between code, tests and
+docs, and gaps inside work that claims to be complete.
+
+Judge work against what it set out to do: the issue, the PR description, the
+module's entry in `migration/modules.json`. Work that is explicitly not done,
+out of scope, or already tracked by an open issue is not a finding.
+
+Verify each finding before filing it: a failing test, a command and its output,
+or the exact lines that disagree. Search open and closed issues for duplicates,
+then file it as a `status:ready` issue with a priority, a kind and the evidence.
+Executors fix it.
 
 ## Tickets
 
