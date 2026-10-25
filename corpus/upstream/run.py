@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 import shutil
 import shlex
+import socket
 import subprocess
 import sys
 import tarfile
@@ -49,6 +50,17 @@ def timed_phase(report, phase):
     finally:
         timings = report.setdefault('timings_seconds', {})
         timings[phase] = round(timings.get(phase, 0) + time.monotonic() - started, 4)
+
+
+# Cases that bind a fixed address. A live listener there fails the case before it
+# runs, so it can never talk to an unrelated process; TIME_WAIT is tolerated.
+FIXED_PORTS = {'tests/swoole_timer/bug_4794_8.phpt': 9601}
+
+
+def require_free_port(port):
+    with socket.socket() as guard:
+        guard.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        guard.bind(('127.0.0.1', port))
 
 
 def batches(cases, isolate=False):
@@ -253,6 +265,7 @@ def main():
     parser.add_argument('--jobs', type=int, default=1, help='Official runner workers for explicitly audited independent cases')
     parser.add_argument('--isolate-cases', action='store_true', help='Original one-runner/process-group-per-case mode')
     parser.add_argument('--require-all', action='store_true', help='Also fail on unsupported or upstream-skipped cases')
+    parser.add_argument('--external-network', action='store_true', help='Include cases marked network (DNS/routes) and run them online')
     parser.add_argument('--match-child-php', action='store_true', help='Explicitly match bare php child commands to this engine; absolute PHP paths are unchanged')
     parser.add_argument('--timeout', type=int, default=15)
     parser.add_argument('--output', type=Path, default=ROOT / 'target/reports/upstream-phpt.json')
@@ -270,14 +283,16 @@ def main():
     if unknown_cases:
         parser.error(f'Unknown or unselected PHPT paths: {sorted(unknown_cases)}')
     cases = [case for case in cases if not args.case or case['path'] in args.case]
+    unmeasured = [case['path'] for case in cases if case.get('network') and not args.external_network]
+    cases = [case for case in cases if case['path'] not in unmeasured]
     if not cases:
-        parser.error('No tests selected')
+        parser.error('No tests selected; network cases require --external-network')
     if manifest['commit'] != COMMIT:
         parser.error('PHPT manifest and reference build pins differ')
     if not args.source.is_dir():
         parser.error('Pinned upstream source missing; run python3 tools/build_upstream.py first')
     engines = parse_engines(args.engine, args.php, args.php_extension)
-    report = {'schema_version': 1, 'created_utc': datetime.now(timezone.utc).isoformat(), 'upstream': {'version': VERSION, 'commit': COMMIT, 'manifest': str(args.manifest.resolve()), 'manifest_sha256': hashlib.sha256(manifest_bytes).hexdigest(), 'support_files': support_files}, 'engines': [], 'results': [], 'batches': [], 'engine_timings': [], 'timings_seconds': {}, 'execution_status': 'running'}
+    report = {'schema_version': 1, 'created_utc': datetime.now(timezone.utc).isoformat(), 'upstream': {'version': VERSION, 'commit': COMMIT, 'manifest': str(args.manifest.resolve()), 'manifest_sha256': hashlib.sha256(manifest_bytes).hexdigest(), 'support_files': support_files}, 'engines': [], 'results': [], 'batches': [], 'engine_timings': [], 'timings_seconds': {}, 'unmeasured_cases': unmeasured, 'execution_status': 'running'}
     try:
         save_report(args.output, report)
         with tempfile.TemporaryDirectory(prefix='swoole-phpt-') as temporary:
@@ -308,9 +323,17 @@ def main():
                             runnable.append(case)
                 save_report(args.output, report)
                 for group in batches(runnable, args.isolate_cases):
+                    if len(group) == 1 and group[0]['path'] in FIXED_PORTS:
+                        try:
+                            require_free_port(FIXED_PORTS[group[0]['path']])
+                        except OSError as error:
+                            record_result(report, engine, group[0], {'status': 'failed', 'seconds': 0,
+                                          'detail': f'Fixed port {FIXED_PORTS[group[0]["path"]]} unavailable: {error}'})
+                            continue
                     artifact = args.output.resolve().parent / (args.output.stem + '-artifacts') / engine.name / f'batch-{len(report["batches"]):03}'
                     with timed_phase(engine_timing, 'cases'):
                         results, timing = run_cases(engine, group, sandbox, artifact, args.timeout, args.jobs,
+                                                    offline=not any(case.get('network') for case in group),
                                                     **({'match_child_php': True} if args.match_child_php else {}))
                     report['batches'].append({'engine': engine.name, **timing})
                     for case in group:

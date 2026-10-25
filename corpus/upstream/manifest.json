@@ -856,6 +856,249 @@
         "tcp",
         "processes"
       ]
+    },
+    {
+      "path": "tests/swoole_timer/bug_2342.phpt",
+      "sha256": "849adbdd86c71d99d8e2db066efdfd990f81115da4eb2f34b0689a3722b7fd74",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/bug_4794.phpt",
+      "sha256": "9b3e3f603ec38af235e3aebbda44dcb17c9ead7f47e5f6796014aa6592b59fbe",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "coroutines"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/bug_4794_2.phpt",
+      "sha256": "ceb0071e8cf38f8475afd75a6082329ebf0c27696b5dc90606f2b7d3edeb3110",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "coroutines",
+        "processes"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/bug_4794_3.phpt",
+      "sha256": "17113051904be70d16ca9ccc85989910476379297b527b96ec2e21ebc57b43dd",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "coroutines",
+        "tcp"
+      ],
+      "network": true
+    },
+    {
+      "path": "tests/swoole_timer/bug_4794_4.phpt",
+      "sha256": "e6b8fc9669619693d58a2d2ac7f565b6d059de421b4274aca6a5d4ea036f7076",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "coroutines",
+        "processes"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/bug_4794_5.phpt",
+      "sha256": "75e35f8c8dd524d8bc6a673c1442fa46ef91d8b186d139d1300d0181dcb14208",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "coroutines"
+      ],
+      "network": true
+    },
+    {
+      "path": "tests/swoole_timer/bug_4794_6.phpt",
+      "sha256": "d3803a0983241b852c81753438e2afb5392a37a2e09b127e2a8ef6731e7d5b34",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "coroutines",
+        "tcp"
+      ],
+      "network": true
+    },
+    {
+      "path": "tests/swoole_timer/bug_4794_7.phpt",
+      "sha256": "7f4ebebdcbc5113cc7f7313bb59d3140367ed75de859ba0b3f087d1c38e5dee5",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "tcp"
+      ],
+      "network": true
+    },
+    {
+      "path": "tests/swoole_timer/bug_4794_8.phpt",
+      "sha256": "6567025f8870fd9146533a92e82d9c15bfd199e50717ca7f8cc5bdee631fc8b4",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "coroutines"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/call_private.phpt",
+      "sha256": "fbaf69ed3db4d74ed7c4756ee2558a6c8c0ee9ce07e3aab21818d8fea4c8f902",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "processes"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/callback_bug_with_array.phpt",
+      "sha256": "56ff2fff09646e452d620be5dac42110b0d870946bc1dfe4d6ffd96cdaf45738",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "coroutines"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/enable_coroutine.phpt",
+      "sha256": "2f6602d851c2c265cf42d757b0132eb103d5bdb84dcffed62d579739e93d7703",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "coroutines"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/enable_coroutine2.phpt",
+      "sha256": "b3d9a9e0e7f4788fc4ac0b9a63df3ff09e33a810cb54fc3cb338e7e61dcd5d36",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "coroutines"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/manager.phpt",
+      "sha256": "b6974be142d4800767be1786a098d207a2785d4625811c0f9757303da7e10a4f",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "processes",
+        "tcp"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/master.phpt",
+      "sha256": "1294ba40d344410306989b1773aa1c9d5b5c54d1a5dd3f5ecf6c6fe0cab76f5a",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "processes",
+        "tcp"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/master_base.phpt",
+      "sha256": "b6b101af0680ab38a16ff3260d8720f9653b211c74279aaba5bd2c360ec9eeee",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "processes",
+        "tcp"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/memory.phpt",
+      "sha256": "6b275304bace2125352f8ad7886ce0f9baa377b8e72b28315bef02b5ddf4f3a2",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/swoole_timer_list_alias.phpt",
+      "sha256": "d2c09a94bb70aa5fe49f7bf8229322931a6186f199131e2c72aeff6e56f4efa6",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/task_worker.phpt",
+      "sha256": "98a61a438a03b81fe008c57605ed03e43874f5e22777164be36c1aec76582077",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "processes",
+        "tcp",
+        "task_workers"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/task_worker_tick_1k.phpt",
+      "sha256": "8791a20c4f410a5f5395e38f07f4f0b9d258cc5059e55d22a430c314a33643eb",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "processes",
+        "tcp",
+        "task_workers"
+      ]
+    },
+    {
+      "path": "tests/swoole_timer/verify.phpt",
+      "sha256": "f6f43c966f3de019f811344eef1fa59f7125c0ad9892a4f19ae999d12fec348e",
+      "module": "timers",
+      "requires": [
+        "upstream_test_bootstrap",
+        "timers",
+        "event_loop",
+        "coroutines"
+      ]
     }
   ]
 }

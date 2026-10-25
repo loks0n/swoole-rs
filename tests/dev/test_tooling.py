@@ -164,6 +164,25 @@ class Overlays(unittest.TestCase):
 
 
 class Phpt(unittest.TestCase):
+    def test_manifest_lists_every_pinned_timer_original(self):
+        tests = json.loads((ROOT / 'corpus/upstream/manifest.json').read_text())['tests']
+        timer = {Path(case['path']).stem: case for case in tests if case['path'].startswith('tests/swoole_timer/')}
+        self.assertEqual(len(timer), 33)
+        self.assertEqual({name for name, case in timer.items() if case.get('network')},
+                         {'bug_4794_3', 'bug_4794_5', 'bug_4794_6', 'bug_4794_7'})
+        self.assertTrue(all(case['module'] == 'timers' for case in timer.values()))
+        self.assertEqual(len({case['path'] for case in tests}), len(tests))
+
+    def test_fixed_port_guard_refuses_live_listener(self):
+        import socket
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            listener.listen()
+            port = listener.getsockname()[1]
+            with self.assertRaises(OSError):
+                phpt.require_free_port(port)
+        phpt.require_free_port(port)
+
     def test_pinned_support_assets_ignore_working_copy_and_reject_bad_inputs(self):
         import hashlib
         with tempfile.TemporaryDirectory() as directory:
@@ -312,7 +331,7 @@ class Phpt(unittest.TestCase):
                 (sandbox / 'tests/include').mkdir(parents=True)
                 (sandbox / 'tests/include/bootstrap.php').write_text('fixture')
                 (sandbox / 'run-tests.php').write_text('fixture')
-            def run(engine, group, *args):
+            def run(engine, group, *args, **kwargs):
                 saved = json.loads(output.read_text())
                 self.assertEqual(saved['execution_status'], 'running')
                 if group[0]['path'] == timer:

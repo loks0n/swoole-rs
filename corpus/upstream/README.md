@@ -1,6 +1,6 @@
 # Original upstream Swoole tests
 
-This selection runs **69 original PHPT tests** from Swoole **v6.2.2**, commit
+This selection runs **90 original PHPT tests** from Swoole **v6.2.2**, commit
 `8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e`. The manifest records each source path,
 SHA-256, subsystem, and required PHP APIs. The PHPT files are extracted with
 `git archive` from the pinned Git object and checked against these hashes before
@@ -28,6 +28,14 @@ python3 corpus/upstream/run.py \
   --engine upstream=target/upstream/src/modules/swoole.so --module timers --require-all
 ```
 
+Each manifest entry has `path`, `sha256`, `module` (its selection group),
+`requires` (engine capabilities) and optionally `network: true` for cases that
+need DNS or external routes. Network cases are left out and listed as
+`unmeasured_cases` unless `--external-network` is given, which runs them online.
+The `timers` group holds all 33 pinned `tests/swoole_timer` cases. Cases that
+bind a fixed address (`FIXED_PORTS` in `run.py`) fail without running if a live
+listener holds it.
+
 `--engine` is repeatable; `--php` and `--php-extension` behave like the application
 corpus runner. `--source` selects an existing checkout at exactly the pinned
 commit. `--module` is repeatable; groups are `http-request`, `channels`, `table`,
@@ -46,7 +54,7 @@ The wrapper instead cleans up only each test's isolated process group. Its `-W` 
 counts as a pass. Failures, unexpected statuses, runner errors, and timeouts fail
 the command. Unsupported APIs are reported separately; `--require-all` also
 fails on unsupported and skipped cases. Rust currently cannot run this selection
-because its APIs and upstream bootstrap prerequisites are missing. Those 69
+because its APIs and upstream bootstrap prerequisites are missing. Those
 unsupported results are compatibility gaps, not passes.
 
 There are two explicit **test-support adaptations** in the disposable copy:
