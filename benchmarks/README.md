@@ -5,6 +5,22 @@ small JSON, 64 KiB binary echo, and the health endpoint of the multi-file SQLite
 service. The last measures HTTP dispatch, not database throughput. All fixtures
 use one PHP worker. The benchmark never loads both extensions into one process.
 
+## Instruction counts (CI)
+
+`benchmarks/callgrind.py` counts instructions per request under callgrind
+(Linux, `valgrind` installed), with instrumentation on only while requests are
+served. Counts barely vary between runs of the same binaries, so the
+hybrid/upstream ratio is stable on shared runners where timings are not.
+`gh workflow run bench.yml` runs it for `plaintext`.
+
+```sh
+python3 benchmarks/callgrind.py --requests 1000 \
+  --engine hybrid=target/hybrid/rust-buffer-websocket/modules/swoole.so \
+  --engine upstream=target/upstream/src/modules/swoole.so
+```
+
+## Throughput
+
 ```sh
 python3 tools/build_hybrid.py --module buffer --module websocket
 python3 benchmarks/run.py \
