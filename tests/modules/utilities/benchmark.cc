@@ -103,12 +103,12 @@ __attribute__((noinline)) static uint64_t work(const std::string &name, bool rus
     if(name=="wait-ready" || name=="wake-ready") {
         alignas(uint32_t) uint32_t word=1; errno=EDOM;
 #ifdef HAVE_FUTEX
-        const unsigned futex=1;
+        const int result=name=="wait-ready" ? (rust ? swr_v1_utils_wait(&word,0) : reference::sw_atomic_futex_wait(&word,0)) :
+                                              (rust ? swr_v1_utils_wakeup(&word,1) : reference::sw_atomic_futex_wakeup(&word,1));
 #else
-        const unsigned futex=0;
+        // Non-futex builds use upstream's wait registry; there is no Rust path to compare.
+        const int result=name=="wait-ready" ? reference::sw_atomic_futex_wait(&word,0) : reference::sw_atomic_futex_wakeup(&word,1);
 #endif
-        const int result=name=="wait-ready" ? (rust ? swr_v1_utils_wait(&word,0,futex) : reference::sw_atomic_futex_wait(&word,0)) :
-                                              (rust ? swr_v1_utils_wakeup(&word,1,futex) : reference::sw_atomic_futex_wakeup(&word,1));
         return static_cast<uint64_t>(word)+static_cast<uint64_t>(result)+static_cast<unsigned>(errno);
     }
     char output[256];

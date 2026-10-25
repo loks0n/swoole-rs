@@ -403,12 +403,13 @@ pub unsafe extern "C" fn swr_v1_locks_pthread_barrier(
     }
 }
 
+/// Futex wait on a native atomic word: consume a ready token, otherwise one
+/// FUTEX_WAIT syscall. Non-futex builds use upstream's C++ wait registry.
+/// # Safety
+/// Word is aligned, live, process-shared u32 storage accessed only atomically.
+#[cfg(target_os = "linux")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_locks_wait(
-    word: *mut u32,
-    mut timeout: f64,
-    have_futex: u32,
-) -> i32 {
+pub unsafe extern "C" fn swr_v1_locks_wait(word: *mut u32, timeout: f64) -> i32 {
     if word.is_null() || !(word as usize).is_multiple_of(align_of::<AtomicU32>()) {
         return -1;
     }
@@ -418,87 +419,60 @@ pub unsafe extern "C" fn swr_v1_locks_wait(
     {
         return 0;
     }
-    #[cfg(target_os = "linux")]
-    if have_futex != 0 {
-        let duration = timespec {
-            tv_sec: timeout as time_t,
-            tv_nsec: ((timeout - (timeout as time_t) as f64) * 1000.0 * 1000.0 * 1000.0) as c_long,
-        };
-        let result = unsafe {
-            syscall(
-                SYS_futex,
-                word,
-                FUTEX_WAIT,
-                0,
-                if timeout > 0.0 {
-                    &duration as *const timespec
-                } else {
-                    ptr::null()
-                },
-                ptr::null::<c_void>(),
-                0,
-            )
-        };
-        return if result == 0
-            && a.compare_exchange(1, 0, Ordering::SeqCst, Ordering::SeqCst)
-                .is_ok()
-        {
-            0
-        } else {
-            -1
-        };
+    let duration = timespec {
+        tv_sec: timeout as time_t,
+        tv_nsec: ((timeout - (timeout as time_t) as f64) * 1000.0 * 1000.0 * 1000.0) as c_long,
+    };
+    let result = unsafe {
+        syscall(
+            SYS_futex,
+            word,
+            FUTEX_WAIT,
+            0,
+            if timeout > 0.0 {
+                &duration as *const timespec
+            } else {
+                ptr::null()
+            },
+            ptr::null::<c_void>(),
+            0,
+        )
+    };
+    if result == 0
+        && a.compare_exchange(1, 0, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+    {
+        0
+    } else {
+        -1
     }
-    #[cfg(not(target_os = "linux"))]
-    let _ = have_futex;
-    if timeout <= 0.0 {
-        timeout = i32::MAX as f64;
-    }
-    let initial = a.fetch_sub(1, Ordering::SeqCst).wrapping_sub(1) as i32;
-    while timeout > 0.0 {
-        if (a.load(Ordering::Relaxed) as i32) > initial {
-            return 0;
-        }
-        unsafe {
-            usleep(1000);
-        }
-        timeout -= 0.001;
-    }
-    a.fetch_add(1, Ordering::SeqCst);
-    -1
 }
+/// # Safety
+/// Same requirements as [`swr_v1_locks_wait`].
+#[cfg(target_os = "linux")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_locks_wakeup(word: *mut u32, n: i32, have_futex: u32) -> i32 {
+pub unsafe extern "C" fn swr_v1_locks_wakeup(word: *mut u32, n: i32) -> i32 {
     if word.is_null() || !(word as usize).is_multiple_of(align_of::<AtomicU32>()) {
         return -1;
     }
     let a = unsafe { AtomicU32::from_ptr(word) };
-    #[cfg(target_os = "linux")]
-    if have_futex != 0 {
-        return if a
-            .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
-        {
-            unsafe {
-                syscall(
-                    SYS_futex,
-                    word,
-                    FUTEX_WAKE,
-                    n,
-                    ptr::null::<c_void>(),
-                    ptr::null::<c_void>(),
-                    0,
-                ) as i32
-            }
-        } else {
-            0
-        };
+    if a.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
+        unsafe {
+            syscall(
+                SYS_futex,
+                word,
+                FUTEX_WAKE,
+                n,
+                ptr::null::<c_void>(),
+                ptr::null::<c_void>(),
+                0,
+            ) as i32
+        }
+    } else {
+        0
     }
-    #[cfg(not(target_os = "linux"))]
-    let _ = have_futex;
-    if a.load(Ordering::Relaxed) != 1 {
-        a.fetch_add(n as u32, Ordering::SeqCst);
-    }
-    0
 }
 
 // 0=reentrant, 1=acquired, 2=busy, 3=wait. Cookie/CID values are copied tokens.

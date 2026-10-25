@@ -70,10 +70,9 @@ All public utility signatures are unchanged; v1 is frozen.
   native `__sync`, relaxed reads, `spin_loop` backoff, OS thread-yield on exhaustion.
   Caller unlocks with its existing native release store. Backoff multiplication is
   checked. Null/unaligned pointers return immediately.
-- `swr_v1_utils_wait(u32 *, timeout, have_futex)` / `swr_v1_utils_wakeup(u32 *, n, have_futex)`:
-  reuse the locks module's Rust implementation. `have_futex` is the configured
-  `HAVE_FUTEX` (0/1); Linux uses the futex path when enabled, otherwise the polling
-  fallback. Caller owns aligned process-shared storage and its lifetime. errno is
+- `swr_v1_utils_wait(u32 *, timeout)` / `swr_v1_utils_wakeup(u32 *, n)`:
+  the locks module's futex wait, called from `misc.cc` only when `HAVE_FUTEX` is
+  set. Other builds keep upstream's C++ wait registry. Caller owns aligned process-shared storage and its lifetime. errno is
   preserved. Timeouts outside the positive `time_t` range are undefined upstream.
 
 ## Logger

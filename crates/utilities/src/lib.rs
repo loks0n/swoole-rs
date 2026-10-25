@@ -162,21 +162,22 @@ pub unsafe extern "C" fn swr_v1_utils_spinlock(lock: *mut u32, cpus: u32, backof
     }
 }
 
-/// Wait on the same process-shared word as the native atomic utility.
+/// Futex wait on the native atomic utility's word (HAVE_FUTEX builds only).
 /// # Safety
 /// Word is aligned, live u32 atomic storage shared only through atomic accesses.
-/// Timeout and HAVE_FUTEX selection follow the native platform contract.
+#[cfg(target_os = "linux")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_utils_wait(word: *mut u32, timeout: f64, have_futex: u32) -> i32 {
-    unsafe { swoole_rs_locks::swr_v1_locks_wait(word, timeout, have_futex) }
+pub unsafe extern "C" fn swr_v1_utils_wait(word: *mut u32, timeout: f64) -> i32 {
+    unsafe { swoole_rs_locks::swr_v1_locks_wait(word, timeout) }
 }
 
-/// Wake the native process-shared atomic utility's waiters.
+/// Futex wake for the native atomic utility's waiters.
 /// # Safety
 /// Word has the same alignment, lifetime and atomic-access requirements as wait.
+#[cfg(target_os = "linux")]
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_utils_wakeup(word: *mut u32, n: i32, have_futex: u32) -> i32 {
-    unsafe { swoole_rs_locks::swr_v1_locks_wakeup(word, n, have_futex) }
+pub unsafe extern "C" fn swr_v1_utils_wakeup(word: *mut u32, n: i32) -> i32 {
+    unsafe { swoole_rs_locks::swr_v1_locks_wakeup(word, n) }
 }
 
 /// Return the exact pinned pretty-function substring as a byte span.

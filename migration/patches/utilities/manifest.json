@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-misc.patch",
-      "sha256": "efecee3e370e282c3ac6553c5464be6d5d51c8baa81e59741585469d69d7e6f9",
+      "sha256": "da119996130366fa9e26f99cffafb249d07ac637715c88564b45b747219ebfd8",
       "upstream_paths": [
         "src/core/misc.cc"
       ]

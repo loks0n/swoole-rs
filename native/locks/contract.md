@@ -64,13 +64,12 @@ wraps at `u32`/`i64` width. CAS returns 0/1 and leaves the word unchanged on
 failure. Atomic objects and their lifetime stay native; callers must keep the
 storage live and exclude concurrent destruction.
 
-`swr_v1_locks_wait` / `swr_v1_locks_wakeup` follow the configure-time
-`HAVE_FUTEX` choice. Linux keeps CAS token consumption, a single futex syscall
-(no hidden EINTR/spurious-wake retry), timeout conversion and result/errno. Other
-configurations keep signed waiter accounting, 1 ms usleep polling, timeout
-restoration and wake counts. NaN/out-of-range timeout casts are undefined input.
-PHP Atomic/Atomic\Long and their Thread counterparts call these exports directly.
-The utilities module's `misc.cc` futex/spinlock functions are separate.
+`swr_v1_locks_wait` / `swr_v1_locks_wakeup` exist on Linux only and implement
+the `HAVE_FUTEX` path: CAS token consumption, a single futex syscall (no hidden
+EINTR/spurious-wake retry), timeout conversion and result/errno. NaN/out-of-range
+timeout casts are undefined input. PHP Atomic and its Thread counterpart call
+upstream's `sw_atomic_futex_wait/wakeup`, which reach them through the utilities
+module; non-futex builds use upstream's C++ wait registry.
 
 ## Coroutine lock policy
 
