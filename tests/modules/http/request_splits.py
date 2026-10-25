@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import parse_engines, run_isolated, write_report
 from gate import PIN
 TEST = 'tests/swoole_http_server/create_request.phpt'
-DIGEST = 'd3061de0df1dd20ddeca8bf32ddb41439837c206416fd57331bf515044210f55'
+DIGEST = 'ae0ac0bfe0b55c5ccc982d8fae4bfe22430d7084be047d3bf51b812614ed4c99'
 SWEEP = r'''
 $rows=[];
 for ($split=100; $split<=600; ++$split) {

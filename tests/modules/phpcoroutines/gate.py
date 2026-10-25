@@ -21,7 +21,7 @@ def sha(path):
 
 def stage(source, work, destination=DEST):
     original = (source / destination).read_text()
-    expected = {DEST: SOURCE_SHA, 'ext-src/swoole_coroutine.cc': 'dbad84a6cfdedff33a327d9d43a2c70777ea68efd9421db15cd8e9d46145a112', 'ext-src/swoole_coroutine_system.cc': '1b2a3d669d95bc7e524787c254ecb38467fa5e2050c1544b360f54e0cbc8c869'}[destination]
+    expected = {DEST: SOURCE_SHA, 'ext-src/swoole_coroutine.cc': '1707e8d7a2881a50b2aca203681afe459a70281929fc29057e9752c71b2ada58', 'ext-src/swoole_coroutine_system.cc': '1b2a3d669d95bc7e524787c254ecb38467fa5e2050c1544b360f54e0cbc8c869'}[destination]
     if hashlib.sha256(original.encode()).hexdigest() != expected:
         raise ValueError('Pinned source checksum mismatch')
     folder = ROOT / 'migration/patches/phpcoroutines'

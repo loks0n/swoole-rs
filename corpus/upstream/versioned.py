@@ -13,7 +13,7 @@ from tools.harness import parse_engines
 from tools.phpt_expectations import select
 import subprocess
 
-RULES_SHA = 'ecc0f856a287ce1c52fbaad34e11dc8684d4122fa985464eb261d7bc2d8ef597'
+RULES_SHA = '06375dd3b2038c81a7df149ee181206c165734dc0e7aaa2ddcb6c49c47f58462'
 
 
 def main():

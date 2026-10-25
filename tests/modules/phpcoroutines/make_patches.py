@@ -166,7 +166,7 @@ def selected(source):
 
 
 def coroutine_selected(source):
-    expected = 'dbad84a6cfdedff33a327d9d43a2c70777ea68efd9421db15cd8e9d46145a112'
+    expected = '1707e8d7a2881a50b2aca203681afe459a70281929fc29057e9752c71b2ada58'
     if hashlib.sha256(source.encode()).hexdigest() != expected:
         raise ValueError('Pinned Coroutine source changed')
     result = source.replace('#include <unordered_map>', '#ifdef SWOOLE_RS_PHPCOROUTINES\n#include "swoole_rs_phpcoroutines.h"\n#include <new>\n#else\n#include <unordered_map>\n#endif')
@@ -605,7 +605,7 @@ def system_selected(source):
 
 
 HEADER_DEST = 'ext-src/php_swoole_coroutine.h'
-HEADER_SHA = '4e6c50c8aae126a9522d1791a846ed424f36c6e4128eccec61b611be129ae22f'
+HEADER_SHA = '632c533e7dc6cd9429617ba5bd1cd3e465243116d48969951956266c74804ef3'
 
 
 HEADER_SIGNATURES = [

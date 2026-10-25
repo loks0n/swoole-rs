@@ -3,10 +3,12 @@
 
   patches.py checkout MODULE   clone the pin to target/patches/MODULE and commit each patch
   patches.py export MODULE     write each commit back to migration/patches/MODULE
+  patches.py rehash OLD [NEW]  rewrite recorded hashes of upstream files changed from OLD to NEW (default: the pin)
 """
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -63,11 +65,46 @@ def export(patches, work):
         (patches / 'manifest.json').write_text(json.dumps(updated, indent=2) + '\n')
 
 
+def rehash(old, new):
+    """Rewrite each recorded sha256 or git blob id of an upstream file from its OLD to its NEW value."""
+    work = ROOT / 'target/patches/.rehash'
+    shutil.rmtree(work, ignore_errors=True)
+    subprocess.run(['git', 'init', '-q', str(work)], check=True)
+    git(work, 'fetch', '-q', '--depth', '1', 'https://github.com/swoole/swoole-src.git', old, new)
+    blob = lambda commit, path: hashlib.sha256(subprocess.run(['git', '-C', str(work), 'show', f'{commit}:{path}'],
+                                                              check=True, capture_output=True).stdout).hexdigest()
+    status = git(work, 'diff', '--name-status', '--no-renames', old, new).splitlines()
+    mapping = {}
+    for kind, path in (line.split('\t', 1) for line in status):
+        if kind == 'M':
+            mapping[blob(old, path)] = blob(new, path)
+            mapping[git(work, 'rev-parse', f'{old}:{path}').strip()] = git(work, 'rev-parse', f'{new}:{path}').strip()
+        elif kind == 'D':
+            print(f'deleted upstream, review any reference: {path}')
+    pattern = re.compile('|'.join(map(re.escape, mapping)))
+    for name in subprocess.check_output(['git', 'ls-files', '-z'], cwd=ROOT, text=True).split('\0'):
+        path = ROOT / name
+        if not name or name.startswith('migration/patches/') or not path.is_file():
+            continue
+        try:
+            text = path.read_text()
+        except UnicodeDecodeError:
+            continue
+        updated = pattern.sub(lambda match: mapping[match.group()], text)
+        if updated != text:
+            path.write_text(updated)
+            print(name)
+    shutil.rmtree(work)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('command', choices=['checkout', 'export'])
-    parser.add_argument('module')
+    parser.add_argument('command', choices=['checkout', 'export', 'rehash'])
+    parser.add_argument('module', help='module, or OLD commit for rehash')
+    parser.add_argument('new', nargs='?', default=COMMIT, help='rehash only: NEW commit')
     args = parser.parse_args()
+    if args.command == 'rehash':
+        return rehash(args.module, args.new)
     patches, work = ROOT / 'migration/patches' / args.module, ROOT / 'target/patches' / args.module
     if not patches.is_dir():
         raise SystemExit(f'No patch directory: {patches}')

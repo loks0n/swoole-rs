@@ -18,7 +18,7 @@ file named after it:
 
 ```sh
 python3 tools/patches.py checkout phphelpers   # target/patches/phphelpers, branch patches/phphelpers
-# edit, then amend or fixup the commit for that patch (git rebase -i 8e8c499)
+# edit, then amend or fixup the commit for that patch
 python3 tools/patches.py export phphelpers     # rewrites the patch files and manifest.json
 rm -rf target/patches/phphelpers
 ```
@@ -29,6 +29,34 @@ bytes of every patch whose commit diff is unchanged, writes the others as
 commit to add a patch. New destinations must be in the module's
 `upstream_patch_targets` in `migration/modules.json`, and an edited patch listed
 in `frozen_upstream_patches` needs its new sha256 there too.
+
+## Following an upstream release
+
+Rebase every module branch onto the new tag, export, then refresh what the repo
+records about upstream files:
+
+```sh
+OLD=$(python3 -c 'from tools.build_upstream import COMMIT; print(COMMIT)')
+TAG=v6.2.5
+modules=$(ls migration/patches)
+for m in $modules; do python3 tools/patches.py checkout $m; done
+for m in $modules; do
+  git -C target/patches/$m fetch -q --depth 1 https://github.com/swoole/swoole-src.git tag $TAG
+  git -C target/patches/$m rebase --onto $TAG $OLD   # resolve conflicts as for any rebase
+done
+# Set VERSION and COMMIT in tools/build_upstream.py to the tag and its commit.
+for m in $modules; do python3 tools/patches.py export $m && rm -rf target/patches/$m; done
+python3 tools/patches.py rehash $OLD
+git grep -n "$OLD"                                  # pins and tags left to update by hand
+rm -rf target/upstream && python3 tools/build_upstream.py
+```
+
+`rehash` rewrites each recorded sha256 or git blob id of an upstream file that
+changed between the two commits, wherever the repo records it, and lists
+upstream files that were deleted. It leaves commit and tag references (some are
+history) and recorded line counts alone. Then add any new original PHPTs to
+`corpus/upstream/manifest.json` (`git diff --stat $OLD $TAG -- tests`), update
+frozen patch hashes in `migration/modules.json`, and run the merge tier.
 
 ## Build variants
 
