@@ -37,7 +37,7 @@ jobs:
       - run: python3 corpus/thirdparty/hyperf.py --prepare
       - run: python3 tests/modules/buffer/baseline.py --sanitize
       # Unit, native, ABI, model and PHP gates, every application and original PHPT, upstream as control.
-      - run: python3 tools/dev.py integrate --all-modules --php-extension pdo --php-extension pdo_sqlite --php-extension curl --php-extension sockets --php-extension tokenizer --external-network
+      - run: python3 tools/dev.py integrate --all-modules --php-extension pdo --php-extension pdo_sqlite --php-extension curl --php-extension sockets --php-extension tokenizer --external-network --php-sockets
       - if: always()
         run: python3 tools/merge_summary.py >> "$GITHUB_STEP_SUMMARY"
       - if: always()
