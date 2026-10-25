@@ -39,6 +39,8 @@ jobs:
       # Unit, native, ABI, model and PHP gates, every application and original PHPT, upstream as control.
       - run: python3 tools/dev.py integrate --all-modules --php-extension pdo --php-extension pdo_sqlite --php-extension curl --php-extension sockets --php-extension tokenizer --external-network
       - if: always()
+        run: python3 tools/merge_summary.py >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
         uses: actions/cache/save@v4
         with:
           path: target/shared-cache/ccache
