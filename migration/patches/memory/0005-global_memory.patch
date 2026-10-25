@@ -1,9 +1,8 @@
 diff --git a/src/memory/global_memory.cc b/src/memory/global_memory.cc
+index af822f6b9..70d84c279 100644
 --- a/src/memory/global_memory.cc
 +++ b/src/memory/global_memory.cc
-@@ -15,120 +15,77 @@
- */
-
+@@ -17,4 +17,6 @@
  #include "swoole_memory.h"
 -
 -#include <vector>
@@ -12,7 +11,7 @@ diff --git a/src/memory/global_memory.cc b/src/memory/global_memory.cc
 +#endif
 +#include "swoole_rs_memory.h"
  #include <mutex>
-
+@@ -22,14 +24,7 @@
  #define SW_MIN_PAGE_SIZE 4096
 -
  namespace swoole {
@@ -29,7 +28,7 @@ diff --git a/src/memory/global_memory.cc b/src/memory/global_memory.cc
 +    void *registry = nullptr;
 +    GlobalMemoryImpl(uint32_t size, bool use_shared);
      ~GlobalMemoryImpl();
-     char *new_page();
+@@ -37,13 +32,2 @@ struct GlobalMemoryImpl {
  };
 -
 -struct MemoryBlock {
@@ -43,8 +42,7 @@ diff --git a/src/memory/global_memory.cc b/src/memory/global_memory.cc
 - * it will not be released until it is recycled by OS when the process exits
 - */
  GlobalMemory::GlobalMemory(uint32_t pagesize, bool shared) {
-     assert(pagesize >= SW_MIN_PAGE_SIZE);
-     impl = new GlobalMemoryImpl(pagesize, shared);
+@@ -52,9 +36,8 @@ GlobalMemory::GlobalMemory(uint32_t pagesize, bool shared) {
  }
 -
 -GlobalMemoryImpl::GlobalMemoryImpl(uint32_t _pagesize, bool _shared) {
@@ -60,7 +58,7 @@ diff --git a/src/memory/global_memory.cc b/src/memory/global_memory.cc
 +    if (!new_page()) {
 +        swr_v1_memory_global_release(registry);
          throw std::bad_alloc();
-     }
+@@ -62,73 +45,47 @@ GlobalMemoryImpl::GlobalMemoryImpl(uint32_t _pagesize, bool _shared) {
  }
 -
 -GlobalMemoryImpl::~GlobalMemoryImpl() {

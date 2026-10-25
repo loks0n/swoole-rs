@@ -11,11 +11,11 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from tools.build_upstream import COMMIT as PIN
 ROOT = Path(__file__).resolve().parents[3]
 import sys
 sys.path.insert(0, str(ROOT))
 from tools.build_hybrid import apply_patch_verified
+from tools.build_upstream import COMMIT as PIN
 
 
 def block(source, signature):

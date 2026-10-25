@@ -33,14 +33,16 @@ fn request_line(input: &[u8], frame: &mut HttpFrame) -> i32 {
     if input.len() < 16 {
         return INVALID;
     }
-    let mut at = if let Some(index) = METHODS[..25]
+    // Every method but the trailing PRI, which is matched below.
+    let pri = METHODS.len() - 1;
+    let mut at = if let Some(index) = METHODS[..pri]
         .iter()
         .position(|m| input.starts_with(m.to_bytes()))
     {
         frame.method = index as u32 + 1;
         METHODS[index].to_bytes().len()
     } else if input.starts_with(b"PRI") {
-        frame.method = 26;
+        frame.method = METHODS.len() as u32;
         if input.starts_with(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n") {
             frame.offset = 24;
             return 0;

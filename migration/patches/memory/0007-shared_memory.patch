@@ -1,32 +1,27 @@
 diff --git a/src/memory/shared_memory.cc b/src/memory/shared_memory.cc
+index 8188278c9..553a0b4b9 100644
 --- a/src/memory/shared_memory.cc
 +++ b/src/memory/shared_memory.cc
-@@ -15,6 +15,11 @@
- */
-
+@@ -17,2 +17,7 @@
  #include "swoole_memory.h"
 +#include "swoole_file.h"
 +#ifndef SWOOLE_RS_MEMORY
 +#error "Memory overlay requires --enable-swoole-rs-memory"
 +#endif
 +#include "swoole_rs_memory.h"
-
- #include <sys/mman.h>
-
-@@ -25,56 +30,78 @@
- namespace swoole {
-
+ 
+@@ -27,4 +32,2 @@ namespace swoole {
  struct SharedMemory {
 -    size_t size_;
 -
      static void *alloc(size_t size);
-     static void free(void *ptr);
-
+@@ -32,5 +35,2 @@ struct SharedMemory {
+ 
 -    static SharedMemory *fetch_object(void *ptr) {
 -        return reinterpret_cast<SharedMemory *>(static_cast<char *>(ptr) - sizeof(SharedMemory));
 -    }
  };
-
+@@ -38,33 +38,48 @@ struct SharedMemory {
  void *SharedMemory::alloc(size_t size) {
 -    void *mem;
 -    int tmpfd = -1;
@@ -45,6 +40,7 @@ diff --git a/src/memory/shared_memory.cc b/src/memory/shared_memory.cc
 +    state.flags = MAP_SHARED;
  #ifdef MAP_ANONYMOUS
 -    flags |= MAP_ANONYMOUS;
+-#else
 +    state.anonymous = 1;
 +    state.anonymous_flags = MAP_ANONYMOUS;
 +#endif
@@ -54,25 +50,36 @@ diff --git a/src/memory/shared_memory.cc b/src/memory/shared_memory.cc
 +#ifndef MAP_ANONYMOUS
 +    // Preserve the real constructor, exception prefix and enclosing RAII scope.
 +    assert(effect.action == SWR_MEMORY_MAPPING_OPEN);
-+    File zerofile("/dev/zero", O_RDWR);
+     File zerofile("/dev/zero", O_RDWR);
+-    if (!zerofile.ready()) {
+-        return nullptr;
+-    }
+-    tmpfd = zerofile.get_fd();
 +    state.result = zerofile.ready();
 +    state.descriptor = zerofile.get_fd();
 +    status = swr_v2_memory_mapping_step(&state, &effect);
-+#endif
+ #endif
+-    mem = mmap(nullptr, size, PROT_READ | PROT_WRITE, flags, tmpfd, 0);
 +    while (status == 1) {
 +        switch (effect.action) {
 +        case SWR_MEMORY_MAPPING_MAP: {
 +            void *mem = mmap(nullptr, effect.size, PROT_READ | PROT_WRITE,
 +                             effect.flags, effect.descriptor, 0);
 +            state.memory = static_cast<uint8_t *>(mem);
-+#ifdef MAP_FAILED
+ #ifdef MAP_FAILED
+-    if (mem == MAP_FAILED)
 +            state.result = mem != MAP_FAILED;
  #else
--    File zerofile("/dev/zero", O_RDWR);
--    if (!zerofile.ready()) {
--        return nullptr;
+-    if (!mem)
 +            state.result = mem != nullptr;
-+#endif
+ #endif
+-    {
+-        swoole_sys_warning("mmap(%lu) failed", size);
+-        return nullptr;
+-    } else {
+-        object.size_ = size;
+-        memcpy(mem, &object, sizeof(object));
+-        return static_cast<char *>(mem) + sizeof(object);
 +            break;
 +        }
 +        case SWR_MEMORY_MAPPING_WARN_ALLOCATE:
@@ -85,25 +92,9 @@ diff --git a/src/memory/shared_memory.cc b/src/memory/shared_memory.cc
 +        }
 +        status = swr_v2_memory_mapping_step(&state, &effect);
      }
--    tmpfd = zerofile.get_fd();
--#endif
--    mem = mmap(nullptr, size, PROT_READ | PROT_WRITE, flags, tmpfd, 0);
--#ifdef MAP_FAILED
--    if (mem == MAP_FAILED)
--#else
--    if (!mem)
--#endif
--    {
--        swoole_sys_warning("mmap(%lu) failed", size);
--        return nullptr;
--    } else {
--        object.size_ = size;
--        memcpy(mem, &object, sizeof(object));
--        return static_cast<char *>(mem) + sizeof(object);
--    }
 +    return status == 0 ? effect.memory : nullptr;
  }
-
+@@ -72,7 +87,19 @@ void *SharedMemory::alloc(size_t size) {
  void SharedMemory::free(void *ptr) {
 -    SharedMemory *object = SharedMemory::fetch_object(ptr);
 -    size_t size = object->size_;
@@ -127,18 +118,14 @@ diff --git a/src/memory/shared_memory.cc b/src/memory/shared_memory.cc
      }
 +    assert(status == 0);
  }
-
- }  // namespace swoole
-@@ -86,12 +113,31 @@
- }
-
+@@ -88,3 +115,5 @@ void *sw_shm_malloc(size_t size) {
  void *sw_shm_calloc(size_t num, size_t _size) {
 -    return SharedMemory::alloc(num * _size);
 +    size_t requested = 0;
 +    if (swr_v1_memory_mapping_product(num, _size, &requested) != 0) return nullptr;
 +    return SharedMemory::alloc(requested);
  }
-
+@@ -92,4 +121,21 @@ void *sw_shm_calloc(size_t num, size_t _size) {
  int sw_shm_protect(void *ptr, int flags) {
 -    SharedMemory *object = SharedMemory::fetch_object(ptr);
 -    return mprotect(object, object->size_, flags);
@@ -162,11 +149,7 @@ diff --git a/src/memory/shared_memory.cc b/src/memory/shared_memory.cc
 +    if (status != 0) { errno = EINVAL; return -1; }
 +    return effect.result;
  }
-
- void sw_shm_free(void *ptr) {
-@@ -99,12 +145,25 @@
- }
-
+@@ -101,10 +147,23 @@ void sw_shm_free(void *ptr) {
  void *sw_shm_realloc(void *ptr, size_t new_size) {
 -    SharedMemory *object = SharedMemory::fetch_object(ptr);
 -    void *new_ptr = sw_shm_malloc(new_size);

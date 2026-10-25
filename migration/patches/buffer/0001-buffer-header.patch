@@ -1,9 +1,8 @@
 diff --git a/include/swoole_buffer.h b/include/swoole_buffer.h
+index 5d0dd5800..74b866fb4 100644
 --- a/include/swoole_buffer.h
 +++ b/include/swoole_buffer.h
-@@ -16,7 +16,15 @@
- 
- #pragma once
+@@ -18,3 +18,11 @@
  
 +#ifndef SWOOLE_RS_BUFFER
 +#error "Buffer overlay requires --enable-swoole-rs-buffer"
@@ -15,19 +14,11 @@ diff --git a/include/swoole_buffer.h b/include/swoole_buffer.h
 +#include "swoole_rs_buffer_typed.h"
 +#endif
  #include <sys/uio.h>
- 
- namespace swoole {
-@@ -29,6 +37,7 @@
-     };
- 
+@@ -31,2 +39,3 @@ struct BufferChunk {
      Type type;
 +    bool rs_borrowed_ = false;
      uint32_t length = 0;
-     uint32_t offset = 0;
-     union {
-@@ -46,10 +55,12 @@
- };
- 
+@@ -48,6 +57,8 @@ struct BufferChunk {
  class Buffer {
 -    // 0: don't use chunk
 -    uint32_t chunk_size;
@@ -40,11 +31,7 @@ diff --git a/include/swoole_buffer.h b/include/swoole_buffer.h
 +#endif
 +    void advance(bool drain);
  
-   public:
-     explicit Buffer(uint32_t _chunk_size);
-@@ -57,28 +68,25 @@
- 
-     BufferChunk *alloc(BufferChunk::Type type, uint32_t size);
+@@ -59,5 +70,10 @@ class Buffer {
  
 -    BufferChunk *front() const {
 -        return queue_.front();
@@ -58,9 +45,7 @@ diff --git a/include/swoole_buffer.h b/include/swoole_buffer.h
 +    void typed_sendfile(void *token, swr_v1_buffer_dispose dispose);
 +#endif
  
-     void pop();
-     void append(const char *data, uint32_t size);
-     void append(const struct iovec *iov, size_t iovcnt, off_t offset);
+@@ -67,16 +83,8 @@ class Buffer {
  
 -    uint32_t length() const {
 -        return total_length;
@@ -81,5 +66,3 @@ diff --git a/include/swoole_buffer.h b/include/swoole_buffer.h
 -        return buffer == nullptr || buffer->queue_.empty();
 +        return buffer == nullptr || buffer->empty();
      }
- };
- 

@@ -1,8 +1,8 @@
 diff --git a/include/swoole_socket.h b/include/swoole_socket.h
+index e4d52b83e..4a09bc17c 100644
 --- a/include/swoole_socket.h
 +++ b/include/swoole_socket.h
-@@ -23,4 +23,11 @@
- #include "swoole_file.h"
+@@ -24,2 +24,9 @@
  
 +#if defined(SWOOLE_RS_REACTOR_IOV_OWNED) && SWOOLE_RS_REACTOR_IOV_OWNED
 +#ifndef SWOOLE_RS_REACTOR
@@ -12,18 +12,13 @@ diff --git a/include/swoole_socket.h b/include/swoole_socket.h
 +#endif
 +
  #include <poll.h>
- #include <sys/types.h>
-@@ -174,4 +181,7 @@
- 
+@@ -175,2 +182,5 @@ struct IOVector {
      size_t length() {
 +#if defined(SWOOLE_RS_REACTOR_IOV_OWNED) && SWOOLE_RS_REACTOR_IOV_OWNED
 +        return swr_v1_reactor_iov_owned_length(iov, count);
 +#else
          size_t len = 0;
-         SW_LOOP_N(count) {
-@@ -179,4 +189,5 @@
-         }
+@@ -180,2 +190,3 @@ struct IOVector {
          return len;
 +    #endif
      }
- 

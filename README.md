@@ -1,7 +1,7 @@
 # swoole-rs
 
 A gradual C/C++ to Rust migration of the [Swoole](https://github.com/swoole/swoole-src)
-PHP extension. Upstream Swoole v6.2.2 (pinned at `8e8c4991`) keeps its PHP runtime;
+PHP extension. Upstream Swoole v6.2.4 (pinned at `c7e51450`) keeps its PHP runtime;
 bounded subsystems are replaced with Rust linked into the upstream extension through
 a C ABI. Each Rust module is opt-in, and omitting it selects the pinned upstream code.
 Full coverage, parity and performance remain in progress. See the

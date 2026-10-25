@@ -1,9 +1,8 @@
 diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_scheduler.cc
+index dd079c083..d07f1cfa1 100644
 --- a/ext-src/swoole_coroutine_scheduler.cc
 +++ b/ext-src/swoole_coroutine_scheduler.cc
-@@ -18,7 +18,13 @@
- 
- #include "php_swoole_cxx.h"
+@@ -20,3 +20,9 @@
  
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +#include "swoole_rs_phpcoroutines.h"
@@ -13,19 +12,13 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
  #include <queue>
 +#endif
  
- BEGIN_EXTERN_C()
- #include "stubs/php_swoole_coroutine_scheduler_arginfo.h"
-@@ -31,14 +37,24 @@
- using swoole::coroutine::System;
- 
+@@ -33,3 +39,5 @@ using swoole::coroutine::System;
  struct SchedulerTask {
 +#ifndef SWOOLE_RS_PHPCOROUTINES
      zend_long count;
 +#endif
      zend_fcall_info fci;
-     zend_fcall_info_cache fci_cache;
- };
- 
+@@ -39,4 +47,12 @@ struct SchedulerTask {
  struct SchedulerObject {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    swr_phpcoroutines_scheduler_queue *list;
@@ -38,11 +31,7 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
      bool started;
 +#endif
      zend_object std;
- };
- 
-@@ -65,6 +81,20 @@
- }
- 
+@@ -67,2 +83,16 @@ static zend_object *scheduler_create_object(zend_class_entry *ce) {
  static void scheduler_free_object(zend_object *object) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -59,15 +48,11 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
 +#else
 +
      SchedulerObject *s = scheduler_get_object(object);
-     if (s->list) {
-         while (!s->list->empty()) {
-@@ -78,9 +108,52 @@
-         s->list = nullptr;
-     }
+@@ -80,2 +110,3 @@ static void scheduler_free_object(zend_object *object) {
      zend_object_std_dtor(&s->std);
 +#endif
  }
- 
+@@ -83,2 +114,44 @@ static void scheduler_free_object(zend_object *object) {
  // clang-format off
 +
 +#ifdef SWOOLE_RS_PHPCOROUTINES
@@ -112,16 +97,11 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
 +static zend_function_entry swoole_coroutine_scheduler_methods[6]{};
 +#else
  static const zend_function_entry swoole_coroutine_scheduler_methods[] = {
-     PHP_ME(swoole_coroutine_scheduler, add,        arginfo_class_Swoole_Coroutine_Scheduler_add,        ZEND_ACC_PUBLIC)
-     PHP_ME(swoole_coroutine_scheduler, parallel,   arginfo_class_Swoole_Coroutine_Scheduler_parallel,   ZEND_ACC_PUBLIC)
-@@ -89,10 +162,49 @@
-     PHP_ME(swoole_coroutine_scheduler, start,      arginfo_class_Swoole_Coroutine_Scheduler_start,      ZEND_ACC_PUBLIC)
-     PHP_FE_END
+@@ -91,2 +164,3 @@ static const zend_function_entry swoole_coroutine_scheduler_methods[] = {
  };
 +#endif
  
- // clang-format on
- 
+@@ -95,2 +169,40 @@ static const zend_function_entry swoole_coroutine_scheduler_methods[] = {
  void php_swoole_coroutine_scheduler_minit(int module_number) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -162,17 +142,11 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
 +#else
 +
      SW_INIT_CLASS_ENTRY(swoole_coroutine_scheduler,
-                         "Swoole\\Coroutine\\Scheduler",
-                         "Co\\Scheduler",
-@@ -104,11 +216,43 @@
-     SW_SET_CLASS_CUSTOM_OBJECT(
-         swoole_coroutine_scheduler, scheduler_create_object, scheduler_free_object, SchedulerObject, std);
+@@ -106,7 +218,39 @@ void php_swoole_coroutine_scheduler_minit(int module_number) {
      swoole_coroutine_scheduler_ce->ce_flags |= ZEND_ACC_FINAL;
--}
--
 +#endif
-+}
-+
+ }
+ 
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +static swr_phpcoroutines_scheduler_callback_owner exit_condition_fci_cache{0};
 +#else
@@ -208,15 +182,11 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
 +    }
 +#else
      zval retval;
- 
-     SW_ASSERT(exit_condition_fci_cache);
-@@ -121,9 +265,37 @@
-         zend_exception_error(EG(exception), E_ERROR);
-     }
+@@ -123,2 +267,3 @@ static bool php_swoole_coroutine_reactor_can_exit(Reactor *reactor, size_t &even
      return Z_TYPE_P(&retval) != IS_FALSE;
 +#endif
  }
- 
+@@ -126,2 +271,29 @@ static bool php_swoole_coroutine_reactor_can_exit(Reactor *reactor, size_t &even
  void php_swoole_coroutine_scheduler_rshutdown() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -246,15 +216,11 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
 +    }
 +#else
      swoole_name_resolver_each([](const std::list<NameResolver>::iterator &iter) -> swTraverseOperation {
-         if (iter->type == NameResolver::TYPE_PHP) {
-             zval_dtor((zval *) iter->private_data);
-@@ -138,9 +310,46 @@
-         sw_callable_free(exit_condition_fci_cache);
-         exit_condition_fci_cache = nullptr;
+@@ -140,2 +312,3 @@ void php_swoole_coroutine_scheduler_rshutdown() {
      }
 +#endif
  }
- 
+@@ -143,2 +316,38 @@ void php_swoole_coroutine_scheduler_rshutdown() {
  void php_swoole_set_coroutine_option(zend_array *vht) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -293,15 +259,11 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
 +#else
 +
      zval *ztmp;
-     if (php_swoole_array_get_value(vht, "max_coro_num", ztmp) ||
-         php_swoole_array_get_value(vht, "max_coroutine", ztmp)) {
-@@ -174,9 +383,57 @@
-     } else {
-         PHPCoroutine::options = zend_array_dup(vht);
+@@ -176,2 +385,3 @@ void php_swoole_set_coroutine_option(zend_array *vht) {
      }
 +#endif
  }
- 
+@@ -179,2 +389,49 @@ void php_swoole_set_coroutine_option(zend_array *vht) {
  PHP_METHOD(swoole_coroutine_scheduler, set) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -351,15 +313,11 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
 +#else
 +
      zval *zset = nullptr;
-     HashTable *vht = nullptr;
-     zval *ztmp;
-@@ -215,15 +472,39 @@
-             }
-         }
+@@ -217,2 +474,3 @@ PHP_METHOD(swoole_coroutine_scheduler, set) {
      }
 +#endif
  }
- 
+@@ -220,2 +478,14 @@ PHP_METHOD(swoole_coroutine_scheduler, set) {
  PHP_METHOD(swoole_coroutine_scheduler, getOptions) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -374,14 +332,11 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
 +    }
 +#else
      if (!PHPCoroutine::options) {
-         return;
-     }
+@@ -224,4 +494,15 @@ PHP_METHOD(swoole_coroutine_scheduler, getOptions) {
      RETURN_ARR(zend_array_dup(PHPCoroutine::options));
--}
--
 +#endif
-+}
-+
+ }
+ 
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +static void scheduler_add_task(SchedulerObject *s, SchedulerTask *task, zend_long count) {
 +    if (!swr_v1_phpcoroutines_scheduler_prepare_slot(&s->list)) { throw std::bad_alloc(); }
@@ -393,11 +348,7 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
 +}
 +#else
  static void scheduler_add_task(SchedulerObject *s, SchedulerTask *task) {
-     if (!s->list) {
-         s->list = new std::queue<SchedulerTask *>;
-@@ -232,8 +513,28 @@
-     sw_zend_fci_params_persist(&task->fci);
-     s->list->push(task);
+@@ -234,4 +515,24 @@ static void scheduler_add_task(SchedulerObject *s, SchedulerTask *task) {
  }
 +#endif
  
@@ -422,33 +373,16 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
 +#else
 +
      SchedulerObject *s = scheduler_get_object(Z_OBJ_P(ZEND_THIS));
-     if (s->started) {
-         php_swoole_fatal_error(
-@@ -250,11 +551,14 @@
- 
-     task->count = 1;
+@@ -252,2 +553,3 @@ static PHP_METHOD(swoole_coroutine_scheduler, add) {
      scheduler_add_task(s, task);
 +#endif
  }
- 
+@@ -255,2 +557,23 @@ static PHP_METHOD(swoole_coroutine_scheduler, add) {
  static PHP_METHOD(swoole_coroutine_scheduler, parallel) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
-     SchedulerObject *s = scheduler_get_object(Z_OBJ_P(ZEND_THIS));
--    if (s->started) {
-+    if (swr_v1_phpcoroutines_scheduler_phase(&s->started, SWR_CORO_SCHED_PHASE_READ)) {
-         php_swoole_fatal_error(
-             E_WARNING, "scheduler is running, unable to execute %s->parallel", SW_Z_OBJCE_NAME_VAL_P(ZEND_THIS));
-         RETURN_FALSE;
-@@ -269,11 +573,70 @@
-     Z_PARAM_VARIADIC('*', task->fci.params, task->fci.param_count)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
- 
-+    scheduler_add_task(s, task, count);
-+#else
-+
 +    SchedulerObject *s = scheduler_get_object(Z_OBJ_P(ZEND_THIS));
-+    if (s->started) {
++    if (swr_v1_phpcoroutines_scheduler_phase(&s->started, SWR_CORO_SCHED_PHASE_READ)) {
 +        php_swoole_fatal_error(
 +            E_WARNING, "scheduler is running, unable to execute %s->parallel", SW_Z_OBJCE_NAME_VAL_P(ZEND_THIS));
 +        RETURN_FALSE;
@@ -463,11 +397,15 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
 +    Z_PARAM_VARIADIC('*', task->fci.params, task->fci.param_count)
 +    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
 +
-     task->count = count;
++    scheduler_add_task(s, task, count);
++#else
++
+     SchedulerObject *s = scheduler_get_object(Z_OBJ_P(ZEND_THIS));
+@@ -273,2 +596,3 @@ static PHP_METHOD(swoole_coroutine_scheduler, parallel) {
      scheduler_add_task(s, task);
 +#endif
  }
- 
+@@ -276,2 +600,41 @@ static PHP_METHOD(swoole_coroutine_scheduler, parallel) {
  static PHP_METHOD(swoole_coroutine_scheduler, start) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -509,12 +447,7 @@ diff --git a/ext-src/swoole_coroutine_scheduler.cc b/ext-src/swoole_coroutine_sc
 +#else
 +
      SchedulerObject *s = scheduler_get_object(Z_OBJ_P(ZEND_THIS));
- 
-     if (s->started) {
-@@ -307,4 +670,5 @@
-     s->list = nullptr;
-     s->started = false;
+@@ -309,2 +672,3 @@ static PHP_METHOD(swoole_coroutine_scheduler, start) {
      RETURN_TRUE;
--}
 +#endif
-+}
+ }

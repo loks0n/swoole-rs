@@ -1,73 +1,37 @@
 diff --git a/src/core/log.cc b/src/core/log.cc
+index 122677067..965dcc65d 100644
 --- a/src/core/log.cc
 +++ b/src/core/log.cc
-@@ -17,195 +17,200 @@
- #include "swoole_process_pool.h"
- 
+@@ -19,2 +19,5 @@
  #include <cstring>
 +#include <new>
 +#include <memory>
 +#include <stdexcept>
  #include <fcntl.h>
+@@ -24,67 +27,76 @@
  
- #include <string>
- #include <chrono>  // NOLINT [build/c++11]
- 
-+#include "swoole_rs_utilities.h"
-+#ifndef SWOOLE_RS_UTILITIES
-+#error "Utilities overlay requires --enable-swoole-rs-utilities"
-+#endif
-+
- namespace swoole {
- 
-+static void state_check(uint32_t status) {
-+    switch (status) {
-+    case SWR_UTILS_STATE_OK: return;
-+    case SWR_UTILS_STATE_LENGTH:
-+    case SWR_UTILS_STATE_CAPACITY: throw std::length_error("Logger state length");
-+    case SWR_UTILS_STATE_ALLOCATION: throw std::bad_alloc();
-+    default: throw std::logic_error("Invalid Logger state operation");
-+    }
-+}
-+
-+using OwnedLogPath = std::unique_ptr<SwrUtilsLogPath, decltype(&swr_v1_utils_log_path_destroy)>;
-+static OwnedLogPath own_path(SwrUtilsLogPath *path) {
-+    return OwnedLogPath(path, swr_v1_utils_log_path_destroy);
-+}
-+
-+Logger::Logger() {
-+    state_check(swr_v1_utils_log_state_create(std::string().max_size(), &state));
-+}
-+
-+Logger::~Logger() {
-+    swr_v1_utils_log_state_destroy(state);
-+}
-+
-+
- std::string Logger::get_pretty_name(const std::string &pretty_function, bool strip) {
+-namespace swoole {
+-
+-std::string Logger::get_pretty_name(const std::string &pretty_function, bool strip) {
 -    const size_t brackets = pretty_function.find_first_of('(');
 -    if (brackets == std::string::npos) {
 -        return "";
 -    }
--
++#include "swoole_rs_utilities.h"
++#ifndef SWOOLE_RS_UTILITIES
++#error "Utilities overlay requires --enable-swoole-rs-utilities"
++#endif
+ 
 -    const size_t begin = pretty_function.substr(0, brackets).rfind(' ') + 1;
 -    const size_t end = brackets - begin;
 -    if (!strip) {
 -        return pretty_function.substr(begin, end);
 -    }
--
++namespace swoole {
+ 
 -    auto method_name = pretty_function.substr(begin, end);
 -    size_t count = 0, index = method_name.length();
-+    size_t begin = 0, count = 0;
-+    if (swr_v1_utils_pretty_range(reinterpret_cast<const uint8_t *>(pretty_function.data()),
-+                                 pretty_function.size(), strip, &begin, &count) != 0) return {};
-+    return pretty_function.substr(begin, count);
-+}
-+
-+bool Logger::open(const char *_log_file) {
-+    uint32_t phase = 0;
-+    int log_fd = -1;
-     while (true) {
+-    while (true) {
 -        index = method_name.rfind("::", index);
 -        if (index == std::basic_string<char>::npos) {
 -            if (count == 1) {
@@ -80,13 +44,69 @@ diff --git a/src/core/log.cc b/src/core/log.cc
 -            return method_name.substr(index + 2);
 -        }
 -        index -= 2;
--    }
++static void state_check(uint32_t status) {
++    switch (status) {
++    case SWR_UTILS_STATE_OK: return;
++    case SWR_UTILS_STATE_LENGTH:
++    case SWR_UTILS_STATE_CAPACITY: throw std::length_error("Logger state length");
++    case SWR_UTILS_STATE_ALLOCATION: throw std::bad_alloc();
++    default: throw std::logic_error("Invalid Logger state operation");
+     }
 -
 -    return method_name;
--}
--
+ }
+ 
 -bool Logger::open(const char *_log_file) {
 -    if (opened) {
+-        close();
+-    }
++using OwnedLogPath = std::unique_ptr<SwrUtilsLogPath, decltype(&swr_v1_utils_log_path_destroy)>;
++static OwnedLogPath own_path(SwrUtilsLogPath *path) {
++    return OwnedLogPath(path, swr_v1_utils_log_path_destroy);
++}
+ 
+-    log_file = _log_file;
++Logger::Logger() {
++    state_check(swr_v1_utils_log_state_create(std::string().max_size(), &state));
++}
+ 
+-    if (log_rotation) {
+-        log_real_file = gen_real_file(log_file);
+-    } else {
+-        log_real_file = log_file;
+-    }
++Logger::~Logger() {
++    swr_v1_utils_log_state_destroy(state);
++}
+ 
+-    auto log_fd = ::open(log_real_file.c_str(), O_APPEND | O_RDWR | O_CREAT, 0666);
+-    if (log_fd < 0) {
+-        swoole_error_log(SW_LOG_WARNING,
+-                         SW_ERROR_SYSTEM_CALL_FAIL,
+-                         "open('%s') failed. Error: %s[%d]",
+-                         log_real_file.c_str(),
+-                         strerror(errno),
+-                         errno);
+-        opened = false;
+-        log_file = "";
+-        log_real_file = "";
+ 
+-        return false;
+-    } else {
+-        opened = true;
+-        log_fp = fdopen(log_fd, "a");
++std::string Logger::get_pretty_name(const std::string &pretty_function, bool strip) {
++    size_t begin = 0, count = 0;
++    if (swr_v1_utils_pretty_range(reinterpret_cast<const uint8_t *>(pretty_function.data()),
++                                 pretty_function.size(), strip, &begin, &count) != 0) return {};
++    return pretty_function.substr(begin, count);
++}
+ 
+-        return true;
++bool Logger::open(const char *_log_file) {
++    uint32_t phase = 0;
++    int log_fd = -1;
++    while (true) {
 +        switch (swr_v1_utils_log_state_file_step(state, &phase, 0, log_fd)) {
 +        case SWR_UTILS_LOG_FILE_CLOSE: close(); break;
 +        case SWR_UTILS_LOG_FILE_ASSIGN_PATH:
@@ -119,51 +139,14 @@ diff --git a/src/core/log.cc b/src/core/log.cc
 +            return true;
 +        default: return false;
 +        }
-+    }
-+}
-+
-+void Logger::set_stream(FILE *stream) {
+     }
+@@ -93,3 +105,4 @@ bool Logger::open(const char *_log_file) {
+ void Logger::set_stream(FILE *stream) {
+-    if (opened) {
 +    uint32_t phase = 0;
 +    if (swr_v1_utils_log_state_config_step(state, &phase, 2, 0) == SWR_UTILS_LOG_CONFIG_CLOSE) {
          close();
-     }
--
--    log_file = _log_file;
--
--    if (log_rotation) {
--        log_real_file = gen_real_file(log_file);
--    } else {
--        log_real_file = log_file;
--    }
--
--    auto log_fd = ::open(log_real_file.c_str(), O_APPEND | O_RDWR | O_CREAT, 0666);
--    if (log_fd < 0) {
--        swoole_error_log(SW_LOG_WARNING,
--                         SW_ERROR_SYSTEM_CALL_FAIL,
--                         "open('%s') failed. Error: %s[%d]",
--                         log_real_file.c_str(),
--                         strerror(errno),
--                         errno);
--        opened = false;
--        log_file = "";
--        log_real_file = "";
--
--        return false;
--    } else {
--        opened = true;
--        log_fp = fdopen(log_fd, "a");
--
--        return true;
--    }
--}
--
--void Logger::set_stream(FILE *stream) {
--    if (opened) {
--        close();
--    }
-     log_fp = stream;
- }
- 
+@@ -100,7 +113,7 @@ void Logger::set_stream(FILE *stream) {
  void Logger::close() {
 -    if (opened) {
 +    uint32_t phase = 0;
@@ -174,13 +157,12 @@ diff --git a/src/core/log.cc b/src/core/log.cc
 -        opened = false;
 +        swr_v1_utils_log_state_clear(state, 0);
      }
- }
- 
+@@ -109,3 +122,3 @@ void Logger::close() {
  int Logger::get_level() const {
 -    return log_level;
 +    return swr_v1_utils_log_state_scalar_get(state, SWR_UTILS_STATE_LEVEL);
  }
- 
+@@ -113,9 +126,3 @@ int Logger::get_level() const {
  void Logger::set_level(int level) {
 -    if (level < SW_LOG_DEBUG) {
 -        level = SW_LOG_DEBUG;
@@ -191,16 +173,42 @@ diff --git a/src/core/log.cc b/src/core/log.cc
 -    log_level = level;
 +    swr_v1_utils_log_state_scalar_set(state, SWR_UTILS_STATE_LEVEL, level);
  }
- 
+@@ -123,3 +130,3 @@ void Logger::set_level(int level) {
  void Logger::set_rotation(int _rotation) {
 -    log_rotation = _rotation;
 +    swr_v1_utils_log_state_scalar_set(state, SWR_UTILS_STATE_ROTATION, _rotation);
  }
- 
+@@ -127,40 +134,30 @@ void Logger::set_rotation(int _rotation) {
  bool Logger::redirect_stdout_and_stderr(bool enable) {
 -    if (enable) {
 -        if (!opened) {
 -            swoole_warning("no log file opened");
+-            return false;
+-        }
+-        if (redirected) {
+-            swoole_warning("has been redirected");
+-            return false;
+-        }
+-        if ((stdout_fd = dup(STDOUT_FILENO)) < 0) {
+-            swoole_sys_warning("dup(STDOUT_FILENO) failed");
+-            return false;
+-        }
+-        if ((stderr_fd = dup(STDERR_FILENO)) < 0) {
+-            swoole_sys_warning("dup(STDERR_FILENO) failed");
+-            return false;
+-        }
+-        swoole_redirect_stdout(fileno(log_fp));
+-        redirected = true;
+-    } else {
+-        if (!redirected) {
+-            swoole_warning("no redirected");
+-            return false;
+-        }
+-        if (dup2(stdout_fd, STDOUT_FILENO) < 0) {
+-            swoole_sys_warning("dup2(STDOUT_FILENO) failed");
+-        }
+-        if (dup2(stderr_fd, STDERR_FILENO) < 0) {
+-            swoole_sys_warning("dup2(STDERR_FILENO) failed");
 +    uint32_t phase = 0;
 +    int result = 0;
 +    while (true) {
@@ -227,74 +235,26 @@ diff --git a/src/core/log.cc b/src/core/log.cc
 +        case SWR_UTILS_REDIRECT_RESTORE_OUT_FAILED: swoole_sys_warning("dup2(STDOUT_FILENO) failed"); break;
 +        case SWR_UTILS_REDIRECT_RESTORE_ERR_FAILED: swoole_sys_warning("dup2(STDERR_FILENO) failed"); break;
 +        default: return false;
-+        }
-+    }
-+}
-+
-+void Logger::reset() {
-+    swr_v1_utils_log_state_reset(state);
-+}
-+
-+bool Logger::set_date_format(const char *format) {
-+    uint32_t phase = 0;
-+    size_t formatted = 0;
-+    while (true) {
-+        switch (swr_v1_utils_log_state_config_step(state, &phase, 1, formatted)) {
-+        case SWR_UTILS_LOG_CONFIG_FORMAT_DATE: {
-+            char date_str[SW_LOG_DATE_STRLEN];
-+            auto now_sec = ::time(nullptr);
-+            formatted = std::strftime(date_str, sizeof(date_str), format, std::localtime(&now_sec));
-+            break;
-+        }
-+        case SWR_UTILS_LOG_CONFIG_REJECT_DATE:
-+            swoole_set_last_error(SW_ERROR_INVALID_PARAMS);
-+            swoole_error_log(SW_LOG_WARNING, SW_ERROR_INVALID_PARAMS,
-+                            "The date format string[length=%ld] is too long", strlen(format));
-             return false;
--        }
--        if (redirected) {
--            swoole_warning("has been redirected");
--            return false;
--        }
--        if ((stdout_fd = dup(STDOUT_FILENO)) < 0) {
--            swoole_sys_warning("dup(STDOUT_FILENO) failed");
--            return false;
--        }
--        if ((stderr_fd = dup(STDERR_FILENO)) < 0) {
--            swoole_sys_warning("dup(STDERR_FILENO) failed");
--            return false;
--        }
--        swoole_redirect_stdout(fileno(log_fp));
--        redirected = true;
--    } else {
--        if (!redirected) {
--            swoole_warning("no redirected");
--            return false;
--        }
--        if (dup2(stdout_fd, STDOUT_FILENO) < 0) {
--            swoole_sys_warning("dup2(STDOUT_FILENO) failed");
--        }
--        if (dup2(stderr_fd, STDERR_FILENO) < 0) {
--            swoole_sys_warning("dup2(STDERR_FILENO) failed");
--        }
+         }
 -        ::close(stdout_fd);
 -        ::close(stderr_fd);
 -        stdout_fd = -1;
 -        stderr_fd = -1;
 -        redirected = false;
--    }
+     }
 -
 -    return true;
--}
--
--void Logger::reset() {
+ }
+@@ -168,6 +165,3 @@ bool Logger::redirect_stdout_and_stderr(bool enable) {
+ void Logger::reset() {
 -    date_format = SW_LOG_DEFAULT_DATE_FORMAT;
 -    date_with_microseconds = false;
 -    log_rotation = SW_LOG_ROTATION_SINGLE;
 -    log_level = SW_LOG_INFO;
--}
--
--bool Logger::set_date_format(const char *format) {
++    swr_v1_utils_log_state_reset(state);
+ }
+@@ -175,18 +169,23 @@ void Logger::reset() {
+ bool Logger::set_date_format(const char *format) {
 -    char date_str[SW_LOG_DATE_STRLEN];
 -    time_t now_sec;
 -
@@ -311,6 +271,21 @@ diff --git a/src/core/log.cc b/src/core/log.cc
 -        date_format = format;
 -
 -        return true;
++    uint32_t phase = 0;
++    size_t formatted = 0;
++    while (true) {
++        switch (swr_v1_utils_log_state_config_step(state, &phase, 1, formatted)) {
++        case SWR_UTILS_LOG_CONFIG_FORMAT_DATE: {
++            char date_str[SW_LOG_DATE_STRLEN];
++            auto now_sec = ::time(nullptr);
++            formatted = std::strftime(date_str, sizeof(date_str), format, std::localtime(&now_sec));
++            break;
++        }
++        case SWR_UTILS_LOG_CONFIG_REJECT_DATE:
++            swoole_set_last_error(SW_ERROR_INVALID_PARAMS);
++            swoole_error_log(SW_LOG_WARNING, SW_ERROR_INVALID_PARAMS,
++                            "The date format string[length=%ld] is too long", strlen(format));
++            return false;
 +        case SWR_UTILS_LOG_CONFIG_ASSIGN_DATE:
 +            state_check(swr_v1_utils_log_state_text_set(state, SWR_UTILS_STATE_DATE,
 +                reinterpret_cast<const uint8_t *>(format), strlen(format)));
@@ -318,13 +293,12 @@ diff --git a/src/core/log.cc b/src/core/log.cc
 +        default: return false;
 +        }
      }
- }
- 
+@@ -195,3 +194,3 @@ bool Logger::set_date_format(const char *format) {
  void Logger::set_date_with_microseconds(bool enable) {
 -    date_with_microseconds = enable;
 +    swr_v1_utils_log_state_scalar_set(state, SWR_UTILS_STATE_MICROS, enable);
  }
- 
+@@ -199,11 +198,17 @@ void Logger::set_date_with_microseconds(bool enable) {
  void Logger::reopen_without_lock() {
 -    if (!opened) {
 -        return;
@@ -351,24 +325,18 @@ diff --git a/src/core/log.cc b/src/core/log.cc
 +        default: return;
 +        }
      }
- }
- 
-@@ -215,128 +220,112 @@
- }
- 
+@@ -217,3 +222,3 @@ void Logger::reopen() {
  const char *Logger::get_real_file() {
 -    return log_real_file.c_str();
 +    return swr_v1_utils_log_state_text_get(state, SWR_UTILS_STATE_REAL_FILE);
  }
- 
+@@ -221,30 +226,26 @@ const char *Logger::get_real_file() {
  const char *Logger::get_file() const {
 -    return log_file.c_str();
--}
--
--std::string Logger::gen_real_file(const std::string &file) const {
 +    return swr_v1_utils_log_state_text_get(state, SWR_UTILS_STATE_FILE);
-+}
-+
+ }
+ 
+-std::string Logger::gen_real_file(const std::string &file) const {
 +SwrUtilsLogPath *Logger::make_real_path(const char *file, size_t length) const {
 +    // Capture before calendar effects, matching the original filename value.
 +    SwrUtilsLogPath *captured = nullptr;
@@ -398,25 +366,24 @@ diff --git a/src/core/log.cc b/src/core/log.cc
  
      size_t l_data_str = std::strftime(date_str, sizeof(date_str), fmt, std::localtime(&now_sec));
 -    std::string real_file = file + "." + std::string(date_str, l_data_str);
--
--    return real_file;
 +    state_check(swr_v1_utils_log_path_rotate(path.get(),
 +        reinterpret_cast<const uint8_t *>(date_str), l_data_str));
 +    return path.release();
 +}
-+
+ 
+-    return real_file;
 +std::string Logger::gen_real_file(const std::string &file) const {
 +    auto path = own_path(make_real_path(file.data(), file.size()));
 +    size_t length = 0;
 +    const char *bytes = swr_v1_utils_log_path_get(path.get(), &length);
 +    return std::string(bytes, length);
  }
- 
+@@ -252,3 +253,3 @@ std::string Logger::gen_real_file(const std::string &file) const {
  bool Logger::is_opened() const {
 -    return opened;
 +    return swr_v1_utils_log_state_scalar_get(state, SWR_UTILS_STATE_OPENED);
  }
- 
+@@ -256,87 +257,75 @@ bool Logger::is_opened() const {
  void Logger::put(int level, const char *content, size_t length) {
 -    const char *level_str;
      char date_str[SW_LOG_DATE_STRLEN];
@@ -460,49 +427,6 @@ diff --git a/src/core/log.cc b/src/core/log.cc
 -        if (tmp != log_real_file && lock.try_lock()) {
 -            reopen_without_lock();
 -            lock.unlock();
--        }
--    }
--
--    if (date_with_microseconds) {
--        auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
--        l_data_str += sw_snprintf(
--            date_str + l_data_str, SW_LOG_DATE_STRLEN - l_data_str, "<.%lld>", (long long) now_us - now_sec * 1000000);
--    }
--
--    int worker_id = swoole_get_worker_id();
--    pid_t worker_pid = swoole_get_worker_pid();
--    if (worker_pid == 0) {
--        worker_pid = getpid();
--    }
--    char worker_symbol = swoole_get_worker_symbol();
--
--    size_t n = sw_snprintf(log_str,
--                           SW_LOG_BUFFER_SIZE,
--                           "[%.*s %c%d.%d]\t%s\t%.*s\n",
--                           static_cast<int>(l_data_str),
--                           date_str,
--                           worker_symbol,
--                           worker_pid,
--                           worker_id,
--                           level_str,
--                           static_cast<int>(length),
--                           content);
--
--    lock.lock();
--    if (opened) {
--        flockfile(log_fp);
--    }
--    fwrite(log_str, n, 1, log_fp);
--    fflush(log_fp);
--    if (opened) {
--        funlockfile(log_fp);
--    }
--    lock.unlock();
--
--    if (display_backtrace_) {
--        swoole_print_backtrace();
--    }
--}
 +    std::chrono::system_clock::time_point now;
 +    time_t now_sec = 0;
 +    size_t l_data_str = 0, n = 0;
@@ -570,8 +494,48 @@ diff --git a/src/core/log.cc b/src/core/log.cc
 +        case SWR_UTILS_LOG_PUT_UNLOCK: lock.unlock(); break;
 +        case SWR_UTILS_LOG_PUT_BACKTRACE: swoole_print_backtrace(); return;
 +        default: return;
-+        }
-+    }
-+}
+         }
+-    }
+-
+-    if (date_with_microseconds) {
+-        auto now_us = std::chrono::duration_cast<std::chrono::microseconds>(now.time_since_epoch()).count();
+-        l_data_str += sw_snprintf(
+-            date_str + l_data_str, SW_LOG_DATE_STRLEN - l_data_str, "<.%lld>", (long long) now_us - now_sec * 1000000);
+-    }
+-
+-    int worker_id = swoole_get_worker_id();
+-    pid_t worker_pid = swoole_get_worker_pid();
+-    if (worker_pid == 0) {
+-        worker_pid = getpid();
+-    }
+-    char worker_symbol = swoole_get_worker_symbol();
+-
+-    size_t n = sw_snprintf(log_str,
+-                           SW_LOG_BUFFER_SIZE,
+-                           "[%.*s %c%d.%d]\t%s\t%.*s\n",
+-                           static_cast<int>(l_data_str),
+-                           date_str,
+-                           worker_symbol,
+-                           worker_pid,
+-                           worker_id,
+-                           level_str,
+-                           static_cast<int>(length),
+-                           content);
+-
+-    lock.lock();
+-    if (opened) {
+-        flockfile(log_fp);
+-    }
+-    fwrite(log_str, n, 1, log_fp);
+-    fflush(log_fp);
+-    if (opened) {
+-        funlockfile(log_fp);
+-    }
+-    lock.unlock();
+-
+-    if (display_backtrace_) {
+-        swoole_print_backtrace();
+     }
+ }
 +
  }  // namespace swoole

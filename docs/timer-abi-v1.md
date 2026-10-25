@@ -1,8 +1,8 @@
 # Timer queue ABI v1
 
 Declarations: `native/include/swoole_rs_timer.h` (14 exports). Feature value 4
-(`--module timer`). Reference: Swoole v6.2.2,
-`8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e`.
+(`--module timer`). Reference: Swoole v6.2.4,
+`c7e514509451beafd4d70ce5b78943d51e76381c`.
 
 ## Ownership
 

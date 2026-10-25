@@ -1,32 +1,23 @@
 diff --git a/ext-src/swoole_channel_coro.cc b/ext-src/swoole_channel_coro.cc
+index 75bb2eb96..5365c166b 100644
 --- a/ext-src/swoole_channel_coro.cc
 +++ b/ext-src/swoole_channel_coro.cc
-@@ -18,6 +18,11 @@
-  */
+@@ -21,2 +21,7 @@
  
- #include "php_swoole_cxx.h"
-+
 +#ifndef SWOOLE_RS_PHPCOLLECTIONS
 +#error "PHP collections overlay requires --enable-swoole-rs-phpcollections"
 +#endif
 +#include "swoole_rs_phpcollections.h"
- 
++
  #include "swoole_coroutine_channel.h"
- 
-@@ -131,9 +136,7 @@
-     Z_PARAM_LONG(capacity)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
+@@ -133,5 +138,3 @@ static PHP_METHOD(swoole_channel_coro, __construct) {
  
 -    if (capacity <= 0) {
 -        capacity = 1;
 -    }
 +    capacity = swr_v1_phpcollections_capacity(capacity);
  
-     ChannelObject *chan_t = channel_coro_fetch_object(Z_OBJ_P(ZEND_THIS));
-     chan_t->chan = new Channel(capacity);
-@@ -151,18 +154,32 @@
-     Z_PARAM_DOUBLE(timeout)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
+@@ -153,14 +156,28 @@ static PHP_METHOD(swoole_channel_coro, push) {
  
 -    Z_TRY_ADDREF_P(zdata);
 -    zdata = sw_zval_dup(zdata);
@@ -67,11 +58,7 @@ diff --git a/ext-src/swoole_channel_coro.cc b/ext-src/swoole_channel_coro.cc
 +        default: abort();
 +        }
      }
- }
- 
-@@ -175,16 +192,30 @@
-     Z_PARAM_DOUBLE(timeout)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
+@@ -177,12 +194,26 @@ static PHP_METHOD(swoole_channel_coro, pop) {
  
 -    zval *zdata = (zval *) chan->pop(timeout);
 -    if (zdata) {
@@ -108,5 +95,3 @@ diff --git a/ext-src/swoole_channel_coro.cc b/ext-src/swoole_channel_coro.cc
 +        default: abort();
 +        }
      }
- }
- 

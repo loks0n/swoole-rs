@@ -1,7 +1,8 @@
 diff --git a/src/server/base.cc b/src/server/base.cc
+index cf0058ddd..29c4c6c40 100644
 --- a/src/server/base.cc
 +++ b/src/server/base.cc
-@@ -196,3 +196,7 @@
+@@ -196,3 +196,7 @@ bool BaseFactory::end(SessionId session_id, int flags) {
      } else {
 +#if defined(SWOOLE_RS_BUFFER_TYPED) && SWOOLE_RS_BUFFER_TYPED
 +        _socket->out_buffer->typed_close();
@@ -10,9 +11,10 @@ diff --git a/src/server/base.cc b/src/server/base.cc
 +#endif
          conn->close_queued = 1;
 diff --git a/src/server/reactor_thread.cc b/src/server/reactor_thread.cc
+index c95e43aad..e868b8b97 100644
 --- a/src/server/reactor_thread.cc
 +++ b/src/server/reactor_thread.cc
-@@ -471,4 +471,9 @@
+@@ -471,4 +471,9 @@ static int ReactorThread_onPipeWrite(Reactor *reactor, Event *ev) {
      while (!Buffer::empty(buffer)) {
 +#if defined(SWOOLE_RS_BUFFER_TYPED) && SWOOLE_RS_BUFFER_TYPED
 +        const auto view = buffer->typed_front();
@@ -22,7 +24,7 @@ diff --git a/src/server/reactor_thread.cc b/src/server/reactor_thread.cc
          const auto *send_data = reinterpret_cast<EventData *>(chunk->value.str);
 +#endif
  
-@@ -499,3 +504,7 @@
+@@ -499,3 +504,7 @@ static int ReactorThread_onPipeWrite(Reactor *reactor, Event *ev) {
  
 +#if defined(SWOOLE_RS_BUFFER_TYPED) && SWOOLE_RS_BUFFER_TYPED
 +        ret = ev->socket->send(view.data, view.length, 0);
@@ -30,7 +32,7 @@ diff --git a/src/server/reactor_thread.cc b/src/server/reactor_thread.cc
          ret = ev->socket->send(chunk->value.str, chunk->length, 0);
 +#endif
          if (ret < 0) {
-@@ -637,6 +646,10 @@
+@@ -637,6 +646,10 @@ static int ReactorThread_onWrite(Reactor *reactor, Event *ev) {
      while (!Buffer::empty(socket->out_buffer)) {
 -        BufferChunk *chunk = socket->out_buffer->front();
 -        if (chunk->type == BufferChunk::TYPE_CLOSE) {

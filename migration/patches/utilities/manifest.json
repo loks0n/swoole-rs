@@ -1,34 +1,34 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-misc.patch",
-      "sha256": "e6a70e1e6b39fdf18e1dd24008598d8fae29fd09052b1724d93452527806d773",
+      "sha256": "efecee3e370e282c3ac6553c5464be6d5d51c8baa81e59741585469d69d7e6f9",
       "upstream_paths": [
         "src/core/misc.cc"
       ]
     },
     {
       "path": "0002-log.patch",
-      "sha256": "6431ba4e881cb060a2354fcdb469c238a05adb62bd207ffec13ca68ef7ee6a89",
+      "sha256": "86cd989028efc13b915c8732e0707a667b49b2a79a63ff32b59092fee96fc967",
       "upstream_paths": [
         "src/core/log.cc"
       ]
     },
     {
       "path": "0003-inline-bytes.patch",
-      "sha256": "eb18b3841a9b78fc674efc017585823b2a0fecfaaa1be007209c5e63b5e54dfa",
+      "sha256": "713f83b6ae1f3b1c5f0ae3fa730db3bf0eeb96eab8dcd7851c6392dfccf7c1df",
       "upstream_paths": [
-        "include/swoole_util.h",
-        "include/swoole.h"
+        "include/swoole.h",
+        "include/swoole_util.h"
       ]
     },
     {
       "path": "0004-logger-state.patch",
+      "sha256": "6bb68955f20100fee8c19ed160c6ce3a12e9c10e1f584fcf65aefa3e5fec37bf",
       "upstream_paths": [
         "include/swoole_log.h"
-      ],
-      "sha256": "6174cdf10358c3e822c3a2c6a9518cef481149eaf93f09705abafb20b6393ab9"
+      ]
     }
   ]
 }

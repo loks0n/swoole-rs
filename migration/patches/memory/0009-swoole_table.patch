@@ -1,27 +1,21 @@
 diff --git a/include/swoole_table.h b/include/swoole_table.h
+index b8a0eadd3..ffe919ed7 100644
 --- a/include/swoole_table.h
 +++ b/include/swoole_table.h
-@@ -18,11 +18,15 @@
-
- #include "swoole_memory.h"
+@@ -20,2 +20,7 @@
  #include "swoole_lock.h"
 +#ifndef SWOOLE_RS_MEMORY
 +#error "Memory overlay requires --enable-swoole-rs-memory"
 +#endif
 +#include "swoole_rs_memory.h"
 +#include <type_traits>
-
- #include <csignal>
-
+ 
+@@ -24,3 +29,2 @@
  #include <vector>
 -#include <unordered_map>
-
- //#define SW_TABLE_DEBUG   0
- #define SW_TABLE_FORCE_UNLOCK_TIME 2000  // milliseconds
-@@ -35,24 +39,7 @@
-
- struct TableColumn;
-
+ 
+@@ -37,20 +41,3 @@ struct TableColumn;
+ 
 -struct TableRow {
 -    sw_atomic_t lock_;
 -    pid_t lock_pid;
@@ -42,32 +36,21 @@ diff --git a/include/swoole_table.h b/include/swoole_table.h
 -
 +struct TableRow : swr_v1_memory_table_row {
      void lock();
-
-     void unlock() {
-@@ -60,14 +47,18 @@
-     }
-
+@@ -62,4 +49,4 @@ struct TableRow {
      void clear() {
 -        sw_memset_zero((char *) &lock_pid, sizeof(TableRow) - offsetof(TableRow, lock_pid));
 -    }
 +        (void) swr_v1_memory_table_clear(this, 1);
 +}
-
-     void set_value(const TableColumn *col, const void *value, size_t vlen);
-     void get_value(const TableColumn *col, double *dval) const;
-     void get_value(const TableColumn *col, long *lval) const;
-     void get_value(const TableColumn *col, char **strval, TableStringLength *strlen);
- };
-+
+ 
+@@ -71,2 +58,6 @@ struct TableRow {
+ 
 +static_assert(std::is_standard_layout<TableRow>::value, "C POD row base");
 +static_assert(sizeof(TableRow) == 88 && offsetof(TableRow, data) == 88, "shared table row layout");
 +static_assert(offsetof(TableRow, next) == 16 && offsetof(TableRow, key) == 24, "shared table links/key");
-
++
  struct TableIterator {
-     size_t row_memory_size_;
-@@ -113,7 +104,10 @@
- };
-
+@@ -115,3 +106,6 @@ struct TableColumn {
  class Table {
 -    std::unordered_map<std::string, TableColumn *> *column_map;
 +    friend class TableV2;
@@ -75,20 +58,12 @@ diff --git a/include/swoole_table.h b/include/swoole_table.h
 +    void destroy_impl(bool legacy_columns);
 +    void *column_map;
      Mutex *mutex;
-     size_t size;
-     size_t mask;
-@@ -184,7 +178,7 @@
-     }
-
+@@ -186,3 +180,3 @@ class Table {
      size_t get_column_size() const {
 -        return column_map->size();
 +        return swr_v1_memory_table_columns_count(column_map);
      }
-
-     TableRow *get_by_index(uint32_t index) const {
-@@ -211,17 +205,48 @@
-     }
-
+@@ -213,5 +207,17 @@ class Table {
      void clear_row(TableRow *row) const {
 -        for (auto &i : *column_list) {
 -            i->clear(row);
@@ -108,7 +83,7 @@ diff --git a/include/swoole_table.h b/include/swoole_table.h
 +        assert(status == 0);
 +        (void) status;
      }
-
+@@ -219,7 +225,26 @@ class Table {
    private:
 -    TableRow *hash(const char *key, int keylen) const {
 -        uint64_t hashv = hash_func(key, keylen);
@@ -139,12 +114,8 @@ diff --git a/include/swoole_table.h b/include/swoole_table.h
 +        (void) status;
 +        return state.row;
      }
-
-     TableRow *alloc_row() const {
-@@ -238,21 +263,6 @@
-         unlock();
-     }
-
+@@ -240,17 +265,2 @@ class Table {
+ 
 -    static void check_key_length(uint16_t *keylen) {
 -        if (*keylen >= SW_TABLE_KEY_SIZE) {
 -            *keylen = SW_TABLE_KEY_SIZE - 1;
@@ -160,6 +131,4 @@ diff --git a/include/swoole_table.h b/include/swoole_table.h
 -        new_row->active = 1;
 -        sw_atomic_fetch_add(&(row_num), 1);
 -    }
-
-     int lock() const {
-         return mutex->lock();
+ 

@@ -1,9 +1,8 @@
 diff --git a/src/network/stream.cc b/src/network/stream.cc
+index 9866c9e95..922daeec1 100644
 --- a/src/network/stream.cc
 +++ b/src/network/stream.cc
-@@ -18,6 +18,11 @@
- #include "swoole_socket.h"
- #include "swoole_protocol.h"
+@@ -20,2 +20,7 @@
  #include "swoole_client.h"
 +#ifndef SWOOLE_RS_REACTOR
 +#error "Reactor overlay requires --enable-swoole-rs-reactor"
@@ -11,20 +10,12 @@ diff --git a/src/network/stream.cc b/src/network/stream.cc
 +#include "swoole_rs_reactor.h"
 +static_assert(sizeof(int) == 4, "stream signed length ABI");
  
- namespace swoole {
- namespace network {
-@@ -27,7 +32,7 @@
-     if (stream->cancel) {
-         cli->close();
+@@ -29,3 +34,3 @@ static void Stream_onConnect(Client *cli) {
      }
 -    *reinterpret_cast<uint32_t *>(stream->buffer->str) = ntohl(stream->buffer->length - 4);
 +    swr_v1_stream_prepare(reinterpret_cast<uint8_t *>(stream->buffer->str), stream->buffer->length);
      if (cli->send(stream->buffer->str, stream->buffer->length, 0) < 0) {
-         cli->close();
-     } else {
-@@ -56,10 +61,11 @@
- 
- static void Stream_onReceive(const Client *cli, const char *data, uint32_t length) {
+@@ -58,6 +63,7 @@ static void Stream_onReceive(const Client *cli, const char *data, uint32_t lengt
      auto *stream = static_cast<Stream *>(cli->object);
 -    if (length == 4) {
 +    auto view = swr_v1_stream_view(length);
@@ -34,16 +25,10 @@ diff --git a/src/network/stream.cc b/src/network/stream.cc
 -        stream->response(stream, data + 4, length - 4);
 +        stream->response(stream, data + view.offset, view.length);
      }
- }
- 
-@@ -139,8 +145,8 @@
-     if (ret <= 0) {
-         return SW_ERR;
+@@ -141,4 +147,4 @@ ssize_t Stream::recv_sync(Socket *sock, void *_buf, size_t _len) {
      }
 -    const int length = static_cast<int>(ntohl(tmp));
 -    if (length <= 0 || length > static_cast<int>(_len)) {
 +    const int length = swr_v1_stream_length(reinterpret_cast<const uint8_t *>(&tmp), _len);
 +    if (length < 0) {
          return SW_ERR;
-     }
-     return sock->recv_sync(_buf, length, MSG_WAITALL);

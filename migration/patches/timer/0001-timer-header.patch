@@ -1,10 +1,9 @@
 diff --git a/include/swoole_timer.h b/include/swoole_timer.h
+index f4e3724fe..5bc64ed3e 100644
 --- a/include/swoole_timer.h
 +++ b/include/swoole_timer.h
-@@ -17,11 +17,18 @@
-
- #pragma once
-
+@@ -19,3 +19,9 @@
+ 
 -#include "swoole_heap.h"
 +#include "swoole.h"
 +
@@ -14,33 +13,21 @@ diff --git a/include/swoole_timer.h b/include/swoole_timer.h
 +#include "swoole_rs_timer.h"
 +#include "swoole_rs_timer_runtime.h"
  #include "swoole_reactor.h"
- #include "swoole_util.h"
-
+@@ -23,3 +29,4 @@
+ 
 -#include <unordered_map>
 +#include <stdexcept>
 +#include <vector>
-
- #define SW_TIMER_MIN_MS 1
- #define SW_TIMER_MIN_SEC 0.001
-@@ -29,6 +36,7 @@
- #define SW_TIMER_MAX_SEC ((double) LONG_MAX / 1000)
-
+ 
+@@ -31,2 +38,3 @@
  namespace swoole {
 +static_assert(sizeof(long) == 8, "Timer ABI v1 requires a 64-bit native long");
  typedef std::function<void(TimerNode *)> TimerDestructor;
-
- struct TimerNode {
-@@ -43,7 +51,6 @@
-     uint64_t exec_count;
-     uint64_t round;
+@@ -45,3 +53,2 @@ struct TimerNode {
      bool removed;
 -    HeapNode *heap_node;
      TimerCallback callback;
-     void *data;
-     TimerDestructor destructor;
-@@ -52,11 +59,14 @@
- class Timer {
-     /*--------------signal timer--------------*/
+@@ -54,7 +61,10 @@ class Timer {
      Reactor *reactor_ = nullptr;
 -    Heap heap;
 -    std::unordered_map<long, TimerNode *> map;
@@ -56,20 +43,12 @@ diff --git a/include/swoole_timer.h b/include/swoole_timer.h
 +        if (status != SWR_TIMER_OK) throw std::runtime_error("Rust timer queue operation failed");
 +    }
      /*---------------event timer--------------*/
-     int64_t base_time;
-     /**
-@@ -79,7 +89,7 @@
-     ~Timer();
-
+@@ -81,3 +91,3 @@ class Timer {
      int64_t get_relative_msec() const {
 -        return get_absolute_msec() - base_time;
 +        return swr_v1_timer_relative_msec(get_absolute_msec(), base_time);
      }
-
-     int64_t get_next_msec() const {
-@@ -95,24 +105,33 @@
-     }
-
+@@ -97,10 +107,17 @@ class Timer {
      TimerNode *add(long _msec, bool persistent, void *data, const TimerCallback &callback);
 -    bool remove(TimerNode *tnode);
 +    bool remove(TimerNode *tnode) { return tnode && remove(tnode->id); }
@@ -92,14 +71,14 @@ diff --git a/include/swoole_timer.h b/include/swoole_timer.h
 +        swr_v1_timer_view view{};
 +        if (swr_v1_timer_update(queue_, tnode->id, deadline, &view) == SWR_TIMER_OK) apply(view);
      }
-     void reinit(bool manually_trigger = false);
+@@ -108,9 +125,11 @@ class Timer {
      void select();
 +    // Only after a caught Zend bailout whose native selection will never resume.
 +    void abandon_selection(void (*bailout)() = nullptr) {
 +        abandoned_selection_ = true;
 +        pending_bailout_ = bailout;
 +    }
-
+ 
      TimerNode *get(long id) {
 -        const auto it = map.find(id);
 -        if (it == map.end()) {
@@ -109,30 +88,26 @@ diff --git a/include/swoole_timer.h b/include/swoole_timer.h
 +        swr_v1_timer_view view{};
 +        return swr_v1_timer_get(queue_, id, &view) == SWR_TIMER_OK ? apply(view) : nullptr;
      }
-
-     TimerNode *get(long id, const TimerNode::Type type) {
-@@ -121,19 +140,25 @@
-     }
-
+@@ -123,3 +142,5 @@ class Timer {
      size_t count() const {
 -        return map.size();
 +        swr_v1_timer_stats stats{};
 +        check(swr_v1_timer_stats_get(queue_, &stats));
 +        return stats.count;
      }
-
+@@ -127,11 +148,15 @@ class Timer {
      uint64_t get_round() const {
 -        return round;
 +        swr_v1_timer_stats stats{};
 +        check(swr_v1_timer_stats_get(queue_, &stats));
 +        return stats.round;
      }
-
+ 
 -    bool remove(long id) {
 -        return remove(get(id));
 -    }
 +    bool remove(long id);
-
+ 
 -    const std::unordered_map<long, TimerNode *> &get_map() {
 -        return map;
 +    std::vector<int64_t> get_ids() const {
@@ -142,5 +117,3 @@ diff --git a/include/swoole_timer.h b/include/swoole_timer.h
 +        ids.resize(copied);
 +        return ids;
      }
- };
-

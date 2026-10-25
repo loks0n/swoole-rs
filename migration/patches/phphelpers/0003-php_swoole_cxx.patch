@@ -1,20 +1,14 @@
 diff --git a/ext-src/php_swoole_cxx.h b/ext-src/php_swoole_cxx.h
-index 32b8a0f..90dff7e 100644
+index 32b8a0fce..90dff7ecd 100644
 --- a/ext-src/php_swoole_cxx.h
 +++ b/ext-src/php_swoole_cxx.h
-@@ -17,6 +17,9 @@
- #pragma once
- 
+@@ -19,2 +19,5 @@
  #include "php_swoole_private.h"
 +#ifdef SWOOLE_RS_PHPHELPERS
 +#include "swoole_rs_phphelpers.h"
 +#endif
  #include "php_swoole_coroutine.h"
- 
- #include "swoole_socket_impl.h"
-@@ -194,12 +197,25 @@ std::unordered_map<std::string, uint64_t> sw_socket_parse_tcp_info(tcp_info *inf
- #endif
- 
+@@ -196,2 +199,14 @@ std::unordered_map<std::string, uint64_t> sw_socket_parse_tcp_info(tcp_info *inf
  static inline bool php_swoole_async(bool blocking, const std::function<void(void)> &fn) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    uint32_t phase = 0;
@@ -29,18 +23,11 @@ index 32b8a0f..90dff7e 100644
 +    }
 +#else
      if (!blocking && swoole_coroutine_is_in()) {
-         return swoole::coroutine::async(fn);
-     } else {
-         fn();
-         return true;
+@@ -202,2 +217,3 @@ static inline bool php_swoole_async(bool blocking, const std::function<void(void
      }
 +#endif
  }
- 
- namespace zend {
-@@ -223,11 +239,25 @@ class String {
-     }
- 
+@@ -225,2 +241,14 @@ class String {
      String(zend_string *v, bool copy) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        str = nullptr;
@@ -55,18 +42,12 @@ index 32b8a0f..90dff7e 100644
 +        }
 +#else
          if (copy) {
-             str = zend_string_copy(v);
-         } else {
-             str = v;
+@@ -230,2 +258,4 @@ class String {
          }
 +    
 +#endif
      }
- 
-     String(const String &o) {
-@@ -240,25 +270,66 @@ class String {
-     }
- 
+@@ -242,2 +272,13 @@ class String {
      String &operator=(zval *v) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -80,12 +61,12 @@ index 32b8a0f..90dff7e 100644
 +        }
 +#else
          release();
-         str = zval_get_string(v);
+@@ -245,2 +286,4 @@ class String {
          return *this;
 +    
 +#endif
      }
- 
+@@ -248,2 +291,14 @@ class String {
      String &operator=(String &&o) noexcept {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -100,13 +81,12 @@ index 32b8a0f..90dff7e 100644
 +        }
 +#else
          release();
-         str = o.str;
-         o.str = nullptr;
+@@ -252,2 +307,4 @@ class String {
          return *this;
 +    
 +#endif
      }
- 
+@@ -255,2 +312,14 @@ class String {
      String &operator=(const String &o) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -121,19 +101,12 @@ index 32b8a0f..90dff7e 100644
 +        }
 +#else
          if (&o == this) {
-             return *this;
-         }
-         release();
-         str = zend_string_copy(o.str);
+@@ -261,2 +330,4 @@ class String {
          return *this;
 +    
 +#endif
      }
- 
-     char *val() const {
-@@ -282,18 +353,36 @@ class String {
-     }
- 
+@@ -284,3 +355,8 @@ class String {
      char *dup() const {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        return sw_likely(!swr_v1_phphelpers_empty(len())) ? sw_strndup(val(), len()) : nullptr;
@@ -142,7 +115,7 @@ index 32b8a0f..90dff7e 100644
 +    
 +#endif
      }
- 
+@@ -288,3 +364,8 @@ class String {
      char *edup() const {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        return sw_likely(!swr_v1_phphelpers_empty(len())) ? estrndup(val(), len()) : nullptr;
@@ -151,7 +124,7 @@ index 32b8a0f..90dff7e 100644
 +    
 +#endif
      }
- 
+@@ -292,2 +373,8 @@ class String {
      void release() {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        if (!swr_v1_phphelpers_empty(str != nullptr)) {
@@ -160,17 +133,12 @@ index 32b8a0f..90dff7e 100644
 +        }
 +#else
          if (str) {
-             zend_string_release(str);
-             str = nullptr;
+@@ -296,2 +383,4 @@ class String {
          }
 +    
 +#endif
      }
- 
-     ~String() {
-@@ -311,24 +400,75 @@ class KeyValue {
-     zval zvalue;
- 
+@@ -313,2 +402,20 @@ class KeyValue {
      KeyValue(zend_ulong _index, zend_string *_key, zval *_zvalue) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        index = _index;
@@ -191,14 +159,12 @@ index 32b8a0f..90dff7e 100644
 +        }
 +#else
          index = _index;
-         key = _key ? zend_string_copy(_key) : nullptr;
-         ZVAL_DEREF(_zvalue);
-         zvalue = *_zvalue;
+@@ -318,2 +425,4 @@ class KeyValue {
          Z_TRY_ADDREF(zvalue);
 +    
 +#endif
      }
- 
+@@ -321,2 +430,17 @@ class KeyValue {
      void add_to(zval *zarray) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        HashTable *ht = Z_ARRVAL_P(zarray);
@@ -216,12 +182,12 @@ index 32b8a0f..90dff7e 100644
 +        }
 +#else
          HashTable *ht = Z_ARRVAL_P(zarray);
-         zval *dest_elem = !key ? zend_hash_index_update(ht, index, &zvalue) : zend_hash_update(ht, key, &zvalue);
+@@ -324,2 +448,4 @@ class KeyValue {
          Z_TRY_ADDREF_P(dest_elem);
 +    
 +#endif
      }
- 
+@@ -327,2 +453,14 @@ class KeyValue {
      ~KeyValue() {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -236,17 +202,12 @@ index 32b8a0f..90dff7e 100644
 +        }
 +#else
          if (key) {
-             zend_string_release(key);
-         }
+@@ -331,2 +469,4 @@ class KeyValue {
          zval_ptr_dtor(&zvalue);
 +    
 +#endif
      }
- };
- 
-@@ -378,6 +518,25 @@ class ArrayIterator {
- 
-   private:
+@@ -380,2 +520,21 @@ class ArrayIterator {
      void skipUndefBucket() {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -268,20 +229,12 @@ index 32b8a0f..90dff7e 100644
 +        }
 +#else
          while (_ptr != pe) {
-             _val = &_ptr->val;
-             if (_val && Z_TYPE_P(_val) == IS_INDIRECT) {
-@@ -396,6 +555,8 @@ class ArrayIterator {
-             }
-             break;
+@@ -398,2 +557,4 @@ class ArrayIterator {
          }
 +    
 +#endif
      }
- 
-     zval *_val;
-@@ -419,11 +580,21 @@ class Array {
-     }
- 
+@@ -421,3 +582,8 @@ class Array {
      bool set(zend_ulong index, zval *value) const {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        return swr_v1_phphelpers_call_success(add_index_zval(arr, index, value), 0) != 0;
@@ -290,7 +243,7 @@ index 32b8a0f..90dff7e 100644
 +    
 +#endif
      }
- 
+@@ -425,3 +591,8 @@ class Array {
      bool append(zval *value) const {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        return swr_v1_phphelpers_call_success(add_next_index_zval(arr, value), 0) != 0;
@@ -299,11 +252,7 @@ index 32b8a0f..90dff7e 100644
 +    
 +#endif
      }
- 
-     bool set(zend_ulong index, zend_resource *res) const {
-@@ -466,13 +637,41 @@ class Variable {
-     }
- 
+@@ -468,4 +639,18 @@ class Variable {
      Variable(const Variable &&src) noexcept {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        value = {};
@@ -322,7 +271,7 @@ index 32b8a0f..90dff7e 100644
 +    
 +#endif
      }
- 
+@@ -473,4 +658,18 @@ class Variable {
      Variable(Variable &&src) noexcept {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        value = {};
@@ -341,11 +290,7 @@ index 32b8a0f..90dff7e 100644
 +    
 +#endif
      }
- 
-     Variable &operator=(zval *zvalue) {
-@@ -481,14 +680,40 @@ class Variable {
-     }
- 
+@@ -483,2 +682,13 @@ class Variable {
      Variable &operator=(const Variable &src) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -359,12 +304,12 @@ index 32b8a0f..90dff7e 100644
 +        }
 +#else
          value = src.value;
-         add_ref();
+@@ -486,2 +696,4 @@ class Variable {
          return *this;
 +    
 +#endif
      }
- 
+@@ -489,4 +701,17 @@ class Variable {
      void assign(zval *zvalue) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -382,11 +327,7 @@ index 32b8a0f..90dff7e 100644
 +    
 +#endif
      }
- 
-     zval *ptr() {
-@@ -535,20 +760,54 @@ class CharPtr {
-     }
- 
+@@ -537,2 +762,8 @@ class CharPtr {
      void release() {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        if (!swr_v1_phphelpers_empty(str_ != nullptr)) {
@@ -395,13 +336,12 @@ index 32b8a0f..90dff7e 100644
 +        }
 +#else
          if (str_) {
-             efree(str_);
-             str_ = nullptr;
+@@ -541,2 +772,4 @@ class CharPtr {
          }
 +    
 +#endif
      }
- 
+@@ -544,4 +777,17 @@ class CharPtr {
      void assign(const char *str, size_t len) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -419,7 +359,7 @@ index 32b8a0f..90dff7e 100644
 +    
 +#endif
      }
- 
+@@ -549,4 +795,17 @@ class CharPtr {
      void assign_tolower(const char *str, size_t len) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        uint32_t phase = 0;
@@ -437,11 +377,7 @@ index 32b8a0f..90dff7e 100644
 +    
 +#endif
      }
- 
-     ~CharPtr() {
-@@ -586,6 +845,23 @@ class Callable {
-     }
- 
+@@ -588,2 +847,19 @@ class Callable {
      Callable *dup() const {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        auto copy = new Callable();
@@ -461,16 +397,12 @@ index 32b8a0f..90dff7e 100644
 +        }
 +#else
          auto copy = new Callable();
-         copy->fcc = fcc;
-         copy->zfn = zfn;
-@@ -594,10 +870,17 @@ class Callable {
-             copy->fn_name = estrdup(fn_name);
-         }
+@@ -596,2 +872,4 @@ class Callable {
          return copy;
 +    
 +#endif
      }
- 
+@@ -599,3 +877,8 @@ class Callable {
      bool call(uint32_t argc, zval *argv, zval *retval) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        return swr_v1_phphelpers_call_success(sw_zend_call_function_ex(&zfn, &fcc, argc, argv, retval), 0) != 0;
@@ -479,11 +411,7 @@ index 32b8a0f..90dff7e 100644
 +    
 +#endif
      }
- };
- 
-@@ -828,6 +1111,19 @@ static inline void sw_callable_free(void *ptr) {
- }
- 
+@@ -830,2 +1113,15 @@ static inline void sw_callable_free(void *ptr) {
  static inline zend::Callable *sw_callable_create(zval *zfn) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    auto fn = new zend::Callable(zfn);
@@ -499,15 +427,11 @@ index 32b8a0f..90dff7e 100644
 +    }
 +#else
      auto fn = new zend::Callable(zfn);
-     if (fn->ready()) {
-         return fn;
-@@ -835,9 +1131,31 @@ static inline zend::Callable *sw_callable_create(zval *zfn) {
-         delete fn;
-         return nullptr;
+@@ -837,2 +1133,3 @@ static inline zend::Callable *sw_callable_create(zval *zfn) {
      }
 +#endif
  }
- 
+@@ -840,2 +1137,23 @@ static inline zend::Callable *sw_callable_create(zval *zfn) {
  static inline zend::Callable *sw_callable_create_ex(zval *zfn, const char *fname, bool allow_null = true) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    uint32_t phase = 0;
@@ -531,11 +455,7 @@ index 32b8a0f..90dff7e 100644
 +    }
 +#else
      if (zfn == nullptr || ZVAL_IS_NULL(zfn)) {
-         if (!allow_null) {
-             zend_throw_exception_ex(
-@@ -855,4 +1173,5 @@ static inline zend::Callable *sw_callable_create_ex(zval *zfn, const char *fname
-         return nullptr;
-     }
+@@ -857,2 +1175,3 @@ static inline zend::Callable *sw_callable_create_ex(zval *zfn, const char *fname
      return cb;
 +#endif
  }

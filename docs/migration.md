@@ -48,5 +48,5 @@ done when nothing remains apart from declared third-party code.
    minimal Zend shims. The pinned upstream tree stops being a build input.
 
 References: [Rust FFI](https://doc.rust-lang.org/nomicon/ffi.html),
-[upstream CMake build](https://github.com/swoole/swoole-src/blob/v6.2.2/CMakeLists.txt),
-[upstream config.m4](https://github.com/swoole/swoole-src/blob/v6.2.2/config.m4).
+[upstream CMake build](https://github.com/swoole/swoole-src/blob/v6.2.4/CMakeLists.txt),
+[upstream config.m4](https://github.com/swoole/swoole-src/blob/v6.2.4/config.m4).

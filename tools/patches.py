@@ -40,7 +40,8 @@ def export(patches, work):
     rows = []
     for commit in git(work, 'rev-list', '--reverse', COMMIT + '..HEAD').split():
         name = git(work, 'log', '-1', '--format=%s', commit).strip()
-        body = git(work, 'diff', commit + '~', commit)
+        # One context line, so patches from different modules to neighbouring lines still stack.
+        body = git(work, 'diff', '-U1', commit + '~', commit)
         (patches / name).write_text(body)
         rows.append({'path': name, 'sha256': hashlib.sha256(body.encode()).hexdigest(),
                      'upstream_paths': git(work, 'diff', '--name-only', commit + '~', commit).split()})

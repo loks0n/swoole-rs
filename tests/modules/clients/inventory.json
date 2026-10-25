@@ -1,7 +1,7 @@
 {
   "assignee": "@loks0n",
   "kind": "read-only readiness; not implementation or parity",
-  "upstream": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "main_observed": "a86a7882c125f78e183d1cf4d62a96db3c4ebd15",
   "source": [
     {
@@ -18,14 +18,14 @@
     },
     {
       "path": "src/network/dns.cc",
-      "sha256": "da6a1cb9363893acbbc031f7999ccbf48465e03554c50f8699d88b67358ed8a9",
-      "lines": 845,
+      "sha256": "d59f8b906264ab6133316affed7a8e850782a774448bc6c5598dd9f07e955459",
+      "lines": 848,
       "sections": null
     },
     {
       "path": "ext-src/swoole_client.cc",
-      "sha256": "d665e758c059971e1d6f99af2c9e632b86bd8ca8cec1f4bd16524e0f13e61d2b",
-      "lines": 1332,
+      "sha256": "b33a9075fa3f3d0bb35bbce7466882403405f7e6ef049bc6dbe39a43681d6bf8",
+      "lines": 1333,
       "sections": null
     },
     {
@@ -36,8 +36,8 @@
     },
     {
       "path": "ext-src/swoole_client_coro.cc",
-      "sha256": "d478f8fb77373f9796f5291afea54acb6855177999db7f8526ed4719dfef6d5b",
-      "lines": 618,
+      "sha256": "45c82e28f3bbd54cecf343f28f39014904c2cc7881a0b2f72b2b227ba939f52b",
+      "lines": 619,
       "sections": null
     },
     {
@@ -48,8 +48,8 @@
     },
     {
       "path": "ext-src/swoole_http_client_coro.cc",
-      "sha256": "3eca651e7b1523d91c7fee87178af73be049c2cbce112a7905e1faa13d3e8268",
-      "lines": 2188,
+      "sha256": "1f079b05790fcace3715159895da3ed60c162b36eecbf73d4154dd3b52d5c241",
+      "lines": 2269,
       "sections": null
     }
   ],
@@ -76,8 +76,8 @@
     },
     {
       "path": "core-tests/src/network/client.cpp",
-      "sha256": "15ff0a9cf7e6b15c4a0acf5f5b0456ae6b7168a417687d0ec7b8cc47de99e6c5",
-      "lines": 1069,
+      "sha256": "b661dfe2694cd77fdf4404079dd41aa237b5da0611d49bbd001b4fca1939975c",
+      "lines": 1098,
       "sections": null,
       "declarations": [
         "client.tcp",
@@ -127,8 +127,8 @@
     },
     {
       "path": "core-tests/src/network/dns.cpp",
-      "sha256": "efa5a29e84fa509ce87969db36d5906deea5844f88648f8feb4899e5a8e1e86e",
-      "lines": 245,
+      "sha256": "2877e1dfb7fb78d6dcbd8a29793d685106ec96f6b865f52386cc0b1317f92aa3",
+      "lines": 258,
       "sections": null,
       "declarations": [
         "dns.lookup1",
@@ -1867,7 +1867,7 @@
     },
     {
       "path": "tests/swoole_http_client_coro/ssl.phpt",
-      "sha256": "974d3edde3224a40cff46469717ed7af08c6fbb66c0a0875aa82faff8ff15a63",
+      "sha256": "c32d5d4b85254ba36fdb266ac79425cf276bd0ff6eee79c0231bde80ba1552f1",
       "lines": 25,
       "sections": [
         "TEST",
@@ -1878,7 +1878,7 @@
     },
     {
       "path": "tests/swoole_http_client_coro/ssl_host_name.phpt",
-      "sha256": "9c20a2931bc781e0b3ad8b520901970e7dd09f479d6921840768ff2fd1a777c5",
+      "sha256": "9782b7fa3532dcea94e97f0ae7a8bc86a8f18382a80bf60ae67584f4f60bdd73",
       "lines": 23,
       "sections": [
         "TEST",
@@ -1999,8 +1999,8 @@
     },
     {
       "path": "tests/swoole_http_client_coro/websocket/bug_01.phpt",
-      "sha256": "fef48bdc19ee870b09edaa3a050e5ae6aab4e428e25d7ff19c70d93abffc429a",
-      "lines": 55,
+      "sha256": "e4803c0d98c013f37b944a1365883b08cdd6539b9f48ee7752ca4fd65c42843b",
+      "lines": 58,
       "sections": [
         "TEST",
         "SKIPIF",
@@ -2219,8 +2219,8 @@
     },
     {
       "path": "tests/swoole_http_client_coro/websocket/ssl_2.phpt",
-      "sha256": "257b719563598c36433ee24320427a868b27cc6ea156349163df3b831116b849",
-      "lines": 41,
+      "sha256": "7cfb70f52d2910bc776fc6cfa8f59202292bac107ea4c20d20c9c6789b9e62f6",
+      "lines": 64,
       "sections": [
         "TEST",
         "SKIPIF",

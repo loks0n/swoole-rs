@@ -1,6 +1,6 @@
 {
   "scope": "Static pinned declaration/path inventory only. No runtime test, availability/skip or expanded parameterized-case PASS claims. Caller references are lexical evidence, not a complete dynamic call graph.",
-  "pin": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "pin": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "integrated_main": "b88ecc7fdae202473c044c650731f1858377a428",
   "reserved_sources": [
     {
@@ -11,9 +11,9 @@
     },
     {
       "path": "src/coroutine/socket.cc",
-      "sha256": "ed3f3763d5fbe85a134cbccbf79d37473897a5ce9052d6fad5db22f0f8d9aee2",
-      "git_blob": "577dc0bd3277420a5a83cf855cca3028ced01ee3",
-      "lines": 1692
+      "sha256": "db48ca9ba640d6b8d7c14bbe85c813450ed3175c7a7f7a256ea5708091e3ee02",
+      "git_blob": "5a16f4cca69849da500cc2dd8fc83d001df0878f",
+      "lines": 1710
     },
     {
       "path": "src/coroutine/system.cc",
@@ -35,21 +35,21 @@
     },
     {
       "path": "src/coroutine/iouring.cc",
-      "sha256": "716702d4706b73c48bb2fab282c3cbf196c7877b100ef925fca634025aaf09eb",
-      "git_blob": "cca2e034370a736f5deac3e93d4e03fd22e90629",
-      "lines": 856
+      "sha256": "0d5c9b725f41d23a9d8d98eaa7396587d1b497fa8a97ae0337903306e88f29d1",
+      "git_blob": "63ca2f2f981d005c140a04938f3510a810c30266",
+      "lines": 865
     },
     {
       "path": "src/coroutine/uring_socket.cc",
-      "sha256": "6637361b35c55d5002ea0537ec1f792930bbbbc1cd953ea6e2662bcba0ac254d",
-      "git_blob": "1dd0a033860306fe5eb5b96bebb577474bff7619",
-      "lines": 668
+      "sha256": "6a0a2a1509bfbe0eaee02598a5f27ade399fdc8b3fb8fd1ace939fab2fca1f00",
+      "git_blob": "758765a25cff40db035a9821323bdbfaab2ac754",
+      "lines": 724
     },
     {
       "path": "ext-src/swoole_runtime.cc",
-      "sha256": "98b1118c466f9c9ac38b23984b289aea5bf8ca624a8fc03e9b93b253890dcedf",
-      "git_blob": "a47b0d3583526863c8df7e2b39a7ce5862f2d0dd",
-      "lines": 2506
+      "sha256": "a3a8b5b509d0bb5faa6b5142054eef7a97fcd53365ecb0a6c9ec4a35fa228295",
+      "git_blob": "0f7b169f425988aa725b948c1844ec3f79079acc",
+      "lines": 2533
     }
   ],
   "native_tests": [
@@ -1313,9 +1313,9 @@
     },
     {
       "path": "core-tests/src/network/dns.cpp",
-      "sha256": "efa5a29e84fa509ce87969db36d5906deea5844f88648f8feb4899e5a8e1e86e",
-      "git_blob": "4bac26a4a65f5165405ba487a4e21dbbc2498184",
-      "lines": 245,
+      "sha256": "2877e1dfb7fb78d6dcbd8a29793d685106ec96f6b865f52386cc0b1317f92aa3",
+      "git_blob": "1118bd8485aa139e874899e8c425f91fbc0da093",
+      "lines": 258,
       "scope": "extended/dependency",
       "declarations": [
         {
@@ -1591,9 +1591,9 @@
       },
       {
         "path": "tests/swoole_runtime/destruct.phpt",
-        "sha256": "e40060dc43d4503e6909e9fcaf219016a95758b2caf6fc66f9ada797a813dc59",
-        "git_blob": "9880af6d4a5f0175ebeb29e4710222f3c00bac08",
-        "lines": 39,
+        "sha256": "616d0fe732c096b11ce3a6b91f23440c0fde78122a220f9a81dd832939ac0948",
+        "git_blob": "7ddf835b741fd9f71ff90bf4ea47de43507a2767",
+        "lines": 69,
         "status": "NOT_RUN",
         "sections": [
           "TEST",
@@ -1894,9 +1894,9 @@
       },
       {
         "path": "tests/swoole_runtime/file_lock/lock_ex.phpt",
-        "sha256": "4f5085ca9bbfad51622a26144103bf010e3718d8e3db12597c3a24102a7139a5",
-        "git_blob": "4b3a5219569abc575cd1ad0bd28724e360b24517",
-        "lines": 32,
+        "sha256": "ec1d7e6e60d74daed09eeda5fee9c3c760c4523fa37eb3791e24e1c2bd8c1929",
+        "git_blob": "b33aede159b54b08629b61e440a461e021841ca2",
+        "lines": 38,
         "status": "NOT_RUN",
         "sections": [
           "TEST",
@@ -2096,9 +2096,9 @@
       },
       {
         "path": "tests/swoole_runtime/persistent.phpt",
-        "sha256": "977b3dd25380be6aad8330a192cbaa6ffddad8f121e4b7473b7a34c07312d41b",
-        "git_blob": "a99ccf43644f1adfb1bf09e3fd7f4ed26972eb05",
-        "lines": 48,
+        "sha256": "25d7466ef5dc1bd1b7ab0c2a7692cd82613b3598a0316e84b0ef0cc2477be8f7",
+        "git_blob": "6fe5db5733f42f1b2aa70e34bd0828724f465950",
+        "lines": 71,
         "status": "NOT_RUN",
         "sections": [
           "TEST",
@@ -3339,8 +3339,8 @@
       },
       {
         "path": "tests/swoole_runtime/stream_get_meta_data.phpt",
-        "sha256": "894d7543b3b3486f67cffb1de4f0fd3fadcab8dc422e60d19414cc45e90a39af",
-        "git_blob": "4d4a5c1fa81164817a23f37a3e48fa2f87c6f4eb",
+        "sha256": "fcb8ba3ded82c8919bfb20b6ef216a7d072035418d668f16e496036a19657074",
+        "git_blob": "2b571dd24f8c048b949cf1d94ee076ffb53599c4",
         "lines": 60,
         "status": "NOT_RUN",
         "sections": [
@@ -4447,9 +4447,9 @@
       },
       {
         "path": "tests/swoole_socket_coro/setopt/recvtimeo.phpt",
-        "sha256": "02f77babe447d6d7ad519fe83fb57926e3db7b8ccf5cca421a1ad3827ffa02cd",
-        "git_blob": "e92b5cb125aafc58efed17a078ed65170a94e069",
-        "lines": 23,
+        "sha256": "07a17e392b612691bb5d9236630423e30279e21969714c6ab89f9ecbfb3fa33b",
+        "git_blob": "9ce9f36938bdf9bbf55295fe0014d9bc223bdcd4",
+        "lines": 39,
         "status": "NOT_RUN",
         "sections": [
           "TEST",
@@ -5389,8 +5389,8 @@
   "caller_references": [
     {
       "path": "ext-src/php_swoole.cc",
-      "sha256": "bf9f886d10509721cb10e33ffa1fa170707849ea6f5bf6f3c066dfea11f8780a",
-      "git_blob": "ef459307bce034b26d13ac9ea4680b6900fdfe66",
+      "sha256": "181e9e787ed35583e7eb305873f868d38073c281c8e719d3ffb79f84cb419927",
+      "git_blob": "66f2386f2654284b1b2a715d3dd6cc43f41160b4",
       "lines": 1899,
       "references": [
         {
@@ -5427,9 +5427,9 @@
     },
     {
       "path": "ext-src/php_swoole_coroutine.h",
-      "sha256": "4e6c50c8aae126a9522d1791a846ed424f36c6e4128eccec61b611be129ae22f",
-      "git_blob": "7839fb56151879f00ff37813be77f0b27258af68",
-      "lines": 319,
+      "sha256": "632c533e7dc6cd9429617ba5bd1cd3e465243116d48969951956266c74804ef3",
+      "git_blob": "ae8a1a16b5aa46dc4957a3623d25fb4376c0279e",
+      "lines": 324,
       "references": [
         {
           "line": 23,
@@ -5607,9 +5607,9 @@
     },
     {
       "path": "ext-src/php_swoole_http.h",
-      "sha256": "a6e41a08e219cf736dab703494fd7a02b6fd0cd2053171d8daa25820bbdb0695",
-      "git_blob": "a3dff829812481eb51d6ba69652699aa135bd430",
-      "lines": 536,
+      "sha256": "a55f0753f2f94c6859cb93fa63df42dc7b7d69d217782fa84888bc52f1e1d8f2",
+      "git_blob": "af194489f6e9957a0f822580836dff31a25000e8",
+      "lines": 545,
       "references": [
         {
           "line": 260,
@@ -5627,9 +5627,9 @@
     },
     {
       "path": "ext-src/php_swoole_library.h",
-      "sha256": "76b63a49998a0adae6557cc47ca7160e888af3d36502d6c969f8fe2c450cc56d",
-      "git_blob": "6458dad61e200ec76433572d587c17532b0dadcd",
-      "lines": 11431,
+      "sha256": "f334a659e52fa137c3422825237fc9309ada8870b3653eae6f9c52b55c3b950a",
+      "git_blob": "7138107d3f5b6e6a6ab90298a5ed7075e2489055",
+      "lines": 12539,
       "references": [
         {
           "line": 104,
@@ -5671,8 +5671,8 @@
     },
     {
       "path": "ext-src/php_swoole_private.h",
-      "sha256": "e92aef2f8e3b8d00b557558aac2c4ee849adb9d1150d4d0f1638deec39ad429b",
-      "git_blob": "5b5f1d23c2a1fd2a5e1d14fd692989766a18d04c",
+      "sha256": "dff3d4256ae98f93d45c2802f2f9dd1ebc08a1e8d34e4e9d9abec1f3da9d2be9",
+      "git_blob": "3b1bd5c35ebdad7b4e68b0a91be934670cb44775",
       "lines": 1036,
       "references": [
         {
@@ -5769,9 +5769,9 @@
     },
     {
       "path": "ext-src/swoole_client_coro.cc",
-      "sha256": "d478f8fb77373f9796f5291afea54acb6855177999db7f8526ed4719dfef6d5b",
-      "git_blob": "9ed23f24f685d39dc13c6eb4d9993f8ea453882a",
-      "lines": 618,
+      "sha256": "45c82e28f3bbd54cecf343f28f39014904c2cc7881a0b2f72b2b227ba939f52b",
+      "git_blob": "40673b5723a461f3def678c31c5bc8b20d9ef7a4",
+      "lines": 619,
       "references": [
         {
           "line": 35,
@@ -5843,9 +5843,9 @@
     },
     {
       "path": "ext-src/swoole_coroutine.cc",
-      "sha256": "dbad84a6cfdedff33a327d9d43a2c70777ea68efd9421db15cd8e9d46145a112",
-      "git_blob": "d993f76b3df1bc5e0ceb1bff1b76acd007e82efb",
-      "lines": 1574,
+      "sha256": "1707e8d7a2881a50b2aca203681afe459a70281929fc29057e9752c71b2ada58",
+      "git_blob": "daecf43c21ec6334e368457e036e2ad92ebf3151",
+      "lines": 1630,
       "references": [
         {
           "line": 74,
@@ -6676,9 +6676,9 @@
     },
     {
       "path": "ext-src/swoole_curl.cc",
-      "sha256": "d7f9fcc4bbbb6ecbe66c5dc4513d5c8a6333c01878732804294067cb37201fb8",
-      "git_blob": "fd61e91e83fd70cfa2abaa30dda68f781940d724",
-      "lines": 452,
+      "sha256": "5ca6cdd1d16f403d691ef0cd257a47285d1f9169d82547a70e22f5c3e9307f5e",
+      "git_blob": "512e0dd3986379fcd918a5b063bc44f89f3efd55",
+      "lines": 529,
       "references": [
         {
           "line": 439,
@@ -6690,9 +6690,9 @@
     },
     {
       "path": "ext-src/swoole_curl_interface.h",
-      "sha256": "e7b915fc86697852d9d682c9a6bb8444f02e7190bffc0c1ac1e37e32dc86bdb8",
-      "git_blob": "e0f7c46916a61d5200444407c4b972456bf355ce",
-      "lines": 72,
+      "sha256": "392bdf882de40423e69fef561dea48dfda5c1f616e86824aeb95579451d93217",
+      "git_blob": "87c7f22ae277695852e46484c280a4d9800e432c",
+      "lines": 61,
       "references": [
         {
           "line": 35,
@@ -6724,9 +6724,9 @@
     },
     {
       "path": "ext-src/swoole_http2_client_coro.cc",
-      "sha256": "6aec8c1a1112ef70044b23fd1ecd8258f5df56fc6a2cedd71466e2cd136350b8",
-      "git_blob": "27df796477c05872b7ca7b9d9b756c40e233db26",
-      "lines": 1483,
+      "sha256": "f7f7b8aa351cbddba1caa6eb20b5c42971fdf8e9d9dc7be097a569d3b891accd",
+      "git_blob": "e0342e15c88e26ead6d85bd5e602d5676389551c",
+      "lines": 1490,
       "references": [
         {
           "line": 93,
@@ -6744,9 +6744,9 @@
     },
     {
       "path": "ext-src/swoole_http2_server.cc",
-      "sha256": "cdbd9ce347bc0d44514b2ef6c62360cad06feb9fefcdb7c5a50912cdb9db4b19",
-      "git_blob": "6c07e55b5c69a8a8030fda50ac0bd9646c2271db",
-      "lines": 1324,
+      "sha256": "e5599e91c1303c0a2438e62ce12fcc7c17eb4454e5cdfbc1d5f48e29ada422a4",
+      "git_blob": "a283ebcb79e32cfe0340b7ddefb25471b476c79a",
+      "lines": 1320,
       "references": [
         {
           "line": 583,
@@ -6782,9 +6782,9 @@
     },
     {
       "path": "ext-src/swoole_http_client_coro.cc",
-      "sha256": "3eca651e7b1523d91c7fee87178af73be049c2cbce112a7905e1faa13d3e8268",
-      "git_blob": "b50e860e36f3330ea701867bdd19273d2f1ae41c",
-      "lines": 2188,
+      "sha256": "1f079b05790fcace3715159895da3ed60c162b36eecbf73d4154dd3b52d5c241",
+      "git_blob": "e7f60d217ab2dade4dad91983c705d276e413f6f",
+      "lines": 2269,
       "references": [
         {
           "line": 271,
@@ -6802,9 +6802,9 @@
     },
     {
       "path": "ext-src/swoole_http_response.cc",
-      "sha256": "9b76fc8b9272c5c6395569f210e68e132feba80d67ddfaedcb44ca8f38ddb1ee",
-      "git_blob": "e929eae409cfcca6b7e0e443ee269985001f9f21",
-      "lines": 1594,
+      "sha256": "75a1bfbb397318454bb1bddbc7b245d63fde97e986bbbce6eebc87078a778e04",
+      "git_blob": "b7e2b144f0c226a41f91598d103565777f09fa46",
+      "lines": 1601,
       "references": [
         {
           "line": 1283,
@@ -6822,9 +6822,9 @@
     },
     {
       "path": "ext-src/swoole_http_server_coro.cc",
-      "sha256": "f74e988dc3a361faf08d263b6300a0a2e12d436d374ab0c075581ad3175db9cf",
-      "git_blob": "25e391ec8d9bbaf5eaf9010b8213d798c8cc643f",
-      "lines": 736,
+      "sha256": "34d586bac44f02d3f5f1d04c081edd3f72cd686839feb569ca2a2a3386df2cec",
+      "git_blob": "110c041330e35212ed22be4f9590f1aca2d34006",
+      "lines": 780,
       "references": [
         {
           "line": 56,
@@ -6912,9 +6912,9 @@
     },
     {
       "path": "ext-src/swoole_server.cc",
-      "sha256": "b27b1c912cbbcc774a5f1b907079bdd095a37c71e09d0376c2dd4761d09c012f",
-      "git_blob": "b86a0b5655f3beae2604572fb6e984fa40f23a6c",
-      "lines": 3944,
+      "sha256": "4a8f7915dc57565e4478b8b13f184f2de57dc7594387394b5823e92f1cddc9f1",
+      "git_blob": "e6a20325fe7de1c3d4fbe508fcb727573d32e0e3",
+      "lines": 3975,
       "references": [
         {
           "line": 23,
@@ -6950,9 +6950,9 @@
     },
     {
       "path": "ext-src/swoole_socket_coro.cc",
-      "sha256": "d4e1e199f20f7b5788c492aa152803c20c18bf2c78bc7296221742765b4332d3",
-      "git_blob": "fc67afb3a753807b8f5eb7ae2be05c65fd1454b0",
-      "lines": 2235,
+      "sha256": "0888a29c51abe199117113437004bc35d739ed4bce59a253a839d964f02cbfd8",
+      "git_blob": "2e80526cae82da6d31e8f40e841cf83fdf59b79d",
+      "lines": 2231,
       "references": [
         {
           "line": 49,
@@ -7084,9 +7084,9 @@
     },
     {
       "path": "ext-src/swoole_thread.cc",
-      "sha256": "e45318440116d64dc0a4fcc2f97b73d8ff5a324bfad1cd8d42cd1035166bc35f",
-      "git_blob": "26b02a8a7596d8385b6f85b0c67db0005682abe1",
-      "lines": 1201,
+      "sha256": "dea2f18edb005b06aec306e7443637a1380e20ddbeafd6d09a10cf3802c80042",
+      "git_blob": "2995a7247ce225198620adc5a36f1186941334b0",
+      "lines": 1249,
       "references": [
         {
           "line": 501,
@@ -7112,9 +7112,9 @@
     },
     {
       "path": "include/swoole_coroutine.h",
-      "sha256": "de4a7387f1c7f42fd761827549ed06d29a8d68f48183b814752982dd40f99940",
-      "git_blob": "9e490bce28753157267fc03df106ee9723d8ea7e",
-      "lines": 296,
+      "sha256": "0d9af2316a4d0e890fc988b6d802be81beec357561d72649c33aeb152d4f0984",
+      "git_blob": "fba89b0aa9a5e4d0fa31843622ee2a2f8f1a45ff",
+      "lines": 302,
       "references": [
         {
           "line": 27,
@@ -7814,9 +7814,9 @@
     },
     {
       "path": "include/swoole_uring_socket.h",
-      "sha256": "6a48fe225df4d55b6378254d6532a9cd06e042b4ab2e28e7bd171a5b1411a89c",
-      "git_blob": "e73551729a66ee4c62d146bea5114ad4d5211e15",
-      "lines": 86,
+      "sha256": "0c16ff8942f9bd8bfcf2a81cd7ac45020898fbf8ed17d488761ca65139bfa442",
+      "git_blob": "06e9f5b144144cbf57ee2b51f4e151f60691af5d",
+      "lines": 88,
       "references": [
         {
           "line": 20,
@@ -7828,9 +7828,9 @@
     },
     {
       "path": "src/core/base.cc",
-      "sha256": "e778fb1519d437197896b4cb38a96c202cc67056c9a73d47b8fc7ec8a41701ce",
-      "git_blob": "f67d87260f25052c88ec0f0a396b1078018a4c49",
-      "lines": 975,
+      "sha256": "cb1168c6f6eafca38317c1c1f01963e5551b6bcc64e10fc2e0ec5c92eb761ce9",
+      "git_blob": "202a6cb3ea7dce4ed3b855d50f5347fcc7957135",
+      "lines": 976,
       "references": [
         {
           "line": 41,
@@ -7854,9 +7854,9 @@
     },
     {
       "path": "src/coroutine/base.cc",
-      "sha256": "4bbdb7193766c2baba9730ec1ec1b941694d8e52f981ead0d933a5f06cb1cb6b",
-      "git_blob": "2fa72eeb3fb3c122c5b751794a25d2b0d679236d",
-      "lines": 339,
+      "sha256": "a3c5fe1ca38b4be960d41f2af457e0345e84de800fc5a269a6960a42ec43594e",
+      "git_blob": "2fbb21de2ebd20903fdbcce546b4fbacba2ee257",
+      "lines": 376,
       "references": [
         {
           "line": 18,
@@ -7972,9 +7972,9 @@
     },
     {
       "path": "src/network/dns.cc",
-      "sha256": "da6a1cb9363893acbbc031f7999ccbf48465e03554c50f8699d88b67358ed8a9",
-      "git_blob": "6f2945e9d6811620094cb9d6e7e198625076c704",
-      "lines": 845,
+      "sha256": "d59f8b906264ab6133316affed7a8e850782a774448bc6c5598dd9f07e955459",
+      "git_blob": "9d40a7cb0095b1271b24c62ea56c42ef5e5f7944",
+      "lines": 848,
       "references": [
         {
           "line": 17,
@@ -8072,9 +8072,9 @@
     },
     {
       "path": "src/wrapper/event.cc",
-      "sha256": "ab18200be47165c4439f3ccaddee2e215b67bf0ed43b75d3db2521a473cfe16d",
-      "git_blob": "4a8e94484d60abdce1233fb81c452178ad9dad58",
-      "lines": 118,
+      "sha256": "4737ceb35580e66604b8469bbf5d4411b0ffbf6bde980b3d89e6efb951d9c9dc",
+      "git_blob": "9ee92fe6cc8f092bb73017a0e2b1190ed6bf4d9e",
+      "lines": 119,
       "references": [
         {
           "line": 19,
@@ -8094,9 +8094,9 @@
   "headers": [
     {
       "path": "include/swoole_coroutine_socket.h",
-      "sha256": "dca3c9df9ff9db4ca5d230b55e0dae6457c3494cddfa8311d8b3d02b885ce0a8",
-      "git_blob": "4f0058a198481ad6e05d861ae760528b4e3f3f1d",
-      "lines": 582
+      "sha256": "c88a4011f33f16599c3968e6baf85f26c9527c820d68930d8033dfa9a6ed742d",
+      "git_blob": "cffe31a58bb2dbfaf5aaef32c06410bf7ac342bc",
+      "lines": 585
     },
     {
       "path": "include/swoole_coroutine_system.h",
@@ -8118,9 +8118,9 @@
     },
     {
       "path": "include/swoole_uring_socket.h",
-      "sha256": "6a48fe225df4d55b6378254d6532a9cd06e042b4ab2e28e7bd171a5b1411a89c",
-      "git_blob": "e73551729a66ee4c62d146bea5114ad4d5211e15",
-      "lines": 86
+      "sha256": "0c16ff8942f9bd8bfcf2a81cd7ac45020898fbf8ed17d488761ca65139bfa442",
+      "git_blob": "06e9f5b144144cbf57ee2b51f4e151f60691af5d",
+      "lines": 88
     },
     {
       "path": "include/swoole_socket_impl.h",
@@ -8142,9 +8142,9 @@
     },
     {
       "path": "ext-src/php_swoole_coroutine.h",
-      "sha256": "4e6c50c8aae126a9522d1791a846ed424f36c6e4128eccec61b611be129ae22f",
-      "git_blob": "7839fb56151879f00ff37813be77f0b27258af68",
-      "lines": 319
+      "sha256": "632c533e7dc6cd9429617ba5bd1cd3e465243116d48969951956266c74804ef3",
+      "git_blob": "ae8a1a16b5aa46dc4957a3623d25fb4376c0279e",
+      "lines": 324
     }
   ]
 }

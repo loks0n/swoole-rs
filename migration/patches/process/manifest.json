@@ -1,14 +1,14 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-worker-transitions.patch",
-      "sha256": "2c846947340a565eee31bc4c251840d381e142957194352d3fc10380bb03161d",
+      "sha256": "282808f080a203e17a1247c927737c9ce3bbb2dd5062be9d217f2eb3401b79c3",
       "upstream_paths": [
-        "src/server/worker.cc",
-        "src/server/task_worker.cc",
+        "src/os/process_pool.cc",
         "src/server/manager.cc",
-        "src/os/process_pool.cc"
+        "src/server/task_worker.cc",
+        "src/server/worker.cc"
       ]
     }
   ]

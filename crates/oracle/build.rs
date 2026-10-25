@@ -1,10 +1,10 @@
-// upstream/ holds unmodified files from Swoole v6.2.2 (8e8c4991); see src/lib.rs.
+// upstream/ holds unmodified files from Swoole v6.2.4 (c7e51450); see src/lib.rs.
 use std::{env, fs, path::PathBuf};
 
 const PATCH: &str = "../../migration/patches/base64/0001-rust-base64.patch";
 
-/// The overlay replaces the whole file, so its added lines are exactly the
-/// adapter the hybrid build compiles.
+/// The overlay replaces the whole file in one hunk, so its kept and added
+/// lines are exactly the adapter the hybrid build compiles.
 fn adapter_from_patch() -> PathBuf {
     let patch = fs::read_to_string(PATCH).expect("base64 overlay patch");
     assert_eq!(
@@ -14,7 +14,9 @@ fn adapter_from_patch() -> PathBuf {
     );
     let source: String = patch
         .lines()
-        .filter(|line| line.starts_with('+') && !line.starts_with("+++"))
+        .skip_while(|line| !line.starts_with("@@ "))
+        .skip(1)
+        .filter(|line| line.starts_with('+') || line.starts_with(' '))
         .map(|line| format!("{}\n", &line[1..]))
         .collect();
     let path = PathBuf::from(env::var("OUT_DIR").unwrap()).join("base64_adapter.cc");

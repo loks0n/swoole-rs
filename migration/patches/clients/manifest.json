@@ -1,18 +1,18 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-rust-address-client-policy.patch",
-      "sha256": "7257239aa921349c6190dc20c612db5db07a8873d17a41836024651d727bbb65",
+      "sha256": "6df1ad2bff98bd6b1303dd5b2e0c0a6390cc33c113c163d89054d491f9427d9a",
       "upstream_paths": [
+        "ext-src/swoole_client.cc",
+        "ext-src/swoole_client_async.cc",
+        "ext-src/swoole_client_coro.cc",
+        "ext-src/swoole_http_client_coro.cc",
+        "ext-src/swoole_name_resolver.cc",
         "src/network/address.cc",
         "src/network/client.cc",
-        "src/network/dns.cc",
-        "ext-src/swoole_http_client_coro.cc",
-        "ext-src/swoole_client.cc",
-        "ext-src/swoole_name_resolver.cc",
-        "ext-src/swoole_client_coro.cc",
-        "ext-src/swoole_client_async.cc"
+        "src/network/dns.cc"
       ]
     }
   ]

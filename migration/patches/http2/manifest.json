@@ -1,13 +1,13 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-rust-http2-policy.patch",
-      "sha256": "22553f2f89c2b6409c8b6155699e35595da6dcfa68bd4dc93d4f086e9b840673",
+      "sha256": "c089768d93824b6ef769311fedbd7d1a6cf929b5aa9ea93f5cdca8a927f751a1",
       "upstream_paths": [
-        "src/protocol/http2.cc",
+        "ext-src/swoole_http2_client_coro.cc",
         "ext-src/swoole_http2_server.cc",
-        "ext-src/swoole_http2_client_coro.cc"
+        "src/protocol/http2.cc"
       ]
     }
   ]

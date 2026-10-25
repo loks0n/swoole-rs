@@ -1,31 +1,25 @@
 diff --git a/ext-src/php_swoole_cxx.cc b/ext-src/php_swoole_cxx.cc
-index cbb5970..8e254ae 100644
+index cbb597004..8e254ae0a 100644
 --- a/ext-src/php_swoole_cxx.cc
 +++ b/ext-src/php_swoole_cxx.cc
-@@ -1,12 +1,20 @@
+@@ -1,2 +1,6 @@
  #include "php_swoole_cxx.h"
 +#ifdef SWOOLE_RS_PHPHELPERS
 +#include "swoole_rs_phphelpers.h"
 +static_assert(SUCCESS == 0, "Zend SUCCESS ABI");
 +#endif
  
- //----------------------------------known string------------------------------------
+@@ -4,2 +8,5 @@
  
 +#ifdef SWOOLE_RS_PHPHELPERS
 +
 +#else
  static const char *sw_known_strings[] = {
- #define _SW_ZEND_STR_DSC(id, str) str,
-     SW_ZEND_KNOWN_STRINGS(_SW_ZEND_STR_DSC)
- #undef _SW_ZEND_STR_DSC
+@@ -9,2 +16,3 @@ static const char *sw_known_strings[] = {
          nullptr};
 +#endif
  
- SW_API zend_string **sw_zend_known_strings = nullptr;
- 
-@@ -19,12 +27,23 @@ zend_refcounted *sw_get_refcount_ptr(zval *value) {
- //----------------------------------known string------------------------------------
- namespace zend {
+@@ -21,2 +29,11 @@ namespace zend {
  void known_strings_init() {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    sw_zend_known_strings = static_cast<zend_string **>(pemalloc(sizeof(zend_string *) * swr_v1_phphelpers_known_count(), 1));
@@ -37,27 +31,16 @@ index cbb5970..8e254ae 100644
 +    }
 +#else
      sw_zend_known_strings = static_cast<zend_string **>(
-         pemalloc(sizeof(zend_string *) * ((sizeof(sw_known_strings) / sizeof(sw_known_strings[0]) - 1)), 1));
-     for (unsigned int i = 0; i < (sizeof(sw_known_strings) / sizeof(sw_known_strings[0])) - 1; i++) {
-         zend_string *str = zend_string_init(sw_known_strings[i], strlen(sw_known_strings[i]), true);
-         sw_zend_known_strings[i] = zend_new_interned_string(str);
+@@ -27,2 +44,4 @@ void known_strings_init() {
      }
 +#endif
 +
  }
- 
- void known_strings_dtor() {
-@@ -48,6 +67,7 @@ zend_function *get_function(const zend_string *fname) {
-     return get_function(ZSTR_VAL(fname), ZSTR_LEN(fname));
- }
+@@ -50,2 +69,3 @@ zend_function *get_function(const zend_string *fname) {
  
 +#ifndef SWOOLE_RS_PHPHELPERS
  static zend_always_inline zval *sw_zend_symtable_str_add(
-     HashTable *ht, const char *str, size_t len, zend_ulong idx, bool numeric_key, zval *pData) {
-     if (numeric_key) {
-@@ -74,12 +94,60 @@ static zend_always_inline zval *sw_zend_symtable_str_update(
-         return zend_hash_str_update(ht, str, len, pData);
-     }
+@@ -76,5 +96,10 @@ static zend_always_inline zval *sw_zend_symtable_str_update(
  }
 +#endif
  
@@ -68,7 +51,7 @@ index cbb5970..8e254ae 100644
      zend_ulong idx;
 +#endif
      bool numeric_key = ZEND_HANDLE_NUMERIC_STR(key, key_len, idx);
- 
+@@ -82,2 +107,45 @@ void array_add_or_merge(zval *zarray, const char *key, size_t key_len, zval *new
      zend_array *array = Z_ARRVAL_P(zarray);
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    uint32_t phase = 0;
@@ -114,17 +97,11 @@ index cbb5970..8e254ae 100644
 +    }
 +#else
      zval *zresult = sw_zend_symtable_str_add(array, key, key_len, idx, numeric_key, new_element);
-     // Adding element failed, indicating that this key already exists and must be converted to an array
-     if (!zresult) {
-@@ -95,11 +163,41 @@ void array_add_or_merge(zval *zarray, const char *key, size_t key_len, zval *new
-             sw_zend_symtable_str_update(array, key, key_len, idx, numeric_key, &zvalue_array);
-         }
+@@ -97,2 +165,3 @@ void array_add_or_merge(zval *zarray, const char *key, size_t key_len, zval *new
      }
 +#endif
  }
- 
- namespace function {
- 
+@@ -102,2 +171,31 @@ namespace function {
  bool call(zend_fcall_info_cache *fci_cache, uint32_t argc, zval *argv, zval *retval, const bool enable_coroutine) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    uint32_t phase = 0;
@@ -156,18 +133,11 @@ index cbb5970..8e254ae 100644
 +    }
 +#else
      bool success;
-     if (enable_coroutine) {
-         if (retval) {
-@@ -115,12 +213,39 @@ bool call(zend_fcall_info_cache *fci_cache, uint32_t argc, zval *argv, zval *ret
-         zend_exception_error(EG(exception), E_ERROR);
-     }
+@@ -117,2 +215,3 @@ bool call(zend_fcall_info_cache *fci_cache, uint32_t argc, zval *argv, zval *ret
      return success;
 +#endif
  }
- 
- Variable call(const std::string &func_name, int argc, zval *argv) {
-     zval function_name;
-     ZVAL_STRINGL(&function_name, func_name.c_str(), func_name.length());
+@@ -123,2 +222,28 @@ Variable call(const std::string &func_name, int argc, zval *argv) {
      Variable retval;
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    uint32_t phase = 0;
@@ -196,18 +166,11 @@ index cbb5970..8e254ae 100644
 +    }
 +#else
      if (call_user_function(EG(function_table), nullptr, &function_name, &retval.value, argc, argv) != SUCCESS) {
-         ZVAL_NULL(&retval.value);
-     }
-@@ -130,12 +255,39 @@ Variable call(const std::string &func_name, int argc, zval *argv) {
-         zend_exception_error(EG(exception), E_ERROR);
-     }
+@@ -132,2 +257,3 @@ Variable call(const std::string &func_name, int argc, zval *argv) {
      return retval;
 +#endif
  }
- 
- }  // namespace function
- 
- Callable::Callable(zval *_zfn) {
+@@ -138,2 +264,28 @@ Callable::Callable(zval *_zfn) {
      ZVAL_UNDEF(&zfn);
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    uint32_t phase = 0;
@@ -236,15 +199,11 @@ index cbb5970..8e254ae 100644
 +    }
 +#else
      if (!zval_is_true(_zfn)) {
-         php_swoole_fatal_error(E_WARNING, "illegal callback function");
-         return;
-@@ -146,15 +298,31 @@ Callable::Callable(zval *_zfn) {
-     }
-     zfn = *_zfn;
+@@ -148,2 +300,3 @@ Callable::Callable(zval *_zfn) {
      zval_add_ref(&zfn);
 +#endif
  }
- 
+@@ -151,2 +304,15 @@ Callable::Callable(zval *_zfn) {
  Callable::~Callable() {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    uint32_t phase = 0;
@@ -260,13 +219,8 @@ index cbb5970..8e254ae 100644
 +    }
 +#else
      if (!ZVAL_IS_UNDEF(&zfn)) {
-         zval_ptr_dtor(&zfn);
-     }
-     if (fn_name) {
-         efree(fn_name);
+@@ -157,2 +323,4 @@ Callable::~Callable() {
      }
 +#endif
 +
  }
- 
- uint32_t Callable::refcount() const {

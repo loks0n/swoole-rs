@@ -1,9 +1,9 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-rust-bridge.patch",
-      "sha256": "12e320563641fb581ffd66b2a2b577b97ad705971fcd1c3fc3f9e912abbcd410",
+      "sha256": "d751d1ce6219018671d5ad673e0c184914dd617a02923455340b3afb7c04514c",
       "upstream_paths": [
         "config.m4",
         "ext-src/php_swoole.cc"
@@ -11,14 +11,14 @@
     },
     {
       "path": "0002-request-v2-server-declaration.patch",
-      "sha256": "b78e9efaac04a496def4fc4ed3543a8c028395e5dc20492a4099fc469a1b8c1e",
+      "sha256": "3999ed7e409971b778223e4854770dd9011e80aa6ac9ebf32c373b5acaad67ee",
       "upstream_paths": [
         "include/swoole_server.h"
       ]
     },
     {
       "path": "0003-server-static-config.patch",
-      "sha256": "87e34d810da71870d4eda800b02b1ead4da08430a7c01c0002815e0613238d1e",
+      "sha256": "c7dbfc1f237549aaca1ea00cd217e6b52e355f310ff291e8f4f252b01a90235e",
       "upstream_paths": [
         "src/server/master.cc"
       ]
