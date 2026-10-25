@@ -45,6 +45,7 @@ def main():
     functions = source[source.index('static ssize_t get_package_length_impl'):source.index('void print_frame(')]
     types = header[header.index('enum Flag {'):header.index('#define WEBSOCKET_VERSION')]
     opcodes = header[header.index('enum Opcode {'):header.index('enum CloseReason {')]
+    control = header[header.index('static inline bool is_control_frame'):header.index('static inline uint16_t get_ext_flags')]
     constants = '\n'.join(line for line in header.splitlines() if line.startswith('#define SW_WEBSOCKET_'))
     adapter = r'''
 #include <arpa/inet.h>
@@ -101,7 +102,7 @@ uint8_t message_policy(uint8_t opcode, uint8_t settings) {
     return drop ? (opcode == OPCODE_PING ? 2 : 1) : 0;
 }
 '''
-    oracle = adapter + constants + '\n' + types + opcodes + functions + policy + '\n}\n'
+    oracle = adapter + constants + '\n' + types + opcodes + control + functions + policy + '\n}\n'
     report = {'created_utc': datetime.now(timezone.utc).isoformat(), 'upstream_commit': PIN,
               'archive': str(archive),
               'rust_asan_declared': args.rust_asan,

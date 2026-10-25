@@ -3,9 +3,12 @@
 use crate::{swr_v1_ws_frame_length, swr_v1_ws_mask, swr_v1_ws_write_header};
 
 const FIN: u8 = 1;
+const RSV1: u8 = 4;
 const MASK: u8 = 32;
 const HEADER_ONLY: u8 = 64;
 const MASK_KEY: [u8; 4] = *b"258E";
+/// `swr_v1_ws_decode` result for a complete compressed (RSV1) control frame.
+pub const INVALID_CONTROL: i64 = -2;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
@@ -27,7 +30,8 @@ fn flags(first: u8, second: u8) -> u8 {
 }
 
 /// Decode one frame, unmasking only a complete payload. Trailing bytes are left
-/// untouched. Returns the expected frame length even when its body is incomplete.
+/// untouched. Returns the expected frame length even when its body is incomplete,
+/// or `INVALID_CONTROL` (payload left masked) for a complete compressed control frame.
 ///
 /// # Safety
 /// Input covers `length` exclusive writable bytes, null only at length zero.
@@ -59,6 +63,11 @@ pub unsafe extern "C" fn swr_v1_ws_decode(
     }
     if total > 0 {
         frame.payload_length = total as usize - frame.header_length;
+        if length >= total as usize && is_control(frame.opcode) && frame.flags & RSV1 != 0 {
+            // SAFETY: The caller supplies a disjoint, aligned output.
+            unsafe { output.write(frame) };
+            return INVALID_CONTROL;
+        }
         if length >= total as usize && frame.payload_length != 0 {
             // SAFETY: A positive complete header bounds the payload and key.
             if frame.flags & MASK != 0 {
@@ -77,6 +86,16 @@ pub unsafe extern "C" fn swr_v1_ws_decode(
     // SAFETY: The caller supplies a disjoint, aligned output.
     unsafe { output.write(frame) };
     total
+}
+
+fn is_control(opcode: u8) -> bool {
+    matches!(opcode, 8..=10)
+}
+
+/// Close, ping and pong frames must be final and carry at most 125 bytes.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_ws_control_invalid(opcode: u8, flags: u8, length: usize) -> bool {
+    is_control(opcode) && (flags & FIN == 0 || length > 125)
 }
 
 /// Actual encoded size, including the pinned header-only behavior.
@@ -113,6 +132,7 @@ pub unsafe extern "C" fn swr_v1_ws_encode(
 ) -> usize {
     let size = swr_v1_ws_encoded_size(length, flags);
     if size == 0
+        || swr_v1_ws_control_invalid(opcode, flags, length)
         || output.is_null()
         || capacity < size
         || capacity > isize::MAX as usize
@@ -136,8 +156,8 @@ pub unsafe extern "C" fn swr_v1_ws_encode(
     size
 }
 
-/// Pack close code/reason, preserving truncation of the signed code to 16 bits
-/// and upstream's 125-byte *reason* limit (not an RFC policy correction).
+/// Pack close code/reason, preserving truncation of the signed code to 16 bits.
+/// Code plus reason is a control payload, so reasons over 123 bytes are rejected.
 ///
 /// # Safety
 /// Same disjoint borrowed ranges as `swr_v1_ws_encode`.
