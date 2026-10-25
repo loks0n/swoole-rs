@@ -1180,6 +1180,19 @@ class Lanes(unittest.TestCase):
         self.assertNotIn('--dev', commands['timer-native'])
 
 
+class ChangedModules(unittest.TestCase):
+    def changed(self, *paths):
+        with patch.object(dev.subprocess, 'check_output', return_value='\n'.join(paths)):
+            return dev.changed_modules('origin/main')
+
+    def test_owned_paths_select_their_module_and_shared_inputs_select_all(self):
+        self.assertEqual(self.changed('crates/timer/src/lib.rs', 'tests/modules/base64/README.md', 'docs/x.md'),
+                         ['base64', 'timer'])
+        self.assertEqual(self.changed('.github/workflows/pr.yml', 'tests/dev/test_tooling.py'), [])
+        self.assertEqual(self.changed('crates/ffi/src/lib.rs'), sorted(dev.MODULES))
+        self.assertEqual(self.changed('migration/patches/halfclose/manifest.json'), sorted(dev.MODULES))
+
+
 class FocusedPhases(unittest.TestCase):
     def test_explicit_selection_keeps_canonical_order_and_records_omitted_gates(self):
         for codes, status, exit_code in [([0, 0], 'partial_passed', 0), ([0, 2], 'partial_failed', 1)]:
