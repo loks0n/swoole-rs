@@ -62,8 +62,6 @@ def main():
     for k in ['LD_PRELOAD', 'LD_AUDIT', 'DYLD_INSERT_LIBRARIES']:
         if env.get(k): raise ValueError('Injected library environment unsupported')
     report['removed_tracing'] = {k: env.pop(k) for k in list(env) if k.startswith(('LD_DEBUG','LD_TRACE_','DYLD_PRINT_'))}
-    for k in ['GIT_DIR','GIT_COMMON_DIR','GIT_WORK_TREE','GIT_INDEX_FILE','GIT_OBJECT_DIRECTORY','GIT_ALTERNATE_OBJECT_DIRECTORIES','GIT_PREFIX']:
-        env.pop(k,None)
     env['GTEST_COLOR'] = 'no'
     system = platform.system();selection = 'DYLD_LIBRARY_PATH' if system == 'Darwin' else 'LD_LIBRARY_PATH'
     env[selection] = str(library.parent)

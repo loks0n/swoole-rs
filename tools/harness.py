@@ -15,6 +15,11 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Tools and tests address repositories explicitly (git -C). Variables a git hook
+# exports would otherwise redirect every child git command to the caller's repository.
+for _name in subprocess.run(['git', 'rev-parse', '--local-env-vars'], capture_output=True, text=True).stdout.split():
+    os.environ.pop(_name, None)
+
 
 @dataclass(frozen=True)
 class Engine:
