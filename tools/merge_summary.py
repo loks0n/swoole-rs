@@ -6,8 +6,10 @@ Unsupported and skipped cases get their own columns; only `passed` counts as pas
 import argparse
 from collections import Counter, defaultdict
 import json
+import re
 from pathlib import Path
 import sys
+import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.build_hybrid import MODULES
@@ -38,6 +40,18 @@ def summarize(loop):
                 continue
             module = row.get('module') or ('corpus' if 'project' in row else module_of(report.stem))
             cases[module][row['status'] if row['status'] in STATUSES else 'failed'] += 1
+    # pytest JUnit reports: the engine is one of the test id's parameters.
+    for report in loop.parent.glob('*.xml'):
+        try:
+            testcases = list(ET.parse(report).iter('testcase'))
+        except ET.ParseError:
+            continue
+        for case in testcases:
+            if 'upstream' in re.split(r'[][-]', case.get('name', '')):
+                continue
+            status = 'failed' if case.find('failure') is not None or case.find('error') is not None else \
+                'skipped' if case.find('skipped') is not None else 'passed'
+            cases[module_of(report.stem)][status] += 1
     return phases, cases
 
 

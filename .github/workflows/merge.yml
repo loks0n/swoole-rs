@@ -16,7 +16,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # rust-cache restores all of target/; hybrid build trees must start clean.
       - run: rm -rf target/hybrid
-      - run: sudo apt-get update -q && sudo apt-get install -yq php-dev php-sqlite3 php-curl php-xml php-mbstring composer libclang-dev libpcre2-dev libssl-dev zlib1g-dev pkg-config cmake libgtest-dev libnghttp2-dev libpq-dev libcurl4-openssl-dev ccache
+      - run: sudo apt-get update -q && sudo apt-get install -yq php-dev php-sqlite3 php-curl php-xml php-mbstring python3-pytest composer libclang-dev libpcre2-dev libssl-dev zlib1g-dev pkg-config cmake libgtest-dev libnghttp2-dev libpq-dev libcurl4-openssl-dev ccache
       # Caches are saved as soon as they are built, so a failing gate later does not discard
       # them; PR branches can only restore caches saved on main.
       - id: upstream

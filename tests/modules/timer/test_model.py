@@ -1,22 +1,15 @@
-#!/usr/bin/env python3
 """Executable timer test specification, not an upstream or Rust parity test.
 
 A deliberately small unordered queue and explicit clock define golden traces.
 Golden traces follow the frozen queue-kernel contract in docs/timer-abi-v1.md.
 This reference model does not drive the actual ABI or PHP/native adapter.
 """
-import argparse
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timezone
-import json
-from pathlib import Path
 import unittest
 
 LIMIT = (1 << 63) - 1
 COUNTER_LIMIT = (1 << 64) - 1
-PIN = "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e"
-TRACES = {}
 
 
 class Clock:
@@ -165,7 +158,6 @@ class GoldenTraces(unittest.TestCase):
     def golden(self, expected):
         self.assertEqual(self.q.events, expected)
         self.q.invariants()
-        TRACES[self.id().split(".")[-1]] = list(expected)
 
     def due(self, now):
         self.q.select()  # Initial birth-round barrier, even if already due.
@@ -355,31 +347,3 @@ class GoldenTraces(unittest.TestCase):
         self.assertEqual(self.q.released[1], 0)
         self.due(1)
         self.golden(["call:A", "drop:A"])
-
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--report", type=Path)
-    args = parser.parse_args()
-    suite = unittest.defaultTestLoader.loadTestsFromTestCase(GoldenTraces)
-    result = unittest.TextTestRunner(verbosity=2).run(suite)
-    report = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "kind": "timer-reference-model-specification",
-        "upstream_commit": PIN,
-        "clock": "injected integer milliseconds; no sleeping",
-        "implementation_parity": "not measured; frozen queue contract, native adapter pending",
-        "contract": "docs/timer-abi-v1.md",
-        "tests_run": result.testsRun,
-        "failures": len(result.failures), "errors": len(result.errors),
-        "golden_traces": TRACES,
-    }
-    if args.report:
-        args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(report, indent=2) + "\n")
-    raise SystemExit(not result.wasSuccessful())
-
-
-if __name__ == "__main__":
-    main()
