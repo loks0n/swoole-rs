@@ -17,7 +17,9 @@ elif args[:2] == ['run', 'list']:
     print(json.dumps([{'databaseId': 7, 'status': 'completed', 'conclusion': 'failure', 'url': 'u'}]))
 elif args[:2] == ['run', 'view']:
     print(json.dumps({'jobs': [{'name': 'rust', 'status': 'completed', 'conclusion': 'failure',
-                                'startedAt': '2026-10-25T21:00:00Z', 'completedAt': '2026-10-25T21:00:31Z'}]}))
+                                'startedAt': '2026-10-25T21:00:00Z', 'completedAt': '2026-10-25T21:00:31Z'},
+                               {'name': 'hybrid', 'status': 'in_progress', 'conclusion': '',
+                                'startedAt': '2026-10-25T21:00:00Z', 'completedAt': '0001-01-01T00:00:00Z'}]}))
 '''
 
 
@@ -44,7 +46,8 @@ class Mcp(unittest.TestCase):
         self.assertEqual({tool['name'] for tool in listed['result']['tools']}, {'workflow_get', 'workflow_wait'})
         result = json.loads(called['result']['content'][0]['text'])
         self.assertEqual(result['state'], 'failed')
-        self.assertEqual(result['jobs'], [{'name': 'rust', 'conclusion': 'failure', 'seconds': 31}])
+        self.assertEqual(result['jobs'], [{'name': 'rust', 'conclusion': 'failure', 'seconds': 31},
+                                          {'name': 'hybrid', 'conclusion': 'in_progress', 'seconds': None}])
 
     def test_unknown_method_is_an_error(self):
         (reply,) = self.call({'jsonrpc': '2.0', 'id': 1, 'method': 'nope'})

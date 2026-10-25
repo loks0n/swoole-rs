@@ -3,6 +3,7 @@
 
 Tools shell out to the GitHub CLI, so an agent needs only `gh` and GH_TOKEN.
 """
+from datetime import datetime
 import json
 import subprocess
 import sys
@@ -46,10 +47,10 @@ def workflow_get(workflow, commit=None, sha=None):
 
 
 def duration(job):
-    if not job.get('startedAt') or not job.get('completedAt'):
-        return None
-    parse = lambda value: time.mktime(time.strptime(value, '%Y-%m-%dT%H:%M:%SZ'))
-    return int(parse(job['completedAt']) - parse(job['startedAt']))
+    # GitHub reports unfinished timestamps as 0001-01-01T00:00:00Z.
+    started, completed = (datetime.fromisoformat(job[key]) if job.get(key) and not job[key].startswith('0001')
+                          else None for key in ('startedAt', 'completedAt'))
+    return int((completed - started).total_seconds()) if started and completed else None
 
 
 def workflow_wait(workflow, commit=None, timeout_s=1800, poll=10):
@@ -81,8 +82,8 @@ def handle(message):
             text, error = json.dumps(HANDLERS[params['name']](**params.get('arguments', {}))), False
         except subprocess.CalledProcessError as failure:
             text, error = failure.stderr.strip() or str(failure), True
-        except (KeyError, TypeError) as failure:
-            text, error = f'Invalid tool call: {failure}', True
+        except Exception as failure:  # a tool error must not take the server down
+            text, error = f'{type(failure).__name__}: {failure}', True
         return {'content': [{'type': 'text', 'text': text}], 'isError': error}
     if method == 'ping':
         return {}
