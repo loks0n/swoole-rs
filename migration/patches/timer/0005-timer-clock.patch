@@ -1,9 +1,8 @@
 diff --git a/src/os/timer.cc b/src/os/timer.cc
+index 2ed39bce1..320b79e68 100644
 --- a/src/os/timer.cc
 +++ b/src/os/timer.cc
-@@ -31,27 +31,23 @@
-
- static int SystemTimer_set(Timer *timer, long next_msec) {
+@@ -33,6 +33,5 @@ static int SystemTimer_set(Timer *timer, long next_msec) {
      itimerval timer_set{};
 -    if (next_msec > 0) {
 -        timer_set.it_interval = {next_msec / 1000, static_cast<int>((next_msec % 1000) * 1000)};
@@ -13,10 +12,7 @@ diff --git a/src/os/timer.cc b/src/os/timer.cc
 +    timer_set.it_interval = {interval.seconds, static_cast<int>(interval.fraction)};
 +    timer_set.it_value = timer_set.it_interval;
      return setitimer(ITIMER_REAL, &timer_set, nullptr) < 0 ? SW_ERR : SW_OK;
- }
-
- void realtime_get(timespec *time) {
-     auto now = std::chrono::system_clock::now();
+@@ -43,4 +42,5 @@ void realtime_get(timespec *time) {
      auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch());
 -    time->tv_sec = ns.count() / SW_NUM_BILLION;
 -    time->tv_nsec = ns.count() % SW_NUM_BILLION;
@@ -24,7 +20,7 @@ diff --git a/src/os/timer.cc b/src/os/timer.cc
 +    time->tv_sec = value.seconds;
 +    time->tv_nsec = value.fraction;
  }
-
+@@ -48,9 +48,5 @@ void realtime_get(timespec *time) {
  void realtime_add(timespec *time, const int64_t add_msec) {
 -    time->tv_sec += add_msec / 1000;
 -    time->tv_nsec += add_msec % 1000 * SW_NUM_MILLION;
@@ -37,4 +33,3 @@ diff --git a/src/os/timer.cc b/src/os/timer.cc
 +    time->tv_sec = value.seconds;
 +    time->tv_nsec = value.fraction;
  }
- }  // namespace swoole

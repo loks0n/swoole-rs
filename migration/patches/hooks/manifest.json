@@ -1,19 +1,19 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-coroutine-io-policy.patch",
-      "sha256": "1b3615696d372d1a32838797b0fbe8c86edd0a4d99bf3fa30e2e8d46f73be272",
+      "sha256": "71bc428f4653b86ff43417dc7b454371600d21da959601b71022e035d1fc3712",
       "upstream_paths": [
-        "src/coroutine/hook.cc",
-        "src/coroutine/socket.cc",
-        "src/coroutine/system.cc",
+        "ext-src/swoole_runtime.cc",
+        "include/swoole_coroutine_socket.h",
         "src/coroutine/file.cc",
         "src/coroutine/file_lock.cc",
+        "src/coroutine/hook.cc",
         "src/coroutine/iouring.cc",
-        "src/coroutine/uring_socket.cc",
-        "ext-src/swoole_runtime.cc",
-        "include/swoole_coroutine_socket.h"
+        "src/coroutine/socket.cc",
+        "src/coroutine/system.cc",
+        "src/coroutine/uring_socket.cc"
       ]
     }
   ]

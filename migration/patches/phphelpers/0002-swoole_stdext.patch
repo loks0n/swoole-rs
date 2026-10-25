@@ -1,10 +1,8 @@
 diff --git a/ext-src/swoole_stdext.cc b/ext-src/swoole_stdext.cc
-index 63e0a37..b6d792c 100644
+index 63e0a375a..b6d792c24 100644
 --- a/ext-src/swoole_stdext.cc
 +++ b/ext-src/swoole_stdext.cc
-@@ -19,6 +19,38 @@
- #include "php_swoole_stdext.h"
- #include "php_swoole_cxx.h"
+@@ -21,2 +21,34 @@
  #include "php_variables.h"
 +#ifdef SWOOLE_RS_PHPHELPERS
 +#include "swoole_rs_phphelpers.h"
@@ -39,11 +37,7 @@ index 63e0a37..b6d792c 100644
 +}
 +#endif
  
- SW_EXTERN_C_BEGIN
- #include "ext/pcre/php_pcre.h"
-@@ -60,14 +92,27 @@ struct ArrayTypeInfo {
- 
-     bool parse(zend_string *type_def);
+@@ -62,6 +94,18 @@ struct ArrayTypeInfo {
      bool equals(const ArrayTypeInfo *other) const {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +        return swr_v1_phphelpers_type_equal(self.type_of_key, self.type_of_value, other->self.type_of_key,
@@ -62,53 +56,33 @@ index 63e0a37..b6d792c 100644
 +                                            reinterpret_cast<const uint8_t *>(get_value_type_str()), get_len_of_value_type_str());
 +#else
          return element_array_type_info->get_type_of_key() == element.type_of_key &&
-                element_array_type_info->get_type_of_value() == element.type_of_value &&
-                element_array_type_info->len_of_type_str == get_len_of_value_type_str() &&
+@@ -70,2 +114,3 @@ struct ArrayTypeInfo {
                 memcmp(element_array_type_info->type_str, get_value_type_str(), get_len_of_value_type_str()) == 0;
 +#endif
      }
-     const char *get_value_type_str() const {
-         return type_str + self.offset_of_value_type_str;
-@@ -87,6 +132,7 @@ struct ArrayTypeInfo {
-     bool is_list() const {
-         return self.type_of_key == 0;
+@@ -89,2 +134,3 @@ struct ArrayTypeInfo {
      }
 +#ifndef SWOOLE_RS_PHPHELPERS
      bool value_is_bool() const {
-         return self.type_of_value == IS_TRUE || self.type_of_value == IS_FALSE;
-     }
-@@ -102,15 +148,18 @@ struct ArrayTypeInfo {
-     bool value_is_numeric() const {
-         return self.type_of_value == IS_LONG || self.type_of_value == IS_DOUBLE;
+@@ -104,2 +150,3 @@ struct ArrayTypeInfo {
      }
 +#endif
      bool instance_of(const zval *value) const {
-         return instanceof_function(Z_OBJCE_P(value), value_ce);
-     }
+@@ -108,2 +155,3 @@ struct ArrayTypeInfo {
      bool check(const zend_array *ht, const zval *key, const zval *value) const;
 +#ifndef SWOOLE_RS_PHPHELPERS
      ArrayTypeInfo *dup() const {
-         const auto copy = static_cast<ArrayTypeInfo *>(emalloc(sizeof(ArrayTypeInfo) + get_len_of_type_str() + 1));
-         memcpy(copy, this, sizeof(ArrayTypeInfo) + get_len_of_type_str() + 1);
-         return copy;
+@@ -113,2 +161,3 @@ struct ArrayTypeInfo {
      }
 +#endif
  };
- 
- static zend_function *fn_swoole_call_array_method = nullptr;
-@@ -138,6 +187,9 @@ static bool is_typed_array(const zval *zval) {
-     return HT_FLAGS(Z_ARRVAL_P(zval)) & HASH_FLAG_TYPED_ARRAY;
- }
+@@ -140,2 +189,5 @@ static bool is_typed_array(const zval *zval) {
  
 +#ifdef SWOOLE_RS_PHPHELPERS
 +static constexpr uint32_t array_methods = 0, string_methods = 1, stream_methods = 2;
 +#else
  static std::unordered_map<std::string, std::string> array_methods = {
-     {"all", "array_all"},
-     {"any", "array_any"},
-@@ -304,8 +356,19 @@ static std::unordered_map<std::string, std::string> stream_methods = {
-     {"getChar", "fgetc"},
-     {"getLine", "fgets"},
+@@ -306,4 +358,15 @@ static std::unordered_map<std::string, std::string> stream_methods = {
  };
 +#endif
  
@@ -124,11 +98,7 @@ index 63e0a37..b6d792c 100644
 +    }
 +#endif
      zval first = src[0];
-     for (int i = 0; i < position; i++) {
-         dst[i] = src[i + 1];
-@@ -316,6 +379,36 @@ static void move_first_element(const zval src[], zval dst[], int size, int posit
-     }
- }
+@@ -318,2 +381,32 @@ static void move_first_element(const zval src[], zval dst[], int size, int posit
  
 +#ifdef SWOOLE_RS_PHPHELPERS
 +static void call_func_move_first_arg(zend_function *fn, zend_execute_data *execute_data, zval *retval, int position) {
@@ -161,11 +131,7 @@ index 63e0a37..b6d792c 100644
 +}
 +#else
  static void call_func_move_first_arg(zend_function *fn, zend_execute_data *execute_data, zval *retval, int position) {
-     const zval *arg_ptr = ZEND_CALL_ARG(execute_data, 1);
-     const int arg_count = ZEND_CALL_NUM_ARGS(execute_data);
-@@ -324,7 +417,66 @@ static void call_func_move_first_arg(zend_function *fn, zend_execute_data *execu
-     zend_call_known_function(fn, nullptr, nullptr, retval, arg_count, argv, nullptr);
-     efree(argv);
+@@ -326,3 +419,62 @@ static void call_func_move_first_arg(zend_function *fn, zend_execute_data *execu
  }
 +#endif
 +
@@ -228,11 +194,7 @@ index 63e0a37..b6d792c 100644
 +}
 +#else
  static void call_method(const std::unordered_map<std::string, std::string> &method_map,
-                         zend_execute_data *execute_data,
-                         zval *retval) {
-@@ -364,7 +516,64 @@ static void call_method(const std::unordered_map<std::string, std::string> &meth
-     }
-     efree(argv);
+@@ -366,3 +518,60 @@ static void call_method(const std::unordered_map<std::string, std::string> &meth
  }
 +#endif
  
@@ -293,11 +255,7 @@ index 63e0a37..b6d792c 100644
 +}
 +#else
  static int opcode_handler_method_call(zend_execute_data *execute_data) {
-     const zend_op *opline = EX(opline);
-     zval *object;
-@@ -412,7 +621,36 @@ static int opcode_handler_method_call(zend_execute_data *execute_data) {
- 
-     return ZEND_USER_OPCODE_DISPATCH;
+@@ -414,3 +623,32 @@ static int opcode_handler_method_call(zend_execute_data *execute_data) {
  }
 +#endif
  
@@ -330,11 +288,7 @@ index 63e0a37..b6d792c 100644
 +}
 +#else
  void php_swoole_stdext_minit(int module_number) {
-     zend_set_user_opcode_handler(ZEND_INIT_METHOD_CALL, opcode_handler_method_call);
-     zend_set_user_opcode_handler(ZEND_ASSIGN_DIM, opcode_handler_array_assign);
-@@ -435,7 +673,31 @@ void php_swoole_stdext_minit(int module_number) {
-     ori_handler_array_splice = fn_array_splice->internal_function.handler;
-     fn_array_splice->internal_function.handler = ZEND_FN(swoole_array_splice);
+@@ -437,3 +675,27 @@ void php_swoole_stdext_minit(int module_number) {
  }
 +#endif
  
@@ -362,19 +316,11 @@ index 63e0a37..b6d792c 100644
 +SW_CREATE_PHP_FUNCTION_WRAPPER(swoole_str_ireplace, 10);
 +#else
  #define SW_CREATE_PHP_FUNCTION_WRAPPER(php_func_name, swoole_func_name, position)                                      \
-     PHP_FUNCTION(swoole_func_name) {                                                                                   \
-         static zend_function *fn_##swoole_func_name = nullptr;                                                         \
-@@ -459,6 +721,7 @@ SW_CREATE_PHP_FUNCTION_WRAPPER(explode, swoole_str_split, 1);
- SW_CREATE_PHP_FUNCTION_WRAPPER(hash, swoole_hash, 1);
- SW_CREATE_PHP_FUNCTION_WRAPPER(str_replace, swoole_str_replace, 2);
+@@ -461,2 +723,3 @@ SW_CREATE_PHP_FUNCTION_WRAPPER(str_replace, swoole_str_replace, 2);
  SW_CREATE_PHP_FUNCTION_WRAPPER(str_ireplace, swoole_str_ireplace, 2);
 +#endif
  
- PHP_FUNCTION(swoole_parse_str) {
-     char *arg;
-@@ -478,7 +741,11 @@ PHP_FUNCTION(swoole_str_is_empty) {
-     ZEND_PARSE_PARAMETERS_START(1, 1)
-     Z_PARAM_STR(str)
+@@ -480,3 +743,7 @@ PHP_FUNCTION(swoole_str_is_empty) {
      ZEND_PARSE_PARAMETERS_END();
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    RETURN_BOOL(swr_v1_phphelpers_empty(str->len));
@@ -382,11 +328,7 @@ index 63e0a37..b6d792c 100644
      RETURN_BOOL(str->len == 0);
 +#endif
  }
- 
- PHP_FUNCTION(swoole_array_is_empty) {
-@@ -486,7 +753,11 @@ PHP_FUNCTION(swoole_array_is_empty) {
-     ZEND_PARSE_PARAMETERS_START(1, 1)
-     Z_PARAM_ARRAY(array)
+@@ -488,3 +755,7 @@ PHP_FUNCTION(swoole_array_is_empty) {
      ZEND_PARSE_PARAMETERS_END();
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    RETURN_BOOL(swr_v1_phphelpers_empty(zend_array_count(Z_ARRVAL_P(array))));
@@ -394,11 +336,7 @@ index 63e0a37..b6d792c 100644
      RETURN_BOOL(zend_array_count(Z_ARRVAL_P(array)) == 0);
 +#endif
  }
- 
- PHP_FUNCTION(swoole_call_array_method) {
-@@ -526,6 +797,16 @@ static ArrayTypeInfo *get_type_info(zend_array *array) {
- 
- static zend_string *get_array_type_def(const ArrayTypeInfo *info) {
+@@ -528,2 +799,12 @@ static zend_string *get_array_type_def(const ArrayTypeInfo *info) {
      zend_string *result = zend_string_alloc(info->get_len_of_value_type_str() + 16, false);
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    size_t projected_length;
@@ -411,11 +349,7 @@ index 63e0a37..b6d792c 100644
 +    }
 +#endif
      char *p = result->val;
-     *p = '<';
-     if (info->get_type_of_key() == IS_STRING) {
-@@ -549,6 +830,27 @@ static zend_string *get_array_type_def(const ArrayTypeInfo *info) {
- }
- 
+@@ -551,2 +832,23 @@ static zend_string *get_array_type_def(const ArrayTypeInfo *info) {
  bool ArrayTypeInfo::check(const zend_array *ht, const zval *key, const zval *value) const {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    const uint32_t key_kind = phphelpers_kind(Z_TYPE_P(key));
@@ -439,11 +373,7 @@ index 63e0a37..b6d792c 100644
 +    }
 +#else
      if (get_type_of_key() > 0) {
-         if (Z_TYPE_P(key) != get_type_of_key()) {
-             zend_type_error("Array key type mismatch, expected `%s`, got `%s`",
-@@ -568,6 +870,52 @@ bool ArrayTypeInfo::check(const zend_array *ht, const zval *key, const zval *val
-             return false;
-         }
+@@ -570,2 +872,48 @@ bool ArrayTypeInfo::check(const zend_array *ht, const zval *key, const zval *val
      }
 +#endif
 +#ifdef SWOOLE_RS_PHPHELPERS
@@ -492,19 +422,11 @@ index 63e0a37..b6d792c 100644
 +    }
 +#else
      ZVAL_DEREF(value);
-     if (value_is_bool() && ZVAL_IS_BOOL(value)) {
-         return true;
-@@ -604,6 +952,7 @@ bool ArrayTypeInfo::check(const zend_array *ht, const zval *key, const zval *val
-         }
-     }
+@@ -606,2 +954,3 @@ bool ArrayTypeInfo::check(const zend_array *ht, const zval *key, const zval *val
      return true;
 +#endif
  }
- 
- static zval *get_array_on_opline(const zend_op *opline EXECUTE_DATA_DC) {
-@@ -638,7 +987,116 @@ static zend_never_inline ZEND_COLD void ZEND_FASTCALL sw_zend_cannot_add_element
-     zend_throw_error(NULL, "Cannot add element to the array as the next element is already occupied");
- }
+@@ -640,3 +989,112 @@ static zend_never_inline ZEND_COLD void ZEND_FASTCALL sw_zend_cannot_add_element
  
 +#ifdef SWOOLE_RS_PHPHELPERS
 +static void phphelpers_mutate(const zend_op *opline, zval *container, const zval *key,
@@ -617,30 +539,21 @@ index 63e0a37..b6d792c 100644
 +    phphelpers_mutate(opline, container, key, value EXECUTE_DATA_CC, 0);
 +#else
      zval *var_ptr;
-     HashTable *source = Z_ARRVAL_P(container);
-     SEPARATE_ARRAY(container);
-@@ -685,9 +1143,13 @@ static void array_add_or_update(const zend_op *opline, zval *container, const zv
-     }
-     FREE_OP(op_data->op1_type, op_data->op1.var);
+@@ -687,2 +1145,3 @@ static void array_add_or_update(const zend_op *opline, zval *container, const zv
      debug_val("4", op_data->op1_type, value);
 +#endif
  }
- 
+@@ -690,2 +1149,5 @@ static void array_add_or_update(const zend_op *opline, zval *container, const zv
  static void array_op(const zend_op *opline, zval *container, const zval *key, zval *value EXECUTE_DATA_DC) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    phphelpers_mutate(opline, container, key, value EXECUTE_DATA_CC, 1);
 +#else
      HashTable *source = Z_ARRVAL_P(container);
-     SEPARATE_ARRAY(container);
-     if (source != Z_ARRVAL_P(container)) {
-@@ -737,10 +1199,97 @@ static void array_op(const zend_op *opline, zval *container, const zval *key, zv
-         ZVAL_COPY(EX_VAR(opline->result.var), variable_ptr);
-     }
+@@ -739,2 +1201,3 @@ static void array_op(const zend_op *opline, zval *container, const zval *key, zv
      FREE_OP((opline + 1)->op1_type, (opline + 1)->op1.var);
 +#endif
  }
- 
- typedef std::function<void(const zend_op *, zval *, const zval *, zval *EXECUTE_DATA_DC)> ArrayFn;
+@@ -743,2 +1206,88 @@ typedef std::function<void(const zend_op *, zval *, const zval *, zval *EXECUTE_
  
 +#ifdef SWOOLE_RS_PHPHELPERS
 +static int phphelpers_vm(zend_execute_data *execute_data, uint32_t operation, const ArrayFn *fn) {
@@ -729,19 +642,11 @@ index 63e0a37..b6d792c 100644
 +}
 +#else
  static int opcode_handler_array(zend_execute_data *execute_data, const ArrayFn &fn) {
-     const zend_op *opline = EX(opline);
-     const zend_op *op_data = opline + 1;
-@@ -770,6 +1319,7 @@ static int opcode_handler_array(zend_execute_data *execute_data, const ArrayFn &
-     EX(opline) += 2;
-     return ZEND_USER_OPCODE_CONTINUE;
+@@ -772,2 +1321,3 @@ static int opcode_handler_array(zend_execute_data *execute_data, const ArrayFn &
  }
 +#endif
  
- static int opcode_handler_array_assign(zend_execute_data *execute_data) {
-     return opcode_handler_array(execute_data, array_add_or_update);
-@@ -779,6 +1329,11 @@ static int opcode_handler_array_assign_op(zend_execute_data *execute_data) {
-     return opcode_handler_array(execute_data, array_op);
- }
+@@ -781,2 +1331,7 @@ static int opcode_handler_array_assign_op(zend_execute_data *execute_data) {
  
 +#ifdef SWOOLE_RS_PHPHELPERS
 +static int opcode_handler_foreach_begin(zend_execute_data *execute_data) {
@@ -749,11 +654,7 @@ index 63e0a37..b6d792c 100644
 +}
 +#else
  static int opcode_handler_foreach_begin(zend_execute_data *execute_data) {
-     const zend_op *opline = EX(opline);
-     zval *array;
-@@ -803,7 +1358,13 @@ static int opcode_handler_foreach_begin(zend_execute_data *execute_data) {
-     }
-     return ZEND_USER_OPCODE_DISPATCH;
+@@ -805,3 +1360,9 @@ static int opcode_handler_foreach_begin(zend_execute_data *execute_data) {
  }
 +#endif
  
@@ -763,11 +664,7 @@ index 63e0a37..b6d792c 100644
 +}
 +#else
  static int opcode_handler_array_unset(zend_execute_data *execute_data) {
-     const zend_op *opline = EX(opline);
-     const zval *array = get_array_on_opline(opline EXECUTE_DATA_CC);
-@@ -821,8 +1382,13 @@ static int opcode_handler_array_unset(zend_execute_data *execute_data) {
-     }
-     return ZEND_USER_OPCODE_DISPATCH;
+@@ -823,4 +1384,9 @@ static int opcode_handler_array_unset(zend_execute_data *execute_data) {
  }
 +#endif
  
@@ -777,19 +674,11 @@ index 63e0a37..b6d792c 100644
 +    *len = static_cast<uint16_t>(swr_v1_phphelpers_compact(reinterpret_cast<uint8_t *>(*val), *len));
 +#else
      if (!*val || *len == 0) {
-         return;
-     }
-@@ -841,6 +1407,7 @@ static void remove_all_spaces(char **val, uint16_t *len) {
-     }
- 
+@@ -843,2 +1409,3 @@ static void remove_all_spaces(char **val, uint16_t *len) {
      *len = new_len;
 +#endif
  }
- 
- static int8_t get_type(const char *val, size_t len) {
-@@ -864,6 +1431,24 @@ static int8_t get_type(const char *val, size_t len) {
- }
- 
+@@ -866,2 +1433,20 @@ static int8_t get_type(const char *val, size_t len) {
  bool ArrayTypeValue::parse(const char *type_str, const size_t len_of_type_str) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    SwrPhpTypeLayout layout;
@@ -810,11 +699,7 @@ index 63e0a37..b6d792c 100644
 +    }
 +#endif
      auto pos = strchr(type_str, ',');
-     if (pos == nullptr) {
-         type_of_key = 0;
-@@ -882,6 +1467,56 @@ bool ArrayTypeValue::parse(const char *type_str, const size_t len_of_type_str) {
- }
- 
+@@ -884,2 +1469,52 @@ bool ArrayTypeValue::parse(const char *type_str, const size_t len_of_type_str) {
  bool ArrayTypeInfo::parse(zend_string *type_def) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    uint32_t phase = 0, kind = SWR_PHP_UNDEF;
@@ -867,11 +752,7 @@ index 63e0a37..b6d792c 100644
 +    }
 +#else
      if (type_def->len >= 65535) {
-         zend_throw_error(nullptr, "The type definition string is too long (must be less than 65535 characters)");
-         return false;
-@@ -916,8 +1551,103 @@ bool ArrayTypeInfo::parse(zend_string *type_def) {
-     }
- 
+@@ -918,4 +1553,99 @@ bool ArrayTypeInfo::parse(zend_string *type_def) {
      return true;
 +#endif
  }
@@ -971,11 +852,7 @@ index 63e0a37..b6d792c 100644
 +}
 +#else
  PHP_FUNCTION(swoole_typed_array) {
-     zend_string *type_def;
-     zval *init_values = nullptr;
-@@ -986,7 +1716,50 @@ PHP_FUNCTION(swoole_typed_array) {
-         ZEND_HASH_FOREACH_END();
-     }
+@@ -988,3 +1718,46 @@ PHP_FUNCTION(swoole_typed_array) {
  }
 +#endif
 +
@@ -1022,11 +899,7 @@ index 63e0a37..b6d792c 100644
 +}
 +#else
  PHP_FUNCTION(swoole_array_is_typed) {
-     zend_string *type_def = nullptr;
-     zval *array;
-@@ -1015,8 +1788,81 @@ PHP_FUNCTION(swoole_array_is_typed) {
-     RETVAL_BOOL(info->equals(tmp_info));
-     efree(tmp_info);
+@@ -1017,4 +1790,77 @@ PHP_FUNCTION(swoole_array_is_typed) {
  }
 +#endif
 +
@@ -1104,47 +977,31 @@ index 63e0a37..b6d792c 100644
 +    phphelpers_builtin(INTERNAL_FUNCTION_PARAM_PASSTHRU, 0);
 +#else
      zval *arg_ptr = ZEND_CALL_ARG(execute_data, 1);
-     const int arg_count = ZEND_CALL_NUM_ARGS(execute_data);
-     zval *array = &arg_ptr[0];
-@@ -1032,9 +1878,13 @@ static PHP_FUNCTION(swoole_array_push) {
-         }
-     }
+@@ -1034,2 +1880,3 @@ static PHP_FUNCTION(swoole_array_push) {
      ori_handler_array_push(INTERNAL_FUNCTION_PARAM_PASSTHRU);
 +#endif
  }
- 
+@@ -1037,2 +1884,5 @@ static PHP_FUNCTION(swoole_array_push) {
  static PHP_FUNCTION(swoole_array_unshift) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    phphelpers_builtin(INTERNAL_FUNCTION_PARAM_PASSTHRU, 1);
 +#else
      zval *arg_ptr = ZEND_CALL_ARG(execute_data, 1);
-     const int arg_count = ZEND_CALL_NUM_ARGS(execute_data);
-     zval *array = &arg_ptr[0];
-@@ -1053,9 +1903,13 @@ static PHP_FUNCTION(swoole_array_unshift) {
-     } else {
-         ori_handler_array_unshift(INTERNAL_FUNCTION_PARAM_PASSTHRU);
+@@ -1055,2 +1905,3 @@ static PHP_FUNCTION(swoole_array_unshift) {
      }
 +#endif
  }
- 
+@@ -1058,2 +1909,5 @@ static PHP_FUNCTION(swoole_array_unshift) {
  static PHP_FUNCTION(swoole_array_splice) {
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    phphelpers_builtin(INTERNAL_FUNCTION_PARAM_PASSTHRU, 2);
 +#else
      const zval *arg_ptr = ZEND_CALL_ARG(execute_data, 1);
-     const int arg_count = ZEND_CALL_NUM_ARGS(execute_data);
-     const zval *array = &arg_ptr[0];
-@@ -1086,6 +1940,7 @@ static PHP_FUNCTION(swoole_array_splice) {
-     } else {
-         ori_handler_array_splice(execute_data, return_value);
+@@ -1088,2 +1942,3 @@ static PHP_FUNCTION(swoole_array_splice) {
      }
 +#endif
  }
- 
- static void php_do_pcre_match(INTERNAL_FUNCTION_PARAMETERS, int global) /* {{{ */
-@@ -1105,6 +1960,32 @@ static void php_do_pcre_match(INTERNAL_FUNCTION_PARAMETERS, int global) /* {{{ *
-     Z_PARAM_LONG(start_offset)
-     ZEND_PARSE_PARAMETERS_END();
+@@ -1107,2 +1962,28 @@ static void php_do_pcre_match(INTERNAL_FUNCTION_PARAMETERS, int global) /* {{{ *
  
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    uint32_t phase = 0;
@@ -1173,29 +1030,17 @@ index 63e0a37..b6d792c 100644
 +    }
 +#else
      /* Compile regex or get it from cache. */
-     if ((pce = pcre_get_compiled_regex_cache(regex)) == nullptr) {
-         RETURN_FALSE;
-@@ -1118,6 +1999,7 @@ static void php_do_pcre_match(INTERNAL_FUNCTION_PARAMETERS, int global) /* {{{ *
-     php_pcre_match_impl(pce, subject, &count, return_value, global, ZEND_NUM_ARGS() >= 3, flags, start_offset);
- #endif
+@@ -1120,2 +2001,3 @@ static void php_do_pcre_match(INTERNAL_FUNCTION_PARAMETERS, int global) /* {{{ *
      php_pcre_pce_decref(pce);
 +#endif
  }
- /* }}} */
- 
-@@ -1143,11 +2025,15 @@ static void php_do_json_decode(INTERNAL_FUNCTION_PARAMETERS, bool assoc) /* {{{
-     Z_PARAM_LONG(options)
-     ZEND_PARSE_PARAMETERS_END();
+@@ -1145,2 +2027,5 @@ static void php_do_json_decode(INTERNAL_FUNCTION_PARAMETERS, bool assoc) /* {{{
  
 +#ifdef SWOOLE_RS_PHPHELPERS
 +    options = swr_v1_phphelpers_json_options(options, PHP_JSON_OBJECT_AS_ARRAY, assoc);
 +#else
      if (assoc) {
-         options |= PHP_JSON_OBJECT_AS_ARRAY;
-     } else {
-         options &= ~PHP_JSON_OBJECT_AS_ARRAY;
+@@ -1150,2 +2035,3 @@ static void php_do_json_decode(INTERNAL_FUNCTION_PARAMETERS, bool assoc) /* {{{
      }
 +#endif
  
-     zend::json_decode(return_value, str, str_len, options, depth);
- }

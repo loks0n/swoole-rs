@@ -24,7 +24,7 @@ The ABI has no decoded Frame struct or fragmentation state.
 
 ## Pinned invalid-frame policy
 
-From Swoole v6.2.2 (`tests/modules/websocket/invalid.py` checks these on both
+From Swoole v6.2.4 (`tests/modules/websocket/invalid.py` checks these on both
 engines, 20 scenarios):
 
 - `dispatch_frame` rejects a continuation with no fragment buffer, and a second

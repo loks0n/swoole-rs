@@ -55,7 +55,7 @@ def main():
         if 'platforms' in identity:
             identity = identity['platforms']['macos' if platform.system() == 'Darwin' else 'linux']
         report['identity_receipt'] = str(args.identity.resolve()); report['identity_receipt_sha256'] = sha(args.identity)
-        system = platform.system(); name = 'libswoole.6.2.2.dylib' if system == 'Darwin' else 'libswoole.so.6.2.2'
+        system = platform.system(); name = 'libswoole.6.2.4.dylib' if system == 'Darwin' else 'libswoole.so.6.2.4'
         env, report['removed_tracing'] = clean_environment()
         for label, path in [('native', args.native_build.resolve()), ('rust', args.rust_build.resolve())]:
             build = json.loads(path.read_text()); modules = build['inputs']['modules']

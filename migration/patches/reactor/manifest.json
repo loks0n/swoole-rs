@@ -1,54 +1,54 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-readiness-policy.patch",
-      "sha256": "1cb9678ad8f7e115b69707dce6c85b989b7bcdcc9db673d9288dad144b21be28",
+      "sha256": "09effcfedae8ce0a8351d2e84b4a0bda7c14dc55376735779421e1afd9243583",
       "upstream_paths": [
         "include/swoole_reactor.h",
-        "src/reactor/poll.cc",
         "src/reactor/epoll.cc",
-        "src/reactor/kqueue.cc"
+        "src/reactor/kqueue.cc",
+        "src/reactor/poll.cc"
       ]
     },
     {
       "path": "0002-write-policy.patch",
-      "sha256": "f99348ba59b849d052c97556edf9a13d51d3d248b7608e85d952d6d2d17779f5",
+      "sha256": "a8bf7dda6cd6ceb53533a7aaac176ad1107243601a067e2661ccf25d4e791bb3",
       "upstream_paths": [
         "src/reactor/base.cc"
       ]
     },
     {
       "path": "0003-stream-framing.patch",
-      "sha256": "f2e31009f41a6eaf778ecc7fd0058ad80530d75fe146da6cd973bd95379f72d8",
+      "sha256": "4b681c7e6ad9e90df50dd25b43f4d50d5d25cfab7a3dbf11d551a73736ac21d6",
       "upstream_paths": [
         "src/network/stream.cc"
       ]
     },
     {
       "path": "0005-iov-owned.patch",
-      "sha256": "f8cca9ae885689f03947bbab0ad31bab4744f67cb86aa5f615349f66dd1463b9",
+      "sha256": "4075f2bf360b3fb29b8895756e85e9cfb31f65184014e8b5d9b68f695c8f593e",
       "upstream_paths": [
         "include/swoole_socket.h"
       ]
     },
     {
       "path": "0004-socket-output.patch",
-      "sha256": "fd482ad919e8043756edca0a6efe6ff48d7d385b5c2467f6297e30d392f154df",
+      "sha256": "7f22922c28616bec17d25b052537819f76cb78c354c722aece5f69181ff7d302",
       "upstream_paths": [
         "src/network/socket.cc"
       ]
     },
     {
       "path": "0006-socket-registry-admin.patch",
-      "sha256": "248d7e4bfc07d964db93d264c3d610b19b9269a34f9a41fe95076c93ec98864b",
+      "sha256": "f8c0c7a87f76ba7c751dfdac2346f00e51a6c4c08e800c45056ee69ad196a57a",
       "upstream_paths": [
         "ext-src/swoole_admin_server.cc"
       ]
     },
     {
       "path": "0007-server-buffer-typed.patch",
-      "sha256": "95be56bcf5f42a13e520c85b0e0b11350ad578a3dc219626c1877ace2eb91bf4",
+      "sha256": "1e2a6c27ab24922f662137c6258bec99f786d116ae1b94c591d1043acfed3300",
       "upstream_paths": [
         "src/server/base.cc",
         "src/server/reactor_thread.cc"

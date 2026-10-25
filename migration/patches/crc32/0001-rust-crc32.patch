@@ -1,9 +1,8 @@
 diff --git a/src/core/crc32.cc b/src/core/crc32.cc
+index f00d66660..ce5fb76a5 100644
 --- a/src/core/crc32.cc
 +++ b/src/core/crc32.cc
-@@ -19,36 +19,12 @@
- 
- #include "swoole.h"
+@@ -21,34 +21,10 @@
  #include "swoole_hash.h"
 +#include "swoole_rs_crc32.h"
  

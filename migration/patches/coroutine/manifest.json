@@ -1,9 +1,9 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-scheduler-channel-policy.patch",
-      "sha256": "9e6f16c80624136d62d1523feef2f56865e84470c4ea5ffc289067a467246de6",
+      "sha256": "63c3cacacf48271db86f6ce34c31a10ee1e652d64cd40bff8b7a5fa75d5e03c0",
       "upstream_paths": [
         "src/coroutine/base.cc",
         "src/coroutine/channel.cc"
@@ -11,28 +11,28 @@
     },
     {
       "path": "0002-channel-owned-tokens.patch",
-      "sha256": "aa04e15780f24d05590045d85bbae92b2125bd1c6b79f0fcc03ad5ca536319b7",
+      "sha256": "537133d6630bcc9c704981dbb10e3cb4ededd564de183b11c4614af0ed19ac1c",
       "upstream_paths": [
         "include/swoole_coroutine_channel.h"
       ]
     },
     {
       "path": "0003-context-stack-markers.patch",
-      "sha256": "927670ae83e62814dc306b527a7cff3ed6ed411f3011333b8b8f8f65fa4d166c",
+      "sha256": "ba4fc64d421d9aba52ca2d370fa6aaa7727fe88bd66fb842aff47c42aa58f64e",
       "upstream_paths": [
         "src/coroutine/context.cc"
       ]
     },
     {
       "path": "0004-timing-header.patch",
-      "sha256": "7e6059372d8ce79b696174d162c01d273dc09b0a7301a5adb2e74b9bd607be9e",
+      "sha256": "2050b9c622365125e84f382f7161cc2fd0099f3757d2d82af4fe9bfed26e6a6e",
       "upstream_paths": [
         "include/swoole_coroutine.h"
       ]
     },
     {
       "path": "0005-context-bookkeeping.patch",
-      "sha256": "182926b4782c9d4b26fa06530d5ce576d3d85633941ec21befc55bf2dc1784e5",
+      "sha256": "64a676280216e513300a2f330b8e6e05abad86e701cbd51ba67e57916716fa33",
       "upstream_paths": [
         "include/swoole_coroutine_context.h",
         "src/coroutine/thread_context.cc"

@@ -13,7 +13,7 @@ import subprocess
 import sys
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
-from tools.build_upstream import COMMIT as PIN
+from tools.build_upstream import COMMIT as PIN, VERSION
 SUPPORT_ROOTS = ['tests/include', 'examples',
          'docs/swoole-logo.svg', 'core-tests/fuzz/cases', 'README.md']
 EXTERNAL = {'bug_2444.phpt': 'external_mysql_service',
@@ -58,7 +58,7 @@ def inventory(source, group="swoole_http_server"):
         else:
             support.append(item)
     tree = subprocess.check_output([*command, 'rev-parse', f'{PIN}:{test_root}'], text=True).strip()
-    return {'repository': 'https://github.com/swoole/swoole-src', 'tag': 'v6.2.2',
+    return {'repository': 'https://github.com/swoole/swoole-src', 'tag': VERSION,
             'commit': PIN, 'http_tree': tree, 'tests': tests, 'support_files': support,
             'inventory': {'cases': len(tests), 'support_blobs': len(support),
                           'total_pinned_bytes': total_bytes,

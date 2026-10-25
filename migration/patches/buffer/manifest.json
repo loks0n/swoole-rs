@@ -1,26 +1,26 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-buffer-header.patch",
-      "sha256": "ecc3eb6bf141315c30cf49aedf5f182b2322370830982c58c1611d23438a2e4b",
+      "sha256": "8fb86ffb4fd271f418622712835594dd2649d865aef61152ed8b9d74c7eda7f6",
       "upstream_paths": [
         "include/swoole_buffer.h"
       ]
     },
     {
       "path": "0002-buffer-body.patch",
-      "sha256": "af457df3157ce639ebdd5795a064aa4184fdc058224f5848ec1de13cd030ff69",
+      "sha256": "4076bfb79f665ab7a9e8d0eef9138fb07a06fea6bec3df86e953d040ee0f3eb1",
       "upstream_paths": [
         "src/core/buffer.cc"
       ]
     },
     {
       "path": "0003-string-storage.patch",
-      "sha256": "ef5ce707ca44252367a142cfa6a32e8c485b1c06e870d9f13f07b33efcd039be",
+      "sha256": "f9f6928dcf0be9a76d12844ce9fe450e12e88a3e23e651993a16274e07a3f09b",
       "upstream_paths": [
-        "src/core/string.cc",
-        "include/swoole_string.h"
+        "include/swoole_string.h",
+        "src/core/string.cc"
       ]
     }
   ]

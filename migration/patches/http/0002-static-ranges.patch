@@ -1,9 +1,8 @@
 diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
+index 0614fcfef..06562760d 100644
 --- a/src/server/static_handler.cc
 +++ b/src/server/static_handler.cc
-@@ -15,60 +15,114 @@
-  */
-
+@@ -17,2 +17,8 @@
  #include "swoole_static_handler.h"
 +#ifndef SWOOLE_RS_HTTP
 +#error "HTTP overlay requires --enable-swoole-rs-http"
@@ -12,15 +11,16 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +#include "swoole_rs_http_static_v2.h"
 +#include "swoole_rs_http_request_view.h"
  #include "swoole_util.h"
-
- #include <string>
- #include <dirent.h>
+@@ -22,3 +28,2 @@
  #include <algorithm>
 -#include <sstream>
  #include <regex>
-
- namespace swoole {
+@@ -27,24 +32,91 @@ namespace swoole {
  namespace http_server {
+-bool StaticHandler::is_modified(const std::string &date_if_modified_since) const {
+-    char date_tmp[64];
+-    if (date_if_modified_since.empty() || date_if_modified_since.length() > sizeof(date_tmp) - 1) {
+-        return false;
 +#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
 +void RewriteRules::append(const std::string &pattern, const std::string &replacement) {
 +    if (swr_v2_http_rewrite_store_add(&owner_, reinterpret_cast<const uint8_t *>(pattern.data()), pattern.size(),
@@ -105,15 +105,9 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +            break;
 +        default: return action == SWR_HTTP_DATE_MATCH;
 +        }
-+    }
+     }
 +}
-+
- bool StaticHandler::is_modified(const std::string &date_if_modified_since) const {
--    char date_tmp[64];
--    if (date_if_modified_since.empty() || date_if_modified_since.length() > sizeof(date_tmp) - 1) {
--        return false;
--    }
--
+ 
 -    struct tm tm3 {};
 -    memcpy(date_tmp, date_if_modified_since.c_str(), date_if_modified_since.length());
 -    date_tmp[date_if_modified_since.length()] = 0;
@@ -130,9 +124,10 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 -        date_format = SW_HTTP_ASCTIME_DATE;
 -    }
 -    return date_format && mktime(&tm3) - (time_t) serv->timezone_ >= get_file_mtime();
++bool StaticHandler::is_modified(const std::string &date_if_modified_since) const {
 +    return conditional_file_date(*this, serv, date_if_modified_since, 0);
  }
-
+@@ -52,21 +124,3 @@ bool StaticHandler::is_modified(const std::string &date_if_modified_since) const
  bool StaticHandler::is_modified_range(const std::string &date_range) const {
 -    if (date_range.empty()) {
 -        return false;
@@ -155,11 +150,7 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 -    return date_format && mktime(&tm3) != mktime(tm_file_mtime);
 +    return conditional_file_date(*this, serv, date_range, 1);
  }
-
- std::string StaticHandler::get_date() {
-@@ -104,141 +158,163 @@
-
- bool StaticHandler::try_serve() {
+@@ -106,88 +160,66 @@ bool StaticHandler::try_serve() {
      serv->apply_rewrite_rules(this);
 -
 -    char *p = filename;
@@ -267,7 +258,22 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +                facts |= SWR_HTTP_PATH_STAT_OK | (is_link() ? uint32_t(SWR_HTTP_PATH_LINK) : 0u) |
 +                         (is_dir() ? uint32_t(SWR_HTTP_PATH_IS_DIRECTORY) : 0u) | (is_file() ? uint32_t(SWR_HTTP_PATH_FILE) : 0u);
              }
--        }
++            break;
++        case SWR_HTTP_PATH_CANONICAL:
++            facts &= ~SWR_HTTP_PATH_CANONICAL_OK;
++            if (get_absolute_path()) {
++                facts |= SWR_HTTP_PATH_CANONICAL_OK;
++            }
++            state.filename_length = l_filename;
++            break;
++        case SWR_HTTP_PATH_MIME:
++            facts &= ~SWR_HTTP_PATH_MIME_OK;
++            if (mime_type::exists(filename)) {
++                facts |= SWR_HTTP_PATH_MIME_OK;
++            }
++            break;
++        default: return catch_error();
+         }
 -    } else {
 -        if (!get_absolute_path() || !is_located_in_document_root()) {
 -            return catch_error();
@@ -284,32 +290,15 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 -
 -    if (!mime_type::exists(filename) && !last) {
 -        return false;
--    }
+     }
 -
 -    if (!is_file()) {
 -        return false;
 -    }
 -
 -    return true;
-+            break;
-+        case SWR_HTTP_PATH_CANONICAL:
-+            facts &= ~SWR_HTTP_PATH_CANONICAL_OK;
-+            if (get_absolute_path()) {
-+                facts |= SWR_HTTP_PATH_CANONICAL_OK;
-+            }
-+            state.filename_length = l_filename;
-+            break;
-+        case SWR_HTTP_PATH_MIME:
-+            facts &= ~SWR_HTTP_PATH_MIME_OK;
-+            if (mime_type::exists(filename)) {
-+                facts |= SWR_HTTP_PATH_MIME_OK;
-+            }
-+            break;
-+        default: return catch_error();
-+        }
-+    }
  }
-
+@@ -195,48 +227,92 @@ bool StaticHandler::try_serve() {
  bool StaticHandler::try_serve_index_file() {
 -    if (serv->http_index_files && !serv->http_index_files->empty() && is_dir()) {
 -        if (!get_dir_files()) {
@@ -322,10 +311,6 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 -        }
 -        if (!has_index_file() && !is_enabled_auto_index()) {
 -            return false;
--        }
--    }
--    return true;
--}
 +    uint32_t phase = 0;
 +#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
 +    uint32_t facts = 0;
@@ -359,10 +344,16 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +        case 5: facts = is_dir() ? 2u : 0u; break;
 +#endif
 +        default: throw std::logic_error("Invalid HTTP index selection phase");
-+        }
-+    }
-+}
-+
+         }
+     }
+-    return true;
+ }
+ 
+-size_t StaticHandler::make_index_page(String *buffer) {
+-    get_dir_files();
+-
+-    if (dir_path.back() != '/') {
+-        dir_path.append("/");
 +static void append_index_part(String *buffer, const std::string &path, const std::string &entry, uint32_t part) {
 +    swr_v1_http_index_page_input input{{reinterpret_cast<const uint8_t *>(path.data()), path.size()},
 +                                     {reinterpret_cast<const uint8_t *>(entry.data()), entry.size()},
@@ -379,9 +370,22 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +        case 3: buffer->length = result.length; return;
 +        default: return;
 +        }
-+    }
+     }
 +}
-+
+ 
+-    buffer->format_impl(String::FORMAT_APPEND | String::FORMAT_GROW,
+-                        "<html>\n"
+-                        "<head>\n"
+-                        "\t<meta charset='UTF-8'>\n<title>Index of %s</title>"
+-                        "</head>\n"
+-                        "<body>\n" SW_HTTP_PAGE_CSS "<h1>Index of %s</h1>"
+-                        "\t<ul>\n",
+-                        dir_path.c_str(),
+-                        dir_path.c_str());
+-
+-    for (const auto &dir_file : dir_files) {
+-        if (dir_file == "." || (dir_path == "/" && dir_file == "..")) {
+-            continue;
 +#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE
 +static void append_legacy_directory_part(String *buffer, const LegacyDirectory &directory,
 +        const std::string &path, size_t index, uint32_t part) {
@@ -397,41 +401,20 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +        case 2: buffer->extend_align(result.required); break;
 +        case 3: buffer->length=result.length; return;
 +        default: return;
-+        }
-+    }
-+}
-+#endif
-
- size_t StaticHandler::make_index_page(String *buffer) {
-     get_dir_files();
--
--    if (dir_path.back() != '/') {
--        dir_path.append("/");
--    }
--
--    buffer->format_impl(String::FORMAT_APPEND | String::FORMAT_GROW,
--                        "<html>\n"
--                        "<head>\n"
--                        "\t<meta charset='UTF-8'>\n<title>Index of %s</title>"
--                        "</head>\n"
--                        "<body>\n" SW_HTTP_PAGE_CSS "<h1>Index of %s</h1>"
--                        "\t<ul>\n",
--                        dir_path.c_str(),
--                        dir_path.c_str());
--
--    for (const auto &dir_file : dir_files) {
--        if (dir_file == "." || (dir_path == "/" && dir_file == "..")) {
--            continue;
--        }
+         }
 -        buffer->format_impl(String::FORMAT_APPEND | String::FORMAT_GROW,
 -                            "\t\t<li><a href=%s%s>%s</a></li>\n",
 -                            dir_path.c_str(),
 -                            dir_file.c_str(),
 -                            dir_file.c_str());
--    }
--
+     }
++}
++#endif
+ 
 -    buffer->append(SW_STRL("\t</ul>\n" SW_HTTP_POWER_BY "</body>\n</html>\n"));
 -
++size_t StaticHandler::make_index_page(String *buffer) {
++    get_dir_files();
 +    if (dir_path.back() != '/') dir_path.append("/");
 +#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE
 +    append_legacy_directory_part(buffer,dir_files,dir_path,0,0);
@@ -445,11 +428,7 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +    append_index_part(buffer, dir_path, "", 2);
 +#endif
      return buffer->length;
- }
-
-@@ -258,219 +334,545 @@
-
-     struct dirent *ptr;
+@@ -260,3 +336,7 @@ bool StaticHandler::get_dir_files() {
      while ((ptr = readdir(dir)) != nullptr) {
 +#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE
 +        dir_files.scan_append(ptr->d_name);
@@ -457,15 +436,33 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
          dir_files.insert(ptr->d_name);
 +#endif
      }
-
+@@ -264,2 +344,5 @@ bool StaticHandler::get_dir_files() {
      closedir(dir);
 +#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE
 +    dir_files.scan_finish();
 +#endif
-
-     return true;
- }
-
+ 
+@@ -268,176 +351,430 @@ bool StaticHandler::get_dir_files() {
+ 
+-bool StaticHandler::set_filename(const std::string &_filename) {
+-    char *p = filename + l_filename;
+-
+-    if (*p != '/') {
+-        *p = '/';
+-        p += 1;
+-    }
+-
+-    memcpy(p, _filename.c_str(), _filename.length());
+-    p += _filename.length();
+-    *p = 0;
+-
+-    if (lstat(filename, &file_stat) < 0) {
+-        return false;
+-    }
+-
+-    if (!is_file()) {
+-        return false;
+-    }
 +StaticHandlerV2::StaticHandlerV2(Server *server, const char *url, size_t length,
 +    const RewriteRulesField *rules)
 +    : serv_(server), rules_(rules), context_(swr_v2_http_context_new(
@@ -473,7 +470,7 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +    if (!context_) throw std::bad_alloc();
 +}
 +StaticHandlerV2::~StaticHandlerV2() { swr_v2_http_context_drop(context_); }
-+
+ 
 +swr_v2_http_observation StaticHandlerV2::observe() const {
 +    swr_v2_http_observation value{};
 +    if (swr_v2_http_context_observe(context_, &value) < 0) throw std::logic_error("Invalid HTTP context");
@@ -535,8 +532,8 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +        (S_ISREG(value.st_mode) ? uint32_t(SWR_HTTP_PATH_FILE) : 0u) |
 +        (S_ISLNK(value.st_mode) ? uint32_t(SWR_HTTP_PATH_LINK) : 0u);
 +    if (swr_v2_http_context_observed(context_,0,&facts) < 0) throw std::logic_error("Invalid HTTP stat");
-+    return true;
-+}
+     return true;
+ }
 +bool StaticHandlerV2::set_filename() {
 +    if (swr_v2_http_context_path(context_,2,nullptr,0,0) != 0) return false;
 +    return stat_file() && (observe().kind & SWR_HTTP_PATH_FILE);
@@ -579,7 +576,31 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +    return swr_v2_http_context_serve(context,&root,&observation);
 +#endif
 +}
-+
+ 
+-void StaticHandler::parse_range(const char *range, const char *if_range) {
+-    task_t _task{};
+-    _task.length = 0;
+-    // range
+-    if (range && '\0' != *range) {
+-        const char *p = range;
+-        // bytes=
+-        if (!SW_STR_ISTARTS_WITH(p, strlen(range), "bytes=")) {
+-            _task.offset = 0;
+-            _task.length = content_length = get_filesize();
+-            tasks.push_back(_task);
+-            return;
+-        }
+-        p += 6;
+-        size_t start, end, size = 0, cutoff = SIZE_MAX / 10, cutlim = SIZE_MAX % 10, suffix,
+-                           _content_length = get_filesize();
+-        content_length = 0;
+-        for (;;) {
+-            start = 0;
+-            end = 0;
+-            suffix = 0;
+-
+-            while (*p == ' ') {
+-                p++;
 +bool StaticHandlerV2::try_serve() {
 +    // Observe the actual field freshly at the original rewrite boundary.
 +#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
@@ -614,7 +635,18 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +                action=swr_v2_http_context_rewrite_step(context_,0,
 +                    result ? SWR_HTTP_REWRITE_CHANGED : SWR_HTTP_REWRITE_UNCHANGED,&cursor);
 +                break;
-+            }
+             }
+-
+-            if (*p != '-') {
+-                if (*p < '0' || *p > '9') {
+-                    status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
+-                    return;
+-                }
+-
+-                while (*p >= '0' && *p <= '9') {
+-                    if (start >= cutoff && (start > cutoff || (size_t) (*p - '0') > cutlim)) {
+-                        status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
+-                        return;
 +#endif
 +            case SWR_HTTP_REWRITE_SEARCH: {
 +                try {
@@ -636,14 +668,42 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +                        if (result < 0) throw std::bad_alloc();
 +                        action=swr_v2_http_context_rewrite_step(context_,0,
 +                            result ? SWR_HTTP_REWRITE_CHANGED : SWR_HTTP_REWRITE_UNCHANGED,&cursor);
-+                    }
+                     }
+-
+-                    start = start * 10 + (*p++ - '0');
+-                }
+-
+-                while (*p == ' ') {
+-                    p++;
+-                }
+-
+-                if (*p++ != '-') {
+-                    status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
+-                    return;
+-                }
+-
+-                while (*p == ' ') {
+-                    p++;
+-                }
+-
+-                if (*p == ',' || *p == '\0') {
+-                    end = _content_length;
+-                    goto found;
 +                } catch (const std::regex_error &) {
 +                    action=swr_v2_http_context_rewrite_step(context_,0,SWR_HTTP_REWRITE_UNCHANGED,&cursor);
-+                }
+                 }
+-
+-            } else {
+-                suffix = 1;
+-                p++;
 +                break;
-+            }
+             }
+-
+-            if (*p < '0' || *p > '9') {
+-                status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
+-                return;
 +            default: throw std::logic_error("Invalid HTTP rewrite action");
-+            }
+             }
 +        }
 +    }
 +#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
@@ -702,7 +762,12 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +        }
 +    }
 +}
-+
+ 
+-            while (*p >= '0' && *p <= '9') {
+-                if (end >= cutoff && (end > cutoff || (size_t) (*p - '0') > cutlim)) {
+-                    status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
+-                    return;
+-                }
 +bool StaticHandlerV2::get_dir_files() {
 +    DIR *dir = nullptr;
 +    int32_t action = swr_v2_http_context_scan(context_, 0, nullptr, 0);
@@ -734,7 +799,9 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +        }
 +    }
 +}
-+
+ 
+-                end = end * 10 + (*p++ - '0');
+-            }
 +bool StaticHandlerV2::try_serve_index_file() {
 +    size_t cursor = 0;
 +#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
@@ -783,7 +850,10 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +        }
 +    }
 +}
-+
+ 
+-            while (*p == ' ') {
+-                p++;
+-            }
 +static void append_directory_part(String *buffer, const swr_v2_http_context *context, size_t entry, uint32_t part) {
 +    swr_v1_http_index_page_input input{{nullptr, 0},
 +        {nullptr, 0},
@@ -800,7 +870,11 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +        }
 +    }
 +}
-+
+ 
+-            if (*p != ',' && *p != '\0' && *p != '\r') {
+-                status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
+-                return;
+-            }
 +size_t StaticHandlerV2::make_index_page(String *buffer) {
 +    get_dir_files();
 +    size_t entry = 0;
@@ -812,33 +886,21 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +    if (part < 0) throw std::bad_alloc();
 +    return buffer->length;
 +}
-+
- bool StaticHandler::set_filename(const std::string &_filename) {
--    char *p = filename + l_filename;
--
--    if (*p != '/') {
--        *p = '/';
--        p += 1;
--    }
--
--    memcpy(p, _filename.c_str(), _filename.length());
--    p += _filename.length();
--    *p = 0;
--
--    if (lstat(filename, &file_stat) < 0) {
+ 
+-            if (suffix) {
+-                start = (end < _content_length) ? _content_length - end : 0;
+-                end = _content_length - 1;
+-            }
++bool StaticHandler::set_filename(const std::string &_filename) {
 +    if (swr_v1_http_static_index_path(reinterpret_cast<uint8_t *>(filename), sizeof(filename), l_filename,
 +                                     reinterpret_cast<const uint8_t *>(_filename.data()), _filename.size()) != 0) {
-         return false;
-     }
--
--    if (!is_file()) {
--        return false;
--    }
--
--    return true;
++        return false;
++    }
 +    return lstat(filename, &file_stat) == 0 && is_file();
 +}
-+
+ 
+-            if (end >= _content_length) {
+-                end = _content_length;
 +static size_t http_range_header(char *output, size_t capacity, bool separator,
 +                                const std::string &boundary, const std::string &mime,
 +                                size_t offset, size_t length, size_t filesize) {
@@ -850,7 +912,10 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +    if (status == 1) errno = EOVERFLOW;
 +    return written;
 +}
-+
+ 
+-            } else {
+-                end++;
+-            }
 +static std::string http_range_end(const std::string &boundary) {
 +    swr_v1_http_range_format_input input{{reinterpret_cast<const uint8_t *>(boundary.data()), boundary.size()},
 +        {nullptr, 0}, 0, 0, 0, 1, 0};
@@ -865,118 +930,8 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +    if (swr_v1_http_range_format(&input, reinterpret_cast<uint8_t *>(&result[0]), length + 1, &written) < 0)
 +        throw std::length_error("HTTP range boundary buffer");
 +    return result;
- }
-
- void StaticHandler::parse_range(const char *range, const char *if_range) {
-     task_t _task{};
--    _task.length = 0;
--    // range
--    if (range && '\0' != *range) {
--        const char *p = range;
--        // bytes=
--        if (!SW_STR_ISTARTS_WITH(p, strlen(range), "bytes=")) {
--            _task.offset = 0;
--            _task.length = content_length = get_filesize();
--            tasks.push_back(_task);
--            return;
--        }
--        p += 6;
--        size_t start, end, size = 0, cutoff = SIZE_MAX / 10, cutlim = SIZE_MAX % 10, suffix,
--                           _content_length = get_filesize();
-+    if (range && *range) {
-         content_length = 0;
-+        swr_v1_http_range_state state{};
-+        swr_v1_http_span part{};
-+        size_t length = strlen(range);
-         for (;;) {
--            start = 0;
--            end = 0;
--            suffix = 0;
--
--            while (*p == ' ') {
--                p++;
--            }
--
--            if (*p != '-') {
--                if (*p < '0' || *p > '9') {
--                    status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
--                    return;
--                }
--
--                while (*p >= '0' && *p <= '9') {
--                    if (start >= cutoff && (start > cutoff || (size_t) (*p - '0') > cutlim)) {
--                        status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
--                        return;
--                    }
--
--                    start = start * 10 + (*p++ - '0');
--                }
--
--                while (*p == ' ') {
--                    p++;
--                }
--
--                if (*p++ != '-') {
--                    status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
--                    return;
--                }
--
--                while (*p == ' ') {
--                    p++;
--                }
--
--                if (*p == ',' || *p == '\0') {
--                    end = _content_length;
--                    goto found;
--                }
--
--            } else {
--                suffix = 1;
--                p++;
--            }
--
--            if (*p < '0' || *p > '9') {
--                status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
-+            int32_t status = swr_v1_http_range_next(reinterpret_cast<const uint8_t *>(range), length,
-+                                                   get_filesize(), &state, &part);
-+            if (status < 0) { status_code = SW_HTTP_RANGE_NOT_SATISFIABLE; return; }
-+            if (status == 2) {
-+                _task.offset = 0;
-+                _task.length = content_length = get_filesize();
-+                tasks.push_back(_task);
-                 return;
-             }
--
--            while (*p >= '0' && *p <= '9') {
--                if (end >= cutoff && (end > cutoff || (size_t) (*p - '0') > cutlim)) {
--                    status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
--                    return;
--                }
--
--                end = end * 10 + (*p++ - '0');
--            }
--
--            while (*p == ' ') {
--                p++;
--            }
--
--            if (*p != ',' && *p != '\0' && *p != '\r') {
--                status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
--                return;
--            }
--
--            if (suffix) {
--                start = (end < _content_length) ? _content_length - end : 0;
--                end = _content_length - 1;
--            }
--
--            if (end >= _content_length) {
--                end = _content_length;
--
--            } else {
--                end++;
--            }
--
++}
+ 
 -        found:
 -            if (start < end) {
 -                if (size > SIZE_MAX - (end - start)) {
@@ -998,16 +953,37 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 -                                              end - 1,
 -                                              get_filesize()) +
 -                                  _task.length;
--                tasks.push_back(_task);
++void StaticHandler::parse_range(const char *range, const char *if_range) {
++    task_t _task{};
++    if (range && *range) {
++        content_length = 0;
++        swr_v1_http_range_state state{};
++        swr_v1_http_span part{};
++        size_t length = strlen(range);
++        for (;;) {
++            int32_t status = swr_v1_http_range_next(reinterpret_cast<const uint8_t *>(range), length,
++                                                   get_filesize(), &state, &part);
++            if (status < 0) { status_code = SW_HTTP_RANGE_NOT_SATISFIABLE; return; }
++            if (status == 2) {
++                _task.offset = 0;
++                _task.length = content_length = get_filesize();
+                 tasks.push_back(_task);
 -            } else if (start == 0) {
 -                break;
 -            }
 -
 -            if (*p++ != ',' || '\r' == *p || '\0' == *p) {
 -                break;
--            }
--        }
--    }
++                return;
+             }
++            if (status == 0) break;
++            _task.offset = part.offset;
++            _task.length = part.length;
++            content_length += http_range_header(_task.part_header, sizeof(_task.part_header), !tasks.empty(),
++                get_boundary(), get_mimetype(), static_cast<size_t>(_task.offset), _task.length, get_filesize()) + _task.length;
++            tasks.push_back(_task);
+         }
+     }
 -    if (_task.length > 0) {
 -        if (1 == tasks.size()) {
 -            content_length = _task.length;
@@ -1025,14 +1001,6 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 -    if (if_range) {
 -        if (is_modified_range(if_range)) {
 -            tasks.clear();
-+            if (status == 0) break;
-+            _task.offset = part.offset;
-+            _task.length = part.length;
-+            content_length += http_range_header(_task.part_header, sizeof(_task.part_header), !tasks.empty(),
-+                get_boundary(), get_mimetype(), static_cast<size_t>(_task.offset), _task.length, get_filesize()) + _task.length;
-+            tasks.push_back(_task);
-+        }
-+    }
 +    swr_v1_http_range_finish_state finish{content_length, _task.length, tasks.size(), get_filesize(), 0,
 +        0, status_code, if_range != nullptr, 0};
 +    for (;;) {
@@ -1047,9 +1015,6 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +            _task.length = finish.filesize;
              tasks.push_back(_task);
 -            status_code = SW_HTTP_OK;
--        }
--    }
--}
 +            break;
 +        case 2:
 +            end_part = http_range_end(get_boundary());
@@ -1058,15 +1023,19 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +        case 3: finish.modified = is_modified_range(if_range); break;
 +        case 4: tasks.clear(); break;
 +        default: throw std::logic_error("Invalid HTTP range finalization state");
-+        }
-+    }
-+}
+         }
+@@ -445,20 +782,78 @@ void StaticHandler::parse_range(const char *range, const char *if_range) {
+ }
+-}  // namespace http_server
 +static int32_t resume_range_header(swr_v2_http_context *owner, uint32_t boundary_ready,
 +                                   const std::string &mime) {
 +    swr_v2_http_range_observation observed{{reinterpret_cast<const uint8_t *>(mime.data()),mime.size()},boundary_ready,0};
 +    return swr_v2_http_context_range_resume(owner,&observed);
 +}
-+
+ 
+-void Server::add_rewrite_rule(const std::string &pattern, const std::string &replacement) {
+-    if (rewrite_rules == nullptr) {
+-        rewrite_rules = std::make_shared<std::vector<http_server::RewriteRule>>();
 +void StaticHandlerV2::parse_range(const char *range, const char *if_range) {
 +    static_assert(sizeof(off_t) == sizeof(int64_t), "V2 task offsets require the selected 64-bit native ABI");
 +    static_assert(SW_HTTP_SERVER_PART_HEADER == 256, "V2 task header capacity changed");
@@ -1099,9 +1068,11 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +            break;
 +        default: throw std::logic_error("Invalid HTTP range state");
 +        }
-+    }
+     }
 +}
-+
+ 
+-    http_server::RewriteRule rule;
+-    rule.replacement = replacement;
 +std::vector<swr_v2_http_static_task> StaticHandlerV2::copy_tasks() const {
 +    const size_t count = observe().task_count;
 +    std::vector<swr_v2_http_static_task> snapshot(count);
@@ -1110,38 +1081,32 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +        throw std::logic_error("Invalid HTTP task snapshot");
 +    return snapshot;
 +}
-+
-+const std::string &StaticHandlerV2::get_content_type(std::string &scratch) {
-+    if (swr_v1_http_static_content_prefix(observe().task_count)) {
-+        ensure_boundary(); // Native RNG ends before owned content formatting.
-+        if (swr_v2_http_context_format(context_,0) < 0) throw std::bad_alloc();
-+        scratch=text(SWR_HTTP_CONTEXT_CONTENT);
-+        return scratch;
-+    }
-+    return get_mimetype();
-+}
-+
- }  // namespace http_server
-
- void Server::add_rewrite_rule(const std::string &pattern, const std::string &replacement) {
--    if (rewrite_rules == nullptr) {
--        rewrite_rules = std::make_shared<std::vector<http_server::RewriteRule>>();
--    }
--
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+    rewrite_rules.append(pattern, replacement);
-+#else
-+    if (rewrite_rules == nullptr) rewrite_rules = std::make_shared<std::vector<http_server::RewriteRule>>();
-     http_server::RewriteRule rule;
-     rule.replacement = replacement;
--
+ 
 -    if (pattern.length() >= 2 && pattern.at(0) == '~' && pattern.at(pattern.length() - 1) == '~') {
 -        rule.pattern = pattern.substr(1, pattern.length() - 2);
 -        rule.is_regex = true;
 -    } else {
 -        rule.pattern = pattern;
 -        rule.is_regex = false;
--    }
++const std::string &StaticHandlerV2::get_content_type(std::string &scratch) {
++    if (swr_v1_http_static_content_prefix(observe().task_count)) {
++        ensure_boundary(); // Native RNG ends before owned content formatting.
++        if (swr_v2_http_context_format(context_,0) < 0) throw std::bad_alloc();
++        scratch=text(SWR_HTTP_CONTEXT_CONTENT);
++        return scratch;
+     }
++    return get_mimetype();
++}
++
++}  // namespace http_server
++
++void Server::add_rewrite_rule(const std::string &pattern, const std::string &replacement) {
++#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
++    rewrite_rules.append(pattern, replacement);
++#else
++    if (rewrite_rules == nullptr) rewrite_rules = std::make_shared<std::vector<http_server::RewriteRule>>();
++    http_server::RewriteRule rule;
++    rule.replacement = replacement;
 +    swr_v1_http_span source{};
 +    uint32_t regex = 0;
 +    if (swr_v1_http_rewrite_rule(reinterpret_cast<const uint8_t *>(pattern.data()), pattern.size(), &source, &regex) < 0) return;
@@ -1150,37 +1115,24 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
      rewrite_rules->emplace_back(rule);
 +#endif
  }
-
+@@ -466,2 +861,5 @@ void Server::add_rewrite_rule(const std::string &pattern, const std::string &rep
  void Server::add_static_handler_location(const std::string &location) {
 +#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
 +    static_files().add_location(location);
 +#else
      if (locations == nullptr) {
-         locations = std::make_shared<std::unordered_set<std::string>>();
-     }
+@@ -470,2 +868,3 @@ void Server::add_static_handler_location(const std::string &location) {
      locations->emplace(location);
 +#endif
  }
-
+@@ -473,2 +872,5 @@ void Server::add_static_handler_location(const std::string &location) {
  void Server::add_static_handler_index_files(const std::string &file) {
 +#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
 +    static_files().add_index(file);
 +#else
      if (http_index_files == nullptr) {
-         http_index_files = std::make_shared<std::vector<std::string>>();
+@@ -481,10 +883,25 @@ void Server::add_static_handler_index_files(const std::string &file) {
      }
-@@ -479,14 +881,29 @@
-     if (iter == http_index_files->end()) {
-         http_index_files->emplace_back(file);
-     }
--}
--
--bool Server::select_static_handler(const http_server::Request *request, const Connection *conn) {
--    const char *url = request->buffer_->str + request->url_offset_;
--    size_t url_length = request->url_length_;
--
--    http_server::StaticHandler handler(this, url, url_length);
--    if (!handler.try_serve()) {
 +#endif
 +}
 +
@@ -1193,24 +1145,25 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +    size_t written = 0;
 +    swr_v1_http_static_headers(&header, reinterpret_cast<uint8_t *>(output), capacity, &written);
 +    return written;
-+}
-+
+ }
+ 
+-bool Server::select_static_handler(const http_server::Request *request, const Connection *conn) {
+-    const char *url = request->buffer_->str + request->url_offset_;
+-    size_t url_length = request->url_length_;
 +template<class RequestView>
 +static bool select_static_handler_impl(Server *server,const RequestView &request,const Connection *conn,
 +    const http_server::RewriteRulesField *rules) {
 +    const char *url = request.buffer()->str + request.url_offset();
 +    size_t url_length = request.url_length();
-+
+ 
+-    http_server::StaticHandler handler(this, url, url_length);
+-    if (!handler.try_serve()) {
 +    http_server::StaticHandlerV2 handler(server, url, url_length, rules);
 +    swr_v1_http_static_selection selection{};
 +    if (swr_v1_http_static_select(&selection, handler.try_serve(), 0) == SWR_HTTP_SELECT_SKIP) {
          return false;
-     }
-
-@@ -495,18 +912,16 @@
-     response.info.fd = conn->session_id;
-     response.info.type = SW_SERVER_EVENT_SEND_DATA;
-
+@@ -497,14 +914,12 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+ 
 -    if (handler.status_code == SW_HTTP_NOT_FOUND) {
 -        response.info.len = sw_snprintf(header_buffer,
 -                                        sizeof(header_buffer),
@@ -1232,13 +1185,9 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
          response.data = header_buffer;
 -        send_to_connection(&response);
 +        server->send_to_connection(&response);
-
-         return true;
-     }
-@@ -514,21 +929,21 @@
-     auto date_str = handler.get_date();
-     auto date_str_last_modified = handler.get_date_last_modified();
-
+ 
+@@ -516,17 +931,17 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+ 
 -    std::string date_if_modified_since = request->get_header("If-Modified-Since");
 -    if (!date_if_modified_since.empty() && handler.is_modified(date_if_modified_since)) {
 -        response.info.len = sw_snprintf(header_buffer,
@@ -1268,21 +1217,13 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
          response.data = header_buffer;
 -        send_to_connection(&response);
 +        server->send_to_connection(&response);
-
-         return true;
-     }
-@@ -537,7 +952,7 @@
-      * if http_index_files is enabled, need to search the index file first.
-      * if the index file is found, set filename to index filename.
+ 
+@@ -539,3 +954,3 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
       */
 -    if (!handler.try_serve_index_file()) {
 +    if (swr_v1_http_static_select(&selection, handler.try_serve_index_file(), 0) == SWR_HTTP_SELECT_SKIP) {
          return false;
-     }
-
-@@ -545,65 +960,47 @@
-      * the index file was not found in the current directory,
-      * if http_autoindex is enabled, should show the list of files in the current directory.
+@@ -547,3 +962,7 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
       */
 -    if (!handler.has_index_file() && handler.is_enabled_auto_index() && handler.is_dir()) {
 +    // These getters only read initialized handler/server fields; effects resume after Rust returns.
@@ -1291,8 +1232,8 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +                               (size_t(handler.is_dir()) << 2);
 +    if (swr_v1_http_static_select(&selection, index_facts, 0) == SWR_HTTP_SELECT_AUTOINDEX) {
          sw_tg_buffer()->clear();
-         size_t body_length = handler.make_index_page(sw_tg_buffer());
-
+@@ -551,18 +970,7 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+ 
 -        response.info.len = sw_snprintf(header_buffer,
 -                                        sizeof(header_buffer),
 -                                        "HTTP/1.1 200 OK\r\n"
@@ -1313,14 +1254,14 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
          response.data = header_buffer;
 -        send_to_connection(&response);
 +        server->send_to_connection(&response);
-
-         response.info.len = body_length;
+ 
+@@ -570,3 +978,3 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
          response.data = sw_tg_buffer()->str;
 -        send_to_connection(&response);
 +        server->send_to_connection(&response);
          return true;
-     }
-
+@@ -574,34 +982,23 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+ 
 -    handler.parse_range(request->get_header("Range").c_str(), request->get_header("If-Range").c_str());
 -    auto tasks = handler.get_tasks();
 -
@@ -1332,7 +1273,26 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 -        } else {
 -            header_stream << "Accept-Ranges: bytes\r\n";
 -        }
--    }
++    handler.parse_range(request.get_header("Range").c_str(), request.get_header("If-Range").c_str());
++    auto tasks = handler.copy_tasks();
++
++    header.variant = 3;
++    header.status = static_header_text(http_server::get_status_message(handler.get_status()));
++    swr_v1_http_static_select(&selection, request.method(), 0);
++    header.content_length = selection.head ? 0 : static_cast<long>(handler.get_content_length());
++    // Native IO scratch remains live through header encoding and send. The
++    // MIME getter itself still returns the unchanged global reference.
++    std::string content_type_scratch;
++    const auto &content_type = selection.head ? handler.get_mimetype() : handler.get_content_type(content_type_scratch);
++    header.content_type = static_header_text(content_type.c_str());
++    // Status is observed after the native MIME/content-type effect, not cached before it.
++    swr_v1_http_static_select(&selection, tasks.size(), handler.get_status());
++    header.range_kind = selection.range_kind;
++    if (selection.range_kind != 0) {
++        header.range_offset = tasks[0].offset;
++        header.range_length = tasks[0].length;
++        header.filesize = handler.get_filesize();
+     }
 -
 -    response.info.len = sw_snprintf(
 -        header_buffer,
@@ -1353,33 +1313,9 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 -        date_str.c_str(),
 -        date_str_last_modified.c_str(),
 -        SW_HTTP_SERVER_SOFTWARE);
-+    handler.parse_range(request.get_header("Range").c_str(), request.get_header("If-Range").c_str());
-+    auto tasks = handler.copy_tasks();
-+
-+    header.variant = 3;
-+    header.status = static_header_text(http_server::get_status_message(handler.get_status()));
-+    swr_v1_http_static_select(&selection, request.method(), 0);
-+    header.content_length = selection.head ? 0 : static_cast<long>(handler.get_content_length());
-+    // Native IO scratch remains live through header encoding and send. The
-+    // MIME getter itself still returns the unchanged global reference.
-+    std::string content_type_scratch;
-+    const auto &content_type = selection.head ? handler.get_mimetype() : handler.get_content_type(content_type_scratch);
-+    header.content_type = static_header_text(content_type.c_str());
-+    // Status is observed after the native MIME/content-type effect, not cached before it.
-+    swr_v1_http_static_select(&selection, tasks.size(), handler.get_status());
-+    header.range_kind = selection.range_kind;
-+    if (selection.range_kind != 0) {
-+        header.range_offset = tasks[0].offset;
-+        header.range_length = tasks[0].length;
-+        header.filesize = handler.get_filesize();
-+    }
 +    response.info.len = encode_static_headers(header_buffer, sizeof(header_buffer), header);
-
-     response.data = header_buffer;
-
-@@ -611,91 +1008,149 @@
-     conn->socket->cork();
-
+ 
+@@ -613,38 +1010,55 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
      // Send HTTP header
 -    send_to_connection(&response);
 -
@@ -1402,6 +1338,21 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 -                    response.info.len = task_size;
 -                    response.data = reinterpret_cast<char *>(task);
 -                    send_to_connection(&response);
+-                }
+-
+-                response.info.type = SW_SERVER_EVENT_SEND_DATA;
+-                response.info.len = handler.get_end_part().length();
+-                response.data = handler.get_end_part().c_str();
+-                send_to_connection(&response);
+-            } else if (tasks[0].length > 0) {
+-                task->offset = tasks[0].offset;
+-                task->length = tasks[0].length;
+-                response.info.type = SW_SERVER_EVENT_SEND_FILE;
+-                response.info.len = task_size;
+-                response.data = reinterpret_cast<char *>(task);
+-                send_to_connection(&response);
+-            }
+-            sw_free(task);
 +    server->send_to_connection(&response);
 +
 +    // Rust schedules copied task metadata. Native allocation, file storage,
@@ -1455,21 +1406,38 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +            server->send_to_connection(&response);
 +            break;
 +        default: throw std::logic_error("Invalid HTTP static body state");
-+        }
-+    }
-+
+         }
+@@ -652,49 +1066,90 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+ 
+-    // Close the connection if keepalive is not used
+-    if (!request->keep_alive) {
+-        response.info.type = SW_SERVER_EVENT_CLOSE;
+-        response.info.len = 0;
+-        response.data = nullptr;
+-        send_to_connection(&response);
+-    }
 +}
-+
+ 
+-    return true;
 +bool Server::select_static_handler(const http_server::Request *request,const Connection *conn) {
 +    return select_static_handler_impl(this,http_server::LegacyRequestView<const http_server::Request>(request),conn,&rewrite_rules);
-+}
+ }
 +#if defined(SWOOLE_RS_HTTP_REQUEST_V2)
 +bool Server::select_static_handler(const http_server::RequestV2 *request,const Connection *conn) {
 +    return select_static_handler_impl(this,http_server::RustRequestView<const http_server::RequestV2>(request),conn,&rewrite_rules);
 +}
 +#endif
-+
-+bool Server::apply_rewrite_rules(http_server::StaticHandler *handler) {
+ 
+ bool Server::apply_rewrite_rules(http_server::StaticHandler *handler) {
+-    if (!rewrite_rules || rewrite_rules->empty()) {
+-        return false;
+-    }
+-
+-    bool rewritten = false;
+-    auto current_url = handler->get_request_url();
+-
+-    for (const auto &rule : *rewrite_rules) {
+-        if (rule.is_regex) {
 +    swr_v2_http_rewrite_state state{};
 +    size_t cursor = 0;
 +#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
@@ -1523,11 +1491,20 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +            break;
 +        }
 +        case 3: {
-+            try {
+             try {
 +#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
 +                std::regex pattern(rewrite_rules.text(cursor,0));
 +#else
-+                std::regex pattern(rule.pattern);
+                 std::regex pattern(rule.pattern);
+-                std::string rewritten_url;
+-
+-                if (std::regex_search(current_url, pattern)) {
+-                    rewritten_url = std::regex_replace(current_url, pattern, rule.replacement);
+-                    if (rewritten_url != current_url) {
+-                        handler->set_request_url(rewritten_url);
+-                        rewritten = true;
+-                        break;
+-                    }
 +#endif
 +                std::string rewritten;
 +                action = resume(std::regex_search(current, pattern) ? 5 : 3);
@@ -1540,56 +1517,6 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 +                    action = resume(6, &rewritten);
 +                    if (action == 5) { handler->set_request_url(rewritten); return true; }
                  }
--
--                response.info.type = SW_SERVER_EVENT_SEND_DATA;
--                response.info.len = handler.get_end_part().length();
--                response.data = handler.get_end_part().c_str();
--                send_to_connection(&response);
--            } else if (tasks[0].length > 0) {
--                task->offset = tasks[0].offset;
--                task->length = tasks[0].length;
--                response.info.type = SW_SERVER_EVENT_SEND_FILE;
--                response.info.len = task_size;
--                response.data = reinterpret_cast<char *>(task);
--                send_to_connection(&response);
--            }
--            sw_free(task);
--        }
--    }
--
--    // Close the connection if keepalive is not used
--    if (!request->keep_alive) {
--        response.info.type = SW_SERVER_EVENT_CLOSE;
--        response.info.len = 0;
--        response.data = nullptr;
--        send_to_connection(&response);
--    }
--
--    return true;
--}
--
--bool Server::apply_rewrite_rules(http_server::StaticHandler *handler) {
--    if (!rewrite_rules || rewrite_rules->empty()) {
--        return false;
--    }
--
--    bool rewritten = false;
--    auto current_url = handler->get_request_url();
--
--    for (const auto &rule : *rewrite_rules) {
--        if (rule.is_regex) {
--            try {
--                std::regex pattern(rule.pattern);
--                std::string rewritten_url;
--
--                if (std::regex_search(current_url, pattern)) {
--                    rewritten_url = std::regex_replace(current_url, pattern, rule.replacement);
--                    if (rewritten_url != current_url) {
--                        handler->set_request_url(rewritten_url);
--                        rewritten = true;
--                        break;
--                    }
--                }
 -            } catch (const std::regex_error &e) {
 -                continue;
 -            }
@@ -1600,15 +1527,12 @@ diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
 -                rewritten = true;
 -                break;
 -            }
--        }
--    }
--
--    return rewritten;
 +            } catch (const std::regex_error &) { action = resume(3); }
 +            break;
 +        }
 +        default: throw std::logic_error("Invalid HTTP rewrite action");
-+        }
-+    }
+         }
+     }
+-
+-    return rewritten;
  }
- }  // namespace swoole

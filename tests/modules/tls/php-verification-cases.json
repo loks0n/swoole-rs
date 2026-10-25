@@ -1,5 +1,5 @@
 {
-  "commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "scope": "Additional unchanged local verification originals: self-signed allow/reject, server client-certificate success, expired-client native verification notice, absent-client-certificate rejection. Separate from first8cohort; actual artifact/source scope retained.",
   "tests": [
     {

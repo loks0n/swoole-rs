@@ -15,7 +15,7 @@ there is no runtime CPU probe. Unlike the pin's mutable table (whose
 rejects address-space wrapping before building a slice; that is outside
 upstream's defined domain, not a compatibility fix.
 
-Derived from Swoole v6.2.2 (`8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e`),
+Derived from Swoole v6.2.4 (`c7e514509451beafd4d70ce5b78943d51e76381c`),
 Apache-2.0; the native source keeps the original notice.
 
 The pin's only production caller is `src/server/reactor_thread.cc`, which

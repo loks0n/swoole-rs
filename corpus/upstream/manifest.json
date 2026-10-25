@@ -1,11 +1,11 @@
 {
   "repository": "https://github.com/swoole/swoole-src",
-  "tag": "v6.2.2",
-  "commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "tag": "v6.2.4",
+  "commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "tests": [
     {
       "path": "tests/swoole_http_server/create_request.phpt",
-      "sha256": "d3061de0df1dd20ddeca8bf32ddb41439837c206416fd57331bf515044210f55",
+      "sha256": "ae0ac0bfe0b55c5ccc982d8fae4bfe22430d7084be047d3bf51b812614ed4c99",
       "module": "http-request",
       "requires": [
         "upstream_test_bootstrap",
@@ -291,7 +291,7 @@
     },
     {
       "path": "tests/swoole_websocket_server/pack.phpt",
-      "sha256": "9be564ec4b3fabea126aac2e2ea0ce2467bd7240a45bbdd935352638388779cb",
+      "sha256": "fe87a6e030ca4079e2d170c0d5507dd65ae3cce2e142613502887c6556f5a0da",
       "module": "websocket",
       "requires": [
         "upstream_test_bootstrap",
@@ -666,7 +666,7 @@
     },
     {
       "path": "tests/swoole_websocket_server/onDisconnct.phpt",
-      "sha256": "8d7c71e05252a9e06ab77bf991e3248185a8fd725e84edaa2788a6a8aa2813ee",
+      "sha256": "2fb7fccaa1529bb0f07459961326386ffe9793c39c3379cbff2fcc540fb69023",
       "module": "websocket-network",
       "requires": [
         "upstream_test_bootstrap",

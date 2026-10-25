@@ -1,20 +1,20 @@
 diff --git a/src/core/misc.cc b/src/core/misc.cc
+index 49b80f230..c577e090e 100644
 --- a/src/core/misc.cc
 +++ b/src/core/misc.cc
-@@ -16,291 +16,39 @@
- 
- #include "swoole.h"
- 
--#include <thread>
+@@ -24,2 +24,3 @@
+ #include <chrono>
 +#include <climits>
-+
+ #include <cmath>
+@@ -27,21 +28,11 @@
+ 
 +#include "swoole_rs_utilities.h"
 +#ifndef SWOOLE_RS_UTILITIES
 +#error "Utilities overlay requires --enable-swoole-rs-utilities"
 +#endif
 +
 +static_assert(sizeof(ulong_t) == 8, "Rust utility hashes require LP64");
- 
++
  void sw_spinlock(sw_atomic_t *lock) {
 -    uint32_t i, n;
 -    while (true) {
@@ -36,15 +36,11 @@ diff --git a/src/core/misc.cc b/src/core/misc.cc
 -    }
 +    swr_v1_utils_spinlock(const_cast<uint32_t *>(lock), SW_CPU_NUM, SW_SPINLOCK_LOOP_N);
  }
- 
+@@ -49,25 +40,4 @@ void sw_spinlock(sw_atomic_t *lock) {
  #ifdef HAVE_FUTEX
 -#include <linux/futex.h>
 -#include <sys/syscall.h>
-+static constexpr uint32_t swr_have_futex = 1;
-+#else
-+static constexpr uint32_t swr_have_futex = 0;
-+#endif
- 
+-
  int sw_atomic_futex_wait(sw_atomic_t *atomic, double timeout) {
 -    if (sw_atomic_cmp_set(atomic, 1, 0)) {
 -        return 0;
@@ -65,47 +61,19 @@ diff --git a/src/core/misc.cc b/src/core/misc.cc
 -    } else {
 -        return -1;
 -    }
-+    return swr_v1_utils_wait(const_cast<uint32_t *>(atomic), timeout, swr_have_futex);
++    return swr_v1_utils_wait(const_cast<uint32_t *>(atomic), timeout, 1);
  }
- 
+@@ -75,7 +45,3 @@ int sw_atomic_futex_wait(sw_atomic_t *atomic, double timeout) {
  int sw_atomic_futex_wakeup(sw_atomic_t *atomic, int n) {
 -    if (sw_atomic_cmp_set(atomic, 0, 1)) {
 -        return syscall(SYS_futex, atomic, FUTEX_WAKE, n, NULL, NULL, 0);
 -    } else {
 -        return 0;
 -    }
--}
--#else
--int sw_atomic_futex_wait(sw_atomic_t *atomic, double timeout) {
--    if (sw_atomic_cmp_set(atomic, (sw_atomic_t) 1, (sw_atomic_t) 0)) {
--        return 0;
--    }
--    timeout = timeout <= 0 ? INT_MAX : timeout;
--    int32_t i = (int32_t) sw_atomic_sub_fetch(atomic, 1);
--    while (timeout > 0) {
--        if ((int32_t) *atomic > i) {
--            return 0;
--        } else {
--            usleep(1000);
--            timeout -= 0.001;
--        }
--    }
--    sw_atomic_fetch_add(atomic, 1);
--    return -1;
-+    return swr_v1_utils_wakeup(const_cast<uint32_t *>(atomic), n, swr_have_futex);
++    return swr_v1_utils_wakeup(const_cast<uint32_t *>(atomic), n, 1);
  }
+@@ -321,205 +287,12 @@ int sw_atomic_futex_wakeup(sw_atomic_t *atomic, int n) {
  
--int sw_atomic_futex_wakeup(sw_atomic_t *atomic, int n) {
--    if (1 == (int32_t) *atomic) {
--        return 0;
--    }
--    sw_atomic_fetch_add(atomic, n);
--    return 0;
-+uint64_t swoole_hash_php(const char *key, size_t len) {
-+    return swr_v1_utils_hash(reinterpret_cast<const uint8_t *>(key), len, 0, CHAR_MIN < 0);
- }
--#endif
--
 -/* {{{ DJBX33A (Daniel J. Bernstein, Times 33 with Addition)
 - *
 - * This is Daniel J. Bernstein's popular `times 33' hash function as
@@ -136,7 +104,7 @@ diff --git a/src/core/misc.cc b/src/core/misc.cc
 - *
 - *                  -- Ralf S. Engelschall <rse@engelschall.com>
 - */
--uint64_t swoole_hash_php(const char *key, size_t len) {
+ uint64_t swoole_hash_php(const char *key, size_t len) {
 -    ulong_t hash = 5381;
 -    /* variant with the hash unrolled eight times */
 -    for (; len >= 8; len -= 8) {
@@ -178,10 +146,9 @@ diff --git a/src/core/misc.cc b/src/core/misc.cc
 -        break;
 -    }
 -    return hash;
-+uint64_t swoole_hash_jenkins(const char *key, size_t len) {
-+    return swr_v1_utils_hash(reinterpret_cast<const uint8_t *>(key), len, 1, CHAR_MIN < 0);
++    return swr_v1_utils_hash(reinterpret_cast<const uint8_t *>(key), len, 0, CHAR_MIN < 0);
  }
--
+ 
 -#define HASH_JEN_MIX(a, b, c)                                                                                          \
 -    do {                                                                                                               \
 -        a -= b;                                                                                                        \
@@ -269,10 +236,10 @@ diff --git a/src/core/misc.cc b/src/core/misc.cc
 -    }
 -    HASH_JEN_MIX(i, j, hashv);
 -    return hashv;
-+uint64_t swoole_hash_austin(const char *key, size_t len) {
-+    return swr_v1_utils_hash(reinterpret_cast<const uint8_t *>(key), len, 2, CHAR_MIN < 0);
++uint64_t swoole_hash_jenkins(const char *key, size_t len) {
++    return swr_v1_utils_hash(reinterpret_cast<const uint8_t *>(key), len, 1, CHAR_MIN < 0);
  }
--
+ 
 -/**
 - * MurmurHash2(Austin Appleby)
 - */
@@ -313,4 +280,6 @@ diff --git a/src/core/misc.cc b/src/core/misc.cc
 -    h ^= h >> 15;
 -
 -    return h;
--}
++uint64_t swoole_hash_austin(const char *key, size_t len) {
++    return swr_v1_utils_hash(reinterpret_cast<const uint8_t *>(key), len, 2, CHAR_MIN < 0);
+ }

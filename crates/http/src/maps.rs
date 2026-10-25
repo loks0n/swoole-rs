@@ -1,6 +1,6 @@
 use super::bytes;
 use std::ffi::{CStr, c_char};
-pub(super) static METHODS: [&CStr; 26] = [
+pub(super) static METHODS: [&CStr; 27] = [
     c"DELETE",
     c"GET",
     c"HEAD",
@@ -26,6 +26,7 @@ pub(super) static METHODS: [&CStr; 26] = [
     c"SUBSCRIBE",
     c"UNSUBSCRIBE",
     c"PURGE",
+    c"QUERY",
     c"PRI",
 ];
 /// Return the immutable NUL-terminated legacy status, or null for native fallback.
@@ -134,6 +135,6 @@ mod tests {
             assert_eq!(swr_v1_http_method_string(index as i32 + 1), name.as_ptr());
         }
         assert!(swr_v1_http_method_string(0).is_null());
-        assert!(swr_v1_http_method_string(27).is_null());
+        assert!(swr_v1_http_method_string(28).is_null());
     }
 }

@@ -25,9 +25,8 @@ permanent hang.
 | current worker exit | `restart_worker_process` finds the Worker by PID, then checks exit status | in-flight work must be cancelled without dropping idle connections |
 | detached worker exit | PID lookup fails; the detached PID is erased and the function returns before the exit-status callback | the worker-error callback alone cannot cover this |
 
-`worker-terminal-current-source.json` confirms the integrated M15/M08 overlays
-leave these six retirement/exit/lookup bodies and the STOP-consumption block
-byte-identical to upstream.
+The integrated M15/M08 overlays leave these six retirement/exit/lookup bodies
+and the STOP-consumption block byte-identical to upstream.
 
 ## Required semantics for a fix
 

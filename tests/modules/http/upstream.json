@@ -1,11 +1,11 @@
 {
   "repository": "https://github.com/swoole/swoole-src",
-  "tag": "v6.2.2",
-  "commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "tag": "v6.2.4",
+  "commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "tests": [
     {
       "path": "tests/swoole_http_server/create_request.phpt",
-      "sha256": "d3061de0df1dd20ddeca8bf32ddb41439837c206416fd57331bf515044210f55",
+      "sha256": "ae0ac0bfe0b55c5ccc982d8fae4bfe22430d7084be047d3bf51b812614ed4c99",
       "module": "http",
       "requires": [
         "upstream_test_bootstrap",

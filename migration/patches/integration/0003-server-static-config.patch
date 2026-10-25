@@ -1,10 +1,9 @@
 diff --git a/src/server/master.cc b/src/server/master.cc
+index 29e9f7212..aa7a73a1f 100644
 --- a/src/server/master.cc
 +++ b/src/server/master.cc
-@@ -327,6 +327,24 @@
-     }
- }
-
+@@ -329,2 +329,20 @@ void Server::set_max_connection(uint32_t _max_connection) {
+ 
 +#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
 +bool Server::set_document_root(const std::string &path) {
 +    int32_t action = static_files().root_begin(path.length(), PATH_MAX);
@@ -24,33 +23,23 @@ diff --git a/src/server/master.cc b/src/server/master.cc
 +}
 +#else
  bool Server::set_document_root(const std::string &path) {
-     if (path.length() > PATH_MAX) {
-         swoole_error_log(
-@@ -343,6 +361,7 @@
-     document_root = std::string(_realpath);
-     return true;
+@@ -345,2 +363,3 @@ bool Server::set_document_root(const std::string &path) {
  }
 +#endif
-
- void Server::add_http_compression_type(const std::string &type) {
-     if (http_compression_types == nullptr) {
-@@ -847,9 +866,15 @@
-         port->gs = &port_gs_list[index++];
-     }
-
+ 
+@@ -850,2 +869,7 @@ int Server::create() {
+ 
 +#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
 +    if (enable_static_handler) {
 +        static_files().initialize();
 +    }
 +#else
      if (enable_static_handler and locations == nullptr) {
-         locations = std::make_shared<std::unordered_set<std::string>>();
+@@ -853,2 +877,3 @@ int Server::create() {
      }
 +#endif
-
-     if (http_compression_types && !http_compression_types->empty()) {
-         http_compression = true;
-@@ -1547,3 +1572,7 @@
+ 
+@@ -1548,3 +1573,7 @@ int Server::send_to_connection(const SendData *_send) const {
      if (_send->info.type == SW_SERVER_EVENT_CLOSE) {
 +#if defined(SWOOLE_RS_BUFFER_TYPED) && SWOOLE_RS_BUFFER_TYPED
 +        _socket->out_buffer->typed_close();

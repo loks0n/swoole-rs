@@ -1,6 +1,6 @@
 {
   "assigned_to": "@loks0n",
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "selection": "All44 PHPTs in three HTTP2 directories; union of pinned PHPT contents matching http2/HTTP/2/nghttp/h2c (69 total) and filename matching http2/h2c (adds one filename-only legacy HTTP-client case); no selected case is claimed executed.",
   "denominators": {
     "native_direct": 5,
@@ -81,8 +81,8 @@
     },
     {
       "path": "core-tests/src/server/http_server.cpp",
-      "sha256": "0a48d80bbae168dd15af5e2bcf7ecdca1eca53d78cb35c1a8835d0bb31843ece",
-      "lines": 1967,
+      "sha256": "16c72ef6145cfc732d7750abe158762193e0ab2847a16ea07949bb6ca2324211",
+      "lines": 1987,
       "case": "http_server.get_protocol",
       "declaration_line": 1564,
       "group": "cross_native",
@@ -90,8 +90,8 @@
     },
     {
       "path": "core-tests/src/server/http_server.cpp",
-      "sha256": "0a48d80bbae168dd15af5e2bcf7ecdca1eca53d78cb35c1a8835d0bb31843ece",
-      "lines": 1967,
+      "sha256": "16c72ef6145cfc732d7750abe158762193e0ab2847a16ea07949bb6ca2324211",
+      "lines": 1987,
       "case": "http_server.get_package_length",
       "declaration_line": 1818,
       "group": "cross_native",
@@ -99,8 +99,8 @@
     },
     {
       "path": "core-tests/src/server/server.cpp",
-      "sha256": "2de4817523f25e9ef388381ac1d2e62ba9f5882fa049d4a0debb5b776dd45bad",
-      "lines": 4281,
+      "sha256": "b055fd603bd614b20c81c67fa22bb68986e6b27604c858348c77e42c171cfbb6",
+      "lines": 4394,
       "case": "server.protocols",
       "declaration_line": 2577,
       "group": "cross_native",
@@ -199,7 +199,7 @@
       "sha256": "c3ad1bb9a2570b029071a554f1c58f5ac4ff22954c7215b43bc30befced3d38c",
       "lines": 14,
       "group": "direct",
-      "test_title": "swoole_http2_client_coro: Github #5127 When use swoole in php 8.2\uff0cSwoole\\Http2\\Request may throw ErrorException\uff1aCreation of dynamic property $usePipelineRead",
+      "test_title": "swoole_http2_client_coro: Github #5127 When use swoole in php 8.2，Swoole\\Http2\\Request may throw ErrorException：Creation of dynamic property $usePipelineRead",
       "skipif_original": "<?php require __DIR__ . '/../include/skipif.inc'; ?>",
       "extension_requirements_original": "",
       "expectation_sections": [
@@ -213,7 +213,7 @@
     },
     {
       "path": "tests/swoole_http2_client_coro/connect_twice.phpt",
-      "sha256": "f016853b0ad1a86ec335b511956315114b4e28d3c573a05c165f42a7be0a234f",
+      "sha256": "996bef8167882dc44314b8213a5e95cceb22d2c294071acac19f2db211256bc6",
       "lines": 46,
       "group": "direct",
       "test_title": "swoole_http2_client_coro: connect twice",
@@ -383,8 +383,8 @@
     },
     {
       "path": "tests/swoole_http2_client_coro/multi.phpt",
-      "sha256": "bcb16e10ef0499455e9736099e46c608e3e6ebb2ca92a8831ca475a92ccea31d",
-      "lines": 59,
+      "sha256": "454715959720c822bc00c3869676b0f6ab8a8e00040590b844440f352f282de5",
+      "lines": 89,
       "group": "direct",
       "test_title": "swoole_http2_client_coro: multi",
       "skipif_original": "<?php require __DIR__ . '/../include/skipif.inc';\nskip_if_offline();\n?>",

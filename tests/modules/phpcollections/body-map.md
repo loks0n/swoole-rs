@@ -2,7 +2,7 @@
 
 43 original functions (29 Table, 14 Channel), three added native effect bridges
 (`table_read_field_value`, `table_set_field_value`, `table_update`) and unchanged
-method/alias registration tables, at pin `8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e`.
+method/alias registration tables, at pin `c7e514509451beafd4d70ce5b78943d51e76381c`.
 No original facade function is wholly replaced by Rust. Export reachability is
 lexical (direct calls and local helpers); M12 storage dispatch is not counted.
 Regenerate the data with `body_map.py --source PINNED --output FILE`; it fails if

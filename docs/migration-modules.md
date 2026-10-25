@@ -2,7 +2,7 @@
 
 [`migration/modules.json`](../migration/modules.json) lists the migration
 modules. Its top level holds `schema_version`, the pinned `upstream` (Swoole
-v6.2.2, commit `8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e`, fetched at
+v6.2.4, commit `c7e514509451beafd4d70ce5b78943d51e76381c`, fetched at
 `target/upstream/src/`) and `modules`. Each module entry has:
 
 | Field | Meaning |

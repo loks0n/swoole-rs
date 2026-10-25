@@ -1,20 +1,15 @@
 diff --git a/ext-src/swoole_coroutine_system.cc b/ext-src/swoole_coroutine_system.cc
+index fc463f3d2..ff096a1bb 100644
 --- a/ext-src/swoole_coroutine_system.cc
 +++ b/ext-src/swoole_coroutine_system.cc
-@@ -20,6 +20,10 @@
- #include <sys/file.h>
- 
+@@ -22,2 +22,6 @@
  #include <string>
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +#include "swoole_rs_phpcoroutines.h"
 +#include "phpcoroutines_registration.h"
 +#endif
  
- using swoole::Coroutine;
- using swoole::Event;
-@@ -37,6 +41,55 @@
- static zend_class_entry *swoole_coroutine_system_ce;
- 
+@@ -39,2 +43,51 @@ static zend_class_entry *swoole_coroutine_system_ce;
  // clang-format off
 +
 +#ifdef SWOOLE_RS_PHPCOROUTINES
@@ -66,16 +61,11 @@ diff --git a/ext-src/swoole_coroutine_system.cc b/ext-src/swoole_coroutine_syste
 +static zend_function_entry swoole_coroutine_system_methods[13]{};
 +#else
  static const zend_function_entry swoole_coroutine_system_methods[] =
- {
-     ZEND_FENTRY(gethostbyname,      ZEND_FN(swoole_coroutine_gethostbyname), arginfo_class_Swoole_Coroutine_System_gethostbyname, ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
-@@ -53,32 +106,81 @@
-     PHP_ME(swoole_coroutine_system, waitEvent,                               arginfo_class_Swoole_Coroutine_System_waitEvent,     ZEND_ACC_PUBLIC | ZEND_ACC_STATIC)
-     PHP_FE_END
+@@ -55,2 +108,3 @@ static const zend_function_entry swoole_coroutine_system_methods[] =
  };
 +#endif
  
- // clang-format on
- 
+@@ -59,2 +113,30 @@ static const zend_function_entry swoole_coroutine_system_methods[] =
  void php_swoole_coroutine_system_minit(int module_number) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -106,22 +96,20 @@ diff --git a/ext-src/swoole_coroutine_system.cc b/ext-src/swoole_coroutine_syste
 +#else
 +
      SW_INIT_CLASS_ENTRY_BASE(
-         swoole_coroutine_system, "Swoole\\Coroutine\\System", "Co\\System", swoole_coroutine_system_methods, nullptr);
-     SW_SET_CLASS_CREATE(swoole_coroutine_system, sw_zend_create_object_deny);
- 
+@@ -64,2 +146,3 @@ void php_swoole_coroutine_system_minit(int module_number) {
      zend::add_constant("FILE_LOCK", SW_FILE_LOCK);
 +#endif
  }
- 
+@@ -67,2 +150,18 @@ void php_swoole_coroutine_system_minit(int module_number) {
  PHP_METHOD(swoole_coroutine_system, sleep) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
-     double seconds;
- 
-     ZEND_PARSE_PARAMETERS_START(1, 1)
-     Z_PARAM_DOUBLE(seconds)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
- 
++    double seconds;
++
++    ZEND_PARSE_PARAMETERS_START(1, 1)
++    Z_PARAM_DOUBLE(seconds)
++    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
++
 +    if (UNEXPECTED(!swr_v1_phpcoroutines_system_sleep(seconds, SW_TIMER_MIN_SEC))) {
 +        php_swoole_fatal_error(E_WARNING, "Timer must be greater than or equal to " ZEND_TOSTR(SW_TIMER_MIN_SEC));
 +        RETURN_FALSE;
@@ -130,30 +118,25 @@ diff --git a/ext-src/swoole_coroutine_system.cc b/ext-src/swoole_coroutine_syste
 +    RETURN_BOOL(swr_v1_phpcoroutines_system_complete(SWR_CORO_RESULT_SLEEP, nullptr, status, 0).value);
 +#else
 +
-+    double seconds;
-+
-+    ZEND_PARSE_PARAMETERS_START(1, 1)
-+    Z_PARAM_DOUBLE(seconds)
-+    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-+
-     if (UNEXPECTED(seconds < SW_TIMER_MIN_SEC)) {
-         php_swoole_fatal_error(E_WARNING, "Timer must be greater than or equal to " ZEND_TOSTR(SW_TIMER_MIN_SEC));
-         RETURN_FALSE;
-     }
+     double seconds;
+@@ -78,2 +177,3 @@ PHP_METHOD(swoole_coroutine_system, sleep) {
      RETURN_BOOL(System::sleep(seconds) == 0);
 +#endif
  }
- 
+@@ -81,2 +181,29 @@ PHP_METHOD(swoole_coroutine_system, sleep) {
  PHP_METHOD(swoole_coroutine_system, readFile) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
-     char *filename = nullptr;
-     size_t l_filename;
-     zend_long flags = 0;
-@@ -89,6 +191,31 @@
-     Z_PARAM_LONG(flags)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
- 
++    char *filename = nullptr;
++    size_t l_filename;
++    zend_long flags = 0;
++
++    ZEND_PARSE_PARAMETERS_START(1, 2)
++    Z_PARAM_PATH(filename, l_filename)
++    Z_PARAM_OPTIONAL
++    Z_PARAM_LONG(flags)
++    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
++
 +    const swr_phpcoroutines_file_config config{SW_FILE_LOCK, SW_FILE_APPEND, O_CREAT | O_WRONLY | O_NOFOLLOW, O_APPEND, O_TRUNC};
 +    const auto plan = swr_v1_phpcoroutines_system_file(filename && *filename, flags, &config);
 +    if (!plan.accepted) {
@@ -169,36 +152,28 @@ diff --git a/ext-src/swoole_coroutine_system.cc b/ext-src/swoole_coroutine_syste
 +    }
 +#else
 +
+     char *filename = nullptr;
+@@ -102,2 +229,3 @@ PHP_METHOD(swoole_coroutine_system, readFile) {
+     }
++#endif
+ }
+@@ -105,2 +233,33 @@ PHP_METHOD(swoole_coroutine_system, readFile) {
+ PHP_METHOD(swoole_coroutine_system, writeFile) {
++#ifdef SWOOLE_RS_PHPCOROUTINES
++
 +    char *filename = nullptr;
 +    size_t l_filename;
++    char *data;
++    size_t l_data;
 +    zend_long flags = 0;
 +
-+    ZEND_PARSE_PARAMETERS_START(1, 2)
++    ZEND_PARSE_PARAMETERS_START(2, 3)
 +    Z_PARAM_PATH(filename, l_filename)
++    Z_PARAM_STRING(data, l_data)
 +    Z_PARAM_OPTIONAL
 +    Z_PARAM_LONG(flags)
 +    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
 +
-     if (!filename || !*filename) {
-         zend_value_error("Filename cannot be empty");
-         RETURN_FALSE;
-@@ -100,9 +227,12 @@
-     } else {
-         RETVAL_STRINGL(result->str, result->length);
-     }
-+#endif
- }
- 
- PHP_METHOD(swoole_coroutine_system, writeFile) {
-+#ifdef SWOOLE_RS_PHPCOROUTINES
-+
-     char *filename = nullptr;
-     size_t l_filename;
-     char *data;
-@@ -116,6 +246,35 @@
-     Z_PARAM_LONG(flags)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
- 
 +    const swr_phpcoroutines_file_config config{SW_FILE_LOCK, SW_FILE_APPEND, O_CREAT | O_WRONLY | O_NOFOLLOW, O_APPEND, O_TRUNC};
 +    const auto plan = swr_v1_phpcoroutines_system_file(filename && *filename, flags, &config);
 +    if (!plan.accepted) {
@@ -215,39 +190,29 @@ diff --git a/ext-src/swoole_coroutine_system.cc b/ext-src/swoole_coroutine_syste
 +    }
 +#else
 +
-+    char *filename = nullptr;
-+    size_t l_filename;
-+    char *data;
-+    size_t l_data;
-+    zend_long flags = 0;
-+
-+    ZEND_PARSE_PARAMETERS_START(2, 3)
-+    Z_PARAM_PATH(filename, l_filename)
-+    Z_PARAM_STRING(data, l_data)
-+    Z_PARAM_OPTIONAL
-+    Z_PARAM_LONG(flags)
-+    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-+
-     if (!filename || !*filename) {
-         zend_value_error("Filename cannot be empty");
-         RETURN_FALSE;
-@@ -134,9 +293,12 @@
-     } else {
-         RETURN_LONG(retval);
+     char *filename = nullptr;
+@@ -136,2 +295,3 @@ PHP_METHOD(swoole_coroutine_system, writeFile) {
      }
 +#endif
  }
- 
+@@ -139,2 +299,37 @@ PHP_METHOD(swoole_coroutine_system, writeFile) {
  PHP_FUNCTION(swoole_coroutine_gethostbyname) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
-     Coroutine::get_current_safe();
- 
-     char *domain_name;
-@@ -151,6 +313,39 @@
-     Z_PARAM_DOUBLE(timeout)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
- 
++    Coroutine::get_current_safe();
++
++    char *domain_name;
++    size_t l_domain_name;
++    zend_long family = AF_INET;
++    double timeout = -1;
++
++    ZEND_PARSE_PARAMETERS_START(1, 3)
++    Z_PARAM_STRING(domain_name, l_domain_name)
++    Z_PARAM_OPTIONAL
++    Z_PARAM_LONG(family)
++    Z_PARAM_DOUBLE(timeout)
++    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
++
 +    const auto admission = swr_v1_phpcoroutines_system_address(l_domain_name, family, AF_INET, AF_INET6);
 +    if (admission == SWR_CORO_ADDRESS_EMPTY) {
 +        php_swoole_fatal_error(E_WARNING, "domain name is empty");
@@ -267,44 +232,34 @@ diff --git a/ext-src/swoole_coroutine_system.cc b/ext-src/swoole_coroutine_syste
 +    }
 +#else
 +
-+    Coroutine::get_current_safe();
-+
-+    char *domain_name;
-+    size_t l_domain_name;
-+    zend_long family = AF_INET;
-+    double timeout = -1;
-+
-+    ZEND_PARSE_PARAMETERS_START(1, 3)
-+    Z_PARAM_STRING(domain_name, l_domain_name)
-+    Z_PARAM_OPTIONAL
-+    Z_PARAM_LONG(family)
-+    Z_PARAM_DOUBLE(timeout)
-+    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-+
-     if (l_domain_name == 0) {
-         php_swoole_fatal_error(E_WARNING, "domain name is empty");
-         RETURN_FALSE;
-@@ -167,6 +362,7 @@
-     } else {
-         RETURN_STRINGL(address.c_str(), address.length());
+     Coroutine::get_current_safe();
+@@ -169,2 +364,3 @@ PHP_FUNCTION(swoole_coroutine_gethostbyname) {
      }
 +#endif
  }
- 
- PHP_FUNCTION(swoole_clear_dns_cache) {
-@@ -174,6 +370,8 @@
- }
- 
+@@ -176,2 +372,54 @@ PHP_FUNCTION(swoole_clear_dns_cache) {
  PHP_METHOD(swoole_coroutine_system, getaddrinfo) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
-     char *hostname;
-     size_t l_hostname;
-     zend_long family = AF_INET;
-@@ -193,6 +391,56 @@
-     Z_PARAM_DOUBLE(timeout)
-     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
- 
++    char *hostname;
++    size_t l_hostname;
++    zend_long family = AF_INET;
++    zend_long socktype = SOCK_STREAM;
++    zend_long protocol = IPPROTO_TCP;
++    char *service = nullptr;
++    size_t l_service = 0;
++    double timeout = -1;
++
++    ZEND_PARSE_PARAMETERS_START(1, 6)
++    Z_PARAM_STRING(hostname, l_hostname)
++    Z_PARAM_OPTIONAL
++    Z_PARAM_LONG(family)
++    Z_PARAM_LONG(socktype)
++    Z_PARAM_LONG(protocol)
++    Z_PARAM_STRING(service, l_service)
++    Z_PARAM_DOUBLE(timeout)
++    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
++
 +    const auto admission = swr_v1_phpcoroutines_system_address(l_hostname, family, AF_INET, AF_INET6);
 +    if (admission == SWR_CORO_ADDRESS_EMPTY) {
 +        php_swoole_fatal_error(E_WARNING, "hostname is empty");
@@ -336,35 +291,12 @@ diff --git a/ext-src/swoole_coroutine_system.cc b/ext-src/swoole_coroutine_syste
 +    }
 +#else
 +
-+    char *hostname;
-+    size_t l_hostname;
-+    zend_long family = AF_INET;
-+    zend_long socktype = SOCK_STREAM;
-+    zend_long protocol = IPPROTO_TCP;
-+    char *service = nullptr;
-+    size_t l_service = 0;
-+    double timeout = -1;
-+
-+    ZEND_PARSE_PARAMETERS_START(1, 6)
-+    Z_PARAM_STRING(hostname, l_hostname)
-+    Z_PARAM_OPTIONAL
-+    Z_PARAM_LONG(family)
-+    Z_PARAM_LONG(socktype)
-+    Z_PARAM_LONG(protocol)
-+    Z_PARAM_STRING(service, l_service)
-+    Z_PARAM_DOUBLE(timeout)
-+    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-+
-     if (l_hostname == 0) {
-         php_swoole_fatal_error(E_WARNING, "hostname is empty");
-         RETURN_FALSE;
-@@ -214,9 +462,51 @@
-     for (auto &i : result) {
-         add_next_index_stringl(return_value, i.c_str(), i.length());
+     char *hostname;
+@@ -216,2 +464,3 @@ PHP_METHOD(swoole_coroutine_system, getaddrinfo) {
      }
 +#endif
  }
- 
+@@ -219,2 +468,43 @@ PHP_METHOD(swoole_coroutine_system, getaddrinfo) {
  PHP_METHOD(swoole_coroutine_system, statvfs) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -408,42 +340,40 @@ diff --git a/ext-src/swoole_coroutine_system.cc b/ext-src/swoole_coroutine_syste
 +#else
 +
      char *path = nullptr;
-     size_t l_path;
- 
-@@ -244,9 +534,12 @@
-     add_assoc_long(return_value, "fsid", _stat.f_fsid);
-     add_assoc_long(return_value, "flag", _stat.f_flag);
+@@ -246,2 +536,3 @@ PHP_METHOD(swoole_coroutine_system, statvfs) {
      add_assoc_long(return_value, "namemax", _stat.f_namemax);
 +#endif
  }
- 
+@@ -249,2 +540,47 @@ PHP_METHOD(swoole_coroutine_system, statvfs) {
  PHP_METHOD(swoole_coroutine_system, exec) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
-     char *command;
-     size_t command_len;
-     zend_bool get_error_stream = false;
-@@ -259,10 +552,12 @@
- 
-     int status;
-     auto buffer = std::shared_ptr<String>(swoole::make_string(1024, sw_zend_string_allocator()));
--    if (!System::exec(command, get_error_stream, buffer, &status)) {
--        RETURN_FALSE;
--    }
--
++    char *command;
++    size_t command_len;
++    zend_bool get_error_stream = false;
++
++    ZEND_PARSE_PARAMETERS_START(1, 2)
++    Z_PARAM_STRING(command, command_len)
++    Z_PARAM_OPTIONAL
++    Z_PARAM_BOOL(get_error_stream)
++    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
++
++    int status;
++    auto buffer = std::shared_ptr<String>(swoole::make_string(1024, sw_zend_string_allocator()));
 +    int64_t observation = System::exec(command, get_error_stream, buffer, &status);
 +    swr_phpcoroutines_result_state state{};
 +    auto admitted = swr_v1_phpcoroutines_system_complete(SWR_CORO_RESULT_EXEC, &state, observation, 0);
 +    if (admitted.action == SWR_CORO_RESULT_FALSE) {
 +        RETURN_FALSE;
 +    }
-     auto str = zend::fetch_zend_string_by_val(buffer->str);
-     buffer->set_null_terminated();
-     str->len = buffer->length;
-@@ -271,13 +566,81 @@
-     zval zdata;
-     ZVAL_STR(&zdata, str);
- 
++    auto str = zend::fetch_zend_string_by_val(buffer->str);
++    buffer->set_null_terminated();
++    str->len = buffer->length;
++    buffer->release();
++
++    zval zdata;
++    ZVAL_STR(&zdata, str);
++
 +
 +    for (;;) {
 +        auto plan = swr_v1_phpcoroutines_system_complete(SWR_CORO_RESULT_EXEC, &state, observation, 0);
@@ -461,37 +391,12 @@ diff --git a/ext-src/swoole_coroutine_system.cc b/ext-src/swoole_coroutine_syste
 +        }
 +    }
 +#else
-+    char *command;
-+    size_t command_len;
-+    zend_bool get_error_stream = false;
-+
-+    ZEND_PARSE_PARAMETERS_START(1, 2)
-+    Z_PARAM_STRING(command, command_len)
-+    Z_PARAM_OPTIONAL
-+    Z_PARAM_BOOL(get_error_stream)
-+    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-+
-+    int status;
-+    auto buffer = std::shared_ptr<String>(swoole::make_string(1024, sw_zend_string_allocator()));
-+    if (!System::exec(command, get_error_stream, buffer, &status)) {
-+        RETURN_FALSE;
-+    }
-+
-+    auto str = zend::fetch_zend_string_by_val(buffer->str);
-+    buffer->set_null_terminated();
-+    str->len = buffer->length;
-+    buffer->release();
-+
-+    zval zdata;
-+    ZVAL_STR(&zdata, str);
-+
-     array_init(return_value);
-     add_assoc_long(return_value, "code", WEXITSTATUS(status));
-     add_assoc_long(return_value, "signal", WTERMSIG(status));
+     char *command;
+@@ -277,2 +613,3 @@ PHP_METHOD(swoole_coroutine_system, exec) {
      add_assoc_zval(return_value, "output", &zdata);
 +#endif
  }
- 
+@@ -280,2 +617,28 @@ PHP_METHOD(swoole_coroutine_system, exec) {
  static void swoole_coroutine_system_wait(INTERNAL_FUNCTION_PARAMETERS, pid_t pid, double timeout) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -520,19 +425,11 @@ diff --git a/ext-src/swoole_coroutine_system.cc b/ext-src/swoole_coroutine_syste
 +    }
 +#else
      int status;
- 
-     Coroutine::get_current_safe();
-@@ -295,6 +658,7 @@
-     } else {
-         RETURN_FALSE;
+@@ -297,2 +660,3 @@ static void swoole_coroutine_system_wait(INTERNAL_FUNCTION_PARAMETERS, pid_t pid
      }
 +#endif
  }
- 
- PHP_METHOD(swoole_coroutine_system, wait) {
-@@ -324,6 +688,50 @@
- }
- 
+@@ -326,2 +690,46 @@ PHP_METHOD(swoole_coroutine_system, waitPid) {
  PHP_METHOD(swoole_coroutine_system, waitSignal) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -579,15 +476,11 @@ diff --git a/ext-src/swoole_coroutine_system.cc b/ext-src/swoole_coroutine_syste
 +    }
 +#else
      SW_MUST_BE_MAIN_THREAD();
-     zval *zsignals;
-     double timeout = -1;
-@@ -358,9 +766,38 @@
-     }
- 
+@@ -360,2 +768,3 @@ PHP_METHOD(swoole_coroutine_system, waitSignal) {
      RETURN_LONG(signo);
 +#endif
  }
- 
+@@ -363,2 +772,30 @@ PHP_METHOD(swoole_coroutine_system, waitSignal) {
  PHP_METHOD(swoole_coroutine_system, waitEvent) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -618,12 +511,7 @@ diff --git a/ext-src/swoole_coroutine_system.cc b/ext-src/swoole_coroutine_syste
 +    }
 +#else
      zval *zfd;
-     zend_long events = SW_EVENT_READ;
-     double timeout = -1;
-@@ -384,4 +821,5 @@
-     }
- 
+@@ -386,2 +823,3 @@ PHP_METHOD(swoole_coroutine_system, waitEvent) {
      RETURN_LONG(events);
--}
 +#endif
-+}
+ }

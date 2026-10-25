@@ -1,9 +1,9 @@
 {
-  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "upstream_commit": "c7e514509451beafd4d70ce5b78943d51e76381c",
   "patches": [
     {
       "path": "0001-php-event-frontend.patch",
-      "sha256": "83960d0797f00c6d3bda75be469d7982ad3bf4b37d1e2852dcd4c9fb2efb8b08",
+      "sha256": "bd577def803dc30ea6ff9aa2706dc062a08ccd1574314ae87f7d1c4af9abc3c3",
       "upstream_paths": [
         "ext-src/swoole_event.cc"
       ]
