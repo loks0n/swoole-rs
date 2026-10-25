@@ -41,7 +41,7 @@ extracts the ID).
 
 ## Reference model
 
-`tests/modules/timer/model.py` is a Python model with an injected clock and
+`tests/modules/timer/test_model.py` is a Python model with an injected clock and
 golden event traces. It does not load PHP or Rust. Cases: active cancellation,
 active one-shot delayed past another due timer, active one-shot updating itself
 and another ID, active repeating delay, nested selection, callback/destructor
@@ -55,16 +55,16 @@ queue reproduces the three-node tie order but not general heap ordering.
 ```sh
 cargo test --locked -p swoole-rs-timer
 cargo clippy --locked -p swoole-rs-timer --all-targets -- -D warnings
-python3 tests/modules/timer/model.py
-python3 tests/modules/timer/kernel.py --sanitize
 python3 tools/build_hybrid.py --module timer
-python3 tests/modules/timer/hybrid.py --sanitize
-python3 tests/modules/timer/fork_active.py --engine timer=target/hybrid/rust-timer/modules/swoole.so
-python3 tests/modules/timer/upstream.py --engine timer=target/hybrid/rust-timer/modules/swoole.so
-python3 -m unittest discover -s tests/modules/timer -p test_upstream.py -v
+python3 -m pytest tests/modules/timer --sanitize \
+  --manifest target/hybrid/rust-timer/build-manifest.json \
+  --engine upstream=target/upstream/src/modules/swoole.so \
+  --engine timer=target/hybrid/rust-timer/modules/swoole.so
 ```
 
-`upstream.py` runs the 33 original timer PHPTs listed in
+The gates are pytest files (`pip install pytest`); options and fixtures are in
+`tests/conftest.py`, and the first `--engine` is the control. Tests that need an
+engine or `--manifest` are skipped without one. `test_originals.py` runs the 33 original timer PHPTs listed in
 [UPSTREAM.md](../tests/modules/timer/UPSTREAM.md); four need external DNS/network
 and are opt-in. `tests/modules/timer/FORK.md` describes the fork cases.
 

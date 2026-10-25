@@ -21,11 +21,17 @@ class MergeSummary(unittest.TestCase):
                 {'engine': 'upstream', 'module': 'timers', 'status': 'failed'}]}))
             (Path(temp) / 'applications.json').write_text(json.dumps({'results': [
                 {'engine': 'hybrid', 'project': '01-hello', 'status': 'passed'}]}))
+            (Path(temp) / 'timer-originals.xml').write_text(
+                '<testsuites><testsuite><testcase name="test_original[after-hybrid]"/>'
+                '<testcase name="test_original[stats-hybrid]"><failure/></testcase>'
+                '<testcase name="test_original[stats-upstream]"><failure/></testcase>'
+                '<testcase name="test_original[bug-hybrid]"><skipped/></testcase></testsuite></testsuites>')
             phases, cases = summarize(loop)
         self.assertEqual(phases['buffer'], {'passed': 1, 'failed': 1})
         self.assertEqual(phases['shared'], {'passed': 1})
         self.assertEqual(cases['timers'], {'passed': 1, 'unsupported': 1, 'failed': 1})
         self.assertEqual(cases['corpus'], {'passed': 1})
+        self.assertEqual(cases['timer'], {'passed': 1, 'failed': 1, 'skipped': 1})
         self.assertIn('| timers | 1 | 1 | 1 | 0 |', markdown(phases, cases))
 
 

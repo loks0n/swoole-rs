@@ -7,9 +7,8 @@ no production flags or ABI change. Linux, with the pinned reference available:
 RUSTC_BOOTSTRAP=1 RUSTFLAGS='-Zsanitizer=address -Zexternal-clangrt=yes' \
   cargo rustc -p swoole-rs-timer --release --offline --locked \
   --target-dir target/rust-asan-timer --crate-type staticlib -v
-python3 tests/modules/timer/kernel.py --no-build --sanitize --rust-asan \
-  --archive target/rust-asan-timer/release/libswoole_rs_timer.a \
-  --output target/reports/timer-rust-asan-kernel.json
+python3 -m pytest tests/modules/timer/test_kernel.py --sanitize --rust-asan \
+  --archive target/rust-asan-timer/release/libswoole_rs_timer.a
 python3 tests/modules/timer/core.py --source target/upstream/src \
   --config target/core-config.h --build-root target/core-rust-asan \
   --archive target/rust-asan-timer/release/libswoole_rs_timer.a \

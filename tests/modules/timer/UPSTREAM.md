@@ -2,18 +2,16 @@
 
 ## Original PHPTs
 
-`upstream.py` inventories all 33 `tests/swoole_timer/*.phpt` files from the
+`test_originals.py` inventories all 33 `tests/swoole_timer/*.phpt` files from the
 pinned Git objects (the selection fails if that inventory changes) and runs them
 serially with PHP's official runner and the shared support adapter
 (`corpus/upstream/run.py`). Assertions, expected output, skip probes and real
 sleeps are unchanged.
 
 ```sh
-python3 tests/modules/timer/upstream.py \
-  --source /absolute/path/to/pinned/upstream/src \
+python3 -m pytest tests/modules/timer/test_originals.py \
   --engine upstream=/absolute/path/to/upstream/swoole.so \
-  --engine timer=/absolute/path/to/timer/swoole.so \
-  --output target/reports/timer-upstream-local.json
+  --engine timer=/absolute/path/to/timer/swoole.so
 ```
 
 By default the 29 local cases run and the four network-dependent cases
@@ -26,7 +24,7 @@ result.
 
 `bug_4794_8` binds fixed port 127.0.0.1:9601; the driver checks the port first
 and records an occupied port as a failure without touching the listener. Run no
-other 9601 workload concurrently. `test_upstream.py` covers selection and the
+other 9601 workload concurrently. Its unit tests cover selection and the
 port guard.
 
 All 33 pass per engine on macOS PHP 8.5 and Linux PHP 8.2 (with
@@ -86,9 +84,8 @@ root. Options:
     --output target/reports/timer-clock.json [--sanitize]
   ```
 
-- `model.py`: Python reference model with golden traces for the queue
-  contract in `docs/timer-abi-v1.md`; runs standalone
-  (`python3 tests/modules/timer/model.py --report target/reports/timer-model.json`).
+- `test_model.py`: Python reference model with golden traces for the queue
+  contract in `docs/timer-abi-v1.md`.
 - `benchmark.py`: optimized PHP timer throughput (cancel/dispatch/repeat), with
   an engine named `upstream` as control. It requires matching PHP builds, `-O2`,
   `-O3` or `-Os` native flags, a clean upstream tree at the pin, and extension hashes

@@ -6,9 +6,8 @@ into a native probe loaded through PHP FFI (the selected Swoole extension
 supplies runtime dependencies). macOS or Linux:
 
 ```sh
-python3 tests/modules/timer/hybrid.py --sanitize \
-  --manifest target/hybrid/rust-timer/build-manifest.json \
-  --output target/reports/timer-adapter.json
+python3 -m pytest tests/modules/timer/test_adapter.py --sanitize \
+  --manifest target/hybrid/rust-timer/build-manifest.json
 ```
 
 Before running, it rejects a mutable build, wrong upstream pin, missing timer

@@ -101,7 +101,7 @@ All default off and get their own alias suffix and manifest input.
 
 ## Timer module
 
-`--module timer` (feature value 4) is opt-in only. `tests/modules/timer/fork_active.py`
+`--module timer` (feature value 4) is opt-in only. `tests/modules/timer/test_fork.py`
 checks forking from an active timer callback, which aborted the child in the
 first adapter.
 
