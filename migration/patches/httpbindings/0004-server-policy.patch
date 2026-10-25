@@ -1,0 +1,203 @@
+diff --git a/ext-src/swoole_http_server.cc b/ext-src/swoole_http_server.cc
+--- a/ext-src/swoole_http_server.cc
++++ b/ext-src/swoole_http_server.cc
+@@ -15,6 +15,10 @@
+ */
+ 
+ #include "php_swoole_http_server.h"
++#ifndef SWOOLE_RS_HTTPBINDINGS
++#error "HTTP PHP binding overlay requires --enable-swoole-rs-httpbindings"
++#endif
++#include "swoole_rs_httpbindings.h"
+ #include "swoole_process_pool.h"
+ 
+ BEGIN_EXTERN_C()
+@@ -60,105 +64,99 @@
+ int php_swoole_http_server_onReceive(Server *serv, RecvData *req) {
+     auto session_id = req->info.fd;
+     auto server_fd = req->info.server_fd;
+-
+     Connection *conn = serv->get_connection_verify_no_ssl(session_id);
+     if (!conn) {
+         swoole_error_log(SW_LOG_TRACE, SW_ERROR_SESSION_NOT_EXIST, "session[%ld] is closed", session_id);
+         return SW_ERR;
+     }
+-
+     auto *port = serv->get_port_by_server_fd(server_fd);
+-    // other server port
+-    if (!(port->open_http_protocol && php_swoole_server_isset_callback(serv, port, SW_SERVER_CB_onRequest)) &&
+-        !(port->open_websocket_protocol && php_swoole_server_isset_callback(serv, port, SW_SERVER_CB_onMessage))) {
+-        return php_swoole_server_onReceive(serv, req);
+-    }
+-    // websocket client
+-    if (conn->websocket_status >= WebSocket::STATUS_HANDSHAKE) {
+-        return swoole_websocket_onMessage(serv, req);
+-    }
+-
+-    if (conn->http2_stream) {
+-        return swoole_http2_server_onReceive(serv, conn, req);
+-    }
+-
+-    HttpContext *ctx = swoole_http_context_new(session_id);
+-    ctx->init(serv);
+-    ctx->onBeforeRequest = swoole_http_server_onBeforeRequest;
+-
+-    zval *zdata = &ctx->request.zdata;
+-    php_swoole_get_recv_data(serv, zdata, req);
+-
+-    swoole_trace_log(SW_TRACE_SERVER,
+-                     "http request from %ld with %d bytes: <<EOF\n%.*s\nEOF",
+-                     session_id,
+-                     (int) Z_STRLEN_P(zdata),
+-                     (int) Z_STRLEN_P(zdata),
+-                     Z_STRVAL_P(zdata));
+-
+-    zval *zrequest_object = ctx->request.zobject;
+-    zval *zresponse_object = ctx->response.zobject;
+-
+-    llhttp_t *parser = &ctx->parser;
+-    swoole_llhttp_parser_init(parser, HTTP_REQUEST, (void *) ctx);
+-
+-    size_t parsed_n = ctx->parse(Z_STRVAL_P(zdata), Z_STRLEN_P(zdata));
+-    if (sw_unlikely(ctx->parser.error != HPE_OK || !ctx->completed)) {
+-        ctx->send(ctx, SW_STRL(SW_HTTP_BAD_REQUEST_PACKET));
+-        ctx->close(ctx);
+-        if (ctx->parser.error != HPE_OK) {
++    HttpContext *ctx = nullptr;
++    zval *zdata = nullptr, *zrequest_object = nullptr, *zresponse_object = nullptr;
++    zend::Callable *cb = nullptr;
++    size_t parsed_n = 0;
++    uint32_t phase = 0, result = 0;
++    uint32_t flags = (port->open_http_protocol ? 1u : 0u) | (port->open_websocket_protocol ? 2u : 0u);
++    for (;;) {
++        switch (swr_v1_httpbindings_receive(&phase, flags, result)) {
++        case SWR_HTTPBINDINGS_RECV_PROBE_HTTP:
++            result = php_swoole_server_isset_callback(serv, port, SW_SERVER_CB_onRequest);
++            flags = port->open_websocket_protocol ? 2u : 0u;
++            break;
++        case SWR_HTTPBINDINGS_RECV_PROBE_MESSAGE:
++            result = php_swoole_server_isset_callback(serv, port, SW_SERVER_CB_onMessage);
++            break;
++        case SWR_HTTPBINDINGS_RECV_CHECK_CONNECTION:
++            flags = (conn->websocket_status >= WebSocket::STATUS_HANDSHAKE ? 1u : 0u) | (conn->http2_stream ? 2u : 0u);
++            break;
++        case SWR_HTTPBINDINGS_RECV_RAW: return php_swoole_server_onReceive(serv, req);
++        case SWR_HTTPBINDINGS_RECV_WEBSOCKET: return swoole_websocket_onMessage(serv, req);
++        case SWR_HTTPBINDINGS_RECV_HTTP2: return swoole_http2_server_onReceive(serv, conn, req);
++        case SWR_HTTPBINDINGS_RECV_INITIALIZE_PARSE:
++            ctx = swoole_http_context_new(session_id);
++            ctx->init(serv);
++            ctx->onBeforeRequest = swoole_http_server_onBeforeRequest;
++            zdata = &ctx->request.zdata;
++            php_swoole_get_recv_data(serv, zdata, req);
++            swoole_trace_log(SW_TRACE_SERVER,
++                "http request from %ld with %d bytes: <<EOF\n%.*s\nEOF", session_id,
++                (int) Z_STRLEN_P(zdata), (int) Z_STRLEN_P(zdata), Z_STRVAL_P(zdata));
++            zrequest_object = ctx->request.zobject;
++            zresponse_object = ctx->response.zobject;
++            swoole_llhttp_parser_init(&ctx->parser, HTTP_REQUEST, (void *) ctx);
++            parsed_n = ctx->parse(Z_STRVAL_P(zdata), Z_STRLEN_P(zdata));
++            result = ctx->parser.error != HPE_OK || !ctx->completed;
++            break;
++        case SWR_HTTPBINDINGS_RECV_BAD_SEND_CLOSE:
++            ctx->send(ctx, SW_STRL(SW_HTTP_BAD_REQUEST_PACKET));
++            ctx->close(ctx);
++            result = ctx->parser.error != HPE_OK;
++            break;
++        case SWR_HTTPBINDINGS_RECV_NOTICE_INVALID:
+             swoole_notice("Invalid HTTP request discarded: %ld bytes unprocessed. Reason: %s",
+-                          Z_STRLEN_P(zdata) - parsed_n,
+-                          llhttp_get_error_reason(&ctx->parser));
+-        } else {
++                Z_STRLEN_P(zdata) - parsed_n, llhttp_get_error_reason(&ctx->parser));
++            break;
++        case SWR_HTTPBINDINGS_RECV_NOTICE_INCOMPLETE:
+             swoole_notice("Incomplete HTTP request: parsed successfully but missing required components");
+-        }
+-        goto _dtor_and_return;
+-    }
+-
+-    do {
+-        zval *zserver = ctx->request.zserver;
+-        HashTable *ht = Z_ARR_P(zserver);
+-        swoole_http_server_populate_ip_and_port(serv, ht, conn, session_id, ctx->keepalive);
+-        http_server_add_server_array(ht, SW_ZSTR_KNOWN(SW_ZEND_STR_MASTER_TIME), (zend_long) conn->last_recv_time);
+-    } while (false);
+-
+-    if (swoole_isset_hook(static_cast<swGlobalHookType>(PHP_SWOOLE_HOOK_BEFORE_REQUEST))) {
+-        swoole_call_hook(static_cast<swGlobalHookType>(PHP_SWOOLE_HOOK_BEFORE_REQUEST), ctx);
+-    }
+-
+-    // begin to check and call registered callback
+-    do {
+-        zend::Callable *cb = nullptr;
+-
+-        if (conn->websocket_status == WebSocket::STATUS_CONNECTION) {
++            break;
++        case SWR_HTTPBINDINGS_RECV_POPULATE_HOOK: {
++            zval *zserver = ctx->request.zserver;
++            HashTable *ht = Z_ARR_P(zserver);
++            swoole_http_server_populate_ip_and_port(serv, ht, conn, session_id, ctx->keepalive);
++            http_server_add_server_array(ht, SW_ZSTR_KNOWN(SW_ZEND_STR_MASTER_TIME), (zend_long) conn->last_recv_time);
++            if (swoole_isset_hook(static_cast<swGlobalHookType>(PHP_SWOOLE_HOOK_BEFORE_REQUEST))) {
++                swoole_call_hook(static_cast<swGlobalHookType>(PHP_SWOOLE_HOOK_BEFORE_REQUEST), ctx);
++            }
++            result = conn->websocket_status == WebSocket::STATUS_CONNECTION;
++            break;
++        }
++        case SWR_HTTPBINDINGS_RECV_PROBE_HANDSHAKE:
+             cb = php_swoole_server_get_callback(serv, server_fd, SW_SERVER_CB_onHandshake);
+-            if (cb == nullptr) {
+-                swoole_websocket_onHandshake(serv, port, ctx);
+-                goto _dtor_and_return;
+-            } else {
+-                conn->websocket_status = WebSocket::STATUS_HANDSHAKE;
+-                ctx->upgrade = 1;
+-            }
+-        } else {
++            result = cb != nullptr;
++            break;
++        case SWR_HTTPBINDINGS_RECV_PROBE_REQUEST:
+             cb = php_swoole_server_get_callback(serv, server_fd, SW_SERVER_CB_onRequest);
+-            if (cb == nullptr) {
+-                swoole_websocket_onRequest(ctx);
+-                goto _dtor_and_return;
+-            }
+-        }
+-        ctx->private_data_2 = cb;
+-        if (ctx->onBeforeRequest && !ctx->onBeforeRequest(ctx)) {
+-            return SW_OK;
+-        }
+-        http_server_process_request(serv, cb, ctx);
+-    } while (false);
+-
+-_dtor_and_return:
+-    zval_ptr_dtor(zrequest_object);
+-    zval_ptr_dtor(zresponse_object);
+-
+-    return SW_OK;
++            result = cb != nullptr;
++            break;
++        case SWR_HTTPBINDINGS_RECV_PUBLISH_HANDSHAKE:
++            conn->websocket_status = WebSocket::STATUS_HANDSHAKE;
++            ctx->upgrade = 1;
++            break;
++        case SWR_HTTPBINDINGS_RECV_PREPARE:
++            ctx->private_data_2 = cb;
++            result = ctx->onBeforeRequest != nullptr;
++            break;
++        case SWR_HTTPBINDINGS_RECV_CALL_BEFORE: result = ctx->onBeforeRequest(ctx); break;
++        case SWR_HTTPBINDINGS_RECV_PROCESS: http_server_process_request(serv, cb, ctx); break;
++        case SWR_HTTPBINDINGS_RECV_DEFAULT_HANDSHAKE: swoole_websocket_onHandshake(serv, port, ctx); break;
++        case SWR_HTTPBINDINGS_RECV_DEFAULT_REQUEST: swoole_websocket_onRequest(ctx); break;
++        case SWR_HTTPBINDINGS_RECV_CLEANUP:
++            zval_ptr_dtor(zrequest_object);
++            zval_ptr_dtor(zresponse_object);
++            break;
++        case SWR_HTTPBINDINGS_RECV_DONE: return SW_OK;
++        default: return SW_ERR;
++        }
++    }
+ }
+ 
+ void php_swoole_http_server_onClose(Server *serv, DataHead *info) {

@@ -1,0 +1,8 @@
+[package]
+name = "swoole-rs-ossupport"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+[lib]
+name = "swoole_rs_ossupport"
+crate-type = ["rlib"]

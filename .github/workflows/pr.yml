@@ -1,0 +1,64 @@
+name: PR
+on:
+  pull_request:
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+env:
+  DEPS: php-dev php-sqlite3 php-curl php-mbstring libpcre2-dev libssl-dev pkg-config ccache
+jobs:
+  rust:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo test --locked --workspace
+
+  tooling:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/check_migration.py
+      - run: python3 -m unittest discover -s tests/dev
+
+  hybrid:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update -q && sudo apt-get install -yq $DEPS
+      - id: upstream
+        uses: actions/cache@v4
+        with:
+          path: target/upstream
+          key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
+      - if: steps.upstream.outputs.cache-hit != 'true'
+        run: python3 tools/build_upstream.py
+      - uses: actions/cache@v4
+        with:
+          path: target/shared-cache/ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-
+      - run: python3 tools/build_hybrid.py --module buffer --module websocket
+      # 11-buffer-lifecycle fails on upstream too (half-close truncation) and 12-hyperf needs
+      # composer; both run in the merge tier.
+      - run: >
+          python3 corpus/run.py
+          --php-extension pdo --php-extension pdo_sqlite
+          --project 01-hello --project 02-router --project 03-notes --project 04-job-service
+          --project 05-coroutines --project 06-websocket --project 07-tcp-framing
+          --project 08-timers --project 09-shared-table --project 10-task-workers
+          --engine hybrid=target/hybrid/rust-buffer-websocket/modules/swoole.so
+          --engine upstream=target/upstream/src/modules/swoole.so
+          --output target/reports/corpus.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr-reports
+          path: target/reports/

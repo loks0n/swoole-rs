@@ -1,0 +1,100 @@
+"""Legacy same-cohort exports stay readable; reuse must not mix cohorts or aliases."""
+import hashlib
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+from tools import dev
+from tools.build_hybrid import REACTOR_OWNED_CAPABILITIES
+
+
+class ArtifactReuse(unittest.TestCase):
+    def fixture(self, root, owned=None):
+        args = SimpleNamespace(artifacts_from=root/'reports', lane='integrate', module=['reactor'] if owned else ['memory'],
+                               all_modules=False, stdext=False, fix_halfclose=False, **(owned or {}))
+        for label, variant in [('selected', dev.build_variant(args)), ('native', 'upstream')]:
+            folder = args.artifacts_from/(label+'-export')
+            alias = root/'target/hybrid'/variant
+            folder.mkdir(parents=True)
+            (alias/'modules').mkdir(parents=True)
+            manifest = dict(build_mode='immutable', configure=[],
+                            inputs=dict(modules=args.module if label=='selected' else [], fix_halfclose=False,
+                                        **{'reactor_' + name + '_owned_requested':
+                                           label == 'selected' and getattr(args, 'reactor_' + name + '_owned', False)
+                                           for name in REACTOR_OWNED_CAPABILITIES}))
+            values = {'swoole.so':label.encode(), 'build-manifest.json':json.dumps(manifest).encode()}
+            for name, value in values.items():
+                (folder/name).write_bytes(value)
+                (alias/('modules/swoole.so' if name=='swoole.so' else name)).write_bytes(value)
+            receipt = dict(source_ref='frozen', files={n:dict(sha256=hashlib.sha256(v).hexdigest()) for n,v in values.items()})
+            (folder/'export.json').write_text(json.dumps(receipt))
+        return args
+
+    def test_same_cohort_passes_and_stale_or_changed_inputs_refuse(self):
+        for mutation in ['none', 'source', 'export', 'alias', 'configuration']:
+            with self.subTest(mutation=mutation), TemporaryDirectory() as temporary:
+                root=Path(temporary);args=self.fixture(root)
+                if mutation=='export': (args.artifacts_from/'selected-export/swoole.so').write_bytes(b'changed')
+                if mutation=='alias': (root/'target/hybrid/rust-memory/modules/swoole.so').write_bytes(b'changed')
+                if mutation=='configuration': args.fix_halfclose=True
+                with patch.object(dev,'ROOT',root), patch.object(dev.subprocess,'check_output',return_value='different' if mutation=='source' else 'frozen'):
+                    if mutation=='none': self.assertEqual(set(dev.verify_artifact_report(args)),{'native','selected'})
+                    else:
+                        with self.assertRaises(ValueError): dev.verify_artifact_report(args)
+
+    def test_known_producer_must_match_receipt_manifest_and_current_cohort(self):
+        for label in ['native', 'selected']:
+            for receipt_origin, manifest_origin in [('frozen', 'frozen'), ('older', 'frozen'),
+                                                      ('frozen', 'older'), (None, 'frozen'), ('frozen', None)]:
+                with self.subTest(label=label, receipt=receipt_origin, manifest=manifest_origin), TemporaryDirectory() as temporary:
+                    root = Path(temporary); args = self.fixture(root)
+                    folder = args.artifacts_from / (label + '-export')
+                    manifest_path = folder / 'build-manifest.json'
+                    manifest = json.loads(manifest_path.read_text())
+                    if manifest_origin is not None:
+                        manifest['producer_source_ref'] = manifest_origin
+                    manifest_path.write_text(json.dumps(manifest))
+                    receipt_path = folder / 'export.json'
+                    receipt = json.loads(receipt_path.read_text())
+                    if receipt_origin is not None:
+                        receipt['producer_source_ref'] = receipt_origin
+                    receipt['files']['build-manifest.json']['sha256'] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+                    receipt_path.write_text(json.dumps(receipt))
+                    variant = 'upstream' if label == 'native' else 'rust-memory'
+                    (root / 'target/hybrid' / variant / 'build-manifest.json').write_bytes(manifest_path.read_bytes())
+                    with patch.object(dev, 'ROOT', root), patch.object(dev.subprocess, 'check_output', return_value='frozen'):
+                        if receipt_origin == manifest_origin == 'frozen':
+                            self.assertEqual(set(dev.verify_artifact_report(args)), {'native', 'selected'})
+                        else:
+                            with self.assertRaisesRegex(ValueError, 'producer source differs'):
+                                dev.verify_artifact_report(args)
+
+    def test_each_owned_storage_request_is_bound_to_the_selected_manifest(self):
+        for capability in REACTOR_OWNED_CAPABILITIES:
+            with self.subTest(capability=capability), TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                attribute = 'reactor_' + capability + '_owned'
+                args = self.fixture(root, {attribute: True})
+                with patch.object(dev, 'ROOT', root), patch.object(dev.subprocess, 'check_output', return_value='frozen'):
+                    self.assertEqual(set(dev.verify_artifact_report(args)), {'native', 'selected'})
+                    setattr(args, attribute, False)
+                    with self.assertRaisesRegex(ValueError, 'configuration differs'):
+                        dev.verify_artifact_report(args)
+
+    def test_loaded_minimal_profiles_capture_both_producers(self):
+        for modules, phase in [(['coroutine'], 'coroutine-production-stack'),
+                               (['http','corebase'], 'http-boundary-rng'),
+                               (['reactor'], 'reactor-production-handlers')]:
+            with self.subTest(modules=modules):
+                args=SimpleNamespace(lane='integrate', module=modules, all_modules=False,
+                    stdext=False, fix_halfclose=False, php='php', php_extension=[], jobs=1,
+                    test=None, case=None, benchmark=False, compare=False)
+                reports=Path('/private/immutable-run')
+                with patch.object(dev.subprocess,'check_output',return_value='-I/fixture'):
+                    commands=dict(dev.plan(args,reports))
+                self.assertIn(phase,commands)
+                for name,label in [('reference-build','native'),('build','selected')]:
+                    command=commands[name]
+                    self.assertEqual(command[command.index('--export')+1],str(reports/(label+'-export')))

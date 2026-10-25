@@ -1,0 +1,531 @@
+//! Ordered callback metadata only. Native owns every std::function payload and
+//! performs its copy, call and destruction after each Rust function returns.
+use crate::owner::{publish, release as release_metadata};
+use std::ptr;
+
+struct Entry {
+    key: i32,
+    token: usize,
+}
+pub struct ReactorCallbacks {
+    entries: [Vec<Entry>; 2],
+}
+impl ReactorCallbacks {
+    fn lookup(&self, kind: u32, key: i32) -> Option<usize> {
+        let entries = self.entries.get(kind as usize)?;
+        entries
+            .binary_search_by_key(&key, |entry| entry.key)
+            .ok()
+            .map(|index| entries[index].token)
+    }
+    fn insert(&mut self, kind: u32, key: i32, token: usize) -> Result<(i32, usize), i32> {
+        let entries = self.entries.get_mut(kind as usize).ok_or(-1)?;
+        match entries.binary_search_by_key(&key, |entry| entry.key) {
+            Ok(index) => Ok((0, entries[index].token)),
+            Err(index) => {
+                entries.try_reserve(1).map_err(|_| -2)?;
+                entries.insert(index, Entry { key, token });
+                Ok((1, token))
+            }
+        }
+    }
+    fn drain(&mut self, kind: &mut u32, token: &mut usize) -> i32 {
+        let entry = if let Some(entry) = self.entries[1].pop() {
+            *kind = 1;
+            Some(entry)
+        } else {
+            *kind = 0;
+            self.entries[0].pop()
+        };
+        if let Some(entry) = entry {
+            *token = entry.token;
+            1
+        } else {
+            0
+        }
+    }
+    fn is_empty(&self) -> bool {
+        self.entries.iter().all(Vec::is_empty)
+    }
+}
+#[repr(C)]
+#[derive(Default)]
+pub struct ReactorCallbackCursor {
+    pub key: i32,
+    ///0 initial,1 previous callback returned,2 complete true,3 complete false.
+    pub phase: u32,
+}
+
+///1 found/0 absent/-1 invalid. A null owner is a lazy empty store.
+/// # Safety
+/// Owner is null or live, and output is aligned/exclusive/disjoint. No token is
+/// dereferenced; no reference escapes this call or spans a Native effect.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_reactor_callbacks_lookup(
+    owner: *const ReactorCallbacks,
+    kind: u32,
+    key: i32,
+    token: *mut usize,
+) -> i32 {
+    let Some(token) = (unsafe { token.as_mut() }) else {
+        return -1;
+    };
+    if kind > 1 {
+        return -1;
+    }
+    *token = 0;
+    let Some(owner) = (unsafe { owner.as_ref() }) else {
+        return 0;
+    };
+    if let Some(found) = owner.lookup(kind, key) {
+        *token = found;
+        1
+    } else {
+        0
+    }
+}
+
+/// Publish a Native empty payload before its Native copy assignment, preserving
+/// the original map operator[] logical prefix if that later assignment throws.
+///1 inserted/0 existing (actual token returned)/-2 capacity/-1 invalid.
+/// # Safety
+/// Owner slot/output are live, exclusive, aligned and disjoint; input token is a
+/// stable nonzero Native payload identity. Caller retains candidate ownership
+/// unless insertion succeeds. No Native function or destructor is called here.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_reactor_callbacks_insert(
+    slot: *mut *mut ReactorCallbacks,
+    kind: u32,
+    key: i32,
+    token: usize,
+    actual: *mut usize,
+) -> i32 {
+    let (Some(slot), Some(actual)) = ((unsafe { slot.as_mut() }), (unsafe { actual.as_mut() }))
+    else {
+        return -1;
+    };
+    if kind > 1 || token == 0 {
+        return -1;
+    }
+    *actual = 0;
+    unsafe { insert_metadata(slot, kind, key, token, actual) }
+}
+
+// Only the opaque slot's live-pointer admission remains unsafe. All actual
+// ordered-container operations compose safe methods, never exported C calls.
+unsafe fn insert_metadata(
+    slot: &mut *mut ReactorCallbacks,
+    kind: u32,
+    key: i32,
+    token: usize,
+    actual: &mut usize,
+) -> i32 {
+    unsafe {
+        publish(
+            slot,
+            || ReactorCallbacks {
+                entries: [Vec::new(), Vec::new()],
+            },
+            |owner| {
+                let (status, value) = owner.insert(kind, key, token)?;
+                *actual = value;
+                Ok((status, status == 1))
+            },
+        )
+    }
+    .unwrap_or_else(|status| status)
+}
+
+/// Detach metadata first; Native destroys the returned payload after return.
+/// # Safety
+/// Same live/exclusive owner/output contract as insertion. Native token ownership
+/// transfers only on result1. Rust never drops or calls the token.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_reactor_callbacks_erase(
+    owner: *mut ReactorCallbacks,
+    kind: u32,
+    key: i32,
+    token: *mut usize,
+) -> i32 {
+    let Some(token) = (unsafe { token.as_mut() }) else {
+        return -1;
+    };
+    if kind > 1 {
+        return -1;
+    }
+    *token = 0;
+    let Some(owner) = (unsafe { owner.as_mut() }) else {
+        return 0;
+    };
+    let entries = &mut owner.entries[kind as usize];
+    match entries.binary_search_by_key(&key, |entry| entry.key) {
+        Ok(index) => {
+            *token = entries.remove(index).token;
+            1
+        }
+        Err(_) => 0,
+    }
+}
+
+/// Fresh ascending-key traversal after each Native callback. Insertions after
+/// the current key become visible; removed future keys disappear. No iterator,
+/// generation snapshot or borrowed payload reference survives return.
+///0 complete true/1 call returned token/2 exit rejected/-1 invalid.
+/// # Safety
+/// Owner is null/live, cursor/output live, aligned/exclusive/disjoint. Cursor is
+/// zero initialized per traversal. Native callback result is supplied freshly.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_reactor_callbacks_next(
+    owner: *const ReactorCallbacks,
+    kind: u32,
+    cursor: *mut ReactorCallbackCursor,
+    previous: u32,
+    token: *mut usize,
+) -> i32 {
+    let (Some(cursor), Some(token)) = ((unsafe { cursor.as_mut() }), (unsafe { token.as_mut() }))
+    else {
+        return -1;
+    };
+    if kind > 1 || previous > 1 || cursor.phase > 3 {
+        return -1;
+    }
+    next_metadata(unsafe { owner.as_ref() }, kind, cursor, previous, token)
+}
+
+fn next_metadata(
+    owner: Option<&ReactorCallbacks>,
+    kind: u32,
+    cursor: &mut ReactorCallbackCursor,
+    previous: u32,
+    token: &mut usize,
+) -> i32 {
+    *token = 0;
+    if cursor.phase == 3 {
+        return 2;
+    }
+    if cursor.phase == 2 {
+        return 0;
+    }
+    if kind == 1 && cursor.phase == 1 && previous == 0 {
+        cursor.phase = 3;
+        return 2;
+    }
+    let Some(owner) = owner else {
+        cursor.phase = 2;
+        return 0;
+    };
+    let entries = &owner.entries[kind as usize];
+    let index = if cursor.phase == 0 {
+        0
+    } else {
+        entries.partition_point(|entry| entry.key <= cursor.key)
+    };
+    if let Some(entry) = entries.get(index) {
+        cursor.key = entry.key;
+        cursor.phase = 1;
+        *token = entry.token;
+        1
+    } else {
+        cursor.phase = 2;
+        0
+    }
+}
+
+/// Defined member destruction order is exit then end; within-map destruction
+/// order is not a new parity claim for the target's std::map implementation.
+/// # Safety
+/// Owner/output are live/exclusive/disjoint. Native destroys each detached
+/// payload after return before asking again; no Rust borrow spans that effect.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_reactor_callbacks_drain(
+    owner: *mut ReactorCallbacks,
+    kind: *mut u32,
+    token: *mut usize,
+) -> i32 {
+    let (Some(kind), Some(token)) = ((unsafe { kind.as_mut() }), (unsafe { token.as_mut() }))
+    else {
+        return -1;
+    };
+    *token = 0;
+    let Some(owner) = (unsafe { owner.as_mut() }) else {
+        return 0;
+    };
+    owner.drain(kind, token)
+}
+
+/// Free only empty metadata; no Native payload is ever dropped by Rust.
+/// # Safety
+/// Owner is null or live/exclusive, detached from Native callback/array use.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_reactor_callbacks_free(owner: *mut ReactorCallbacks) -> i32 {
+    let Some(value) = (unsafe { owner.as_ref() }) else {
+        return 0;
+    };
+    if !value.is_empty() {
+        return -1;
+    }
+    unsafe { release_metadata(owner) };
+    0
+}
+
+/// Complete empty-payload publication/retry policy. Candidate allocation and
+/// destruction/copy remain Native effects between calls. 1 existing token,
+/// 2 allocate candidate, 3 committed candidate, 0 discard candidate then retry.
+/// -2 capacity refusal, -1 invalid protocol. A zero candidate requests lookup.
+/// # Safety
+/// The slot/output follow callbacks_insert; a nonzero candidate is a fresh live
+/// Native payload token exclusively retained until action3 transfers ownership.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_reactor_callbacks_ensure(
+    slot: *mut *mut ReactorCallbacks,
+    kind: u32,
+    key: i32,
+    candidate: usize,
+    token: *mut usize,
+) -> i32 {
+    let (Some(slot), Some(token)) = ((unsafe { slot.as_mut() }), (unsafe { token.as_mut() }))
+    else {
+        return -1;
+    };
+    if kind > 1 {
+        return -1;
+    }
+    *token = 0;
+    if candidate == 0 {
+        match unsafe { (*slot).as_ref() }.and_then(|owner| owner.lookup(kind, key)) {
+            Some(found) => {
+                *token = found;
+                1
+            }
+            None => 2,
+        }
+    } else {
+        match unsafe { insert_metadata(slot, kind, key, candidate, token) } {
+            1 => 3,
+            other => other,
+        }
+    }
+}
+
+/// Copy traversal owns the end-before-exit sequence and fresh ordered cursor.
+/// No token reference or iterator survives each Native function-copy effect.
+#[repr(C)]
+#[derive(Default)]
+pub struct ReactorCallbackCopy {
+    pub cursor: ReactorCallbackCursor,
+    pub kind: u32,
+}
+/// 0 complete, 1 copy end token, 2 copy exit token, -1 invalid.
+/// # Safety
+/// Source/state/output follow callbacks_next, with zero initialized state.
+/// Source storage and payloads stay live; caller applies each copy after return.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_reactor_callbacks_copy_next(
+    source: *const ReactorCallbacks,
+    state: *mut ReactorCallbackCopy,
+    token: *mut usize,
+) -> i32 {
+    let Some(state) = (unsafe { state.as_mut() }) else {
+        return -1;
+    };
+    if state.kind > 2 || token.is_null() {
+        return -1;
+    }
+    while state.kind < 2 {
+        if state.cursor.phase > 3 {
+            return -1;
+        }
+        match next_metadata(
+            unsafe { source.as_ref() },
+            state.kind,
+            &mut state.cursor,
+            1,
+            unsafe { &mut *token },
+        ) {
+            0 => {
+                state.kind += 1;
+                state.cursor = ReactorCallbackCursor::default();
+            }
+            1 => return state.kind as i32 + 1,
+            _ => return -1,
+        }
+    }
+    unsafe { *token = 0 };
+    0
+}
+/// Detach one payload for Native typed deletion, or release the empty metadata
+/// and publish null. 1 delete end, 2 delete exit, 0 complete, -1 invalid.
+/// # Safety
+/// Slot/output are live/aligned/exclusive/disjoint; each returned Native token
+/// is deleted after return before another call. No custom destruction/reentry
+/// contract is introduced and no Rust reference survives that Native effect.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_reactor_callbacks_clear_next(
+    slot: *mut *mut ReactorCallbacks,
+    token: *mut usize,
+) -> i32 {
+    let Some(slot) = (unsafe { slot.as_mut() }) else {
+        return -1;
+    };
+    let Some(token) = (unsafe { token.as_mut() }) else {
+        return -1;
+    };
+    *token = 0;
+    let mut kind = 0;
+    let action = unsafe { (*slot).as_mut() }.map_or(0, |owner| owner.drain(&mut kind, token));
+    match action {
+        1 => kind as i32 + 1,
+        0 => {
+            unsafe { release_metadata(*slot) };
+            *slot = ptr::null_mut();
+            0
+        }
+        _ => -1,
+    }
+}
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_reactor_callbacks_copy_layout(field: u32) -> usize {
+    match field {
+        0 => std::mem::size_of::<ReactorCallbackCopy>(),
+        1 => std::mem::align_of::<ReactorCallbackCopy>(),
+        2 => std::mem::offset_of!(ReactorCallbackCopy, cursor),
+        3 => std::mem::offset_of!(ReactorCallbackCopy, kind),
+        _ => usize::MAX,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn callbacks_positive_whole_publication_copy_and_clear_control() {
+        unsafe {
+            let mut source = ptr::null_mut();
+            let mut token = 0;
+            for (kind, key, value) in [(0, 3, 103), (0, 1, 101), (1, 2, 202)] {
+                assert_eq!(
+                    swr_v1_reactor_callbacks_ensure(&mut source, kind, key, 0, &mut token),
+                    2
+                );
+                assert_eq!(
+                    swr_v1_reactor_callbacks_ensure(&mut source, kind, key, value, &mut token),
+                    3
+                );
+                assert_eq!(token, value);
+                assert_eq!(
+                    swr_v1_reactor_callbacks_ensure(&mut source, kind, key, 0, &mut token),
+                    1
+                );
+                assert_eq!(token, value);
+            }
+            let mut target = ptr::null_mut();
+            let mut copy = ReactorCallbackCopy::default();
+            let mut observed = Vec::new();
+            loop {
+                let action = swr_v1_reactor_callbacks_copy_next(source, &mut copy, &mut token);
+                if action == 0 {
+                    break;
+                }
+                observed.push((action, copy.cursor.key, token));
+                let kind = (action - 1) as u32;
+                let value = token + 1000;
+                assert_eq!(
+                    swr_v1_reactor_callbacks_ensure(
+                        &mut target,
+                        kind,
+                        copy.cursor.key,
+                        0,
+                        &mut token
+                    ),
+                    2
+                );
+                assert_eq!(
+                    swr_v1_reactor_callbacks_ensure(
+                        &mut target,
+                        kind,
+                        copy.cursor.key,
+                        value,
+                        &mut token
+                    ),
+                    3
+                );
+            }
+            assert_eq!(observed, [(1, 1, 101), (1, 3, 103), (2, 2, 202)]);
+            for owner in [&mut source, &mut target] {
+                let mut released = Vec::new();
+                loop {
+                    let action = swr_v1_reactor_callbacks_clear_next(owner, &mut token);
+                    if action == 0 {
+                        break;
+                    }
+                    released.push((action, token % 1000));
+                }
+                assert_eq!(released, [(2, 202), (1, 103), (1, 101)]);
+                assert!(owner.is_null());
+            }
+        }
+    }
+    #[test]
+    fn callbacks_positive_fresh_ordered_insert_erase_and_exit_stop() {
+        unsafe {
+            let mut owner = ptr::null_mut();
+            let mut token = 0;
+            for (kind, key, value) in [
+                (0, 20, 120),
+                (0, 10, 110),
+                (0, 30, 130),
+                (1, 1, 201),
+                (1, 2, 202),
+            ] {
+                assert_eq!(
+                    swr_v1_reactor_callbacks_insert(&mut owner, kind, key, value, &mut token),
+                    1
+                );
+                assert_eq!(token, value);
+            }
+            let mut cursor = ReactorCallbackCursor::default();
+            assert_eq!(
+                swr_v1_reactor_callbacks_next(owner, 0, &mut cursor, 1, &mut token),
+                1
+            );
+            assert_eq!((cursor.key, token), (10, 110));
+            assert_eq!(swr_v1_reactor_callbacks_erase(owner, 0, 20, &mut token), 1);
+            assert_eq!(token, 120);
+            assert_eq!(
+                swr_v1_reactor_callbacks_insert(&mut owner, 0, 25, 125, &mut token),
+                1
+            );
+            assert_eq!(
+                swr_v1_reactor_callbacks_next(owner, 0, &mut cursor, 1, &mut token),
+                1
+            );
+            assert_eq!((cursor.key, token), (25, 125));
+            assert_eq!(
+                swr_v1_reactor_callbacks_next(owner, 0, &mut cursor, 1, &mut token),
+                1
+            );
+            assert_eq!((cursor.key, token), (30, 130));
+            assert_eq!(
+                swr_v1_reactor_callbacks_next(owner, 0, &mut cursor, 1, &mut token),
+                0
+            );
+            let mut exit = ReactorCallbackCursor::default();
+            assert_eq!(
+                swr_v1_reactor_callbacks_next(owner, 1, &mut exit, 1, &mut token),
+                1
+            );
+            assert_eq!(token, 201);
+            assert_eq!(
+                swr_v1_reactor_callbacks_next(owner, 1, &mut exit, 0, &mut token),
+                2
+            );
+            let mut kind = 0;
+            let mut released = Vec::new();
+            while swr_v1_reactor_callbacks_drain(owner, &mut kind, &mut token) == 1 {
+                released.push((kind, token));
+            }
+            assert_eq!(released, [(1, 202), (1, 201), (0, 130), (0, 125), (0, 110)]);
+            assert_eq!(swr_v1_reactor_callbacks_free(owner), 0);
+        }
+    }
+}

@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""Exercise the real C ABI and PHP module startup (including an incompatible ABI).
+
+Build reference/hybrid first, then run: python3 tests/modules/integration/test_bridge.py
+All compilations and the incompatible relink write only to a temporary directory.
+"""
+import argparse
+import hashlib
+import json
+import os
+import re
+from pathlib import Path
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+from tools.private_copy import copy_private
+
+
+def run(command, *, cwd=ROOT, check=True):
+    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, timeout=120)
+    if check and result.returncode:
+        raise AssertionError(f'{shlex.join(map(str, command))}\n{result.stdout}{result.stderr}')
+    return result
+
+
+class BridgeTests(unittest.TestCase):
+    def php(self, extension, *arguments):
+        return run([ARGS.php, '-n', '-d', f'extension={extension}', *arguments], check=False)
+
+    def test_c_and_cpp_consumers(self):
+        source = '''#include "swoole_rs.h"
+int main(void) {
+    return SWR_ABI_VERSION != 1 || swr_v1_abi_version() != 1 || swr_v1_feature_bits() != EXPECTED_FEATURE_BITS;
+}
+'''.replace('EXPECTED_FEATURE_BITS', str(ARGS.feature_bits))
+        native = ['-lm']
+        if sys.platform.startswith('linux'):
+            native += ['-ldl', '-lpthread', '-lrt', '-lutil']
+        with tempfile.TemporaryDirectory(prefix='swoole-rs-abi-') as directory:
+            temporary = Path(directory)
+            for language, variable, default in [('c', 'CC', 'cc'), ('cc', 'CXX', 'c++')]:
+                with self.subTest(language=language):
+                    path = temporary / f'consumer.{language}'
+                    path.write_text(source)
+                    executable = temporary / f'consumer-{language}'
+                    run(shlex.split(os.environ.get(variable, default)) + [str(path), '-I', str(ROOT / 'native/include'),
+                        str(ARGS.archive), *native, '-o', str(executable)])
+                    run([str(executable)])
+
+    def test_selected_abi_exports(self):
+        build = ARGS.hybrid.resolve().parents[2]
+        manifest = json.loads((build / 'build-manifest.json').read_text())
+        modules = set(manifest['inputs']['modules'])
+        headers = []
+        for relative, digest in manifest['inputs']['headers_sha256'].items():
+            path = Path(relative)
+            if path.parent == Path('native/include') and path.stem != 'swoole_rs':
+                if path.stem.removeprefix('swoole_rs_') not in modules:
+                    continue
+            header = build / 'rust-prefix/include' / path.name
+            content = header.read_bytes()
+            self.assertEqual(hashlib.sha256(content).hexdigest(), digest, str(header))
+            headers.append(header)
+        # Inventory the declarations selected by the actual target/compiler and
+        # configured SDK. Raw text includes unavailable OS backends as well.
+        source = build / 'src'
+        includes = shlex.split(run([ARGS.php_config, '--includes']).stdout)
+        flags = shlex.split(manifest['inputs'].get('effective_cppflags', ''))
+        for option in manifest.get('configure', []):
+            if option.startswith('--with-openssl-dir='):
+                flags += ['-I', str(Path(option.split('=', 1)[1]) / 'include')]
+        with tempfile.TemporaryDirectory(prefix='swoole-rs-export-inventory-') as directory:
+            inventory = Path(directory) / 'headers.cc'
+            inventory.write_text(''.join(f'#include "{header}"\n' for header in headers))
+            text = run(shlex.split(os.environ.get('CXX', 'c++')) + [
+                '-E', '-P', '-x', 'c++', '-include', str(source / 'config.h'),
+                '-I', str(build / 'rust-prefix/include'), '-I', str(source),
+                '-I', str(source / 'include'), '-I', str(source / 'ext-src'),
+                *includes, *flags, str(inventory)]).stdout
+        text = re.sub(r'/\*.*?\*/|//[^\n]*', '', text, flags=re.S)
+        expected = set(re.findall(r'\b(swr_v[0-9]+_\w+)\s*\(', text))
+        self.assertTrue(expected, 'No selected ABI declarations were checked')
+        options = ['-gU'] if sys.platform == 'darwin' else ['-D', '--defined-only']
+        symbols = run(['nm', *options, str(ARGS.hybrid)]).stdout
+        actual = set(re.findall(r'\b_?(swr_v[0-9]+_\w+)\b', symbols))
+        self.assertFalse(expected - actual, 'Selected ABI exports missing: ' + ', '.join(sorted(expected - actual)))
+
+    def test_public_http_status_array_export(self):
+        if not ARGS.feature_bits & 256:
+            self.skipTest('HTTP module is not selected')
+        # The existing public C++ data symbol must survive static archive
+        # extraction and production DSO export filtering, not just a mini DSO.
+        symbol = '_ZN6swoole11http_server19list_of_status_codeE'
+        if sys.platform == 'darwin':
+            symbol = '_' + symbol
+        options = ['-gU'] if sys.platform == 'darwin' else ['-D', '--defined-only']
+        for label, extension in [('native', ARGS.reference), ('selected', ARGS.hybrid)]:
+            with self.subTest(engine=label):
+                symbols = run(['nm', *options, str(extension)]).stdout
+                definitions = [line.split() for line in symbols.splitlines()
+                               if line.split() and line.split()[-1] == symbol]
+                self.assertEqual(len(definitions), 1,
+                                 f'{label} production extension lacks the unique public status array: {symbol}')
+                self.assertIn(definitions[0][-2], {'B', 'D', 'G', 'S'},
+                              f'{label} public status array is not mutable exported data')
+
+    def test_reference_has_no_bridge_marker(self):
+        result = self.php(ARGS.reference, '-r', 'echo extension_loaded("swoole") ? "loaded\\n" : "missing\\n"; '
+                          'echo defined("SWOOLE_RS_ABI_VERSION") || defined("SWOOLE_RS_FEATURE_BITS") ? "bridge\\n" : "upstream\\n";')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, 'loaded\nupstream\n')
+        self.assertNotIn('Rust migration bridge', self.php(ARGS.reference, '--ri', 'swoole').stdout)
+
+    def test_hybrid_markers_and_phpinfo(self):
+        result = self.php(ARGS.hybrid, '-r', 'echo SWOOLE_RS_ABI_VERSION, ":", SWOOLE_RS_FEATURE_BITS, "\\n";')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout, f'1:{ARGS.feature_bits}\n')
+        info = self.php(ARGS.hybrid, '--ri', 'swoole')
+        self.assertEqual(info.returncode, 0, info.stdout + info.stderr)
+        self.assertIn(f'Rust migration bridge => ABI 1, features {ARGS.feature_bits}', info.stdout)
+        # Selected overlays require their flags; omission selects pristine C++.
+        source = ARGS.hybrid.resolve().parents[1]
+        manifest = json.loads((source.parent / 'build-manifest.json').read_text())
+        includes = shlex.split(manifest['inputs'].get('effective_cppflags', ''))
+        for option in manifest['configure']:
+            if option.startswith('--with-swoole-rs='):
+                includes += ['-I', str(Path(option.split('=', 1)[1]) / 'include')]
+            if option.startswith('--with-openssl-dir='):
+                includes += ['-I', str(Path(option.split('=', 1)[1]) / 'include')]
+        for bit, path, message in [
+            (2, 'include/swoole_buffer.h', 'Buffer overlay requires --enable-swoole-rs-buffer'),
+            (1, 'src/protocol/websocket.cc', 'WebSocket overlay requires --enable-swoole-rs-websocket'),
+            (4, 'include/swoole_timer.h', 'Timer overlay requires --enable-swoole-rs-timer'),
+            (8, 'src/core/base64.cc', 'Base64 overlay requires --enable-swoole-rs-base64'),
+            (16, 'src/core/crc32.cc', 'CRC32 overlay requires --enable-swoole-rs-crc32'),
+            (32, 'src/core/error.cc', 'Error overlay requires --enable-swoole-rs-error'),
+            (64, 'src/memory/fixed_pool.cc', 'Memory overlay requires --enable-swoole-rs-memory'),
+            (128, 'src/protocol/mqtt.cc', 'Packet protocols overlay requires --enable-swoole-rs-protocols'),
+            (256, 'src/protocol/http.cc', 'HTTP overlay requires --enable-swoole-rs-http'),
+            (512, 'src/core/misc.cc', 'Utilities overlay requires --enable-swoole-rs-utilities'),
+            (1024, 'src/lock/mutex.cc', 'Locks overlay requires --enable-swoole-rs-locks'),
+            (2048, 'src/wrapper/event.cc', 'Wrapper overlay requires --enable-swoole-rs-wrappers'),
+            (4096, 'src/protocol/base.cc', 'Framing overlay requires --enable-swoole-rs-framing'),
+            (8192, 'src/core/base.cc', 'Corebase overlay requires --enable-swoole-rs-corebase'),
+            (16384, 'src/reactor/poll.cc', 'Reactor overlay requires --enable-swoole-rs-reactor'),
+            (32768, 'src/coroutine/base.cc', 'Coroutine overlay requires --enable-swoole-rs-coroutine'),
+            (65536, 'src/coroutine/hook.cc', 'Hooks overlay requires --enable-swoole-rs-hooks'),
+            (131072, 'src/os/async_thread.cc', 'OS support overlay requires --enable-swoole-rs-ossupport'),
+            (262144, 'src/protocol/ssl.cc', 'TLS overlay requires explicit module activation'),
+            (524288, 'src/server/worker.cc', 'Process overlay requires --enable-swoole-rs-process'),
+            (1048576, 'src/network/address.cc', 'Clients overlay requires --enable-swoole-rs-clients'),
+            (2097152, 'ext-src/swoole_http_cookie.cc', 'HTTP PHP binding overlay requires --enable-swoole-rs-httpbindings'),
+            (8388608, 'src/server/port.cc', 'ListenPort overlay requires --enable-swoole-rs-ports'),
+            (33554432, 'ext-src/swoole_table.cc', 'PHP collections overlay requires --enable-swoole-rs-phpcollections'),
+        ]:
+            if not ARGS.feature_bits & bit:
+                continue
+            macros = {1: 'SWOOLE_RS_WEBSOCKET', 2: 'SWOOLE_RS_BUFFER', 4: 'SWOOLE_RS_TIMER',
+                      8: 'SWOOLE_RS_BASE64', 16: 'SWOOLE_RS_CRC32', 32: 'SWOOLE_RS_ERROR',
+                      64: 'SWOOLE_RS_MEMORY', 128: 'SWOOLE_RS_PROTOCOLS', 256: 'SWOOLE_RS_HTTP', 512: 'SWOOLE_RS_UTILITIES', 1024: 'SWOOLE_RS_LOCKS', 2048: 'SWOOLE_RS_WRAPPERS', 4096: 'SWOOLE_RS_FRAMING', 8192: 'SWOOLE_RS_COREBASE', 16384: 'SWOOLE_RS_REACTOR', 32768: 'SWOOLE_RS_COROUTINE', 65536: 'SWOOLE_RS_HOOKS', 131072: 'SWOOLE_RS_OSSUPPORT', 262144: 'SWOOLE_RS_TLS', 524288: 'SWOOLE_RS_PROCESS', 1048576: 'SWOOLE_RS_CLIENTS', 2097152: 'SWOOLE_RS_HTTPBINDINGS', 4194304: 'SW_USE_RUST_HTTP2', 8388608: 'SWOOLE_RS_PORTS', 33554432: 'SWOOLE_RS_PHPCOLLECTIONS'}
+            defines = ['-D' + macro for flag, macro in macros.items() if flag != bit and ARGS.feature_bits & flag]
+            php_includes = (shlex.split(next(line.split('=', 1)[1]
+                            for line in (source / 'Makefile').read_text().splitlines()
+                            if line.startswith('INCLUDES = '))) if bit in {2097152, 33554432} else [])
+            result = run(shlex.split(os.environ.get('CXX', 'c++')) +
+                         ['-E', '-x', 'c++', *includes, *php_includes, *defines,
+                          '-U' + macros[bit],
+                          '-I', str(source / 'include'),
+                          '-I', str(ROOT / 'native/include'), str(source / path)], check=False)
+            self.assertNotEqual(result.returncode, 0, 'Overlay compiled with its feature disabled')
+            self.assertIn(message, result.stderr)
+
+
+    def require_space(self, temporary):
+        for path in [ROOT, ARGS.archive.parent, temporary]:
+            free = shutil.disk_usage(path).free
+            self.assertGreaterEqual(free, 4294967296, f'Unchanged 4GiB guard: {path}, free={free}')
+
+    def abi_query_members(self, archive, temporary):
+        queries = {'swr_v1_abi_version', 'swr_v1_feature_bits'}
+        removed, isolated = [], set()
+        for member in run(['ar', 't', str(archive)]).stdout.splitlines():
+            if not member.startswith('swoole_rs_ffi-'):
+                continue
+            scan = temporary / 'scan.o'
+            scan.write_bytes(subprocess.check_output(['ar', 'p', str(archive), member], timeout=120))
+            definitions = {parts[-1].lstrip('_')
+                           for line in run(['nm', '-g', str(scan)]).stdout.splitlines()
+                           if len(parts := line.split()) >= 2 and parts[-2] in {'T', 'D', 'B', 'R', 'S', 'C', 'W', 'V'}}
+            if definitions & queries:
+                self.assertLessEqual(definitions, queries, 'ABI queries share code with another implementation')
+                removed.append(member)
+                isolated.update(definitions)
+        self.assertEqual(isolated, queries, 'Could not isolate both real ABI query objects')
+        return removed
+
+    def test_php_rejects_incompatible_archive(self):
+        # Ask make for its expanded link recipe without executing any build step.
+        # Existing .lo inputs remain read-only; libtool runs inside our scratch tree.
+        source = ARGS.hybrid.resolve().parents[1]
+        recipe = run(['make', '-n', '-W', 'ext-src/php_swoole.lo', 'swoole.la'], cwd=source).stdout
+        lines = [line for line in recipe.splitlines() if '--mode=link' in line and '-o swoole.la' in line]
+        self.assertEqual(len(lines), 1, 'Expected one expanded libtool link recipe: ' + recipe)
+        command = shlex.split(lines[0])
+        self.assertEqual(command.count('-lswoole_rs_ffi'), 1, 'Rust archive missing from link recipe')
+        cases = [(999, 0, 'Rust bridge ABI mismatch: expected 1, got 999')]
+        if ARGS.feature_bits & 1:
+            cases.append((1, ARGS.feature_bits & ~1, 'Rust bridge missing WebSocket kernel feature'))
+        if ARGS.feature_bits & 2:
+            cases.append((1, ARGS.feature_bits & ~2, 'Rust bridge missing buffer feature'))
+        if ARGS.feature_bits & 4:
+            cases.append((1, ARGS.feature_bits & ~4, 'Rust bridge missing timer feature'))
+        for bit, name in [(8, 'base64'), (16, 'crc32'), (32, 'error'), (64, 'memory'), (128, 'protocols'), (256, 'http'), (512, 'utilities'), (1024, 'locks'), (2048, 'wrappers'), (4096, 'framing'), (8192, 'corebase'), (16384, 'reactor'), (32768, 'coroutine'), (65536, 'hooks'), (131072, 'ossupport'), (262144, 'tls'), (524288, 'process'), (1048576, 'clients'), (2097152, 'httpbindings'), (4194304, 'http2'), (8388608, 'ports'), (16777216, 'phphelpers'), (33554432, 'phpcollections'), (67108864, 'phpevents'), (134217728, 'phpcoroutines')]:
+            if ARGS.feature_bits & bit:
+                cases.append((1, ARGS.feature_bits & ~bit, f'Rust bridge missing {name} feature'))
+        # Discover and remove invariant real query members once. Each case gets
+        # an independent copy of the same real implementation archive.
+        with tempfile.TemporaryDirectory(prefix='swoole-rs-abi-preparation-') as directory:
+            preparation = Path(directory)
+            self.require_space(preparation)
+            removed = self.abi_query_members(ARGS.archive, preparation)
+            prepared = preparation / 'libswoole_rs_ffi.a'
+            copy_private(ARGS.archive, prepared)
+            run(['ar', 'd', str(prepared), *removed])
+            command = [str(source / argument) if argument.endswith('.lo') and not Path(argument).is_absolute()
+                       else argument for argument in command]
+            archive_index = command.index('-lswoole_rs_ffi')
+            output_index, rpath_index = command.index('-o') + 1, command.index('-rpath') + 1
+            stats_indices = [index for index, argument in enumerate(command) if argument.startswith('CCACHE_STATSLOG=')]
+            for abi, bits, message in cases:
+                with self.subTest(abi=abi, feature_bits=bits):
+                    with tempfile.TemporaryDirectory(prefix='swoole-rs-bad-abi-') as directory:
+                        temporary = Path(directory)
+                        self.require_space(temporary)
+                        stub = temporary / 'incompatible.c'
+                        stub.write_text('#include "swoole_rs.h"\n'
+                                        f'uint32_t swr_v1_abi_version(void) {{ return {abi}; }}\n'
+                                        f'uint64_t swr_v1_feature_bits(void) {{ return {bits}; }}\n')
+                        obj, archive = temporary / 'incompatible.o', temporary / 'libswoole_rs_ffi.a'
+                        run(shlex.split(os.environ.get('CC', 'cc')) + ['-fPIC', '-I', str(ROOT / 'native/include'),
+                            '-c', str(stub), '-o', str(obj)])
+                        # Preserve real module initialization/error paths: incomplete
+                        # function stubs can crash before startup reaches its ABI guard.
+                        copy_private(prepared, archive)
+                        run(['ar', 'rcs', str(archive), str(obj)])
+                        # Absolute .lo paths preserve each libtool object's .libs lookup. Move
+                        # both outputs and libtool's working directory away from the build.
+                        relink = command.copy()
+                        relink[archive_index] = str(archive)
+                        relink[output_index] = str(temporary / 'swoole.la')
+                        relink[rpath_index] = str(temporary)
+                        for index in stats_indices:
+                            relink[index] = 'CCACHE_STATSLOG=' + str(temporary / 'link.ccache.log')
+                        run(relink, cwd=temporary)
+                        extension = temporary / '.libs/swoole.so'
+                        self.assertTrue(extension.is_file(), 'Relink did not produce a temporary PHP extension')
+                        result = self.php(extension, '-r', 'echo "startup-accepted\\n";')
+                        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+                        self.assertIn(message, result.stdout + result.stderr)
+                        self.assertNotIn('startup-accepted', result.stdout)
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--php', default='php')
+    parser.add_argument('--php-config', default=os.environ.get('PHP_CONFIG', 'php-config'))
+    parser.add_argument('--reference', type=Path, default=ROOT / 'target/upstream/src/modules/swoole.so')
+    parser.add_argument('--hybrid', type=Path, default=ROOT / 'target/hybrid/rust/modules/swoole.so')
+    parser.add_argument('--archive', type=Path, help='Defaults to the selected hybrid build’s copied archive')
+    parser.add_argument('--feature-bits', type=int, help='Defaults to the selected hybrid build manifest')
+    parser.add_argument('--startup-only', action='store_true', help='Positive startup/flag gates; full incompatible-archive relinks remain integration-only')
+    ARGS = parser.parse_args()
+    build = ARGS.hybrid.resolve().parents[2]
+    if ARGS.archive is None:
+        ARGS.archive = build / 'rust-prefix/lib/libswoole_rs_ffi.a'
+    if ARGS.feature_bits is None:
+        manifest = build / 'build-manifest.json'
+        if not manifest.is_file():
+            parser.error(f'Missing build manifest: {manifest}; provide --feature-bits explicitly')
+        ARGS.feature_bits = json.loads(manifest.read_text())['migrated_feature_bits']
+    for path in [ARGS.reference, ARGS.hybrid, ARGS.archive]:
+        if not path.is_file():
+            parser.error(f'Missing built artifact: {path}; build reference and hybrid first')
+    tests = ['BridgeTests.test_reference_has_no_bridge_marker', 'BridgeTests.test_hybrid_markers_and_phpinfo',
+             'BridgeTests.test_selected_abi_exports', 'BridgeTests.test_public_http_status_array_export'] if ARGS.startup_only else []
+    unittest.main(argv=[sys.argv[0], *tests], verbosity=2)

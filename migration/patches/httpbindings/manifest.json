@@ -1,0 +1,40 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-cookie-policy.patch",
+      "sha256": "15dee500a46bfd186d95440409b3b434c68511a7481311298b929c512141f149",
+      "upstream_paths": [
+        "ext-src/swoole_http_cookie.cc"
+      ]
+    },
+    {
+      "path": "0002-request-policy.patch",
+      "sha256": "b6d47f27c833a9293a5d52b59291fc4f6bbc8b3a01a811084367cea24fe72a5c",
+      "upstream_paths": [
+        "ext-src/swoole_http_request.cc"
+      ]
+    },
+    {
+      "path": "0003-response-policy.patch",
+      "sha256": "25402f1d2d596e295762bbd474bc35c11a41bd92671912278fb79af9c29825e8",
+      "upstream_paths": [
+        "ext-src/swoole_http_response.cc"
+      ]
+    },
+    {
+      "path": "0004-server-policy.patch",
+      "sha256": "b83cb436a63b0f357032f4af432b13682c349b30d454e602e5ffa5a89dad3e8a",
+      "upstream_paths": [
+        "ext-src/swoole_http_server.cc"
+      ]
+    },
+    {
+      "path": "0005-coro-server-policy.patch",
+      "sha256": "0d179e179119133129945e85c24a8c5359e2f051f86ad529013ae309f64f7b04",
+      "upstream_paths": [
+        "ext-src/swoole_http_server_coro.cc"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,488 @@
+//! HTTP policy and private directory storage. Native effects run after Rust returns.
+use std::{mem::MaybeUninit, slice};
+const INVALID: i32 = -1;
+const OVERFLOW: i32 = -2;
+mod cookie_flow;
+pub use cookie_flow::{HttpCookieFlow, swr_v2_http_cookie_flow};
+mod conditional;
+pub use conditional::{HttpConditional, swr_v1_http_conditional, swr_v1_http_date_format};
+mod directory;
+pub use directory::{
+    HttpDirectory, swr_v2_http_directory_clone, swr_v2_http_directory_contains,
+    swr_v2_http_directory_count, swr_v2_http_directory_drop, swr_v2_http_directory_emit,
+    swr_v2_http_directory_insert, swr_v2_http_directory_new, swr_v2_http_directory_page,
+    swr_v2_http_directory_scan_append, swr_v2_http_directory_scan_finish,
+};
+mod dispatch;
+pub use dispatch::{
+    swr_v1_http_index_file, swr_v1_http_proxy_auth_enabled, swr_v1_http_transport_route,
+    swr_v1_http_unknown_status,
+};
+mod framing;
+pub use framing::{
+    HttpChunkStep, HttpFrame, swr_v1_http_chunk_step, swr_v1_http_expect, swr_v1_http_frame,
+    swr_v1_http_header_value,
+};
+mod headers;
+mod index_page;
+pub use headers::{HttpCookie, HttpHeaderInfo, swr_v1_http_cookie_next, swr_v1_http_header_info};
+pub use index_page::{HttpIndexPage, swr_v1_http_index_page, swr_v2_http_index_page_emit};
+mod maps;
+mod multipart;
+mod multipart_emit;
+mod multipart_upload;
+pub use multipart::{
+    HttpMultipartData, swr_v1_http_multipart_data, swr_v1_http_multipart_disposition,
+    swr_v1_http_multipart_filename, swr_v1_http_multipart_result,
+};
+pub use multipart_emit::{
+    HttpMultipartAction, swr_v1_http_multipart_body_length, swr_v1_http_multipart_emit,
+};
+pub use multipart_upload::swr_v2_http_multipart_upload;
+mod proxy;
+pub use proxy::{
+    HttpProxyRequest, HttpProxyText, swr_v1_http_proxy_credentials, swr_v1_http_proxy_handshake,
+    swr_v1_http_proxy_pack, swr_v2_http_proxy_authorization,
+};
+mod range;
+mod range_response;
+pub use range_response::{
+    HttpRangeFinish, HttpRangeFormat, swr_v1_http_range_finish, swr_v1_http_range_format,
+};
+mod request_context;
+pub use request_context::*;
+mod request_lifecycle;
+pub use request_lifecycle::swr_v1_http_request_lifecycle;
+mod rewrite;
+pub use rewrite::{HttpRewriteLiteral, swr_v1_http_rewrite_literal, swr_v1_http_rewrite_rule};
+pub use rewrite::{HttpRewriteState, swr_v2_http_rewrite_step};
+mod static_context;
+pub use static_context::*;
+mod static_body;
+mod static_select;
+pub use static_body::{HttpStaticBody, swr_v1_http_static_body};
+pub use static_select::{HttpStaticSelection, swr_v1_http_static_select};
+mod tasks;
+pub use tasks::{
+    HttpStaticTask, HttpTasks, swr_v2_http_tasks_begin, swr_v2_http_tasks_clear,
+    swr_v2_http_tasks_copy, swr_v2_http_tasks_count, swr_v2_http_tasks_drop, swr_v2_http_tasks_new,
+    swr_v2_http_tasks_prepare, swr_v2_http_tasks_push, swr_v2_http_tasks_snapshot,
+};
+mod static_meta;
+pub use static_meta::{
+    swr_v1_http_static_boundary, swr_v1_http_static_catch, swr_v1_http_static_content_prefix,
+    swr_v1_http_static_content_type, swr_v1_http_static_path_check,
+};
+mod status_buffer;
+pub use status_buffer::{NATIVE_STATUS_CODES, swr_v2_http_status_message};
+mod static_config;
+pub use static_config::*;
+mod static_headers;
+mod static_path;
+pub use maps::{swr_v1_http_method, swr_v1_http_method_string, swr_v1_http_status};
+pub use range::{HttpRangeState, swr_v1_http_range_next};
+pub use static_headers::{HttpStaticHeaders, swr_v1_http_static_headers};
+pub use static_path::{
+    HttpStaticPath, swr_v1_http_static_index_path, swr_v1_http_static_location,
+    swr_v1_http_static_path,
+};
+
+/// # Safety
+/// Nonempty input is readable and initialized for its length; no borrow escapes.
+unsafe fn bytes<'a>(data: *const u8, length: usize) -> Result<&'a [u8], i32> {
+    if length > isize::MAX as usize {
+        return Err(OVERFLOW);
+    }
+    if length == 0 {
+        return Ok(&[]);
+    }
+    if data.is_null() {
+        return Err(INVALID);
+    }
+    Ok(unsafe { slice::from_raw_parts(data, length) })
+}
+unsafe extern "C" {
+    fn strncasecmp(
+        left: *const std::ffi::c_char,
+        right: *const std::ffi::c_char,
+        length: usize,
+    ) -> i32;
+}
+/// Preserve the pinned POSIX comparison's current locale and matching-NUL rules.
+/// This libc leaf borrows initialized bytes only; it has no allocator, callback,
+/// IO or Zend boundary. ASCII folding alone differs for configured binary paths.
+fn case_prefix(input: &[u8], expected: &[u8]) -> bool {
+    input.len() >= expected.len()
+        && unsafe {
+            strncasecmp(
+                input.as_ptr().cast(),
+                expected.as_ptr().cast(),
+                expected.len(),
+            ) == 0
+        }
+}
+fn case_equal(input: &[u8], expected: &[u8]) -> bool {
+    input.len() == expected.len() && case_prefix(input, expected)
+}
+fn unreserved(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || b"-._~".contains(&byte)
+}
+fn encoded_length(input: &[u8]) -> Result<usize, i32> {
+    let escaped = input.iter().filter(|&&byte| !unreserved(byte)).count();
+    input
+        .len()
+        .checked_add(1)
+        .and_then(|length| length.checked_add(escaped.checked_mul(2)?))
+        .filter(|&length| length <= isize::MAX as usize)
+        .ok_or(OVERFLOW)
+}
+/// Required encoded capacity, INCLUDING the trailing NUL. No allocation occurs.
+/// # Safety
+/// Input is readable and output is aligned/writable/disjoint.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_http_url_capacity(
+    data: *const u8,
+    length: usize,
+    output: *mut usize,
+) -> i32 {
+    if output.is_null() {
+        return INVALID;
+    }
+    unsafe {
+        output.write(0);
+    }
+    match unsafe { bytes(data, length) }.and_then(encoded_length) {
+        Ok(n) => {
+            unsafe {
+                output.write(n);
+            }
+            0
+        }
+        Err(status) => status,
+    }
+}
+/// Encode into disjoint native-owned storage, terminating it. No mutation on error.
+/// # Safety
+/// Input is readable; output capacity is writable, disjoint from input/length.
+/// Length output is valid/aligned. No allocation, callback or borrow escapes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_http_url_encode(
+    data: *const u8,
+    length: usize,
+    output: *mut u8,
+    capacity: usize,
+    written: *mut usize,
+) -> i32 {
+    if written.is_null() {
+        return INVALID;
+    }
+    unsafe {
+        written.write(0);
+    }
+    let input = match unsafe { bytes(data, length) } {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let needed = match encoded_length(input) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    if output.is_null() || capacity < needed {
+        return INVALID;
+    }
+    let output = unsafe { slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), needed) };
+    let at = if needed == input.len() + 1 {
+        // Exact capacity proves every byte is unreserved, so emission can copy
+        // the entire initialized input without reclassifying each byte.
+        unsafe {
+            std::ptr::copy_nonoverlapping(input.as_ptr(), output.as_mut_ptr().cast(), input.len())
+        };
+        input.len()
+    } else {
+        let mut at = 0;
+        for &byte in input {
+            if unreserved(byte) {
+                output[at].write(byte);
+                at += 1;
+            } else {
+                output[at].write(b'%');
+                output[at + 1].write(b"0123456789ABCDEF"[usize::from(byte >> 4)]);
+                output[at + 2].write(b"0123456789ABCDEF"[usize::from(byte & 15)]);
+                at += 3;
+            }
+        }
+        at
+    };
+    output[at].write(0);
+    unsafe {
+        written.write(at);
+    }
+    0
+}
+fn hex(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+/// Decode in place, preserving malformed escapes and decoding '+' as space.
+/// # Safety
+/// Data is writable for length+1 initialized input bytes; written is disjoint.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_http_url_decode(
+    data: *mut u8,
+    length: usize,
+    written: *mut usize,
+) -> i32 {
+    if written.is_null() {
+        return INVALID;
+    }
+    unsafe {
+        written.write(0);
+    }
+    let Some(_capacity) = length.checked_add(1).filter(|&n| n <= isize::MAX as usize) else {
+        return OVERFLOW;
+    };
+    if data.is_null() {
+        return INVALID;
+    }
+    let input = unsafe { slice::from_raw_parts_mut(data, length) };
+    let (mut read, mut write) = (0, 0);
+    while read < length {
+        let byte = input[read];
+        let pair = if byte == b'%' && length - read >= 3 {
+            hex(input[read + 1]).zip(hex(input[read + 2]))
+        } else {
+            None
+        };
+        input[write] = if let Some((high, low)) = pair {
+            read += 2;
+            (high << 4) | low
+        } else if byte == b'+' {
+            b' '
+        } else {
+            byte
+        };
+        read += 1;
+        write += 1;
+    }
+    unsafe {
+        data.add(write).write(0);
+    }
+    unsafe {
+        written.write(write);
+    }
+    0
+}
+#[repr(C)]
+#[derive(Default)]
+pub struct HttpSpan {
+    pub offset: usize,
+    pub length: usize,
+}
+/// Find legacy multipart boundary without allocating or retaining input.
+/// # Safety
+/// Input is readable; output is valid/aligned/disjoint. Status 1=found, 0=absent.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_http_boundary(
+    data: *const u8,
+    length: usize,
+    mut offset: usize,
+    output: *mut HttpSpan,
+) -> i32 {
+    if output.is_null() {
+        return INVALID;
+    }
+    unsafe {
+        output.write(HttpSpan::default());
+    }
+    let input = match unsafe { bytes(data, length) } {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    while offset < length {
+        if matches!(input[offset], b' ' | b';') {
+            offset += 1;
+            continue;
+        }
+        if case_prefix(&input[offset..], b"boundary=") {
+            offset += 9;
+            break;
+        }
+        let Some(next) = input[offset..].iter().position(|&b| b == b';') else {
+            return 0;
+        };
+        offset += next;
+    }
+    if offset >= length {
+        return 0;
+    }
+    let mut count = input[offset..]
+        .iter()
+        .position(|&b| b == b';')
+        .unwrap_or(length - offset);
+    if count >= 2 && input[offset] == b'"' && input[offset + count - 1] == b'"' {
+        offset += 1;
+        count -= 2;
+    }
+    if count == 0 {
+        return 0;
+    }
+    if count > i32::MAX as usize {
+        return OVERFLOW;
+    }
+    unsafe {
+        output.write(HttpSpan {
+            offset,
+            length: count,
+        });
+    }
+    1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn positive_url_encoding_capacity_and_bytes_cover_loop_boundaries() {
+        for length in [0, 1, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 1024] {
+            for escaped in [false, true] {
+                let mut input = b"Az09-._~".repeat(length);
+                if escaped {
+                    input.extend_from_slice(b"/+%\0\xff");
+                }
+                let mut expected = b"Az09-._~".repeat(length);
+                if escaped {
+                    expected.extend_from_slice(b"%2F%2B%25%00%FF");
+                }
+                expected.push(0);
+                let mut capacity = 0;
+                assert_eq!(
+                    unsafe { swr_v1_http_url_capacity(input.as_ptr(), input.len(), &mut capacity) },
+                    0
+                );
+                assert_eq!(capacity, expected.len());
+                let mut output = vec![0xa5; capacity + 3];
+                let mut written = 999;
+                assert_eq!(
+                    unsafe {
+                        swr_v1_http_url_encode(
+                            input.as_ptr(),
+                            input.len(),
+                            output.as_mut_ptr(),
+                            capacity,
+                            &mut written,
+                        )
+                    },
+                    0
+                );
+                assert_eq!(written + 1, capacity);
+                assert_eq!(&output[..capacity], expected);
+                assert_eq!(&output[capacity..], &[0xa5; 3]);
+            }
+        }
+    }
+    #[test]
+    fn url_roundtrips_all_bytes_and_handles_malformed_escapes() {
+        let input: Vec<u8> = (0..=255).collect();
+        let mut encoded = vec![0; encoded_length(&input).unwrap()];
+        let mut length = 0;
+        unsafe {
+            assert_eq!(
+                swr_v1_http_url_encode(
+                    input.as_ptr(),
+                    input.len(),
+                    encoded.as_mut_ptr(),
+                    encoded.len(),
+                    &mut length
+                ),
+                0
+            );
+            assert_eq!(
+                swr_v1_http_url_decode(encoded.as_mut_ptr(), length, &mut length),
+                0
+            );
+        }
+        assert_eq!(&encoded[..length], input);
+        assert_eq!(encoded[length], 0);
+        let mut malformed = b"%+%0%GG%a0+%00!\0".to_vec();
+        unsafe {
+            assert_eq!(
+                swr_v1_http_url_decode(malformed.as_mut_ptr(), malformed.len() - 1, &mut length),
+                0
+            );
+        }
+        assert_eq!(&malformed[..length], b"% %0%GG\xa0 \0!");
+    }
+    #[test]
+    fn errors_are_atomic_and_empty_encoding_has_terminator_storage() {
+        let mut output = [99; 4];
+        let mut length = 7;
+        unsafe {
+            assert_eq!(
+                swr_v1_http_url_encode(b"!!".as_ptr(), 2, output.as_mut_ptr(), 4, &mut length),
+                INVALID
+            );
+            assert_eq!(output, [99; 4]);
+            assert_eq!(length, 0);
+            assert_eq!(
+                swr_v1_http_url_capacity(std::ptr::null(), 0, &mut length),
+                0
+            );
+            assert_eq!(length, 1);
+            assert_eq!(
+                swr_v1_http_url_encode(std::ptr::null(), 0, output.as_mut_ptr(), 1, &mut length),
+                0
+            );
+            assert_eq!(output[0], 0);
+        }
+    }
+    #[test]
+    fn ffi_rejects_overflow_before_access_and_extreme_method_ids_do_not_panic() {
+        let mut written = 9;
+        unsafe {
+            assert_eq!(
+                swr_v1_http_url_capacity(std::ptr::null(), usize::MAX, &mut written),
+                OVERFLOW
+            );
+            assert_eq!(written, 0);
+            assert_eq!(
+                swr_v1_http_url_decode(std::ptr::null_mut(), usize::MAX, &mut written),
+                OVERFLOW
+            );
+            assert_eq!(written, 0);
+            assert_eq!(
+                swr_v1_http_url_capacity(std::ptr::null(), 0, std::ptr::null_mut()),
+                INVALID
+            );
+        }
+        assert!(swr_v1_http_method_string(i32::MIN).is_null());
+        assert!(swr_v1_http_method_string(i32::MAX).is_null());
+    }
+    #[test]
+    fn boundary_preserves_quotes_spaces_and_parameter_rules() {
+        for (input, offset, expected) in [
+            (&b"x; boundary=\"abc\"; foo=x"[..], 0, Some(&b"abc"[..])),
+            (&b"BounDary=a "[..], 0, Some(&b"a "[..])),
+            (&b"boundary=\"\""[..], 0, None),
+            (&b"x=a"[..], 0, None),
+            (&b"boundary=x"[..], 99, None),
+        ] {
+            let mut result = HttpSpan::default();
+            let status =
+                unsafe { swr_v1_http_boundary(input.as_ptr(), input.len(), offset, &mut result) };
+            assert_eq!(status, i32::from(expected.is_some()));
+            if let Some(expected) = expected {
+                assert_eq!(
+                    &input[result.offset..result.offset + result.length],
+                    expected
+                );
+            }
+        }
+    }
+}
+
+mod rewrite_store;
+pub use rewrite_store::*;

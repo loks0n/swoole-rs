@@ -1,0 +1,74 @@
+diff --git a/src/server/reactor_thread.cc b/src/server/reactor_thread.cc
+--- a/src/server/reactor_thread.cc
++++ b/src/server/reactor_thread.cc
+@@ -177,6 +177,22 @@
+         conn->timer = nullptr;
+     }
+ 
++    if (socket->ssl && socket->ssl_state == SW_SSL_STATE_READY && socket->is_stream() &&
++        !(conn->peer_closed || conn->close_force || conn->close_reset) && !socket->ssl_closed_ &&
++        !socket->ssl_shutdown() && (socket->ssl_want_read || socket->ssl_want_write)) {
++        if (!conn->close_queued) {
++            if (!socket->out_buffer) {
++                socket->out_buffer = new Buffer(SW_SEND_BUFFER_SIZE);
++            }
++            socket->out_buffer->alloc(BufferChunk::TYPE_CLOSE, 0);
++            conn->close_queued = 1;
++        }
++        int events = socket->what_event_want(SW_EVENT_WRITE);
++        if ((socket->removed ? reactor->add(socket, events) : reactor->set(socket, events)) == SW_OK) {
++            return SW_OK;
++        }
++    }
++
+     if (conn->websocket_buffer) {
+     	delete conn->websocket_buffer;
+     	conn->websocket_buffer = nullptr;
+@@ -291,11 +307,11 @@
+         if (conn->close_queued) {
+             return Server::close_connection(reactor, socket);
+         } else if (socket->close_notified == 0) {
+-            /**
+-             * peer_closed indicates that the client has closed the connection
+-             * and the connection is no longer available.
+-             */
+-            conn->peer_closed = 1;
++            // A synchronous process worker still owes its ordered response after a clean FIN.
++            // Other execution modes, TLS and fatal closes retain their terminal behavior.
++            conn->peer_closed = !serv->is_process_mode() || !serv->is_hash_dispatch_mode() ||
++                                serv->dispatch_func || serv->enable_coroutine || conn->ssl ||
++                                conn->close_errno || conn->close_force || conn->close_reset;
+             socket->close_notified = 1;
+             return serv->factory_->notify(&notify_ev);
+         }
+@@ -539,8 +555,11 @@
+      * invalid event
+      * The server has been actively closed the connection, the client also initiated off, fd has been reused.
+      */
+-    if (!conn || conn->server_fd == 0) {
++    if (!conn || conn->server_fd == 0 || event->socket->close_notified) {
+         return SW_OK;
++    }
++    if (conn->close_queued) {
++        return event->socket->ssl && event->socket->ssl_want_read ? ReactorThread_onWrite(reactor, event) : SW_OK;
+     }
+     ListenPort *port = serv->get_port_by_fd(event->fd);
+ #ifdef SW_SUPPORT_DTLS
+@@ -585,7 +604,7 @@
+         sw_atomic_fetch_add(&port->gs->total_recv_bytes, socket_recv_bytes);
+         sw_atomic_fetch_add(&serv->gs->total_recv_bytes, socket_recv_bytes);
+     }
+-    if (!conn->active) {
++    if (!conn->active || event->socket->close_notified) {
+         return retval;
+     }
+     if (serv->is_process_mode() && serv->max_queued_bytes && conn->recv_queued_bytes > serv->max_queued_bytes) {
+@@ -679,7 +698,7 @@
+ 
+     // remove EPOLLOUT event
+     if (!conn->peer_closed && !socket->removed && Buffer::empty(socket->out_buffer)) {
+-        reactor->set(socket, SW_EVENT_READ);
++        reactor->remove_write_event(socket);
+     }
+     return SW_OK;
+ }

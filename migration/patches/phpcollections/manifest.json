@@ -1,0 +1,19 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-swoole_table.patch",
+      "sha256": "82d8112dc38ea750ac26d84e6f0d66e73752b87ae5323a6f7aefdbb7293e35f2",
+      "upstream_paths": [
+        "ext-src/swoole_table.cc"
+      ]
+    },
+    {
+      "path": "0002-swoole_channel_coro.patch",
+      "sha256": "c010de51bddb33248f52ce204ab958678e9bf005cb1e07abef876be9fe3bdaf1",
+      "upstream_paths": [
+        "ext-src/swoole_channel_coro.cc"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,170 @@
+diff --git a/src/coroutine/context.cc b/src/coroutine/context.cc
+--- a/src/coroutine/context.cc
++++ b/src/coroutine/context.cc
+@@ -15,6 +15,9 @@
+ */
+
+ #include "swoole_coroutine_context.h"
++#ifdef SWOOLE_RS_COROUTINE
++#include "swoole_rs_coroutine.h"
++#endif
+
+ #ifdef SW_CONTEXT_PROTECT_STACK_PAGE
+ #include <sys/mman.h>
+@@ -31,10 +34,10 @@
+ namespace swoole {
+ namespace coroutine {
+
++#ifdef SWOOLE_RS_COROUTINE
+ Context::Context(size_t stack_size, CoroutineFunc fn, void *private_data)
+-    : fn_(std::move(fn)), stack_size_(stack_size), private_data_(private_data) {
+-    end_ = false;
+-
++    : fn_(std::move(fn)), stack_size_(swr_v1_context_extent_new(stack_size)), private_data_(private_data) {
++    const size_t allocation_size = swr_v1_context_prepare(&end_, &stack_size_);
+ #ifdef SW_CONTEXT_PROTECT_STACK_PAGE
+     int mapflags = MAP_PRIVATE | MAP_ANONYMOUS;
+ #ifdef __OpenBSD__
+@@ -42,6 +45,57 @@
+     // However, necessary on OpenBSD.
+     mapflags |= MAP_STACK;
+ #endif
++    void *allocation = ::mmap(0, allocation_size, PROT_READ | PROT_WRITE, mapflags, -1, 0);
++#else
++    void *allocation = sw_malloc(allocation_size);
++#endif
++    const auto admitted = swr_v1_context_stack_step(&stack_, &stack_size_, SWR_CTX_STACK_ADMIT, allocation, 0);
++    if (!admitted.present) {
++        swoole_fatal_error(SW_ERROR_MALLOC_FAIL, "failed to malloc stack memory.");
++        exit(254);
++    }
++    swoole_trace_log(SW_TRACE_COROUTINE, "alloc stack: size=%u, ptr=%p", static_cast<uint32_t>(admitted.size), admitted.pointer);
++    const auto top = swr_v1_context_stack_step(&stack_, &stack_size_, SWR_CTX_STACK_TOP, nullptr, 0);
++    void *sp = top.top;
++#ifdef USE_VALGRIND
++    valgrind_stack_id = VALGRIND_STACK_REGISTER(sp, top.pointer);
++#endif
++#ifdef USE_UCONTEXT
++    if (-1 == getcontext(&ctx_)) {
++        swoole_throw_error(SW_ERROR_CO_GETCONTEXT_FAILED);
++        const auto failed = swr_v1_context_stack_read(&stack_, &stack_size_);
++        sw_free(failed.pointer);
++        return;
++    }
++    ctx_.uc_stack.ss_sp = swr_v1_context_stack_read(&stack_, &stack_size_).pointer;
++    ctx_.uc_stack.ss_size = stack_size;
++    ctx_.uc_link = nullptr;
++    makecontext(&ctx_, (void (*)(void)) & context_func, 1, this);
++#else
++    const auto setup = swr_v1_context_stack_read(&stack_, &stack_size_);
++    ctx_ = swoole_make_fcontext(sp, setup.size, (void (*)(transfer_t)) & context_func);
++    swap_ctx_ = nullptr;
++#endif
++#ifdef SW_CONTEXT_DETECT_STACK_USAGE
++    swr_v1_context_stack_step(&stack_, &stack_size_, SWR_CTX_STACK_MARK, nullptr, stack_size);
++#endif
++#ifdef SW_CONTEXT_PROTECT_STACK_PAGE
++    const auto protection = swr_v1_context_stack_read(&stack_, &stack_size_);
++    mprotect(protection.pointer, SwooleG.pagesize, PROT_NONE);
++#endif
++}
++#else
++Context::Context(size_t stack_size, CoroutineFunc fn, void *private_data)
++    : fn_(std::move(fn)), stack_size_(stack_size), private_data_(private_data) {
++    end_ = false;
++
++#ifdef SW_CONTEXT_PROTECT_STACK_PAGE
++    int mapflags = MAP_PRIVATE | MAP_ANONYMOUS;
++#ifdef __OpenBSD__
++    // no-op for Linux and NetBSD, not to enable on FreeBSD as the semantic differs.
++    // However, necessary on OpenBSD.
++    mapflags |= MAP_STACK;
++#endif
+     stack_ = (char *) ::mmap(0, stack_size_, PROT_READ | PROT_WRITE, mapflags, -1, 0);
+ #else
+     stack_ = (char *) sw_malloc(stack_size_);
+@@ -73,18 +127,41 @@
+ #endif
+
+ #ifdef SW_CONTEXT_DETECT_STACK_USAGE
++#ifdef SWOOLE_RS_COROUTINE
++    swr_v1_context_stack_mark(reinterpret_cast<uint8_t *>(stack_), stack_size);
++#else
+     size_t offset = START_OFFSET;
+     while (offset <= stack_size) {
+         memcpy((char *) sp - offset + (sizeof(MAGIC_STRING) - 1), SW_STRL(MAGIC_STRING));
+         offset *= 2;
+     }
+ #endif
++#endif
+
+ #ifdef SW_CONTEXT_PROTECT_STACK_PAGE
+     mprotect(stack_, SwooleG.pagesize, PROT_NONE);
+ #endif
+ }
+-
++#endif
++
++#ifdef SWOOLE_RS_COROUTINE
++Context::~Context() {
++    const auto observed = swr_v1_context_stack_read(&stack_, &stack_size_);
++    if (observed.present) {
++        swoole_trace_log(SW_TRACE_COROUTINE, "free stack: ptr=%p", observed.pointer);
++#ifdef USE_VALGRIND
++        VALGRIND_STACK_DEREGISTER(valgrind_stack_id);
++#endif
++        const auto releasing = swr_v1_context_stack_read(&stack_, &stack_size_);
++#ifdef SW_CONTEXT_PROTECT_STACK_PAGE
++        ::munmap(releasing.pointer, releasing.size);
++#else
++        sw_free(releasing.pointer);
++#endif
++        swr_v1_context_stack_step(&stack_, &stack_size_, SWR_CTX_STACK_CLEAR, nullptr, 0);
++    }
++}
++#else
+ Context::~Context() {
+     if (stack_) {
+         swoole_trace_log(SW_TRACE_COROUTINE, "free stack: ptr=%p", stack_);
+@@ -100,9 +177,18 @@
+         stack_ = nullptr;
+     }
+ }
++#endif
+
+ #ifdef SW_CONTEXT_DETECT_STACK_USAGE
++#ifdef SWOOLE_RS_COROUTINE
+ ssize_t Context::get_stack_usage() {
++    return swr_v1_context_stack_step(&stack_, &stack_size_, SWR_CTX_STACK_USAGE, nullptr, 0).size;
++}
++#else
++ssize_t Context::get_stack_usage() {
++#ifdef SWOOLE_RS_COROUTINE
++    return swr_v1_context_stack_usage(reinterpret_cast<const uint8_t *>(stack_), stack_size_);
++#else
+     size_t offset = START_OFFSET;
+     size_t retval = START_OFFSET;
+
+@@ -116,7 +202,9 @@
+     }
+
+     return retval;
+-}
++#endif
++}
++#endif
+ #endif
+
+ bool Context::swap_in() {
+@@ -147,7 +235,11 @@
+     _this->swap_ctx_ = arg.fctx;
+ #endif
+     _this->fn_(_this->private_data_);
++#ifdef SWOOLE_RS_COROUTINE
++    swr_v1_context_finish(&_this->end_);
++#else
+     _this->end_ = true;
++#endif
+     _this->swap_out();
+ }
+ }  // namespace coroutine

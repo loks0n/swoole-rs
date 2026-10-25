@@ -1,0 +1,90 @@
+# Compatibility corpus
+
+Small, unchanged PHP projects progress from a single callback to application
+state, persistence, coroutine coordination, WebSocket lifecycles, framed TCP, timers, shared memory, and task workers. Projects 1–11 are locally authored fixtures. Project 12 is an unchanged pinned
+Hyperf skeleton with external HTTP and container probes; its exact scope is
+documented in thirdparty/README.md.
+No application branches on the extension under test. Python's standard library
+runs external clients against real PHP processes.
+
+| Level | Project | E2E assertions |
+| --- | --- | --- |
+| 1 | Hello | Status, content type, body, reuse of the same keep-alive socket |
+| 2 | Router | Routing, 404, nested query arrays, headers, 64 KiB binary echo, concurrent clients |
+| 3 | Notes API | Authentication, validation, create/list/read/delete, 405/404, state between requests |
+| 4 | Job service | Multi-file app, SQLite, authentication, state transitions, metrics, persistence across full process restart |
+| 5 | Coroutines | Four producers, channel capacity two, fan-in, sleep, pop timeout |
+| 6 | WebSocket room | Verified upgrade, masked client frames, two-client broadcast, closing handshake, surviving client |
+| 7 | Framed TCP | Binary length-prefixed messages, split writes, coalesced frames and concurrent clients |
+| 8 | Timers | Repetition, cancellation, existence checks and nested one-shot |
+| 9 | Shared Table | Typed rows, forked child updates, atomic increment, deletion and process completion |
+| 10 | Task workers | HTTP validation and computation in a separate task worker |
+| 11 | Buffer lifecycle | Slow reads, stream/sendfile cancellation, half-close, churn, pending-write shutdown |
+| 12 | Pinned Hyperf skeleton | Unchanged app startup/routing/parsing/shutdown; external coroutine I/O and persistence probes |
+
+```sh
+# Build the pinned upstream reference without installing it globally:
+python3 tools/build_upstream.py
+python3 tools/build_hybrid.py --module buffer --module websocket
+python3 corpus/run.py \
+  --engine hybrid=target/hybrid/rust-buffer-websocket/modules/swoole.so \
+  --engine upstream=target/upstream/src/modules/swoole.so
+```
+
+The upstream build needs Git, a C/C++ compiler, make, autoconf, phpize, php-config,
+pkg-config, PCRE2 and OpenSSL development files. On Ubuntu:
+`sudo apt-get install php-dev php-sqlite3 libclang-dev libpcre2-dev libssl-dev pkg-config`.
+On macOS the script discovers Homebrew OpenSSL and PCRE2 headers. Override
+`--phpize`, `--php-config`, and `--openssl-dir` for another toolchain. The runner's
+`--php` must match the PHP version used to compile both extensions.
+
+The runner uses `php -n` to avoid accidentally loading another Swoole extension.
+On Linux distributions with dynamic PDO modules, add
+`--php-extension pdo --php-extension pdo_sqlite --php-extension curl
+--php-extension sockets --php-extension tokenizer` to corpus, PHPT and benchmark commands. Install the
+matching PHP curl and sockets packages first where separate. These explicit modules are loaded identically for every engine and
+recorded in report metadata. Homebrew PHP builds them in and needs no extra flags; do not add dynamic
+module flags for those built-in modules.
+
+The reference is **v6.2.2**, commit
+`8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e`. Version 6.2.3 failed to compile on this
+Mac because `src/core/misc.cc` references undefined `sw_usleep` in its non-Linux
+fallback. We selected the previous release rather than patching the baseline.
+`tools/build_upstream.py` verifies the checkout's commit and writes
+`target/upstream/build.log`; it never runs `make install` or changes php.ini.
+
+`manifest.json` names each project's entry point, required capabilities, and E2E
+test. Capabilities are probed through PHP's actual classes/functions/extensions.
+An absent API is `unsupported`; once its symbols exist, its behavioral test runs
+and any regression is `failed`. Presence is not evidence of compatibility.
+
+- Default mode fails on behavioral failures and prints unsupported cases explicitly.
+- `--require-all` also fails on unsupported projects. CI uses this for upstream.
+- `--project 04-job-service` selects a project; repeat to select several.
+- `--output PATH` selects the JSON report, default `target/reports/corpus.json`.
+
+The report includes extension checksums, PHP/Swoole versions, capabilities,
+per-project outcomes, reasons, and durations. Each server runs in its own process
+group, data directory, and port. Cleanup terminates the full group, including
+upstream workers. The restart test explicitly reuses only its database directory.
+
+Add real third-party
+applications later with pinned dependencies, license/provenance, deterministic
+external services, and a complete user flow. The synthetic fixtures alone are not
+a release gate for replacing production Swoole.
+
+## Original Swoole PHPT tests
+
+A separate [upstream selection](upstream/README.md) runs 69 original tests through
+PHP's official PHPT runner, with source checksums and unchanged assertions.
+Use `python3 corpus/upstream/run.py --engine upstream=target/upstream/src/modules/swoole.so --require-all`.
+This complements the twelve external application e2e projects for 81 total cases; unsupported APIs and
+upstream skips remain visible. See [migration modules](../docs/migration-modules.md)
+for ownership and test gates.
+
+Prepare the independent application before running project 12:
+`python3 corpus/thirdparty/hyperf.py --prepare`. Source and Composer dependency
+identities are pinned; runtime tests do not resolve dependencies. Application
+projects count once each in the overall denominator, including project 11's
+strict half-close failure. Native model tests, timer specifications and Autobahn
+RFC results remain separately reported, rather than inflating application passes.

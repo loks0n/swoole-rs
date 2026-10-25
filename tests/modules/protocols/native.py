@@ -1,0 +1,156 @@
+#!/usr/bin/env python3
+"""Real Rust C ABI + native facades versus unchanged pinned protocol bodies."""
+import argparse
+from datetime import datetime, timezone
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from tools.harness import ROOT, run_isolated, write_report
+from tools.dev_cache import compile_cached
+
+PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+TARGETS = ['src/protocol/mqtt.cc', 'src/protocol/redis.cc', 'src/protocol/socks5.cc', 'src/protocol/message_bus.cc', 'include/swoole_message_bus.h', 'ext-src/swoole_redis_server.cc']
+
+
+def function(source, signature):
+    start = source.index(signature)
+    begin = source.index('{', start)
+    depth = 1
+    end = begin + 1
+    while depth:
+        depth += (source[end] == '{') - (source[end] == '}')
+        end += 1
+    return source[start:end]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--source', type=Path, required=True)
+    parser.add_argument('--candidate', type=Path, help='External patched checkout; default stages the checked module overlay')
+    parser.add_argument('--archive', type=Path, default=ROOT / 'target/protocols/release/libswoole_rs_protocols.a')
+    parser.add_argument('--output', default=str(ROOT / 'target/reports/protocols-native.json'))
+    parser.add_argument('--sanitize', action='store_true')
+    parser.add_argument('--allocation-failures', action='store_true', help='Separate native owner-allocation failure driver; no injection in benchmarks')
+    parser.add_argument('--prepare-benchmark', type=Path, help='Compile optimized paired benchmark and verify only; timing requires a separate exclusive lease')
+    args = parser.parse_args()
+    sources = {p: subprocess.check_output(['git', '-C', str(args.source), 'show', f'{PIN}:{p}'], text=True) for p in TARGETS}
+    headers = {p: subprocess.check_output(['git', '-C', str(args.source), 'show', f'{PIN}:{p}'], text=True) for p in ['include/swoole_proxy.h', 'include/swoole_redis.h']}
+    if args.candidate:
+        candidates = {p: (args.candidate / p).read_text() for p in TARGETS}
+    else:
+        manifest = json.loads((ROOT / 'migration/patches/protocols/manifest.json').read_text())
+        if manifest['upstream_commit'] != PIN:
+            parser.error('Overlay pin differs')
+        with tempfile.TemporaryDirectory(prefix='swr-protocols-overlay-') as directory:
+            staged = Path(directory)
+            subprocess.run(['git', 'init', '-q', directory], check=True)
+            for name, text in sources.items():
+                destination = staged / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(text)
+            for patch in manifest['patches']:
+                path = ROOT / 'migration/patches/protocols' / patch['path']
+                if hashlib.sha256(path.read_bytes()).hexdigest() != patch['sha256']:
+                    parser.error('Overlay checksum differs')
+                subprocess.run(['git', '-C', directory, 'apply', '--check', str(path)], check=True)
+                subprocess.run(['git', '-C', directory, 'apply', str(path)], check=True)
+            candidates = {p: (staged / p).read_text() for p in TARGETS}
+    archive = args.archive.resolve(strict=True)
+    local = Path(__file__).resolve().parent
+    report = {'created_utc': datetime.now(timezone.utc).isoformat(), 'upstream_pin': PIN,
+              'scope': 'Actual pinned and selected protocol facade bodies. Native String/allocation/socket IO are modeled, protocol bodies unchanged. The exact original PHP request parser loop runs with modeled Zend parameters on 10000 seeded defined wires versus Rust typed events. Full Zend request/reply callers are staged, not executed here; run request.py/reply.py against actual PHP. No live network in this gate.',
+              'sanitizer_scope': 'C++ ASan/UBSan; Rust not instrumented' if args.sanitize else 'none'}
+    def bodies(selected):
+        mqtt, redis, socks, bus = (selected[p] for p in TARGETS[:4])
+        socks_header = headers['include/swoole_proxy.h']
+        constants = '\n'.join(line for line in socks_header.splitlines() if line.startswith('#define SW_SOCKS5'))
+        socks_types = socks_header[socks_header.index('enum swSocks5State'):socks_header.index('namespace swoole {')]
+        socks_types += socks_header[socks_header.index('struct Socks5Proxy {'):socks_header.index('}  // namespace swoole')]
+        redis_header = headers['include/swoole_redis.h']
+        redis_types = redis_header[redis_header.index('enum State {'):redis_header.index('const char *get_number')]
+        redis_constants = '#define SW_REDIS_RETURN_NIL "$-1\\r\\n"\n'
+        socks_body = socks[socks.index('const char *Socks5Proxy::strerror'):socks.index('}  // namespace swoole')]
+        redis_body = redis[redis.index('namespace redis {') + len('namespace redis {'):redis.index('}  // namespace redis')]
+        return (constants + '\n' + socks_types + socks_body + '\nnamespace mqtt {\n' +
+                function(mqtt, 'ssize_t get_package_length(') + '\n}\nnamespace redis {\n' +
+                redis_constants + redis_types + redis_body + '\n}\n' +
+                ('' if 'using PacketHolder' not in bus else bus[bus.index('using PacketHolder'):bus.index('char *MessageBus::move_packet()')]) +
+                function(bus, 'char *MessageBus::move_packet(') + '\n' +
+                function(bus, 'String *MessageBus::get_packet_buffer(') + '\n' +
+                function(bus, 'size_t MessageBus::get_memory_size(') + '\n' +
+                function(bus, 'bool MessageBus::write(') + '\n' + function(bus, 'ReturnCode MessageBus::prepare_packet('))
+    with tempfile.TemporaryDirectory(prefix='swr-protocols-native-') as directory:
+        tree = Path(directory)
+        for name, selected in [('reference', sources), ('candidate', candidates)]:
+            value = bodies(selected)
+            (tree / f'{name}.inc').write_text(value)
+        php = sources['ext-src/swoole_redis_server.cc']
+        php_loop = php[php.index('    const char *p = Z_STRVAL(zdata);'):php.index('\n    if (command_len >=')]
+        (tree / 'php-request-original.inc').write_text(php_loop)
+        header = candidates['include/swoole_message_bus.h']
+        (tree / 'pool-class.inc').write_text(header[header.index('    class PacketPool {'):header.index('    std::vector<network::Socket *>')])
+        binary = tree / 'native'
+        command = ['c++', '-std=c++17', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-Wno-unused-function',
+                   '-I' + str(tree), '-I' + str(local), '-I' + str(ROOT / 'native/protocols'),
+                   str(local / 'native.cc'), str(archive), '-lc', '-lm']
+        if sys.platform.startswith('linux'):
+            command += ['-ldl', '-lpthread', '-lrt', '-lutil']
+        if args.sanitize:
+            command += ['-fsanitize=address,undefined', '-fno-sanitize-recover=all']
+        report['compile'] = compile_cached(command + ['-o', str(binary)], output=binary, scratch=tree)
+        if report['compile']['returncode']:
+            write_report(args.output, report)
+            print(report['compile']['stderr'], file=sys.stderr)
+            return 1
+        result = run_isolated([str(binary)], timeout=60)
+        report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
+        if result.returncode == 0 and args.allocation_failures:
+            failure_source = local / 'pool_failure.cc'
+            failure_binary = tree / 'pool-failure'
+            failure_command = [str(failure_source) if item == str(local / 'native.cc') else item for item in command]
+            report['allocation_compile'] = compile_cached(failure_command + ['-o', str(failure_binary)], output=failure_binary, scratch=tree)
+            if report['allocation_compile']['returncode']:
+                report['passed'] = False
+                write_report(args.output, report)
+                print(report['allocation_compile']['stderr'], file=sys.stderr)
+                return 1
+            failed = run_isolated([str(failure_binary)], timeout=60)
+            report['allocation_failures'] = {'returncode': failed.returncode, 'stdout': failed.stdout, 'stderr': failed.stderr,
+                'scope': 'C++ owner allocation only; original/source lifetime, copy rollback and assignment validity. Rust allocator faults and exact stdcontainer failure-position/target-content parity not claimed. Separate TU never participates in benchmarks.'}
+            if failed.returncode:
+                report['passed'] = False
+                write_report(args.output, report)
+                print(failed.stderr, file=sys.stderr)
+                return 1
+            report['allocation_failures']['outcome'] = json.loads(failed.stdout)
+        if result.returncode == 0 and args.prepare_benchmark:
+            binary = args.prepare_benchmark.resolve()
+            binary.parent.mkdir(parents=True, exist_ok=True)
+            benchmark = [str(local / 'bench.cc') if item == str(local / 'native.cc') else item for item in command]
+            benchmark[benchmark.index('-O2')] = '-O3'
+            benchmark = [item for item in benchmark if not item.startswith('-fsanitize=') and not item.startswith('-fno-sanitize-recover=')]
+            report['benchmark_compile'] = compile_cached(benchmark + ['-o', str(binary)], output=binary, scratch=tree)
+            if report['benchmark_compile']['returncode']:
+                write_report(args.output, report)
+                return 1
+            verified = run_isolated([str(binary), '--verify'], timeout=30)
+            report['benchmark'] = {'binary': str(binary), 'verify_returncode': verified.returncode,
+                'verify_stdout': verified.stdout, 'verify_stderr': verified.stderr, 'timing_run': False}
+            if verified.returncode:
+                write_report(args.output, report)
+                return 1
+        report['passed'] = result.returncode == 0
+        if not result.returncode:
+            report['outcome'] = json.loads(result.stdout)
+        write_report(args.output, report)
+        print(result.stdout if not result.returncode else result.stderr, end='')
+        return int(result.returncode != 0)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

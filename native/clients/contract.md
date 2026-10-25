@@ -1,0 +1,69 @@
+# Clients local ABI
+
+Opt-in feature bit 1048576 (`clients`). ABI: `docs/clients-resolver-abi-v1.md`,
+`swoole_rs_clients.h`, `swoole_rs_clients_pool.h`. Converted sources require
+`SWOOLE_RS_CLIENTS`. Patched upstream files: `ext-src/swoole_client.cc`,
+`ext-src/swoole_client_async.cc`, `ext-src/swoole_client_coro.cc`,
+`ext-src/swoole_http_client_coro.cc`, `ext-src/swoole_name_resolver.cc`,
+`src/network/address.cc`, `src/network/client.cc`, `src/network/dns.cc`.
+
+35 production exports (prefix `swr_v1_clients_`). A test-only allocation-budget
+symbol is excluded from production artifacts.
+
+| Area | Exports | Rust responsibility |
+| --- | --- | --- |
+| Address | `url`, `port`, `ip`, `loopback`, `ip_text` | URL spans; port validity; numeric bytes, original loopback policy and DNS text |
+| Hosts/resolver settings | `hosts_match`, `resolv_line`, `dns_endpoint` | Borrowed line/token spans; locale/`strtol` stay native |
+| DNS codec | `domain_encode`, `domain_decode` | Bounded label encoding/decoding with native `char` signedness |
+| Raw lifecycle | `shutdown`, `close_next`, `object_next` | Shutdown, close and constructor/destructor order |
+| Raw transport | `write_next`, `read_next`, `connect_next`, `transport_next`, `datagram_send` | Proxy/TLS/connect/read/write/datagram decisions and result narrowing |
+| Persistent clients | `persistent_next`; `pool_create`, `pool_destroy`, `pool_push`, `pool_state`, `pool_take`, `pool_remove_empty` | Acquire/release decisions and private pool storage |
+| PHP resolver | `resolver_next` | Lookup/cluster retry/result/context publication order |
+| HTTP | `cookie`, `http_exec`, `http_connection_next`, `http_response_next`, `http_format` | Header spans; exec/retry/connection/response order; bounded output formatting |
+| Coroutine Client | `coro_next` | Setup, stream/datagram IO, peek, metadata and close decisions |
+| Async Client | `async_meta`, `async_event`, `async_next` | Immutable names/slots, prefix matching, freeing/connect/callback selection |
+
+## Common rules
+
+Scalar cursors hold no native address or object. Native code observes copied
+facts at the original point, calls Rust, then performs the chosen effect. No Rust
+frame or borrow spans a callback, Zend bailout, exception, IO, coroutine
+suspension or destructor. Native Client/Socket/Zend fields and route function
+slots stay authoritative; static callback metadata is not a mutable registry.
+
+Borrowed spans must be initialized readable/writable storage for their stated
+length (see each unsafe export). Returned offsets/lengths refer to that
+caller-owned storage; no span is retained. Null/oversized inputs are rejected
+defensively. Scalar/span operations allocate no Rust storage. Locale facets,
+`std::stoi`/`strtol` and their exceptions/errno, buffers, strings, zvals,
+parsers, crypto, descriptors and callbacks stay native.
+
+## Persistent pool
+
+A private native RAII facade owns one lazily created opaque Rust pool handle.
+Rust stores binary keys and FIFO queues of opaque Client tokens using a
+deterministic hasher and fallible allocation; there is no C++ map/queue. Only
+native code closes or deletes Client tokens; dropping the Rust container never
+does. On allocation failure Rust returns a status and native throws `bad_alloc`.
+Unlike the original (which leaks residual heap queues at shutdown), Rust frees
+its own buffers on destruction, so allocation topology differs.
+
+## Address and raw object
+
+- Numeric parsing stops at the first NUL of the span. Only successful 4/16-byte
+  results are written into existing `sockaddr`/`tmp_address` storage.
+- Apple accepts decimal leading zeros; Linux is strict. Dotted IPv6 tails are
+  normalized in bounded stack storage before `std::net` parsing.
+- IPv4 loopback is exactly `127.0.0.1`, not `/8`.
+- Unsupported families and Apple scoped-IPv6 interface lookup stay native,
+  including errno on successful scoped parsing.
+- `ip_text` writes into 40-byte caller-local storage and returns the length.
+  IPv6 is emitted as eight four-digit lowercase groups (as the original DNS
+  helper does, not compressed `inet_ntop` text). Native builds the
+  `std::string`; the invalid-family assertion stays native.
+- Raw construction checks static `Socket::is_stream(type)` for fd class and the
+  created `Socket::is_stream()` for dispatch. Destruction observes `async` after
+  close and buffer destruction. A null Socket keeps the early return; the
+  zero-fd assertion, function pointers and deletion stay native.
+
+Tests: `tests/modules/clients/README.md`.

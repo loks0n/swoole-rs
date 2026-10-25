@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+"""Actual misc.cc wait/wake bodies versus selected Rust facades and shared forks."""
+import argparse
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+from tools.harness import run_isolated, write_report
+from gate import PIN, asan_imports
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--source', type=Path, required=True)
+    p.add_argument('--archive', type=Path, required=True)
+    p.add_argument('--output', default=str(ROOT/'target/reports/utilities-wait.json'))
+    p.add_argument('--sanitize', action='store_true')
+    p.add_argument('--rust-asan', action='store_true')
+    args = p.parse_args()
+    if args.rust_asan and not args.sanitize:
+        p.error('--rust-asan requires --sanitize')
+    archive = args.archive.resolve(strict=True)
+    original = subprocess.check_output(['git', '-C', str(args.source), 'show', f'{PIN}:src/core/misc.cc'], text=True)
+    patch = ROOT/'migration/patches/utilities/0001-misc.patch'
+    caller = Path(__file__).with_suffix('.cc')
+    report = {'pin': PIN,
+              'scope': 'Defined LP64 original misc.cc wait/wake result, errno, word and actual process-shared wake; no performance claim. C++ sanitizer only; Rust uninstrumented.',
+              'passed': False}
+    if args.rust_asan:
+        report['rust_asan_imports'] = asan_imports(archive)
+        report['scope'] = report['scope'].replace('Rust uninstrumented.', 'Rust ASan imports verified; precompiled std/libc uninstrumented.')
+    with tempfile.TemporaryDirectory(prefix='swr-utils-wait-') as temp:
+        tree = Path(temp)
+        (tree/'src/core').mkdir(parents=True)
+        product = tree/'src/core/misc.cc'
+        product.write_text(original)
+        subprocess.run(['patch', '-p1', '-i', str(patch)], cwd=tree, check=True, capture_output=True)
+        candidate = product.read_text()
+        oracle = original[original.index('#ifdef HAVE_FUTEX'):original.index('/* {{{ DJBX33A')]
+        oracle = oracle.replace('#include <linux/futex.h>\n', '').replace('#include <sys/syscall.h>\n', '')
+        candidate = candidate[candidate.index('#ifdef HAVE_FUTEX'):candidate.index('uint64_t swoole_hash_php')]
+        for name, text in [('oracle', oracle), ('candidate', candidate)]:
+            (tree/(name+'.inc')).write_text(text)
+        binary = tree/'wait'
+        command = ['c++', '-std=c++14', '-O2', '-Wall', '-Wextra', '-Werror', '-Wno-ignored-qualifiers',
+                   '-I'+str(tree), '-I'+str(ROOT/'native/utilities'), str(caller), str(archive), '-o', str(binary)]
+        if sys.platform.startswith('linux'):
+            command += ['-ldl', '-lpthread', '-lrt', '-lutil', '-lm']
+        if args.sanitize:
+            command += ['-fsanitize=address,undefined', '-fno-sanitize-recover=all']
+        compile_result = run_isolated(command, timeout=90)
+        report.update(compile=command, compile_exit=compile_result.returncode, compile_stderr=compile_result.stderr)
+        if compile_result.returncode:
+            write_report(args.output, report)
+            print(compile_result.stderr)
+            return 1
+        result = run_isolated([str(binary)], timeout=30)
+        report.update(exit=result.returncode, stdout=result.stdout, stderr=result.stderr)
+        if result.returncode == 0:
+            report['observations'] = json.loads(result.stdout)
+            report['passed'] = True
+    write_report(args.output, report)
+    print(json.dumps(report))
+    return 0 if report['passed'] else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

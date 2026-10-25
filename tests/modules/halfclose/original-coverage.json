@@ -1,0 +1,70 @@
+{
+  "assigned_to": "@loks0n",
+  "repository": "https://github.com/swoole/swoole-src",
+  "pin": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "review": "Source-only original assertion/coverage review; every listed original compared byte-for-byte with git pin. No originals or behavior checks executed. No runtime verdicts added.",
+  "originals": [
+    {
+      "path": "tests/swoole_server/close_queued.phpt",
+      "sha256": "2ba163e52034be813d73a7d082bbcf5857c2f4f0bf2d62b0b96668d229a74feb",
+      "native_behavior": "Queued data then ordinary close",
+      "assertion_anchor": "Assert::eq(strlen($data), 2*1024*1024 +2);",
+      "limits": "Length assertion only; no payload hash, FIN, TLS or suspended response. SERVER_MODE_RANDOM is retained and does not establish both modes per execution."
+    },
+    {
+      "path": "tests/swoole_server/close_force.phpt",
+      "sha256": "78ca22398fa798a9f25477fe879d54fe2690a196bd75d0a3043381ca8d5099ab",
+      "native_behavior": "Heartbeat with ordinary queued close",
+      "assertion_anchor": "Assert::greaterThan(strlen($data), 8192);",
+      "limits": "Calls $serv->close($fd), with no force argument; not an explicit forced-close gate. Preserve the original assertion without reinterpretation."
+    },
+    {
+      "path": "tests/swoole_http_server/pipeline.phpt",
+      "sha256": "8af283f517c843ac93ceccca01f46a03206ffb6e82ba1670d3da3d18ffbbfd6d",
+      "native_behavior": "Ten HTTP responses over one BASE connection",
+      "assertion_anchor": "Assert::same(substr_count($html, \"HTTP/1.1 200 OK\"), N);",
+      "limits": "Counts response/status markers; no suspended callback dependency, FIN or exact decoded response ordering."
+    },
+    {
+      "path": "tests/swoole_http_server/response_create.phpt",
+      "sha256": "247f588738be8bdf46231d2cf3cec57741e01a3f925522dee2f5f755df85fc04",
+      "native_behavior": "Create HTTP response in PROCESS TCP Receive callback",
+      "assertion_anchor": "Assert::eq($body, 'hello world');",
+      "limits": "No detach, retained object, re-adoption, terminal cancellation or session reuse."
+    },
+    {
+      "path": "tests/swoole_http_server/chunk_with_end_data.phpt",
+      "sha256": "aee8972d255812ad06e43d162e954e88f20704c2c5b529a84989a4870dac7d69",
+      "native_behavior": "BASE chunk writes followed by end with final data",
+      "assertion_anchor": "Assert::eq(md5($data), md5_file(TEST_IMAGE));",
+      "limits": "Strong reconstructed body hash; does not assert write/end return values or early FIN."
+    },
+    {
+      "path": "tests/swoole_http_server/trailer.phpt",
+      "sha256": "25259817daa1bf890e678d76770001a664c77948bd1840077cd8ed5f161da7fa",
+      "native_behavior": "PROCESS chunk/trailer/end calls",
+      "assertion_anchor": "Assert::eq(md5('hello world'), $cli->headers['content-md5']);",
+      "limits": "write/trailer/end true and returned trailer value are checked; no retained response, FIN or complete transport EOF guarantee."
+    },
+    {
+      "path": "tests/swoole_http_server/sendfile_no_keepalive.phpt",
+      "sha256": "e165f52d946a2711e2994840187c1de47deae9361799ad1e4c92fdd843b71722",
+      "native_behavior": "PROCESS mode7 HTTP sendfile with close header",
+      "assertion_anchor": "Assert::contains($cli->getBody(), 'swoole_http_server: sendfile with dispatch_mode=7');",
+      "limits": "Concurrency/request-count macros and WebSocket server facade; substring assertion, not exact body hash. Not part of the proposed minimal cohort."
+    }
+  ],
+  "existing_M15_manifests": [
+    "tests/modules/halfclose/pause-originals.json",
+    "tests/modules/halfclose/tls-originals.json"
+  ],
+  "scope_note": "M15 manifest membership is not whole-project registration or passing evidence. HTTP module upstream.json already selects pipeline and chunk_with_end_data. Existing corebase startup reports include response_create; those reports retain their own artifact/scope qualifications.",
+  "future_minimal_normal_cohort": [
+    "tests/swoole_server/close_queued.phpt",
+    "tests/swoole_http_server/pipeline.phpt",
+    "tests/swoole_http_server/response_create.phpt",
+    "tests/swoole_http_server/chunk_with_end_data.phpt",
+    "tests/swoole_http_server/trailer.phpt"
+  ],
+  "future_status": "NOT_RUN by this review; original PHP runner/support adapter, verified real artifacts, normal capability checks, isolated process groups/private ports and required fixture preflight remain mandatory."
+}

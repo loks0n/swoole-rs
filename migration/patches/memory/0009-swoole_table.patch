@@ -1,0 +1,165 @@
+diff --git a/include/swoole_table.h b/include/swoole_table.h
+--- a/include/swoole_table.h
++++ b/include/swoole_table.h
+@@ -18,11 +18,15 @@
+
+ #include "swoole_memory.h"
+ #include "swoole_lock.h"
++#ifndef SWOOLE_RS_MEMORY
++#error "Memory overlay requires --enable-swoole-rs-memory"
++#endif
++#include "swoole_rs_memory.h"
++#include <type_traits>
+
+ #include <csignal>
+
+ #include <vector>
+-#include <unordered_map>
+
+ //#define SW_TABLE_DEBUG   0
+ #define SW_TABLE_FORCE_UNLOCK_TIME 2000  // milliseconds
+@@ -35,24 +39,7 @@
+
+ struct TableColumn;
+
+-struct TableRow {
+-    sw_atomic_t lock_;
+-    pid_t lock_pid;
+-    /**
+-     * 1:used, 0:empty
+-     */
+-    uint8_t active;
+-    uint8_t key_len;
+-    /**
+-     * next slot
+-     */
+-    TableRow *next;
+-    /**
+-     * Hash Key
+-     */
+-    char key[SW_TABLE_KEY_SIZE];
+-    char data[0];
+-
++struct TableRow : swr_v1_memory_table_row {
+     void lock();
+
+     void unlock() {
+@@ -60,14 +47,18 @@
+     }
+
+     void clear() {
+-        sw_memset_zero((char *) &lock_pid, sizeof(TableRow) - offsetof(TableRow, lock_pid));
+-    }
++        (void) swr_v1_memory_table_clear(this, 1);
++}
+
+     void set_value(const TableColumn *col, const void *value, size_t vlen);
+     void get_value(const TableColumn *col, double *dval) const;
+     void get_value(const TableColumn *col, long *lval) const;
+     void get_value(const TableColumn *col, char **strval, TableStringLength *strlen);
+ };
++
++static_assert(std::is_standard_layout<TableRow>::value, "C POD row base");
++static_assert(sizeof(TableRow) == 88 && offsetof(TableRow, data) == 88, "shared table row layout");
++static_assert(offsetof(TableRow, next) == 16 && offsetof(TableRow, key) == 24, "shared table links/key");
+
+ struct TableIterator {
+     size_t row_memory_size_;
+@@ -113,7 +104,10 @@
+ };
+
+ class Table {
+-    std::unordered_map<std::string, TableColumn *> *column_map;
++    friend class TableV2;
++    static Table *make_impl(uint32_t rows_size, float conflict, bool legacy_columns);
++    void destroy_impl(bool legacy_columns);
++    void *column_map;
+     Mutex *mutex;
+     size_t size;
+     size_t mask;
+@@ -184,7 +178,7 @@
+     }
+
+     size_t get_column_size() const {
+-        return column_map->size();
++        return swr_v1_memory_table_columns_count(column_map);
+     }
+
+     TableRow *get_by_index(uint32_t index) const {
+@@ -211,17 +205,48 @@
+     }
+
+     void clear_row(TableRow *row) const {
+-        for (auto &i : *column_list) {
+-            i->clear(row);
++        swr_v1_memory_table_clear_cursor state{};
++        state.row = row;
++        state.columns = column_list->data();
++        state.count = column_list->size();
++        state.item_size = item_size;
++        int status;
++        while ((status = swr_v1_memory_table_clear_step(&state)) == 1) {
++            // Only C++ field marshalling; Rust owns batching/order/termination.
++            for (uint32_t i = 0; i < state.take; i++) {
++                const auto *column = state.tokens[i];
++                state.batch[i] = {column->index, column->size, static_cast<uint32_t>(column->type)};
++            }
+         }
++        assert(status == 0);
++        (void) status;
+     }
+
+   private:
+-    TableRow *hash(const char *key, int keylen) const {
+-        uint64_t hashv = hash_func(key, keylen);
+-        uint64_t index = hashv & mask;
++    swr_v1_memory_table_metadata_fields metadata_fields() {
++        static_assert(sizeof(created) == 1, "native bool representation byte");
++        return {&size, &mask, &item_size, &memory_size, &conflict_proportion,
++                reinterpret_cast<uint8_t *>(&created), &rows, &pool, &iterator, &memory,
++                {&row_num, &insert_count, &delete_count, &update_count, &conflict_count, &conflict_max_level}};
++    }
++
++    TableRow *hash(const char *key, uint16_t *keylen) const {
++        swr_v1_memory_table_lookup state{};
++        state.rows = rows;
++        state.count = size;
++        state.mask = mask;
++        state.length = *keylen;
++        int status = swr_v1_memory_table_lookup_step(&state);
++        assert(status == 1);
++        *keylen = state.length;
++        state.hash = hash_func(key, state.length);
++        status = swr_v1_memory_table_lookup_step(&state);
++        uint64_t index = state.index;
+         assert(index < size);
+-        return rows[index];
++        (void) index;
++        assert(status == 0);
++        (void) status;
++        return state.row;
+     }
+
+     TableRow *alloc_row() const {
+@@ -238,21 +263,6 @@
+         unlock();
+     }
+
+-    static void check_key_length(uint16_t *keylen) {
+-        if (*keylen >= SW_TABLE_KEY_SIZE) {
+-            *keylen = SW_TABLE_KEY_SIZE - 1;
+-        }
+-    }
+-
+-    void init_row(TableRow *new_row, const char *key, int keylen) {
+-        sw_memset_zero(reinterpret_cast<char *>(new_row) + offsetof(TableRow, active),
+-                       sizeof(TableRow) - offsetof(TableRow, active));
+-        memcpy(new_row->key, key, keylen);
+-        new_row->key[keylen] = '\0';
+-        new_row->key_len = keylen;
+-        new_row->active = 1;
+-        sw_atomic_fetch_add(&(row_num), 1);
+-    }
+
+     int lock() const {
+         return mutex->lock();

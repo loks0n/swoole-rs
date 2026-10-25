@@ -1,0 +1,112 @@
+diff --git a/ext-src/swoole_channel_coro.cc b/ext-src/swoole_channel_coro.cc
+--- a/ext-src/swoole_channel_coro.cc
++++ b/ext-src/swoole_channel_coro.cc
+@@ -18,6 +18,11 @@
+  */
+ 
+ #include "php_swoole_cxx.h"
++
++#ifndef SWOOLE_RS_PHPCOLLECTIONS
++#error "PHP collections overlay requires --enable-swoole-rs-phpcollections"
++#endif
++#include "swoole_rs_phpcollections.h"
+ 
+ #include "swoole_coroutine_channel.h"
+ 
+@@ -131,9 +136,7 @@
+     Z_PARAM_LONG(capacity)
+     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
+ 
+-    if (capacity <= 0) {
+-        capacity = 1;
+-    }
++    capacity = swr_v1_phpcollections_capacity(capacity);
+ 
+     ChannelObject *chan_t = channel_coro_fetch_object(Z_OBJ_P(ZEND_THIS));
+     chan_t->chan = new Channel(capacity);
+@@ -151,18 +154,32 @@
+     Z_PARAM_DOUBLE(timeout)
+     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
+ 
+-    Z_TRY_ADDREF_P(zdata);
+-    zdata = sw_zval_dup(zdata);
+-    if (chan->push(zdata, timeout)) {
+-        zend_update_property_long(
+-            swoole_channel_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("errCode"), Channel::ERROR_OK);
+-        RETURN_TRUE;
+-    } else {
+-        zend_update_property_long(
+-            swoole_channel_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("errCode"), chan->get_error());
+-        Z_TRY_DELREF_P(zdata);
+-        efree(zdata);
+-        RETURN_FALSE;
++    uint64_t plan = swr_v1_phpcollections_channel_plan(1, 0, 0);
++    for (;;) {
++        const uint8_t action = plan & 0xff;
++        plan >>= 8;
++        switch (action) {
++        case SWR_COLLECTION_RETAIN: Z_TRY_ADDREF_P(zdata); break;
++        case SWR_COLLECTION_DUP: zdata = sw_zval_dup(zdata); break;
++        case SWR_COLLECTION_PUSH: {
++            const bool success = chan->push(zdata, timeout);
++            plan = swr_v1_phpcollections_channel_plan(1, 1, success);
++            break;
++        }
++        case SWR_COLLECTION_OK:
++            zend_update_property_long(
++                swoole_channel_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("errCode"), Channel::ERROR_OK);
++            break;
++        case SWR_COLLECTION_ERROR:
++            zend_update_property_long(
++                swoole_channel_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("errCode"), chan->get_error());
++            break;
++        case SWR_COLLECTION_TRUE: RETURN_TRUE;
++        case SWR_COLLECTION_RELEASE: Z_TRY_DELREF_P(zdata); break;
++        case SWR_COLLECTION_FREE: efree(zdata); break;
++        case SWR_COLLECTION_FALSE: RETURN_FALSE;
++        default: abort();
++        }
+     }
+ }
+ 
+@@ -175,16 +192,30 @@
+     Z_PARAM_DOUBLE(timeout)
+     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
+ 
+-    zval *zdata = (zval *) chan->pop(timeout);
+-    if (zdata) {
+-        RETVAL_ZVAL(zdata, 0, 0);
+-        efree(zdata);
+-        zend_update_property_long(
+-            swoole_channel_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("errCode"), Channel::ERROR_OK);
+-    } else {
+-        zend_update_property_long(
+-            swoole_channel_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("errCode"), chan->get_error());
+-        RETURN_FALSE;
++    zval *zdata = nullptr;
++    uint64_t plan = swr_v1_phpcollections_channel_plan(2, 0, 0);
++    for (;;) {
++        const uint8_t action = plan & 0xff;
++        plan >>= 8;
++        switch (action) {
++        case SWR_COLLECTION_POP:
++            zdata = (zval *) chan->pop(timeout);
++            plan = swr_v1_phpcollections_channel_plan(2, 1, zdata != nullptr);
++            break;
++        case SWR_COLLECTION_RESULT: RETVAL_ZVAL(zdata, 0, 0); break;
++        case SWR_COLLECTION_FREE: efree(zdata); break;
++        case SWR_COLLECTION_OK:
++            zend_update_property_long(
++                swoole_channel_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("errCode"), Channel::ERROR_OK);
++            break;
++        case SWR_COLLECTION_ERROR:
++            zend_update_property_long(
++                swoole_channel_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("errCode"), chan->get_error());
++            break;
++        case SWR_COLLECTION_FALSE: RETURN_FALSE;
++        case SWR_COLLECTION_DONE: return;
++        default: abort();
++        }
+     }
+ }
+ 

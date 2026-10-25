@@ -1,0 +1,173 @@
+//! Borrowed inline utility policy. Locale classification remains the host libc.
+mod span;
+pub use span::*;
+unsafe extern "C" {
+    fn strncmp(a: *const std::ffi::c_char, b: *const std::ffi::c_char, n: usize) -> i32;
+    fn isspace(value: std::ffi::c_int) -> std::ffi::c_int;
+    fn tolower(value: std::ffi::c_int) -> std::ffi::c_int;
+    fn strncasecmp(a: *const std::ffi::c_char, b: *const std::ffi::c_char, n: usize) -> i32;
+}
+
+/// Lowercase a native char buffer in place, retaining host libc locale semantics.
+/// # Safety
+/// Positive length requires an exclusive initialized writable range of that many
+/// bytes. Each promoted char must be a defined native tolower argument (unsigned
+/// char or EOF). Locale changes obey libc's concurrency rules. No borrow survives
+/// return; nonpositive lengths perform no access, as the original traversal.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_utils_lowercase(data: *mut u8, length: i32, signed_char: u8) {
+    if length <= 0 || data.is_null() {
+        return;
+    }
+    let data = unsafe { std::slice::from_raw_parts_mut(data, length as usize) };
+    for byte in data {
+        let value = if signed_char != 0 {
+            i32::from(*byte as i8)
+        } else {
+            i32::from(*byte)
+        };
+        *byte = unsafe { tolower(value) } as u8;
+    }
+}
+
+unsafe fn bytes<'a>(data: *const u8, length: usize) -> Option<&'a [u8]> {
+    if length == 0 {
+        Some(&[])
+    } else if data.is_null() || length > isize::MAX as usize {
+        None
+    } else {
+        Some(unsafe { std::slice::from_raw_parts(data, length) })
+    }
+}
+
+/// Return the whitespace prefix count (right=0), or trimmed suffix length (right=1).
+/// # Safety
+/// Data is readable for length bytes; null is allowed for empty input. Input bytes
+/// must have defined native isspace arguments under the selected char signedness.
+/// No pointer is retained; host locale changes must obey libc's concurrency rules.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_utils_trim(
+    data: *const u8,
+    length: usize,
+    right: u8,
+    signed_char: u8,
+) -> usize {
+    let Some(data) = (unsafe { bytes(data, length) }) else {
+        return 0;
+    };
+    let whitespace = |byte: &u8| {
+        let value = if signed_char != 0 {
+            i32::from(*byte as i8)
+        } else {
+            i32::from(*byte)
+        };
+        unsafe { isspace(value) != 0 }
+    };
+    if right != 0 {
+        data.iter()
+            .rposition(|b| !whitespace(b))
+            .map_or(0, |p| p + 1)
+    } else {
+        data.iter()
+            .position(|b| *b == 0 || !whitespace(b))
+            .unwrap_or(length)
+    }
+}
+
+/// Bounded native search: binary=0, native case-insensitive=1, reverse=2.
+/// Reverse deliberately omits position zero; case-insensitive preserves the
+/// original exact first-byte check and locale/NUL-aware strncasecmp remainder.
+/// # Safety
+/// Ranges are initialized/readable, disjoint or shared immutable. Needle is
+/// nonempty; reverse requires length>=count. Undefined original bounds return -1.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_utils_find(
+    data: *const u8,
+    length: usize,
+    needle: *const u8,
+    count: usize,
+    mode: u8,
+) -> isize {
+    if count == 0 || count > length {
+        return -1;
+    }
+    let (Some(data), Some(needle)) = (unsafe { bytes(data, length) }, unsafe {
+        bytes(needle, count)
+    }) else {
+        return -1;
+    };
+    let found = match mode {
+        0 => memchr::memmem::find(data, needle),
+        1 => memchr::memchr_iter(needle[0], &data[..length - count + 1]).find(|p| unsafe {
+            strncasecmp(data.as_ptr().add(*p).cast(), needle.as_ptr().cast(), count) == 0
+        }),
+        2 => memchr::memmem::rfind(&data[1..], needle).map(|p| p + 1),
+        _ => None,
+    };
+    found.map_or(-1, |p| p as isize)
+}
+
+/// Equality/prefix policy: C equality=0/1 (case-sensitive/libc casefold),
+/// C prefix=2/3, binary prefix=4, binary suffix=5.
+/// # Safety
+/// Only compared ranges need be initialized/readable (C modes stop at NUL).
+/// Nonempty compared inputs are nonnull; binary ranges fit isize::MAX.
+/// No pointer is retained; libc locale changes follow its native rules.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_utils_compare(
+    data: *const u8,
+    length: usize,
+    needle: *const u8,
+    count: usize,
+    mode: u8,
+) -> u8 {
+    if count > length || (mode <= 1 && count != length) || mode > 5 {
+        return 0;
+    }
+    if count == 0 {
+        return 1;
+    }
+    if data.is_null() || needle.is_null() {
+        return 0;
+    }
+    let equal = match mode {
+        0 | 2 => unsafe { strncmp(data.cast(), needle.cast(), count) == 0 },
+        1 | 3 => unsafe { strncasecmp(data.cast(), needle.cast(), count) == 0 },
+        4 | 5 => {
+            if count > isize::MAX as usize || (mode == 5 && length > isize::MAX as usize) {
+                return 0;
+            }
+            let offset = if mode == 5 { length - count } else { 0 };
+            if offset > isize::MAX as usize {
+                return 0;
+            }
+            let compared = unsafe { std::slice::from_raw_parts(data.add(offset), count) };
+            let needle = unsafe { std::slice::from_raw_parts(needle, count) };
+            compared == needle
+        }
+        _ => return 0,
+    };
+    u8::from(equal)
+}
+
+/// First separator: bytes before it or bytes after it; -1 if absent.
+/// # Safety
+/// Range is initialized/readable, null only if empty; no pointer is retained.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_utils_partition(
+    data: *const u8,
+    length: usize,
+    separator: u8,
+    before: u8,
+) -> isize {
+    let Some(data) = (unsafe { bytes(data, length) }) else {
+        return -1;
+    };
+    memchr::memchr(separator, data).map_or(-1, |offset| {
+        if before != 0 {
+            offset as isize
+        } else {
+            (length - offset - 1) as isize
+        }
+    })
+}

@@ -1,0 +1,27 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-drain-before-close.patch",
+      "sha256": "6b08d92689b599f4b57a6ff9bc1beca22cff880d51808c65b72e28ca0e072dd6",
+      "upstream_paths": [
+        "src/server/base.cc",
+        "src/server/master.cc"
+      ]
+    },
+    {
+      "path": "0002-preserve-prequeue-response.patch",
+      "sha256": "9f16ec95a2947ee3b8daf51fb15da542e7ea7fe70ec2d5378e64ab63c3a1e376",
+      "upstream_paths": [
+        "src/server/reactor_thread.cc"
+      ]
+    },
+    {
+      "path": "0003-send-tls-close-notify.patch",
+      "sha256": "9f168cde26029e14c0e94fd2542b5bce573c81435cb9b06d521d030640786bf5",
+      "upstream_paths": [
+        "src/network/socket.cc"
+      ]
+    }
+  ]
+}

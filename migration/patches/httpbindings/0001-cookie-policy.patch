@@ -1,0 +1,162 @@
+diff --git a/ext-src/swoole_http_cookie.cc b/ext-src/swoole_http_cookie.cc
+--- a/ext-src/swoole_http_cookie.cc
++++ b/ext-src/swoole_http_cookie.cc
+@@ -14,17 +14,16 @@
+   +----------------------------------------------------------------------+
+  */
+ #include "php_swoole_http_server.h"
++#ifndef SWOOLE_RS_HTTPBINDINGS
++#error "HTTP PHP binding overlay requires --enable-swoole-rs-httpbindings"
++#endif
++#include "swoole_rs_httpbindings.h"
+ 
+ BEGIN_EXTERN_C()
+ #include "stubs/php_swoole_http_cookie_arginfo.h"
+ END_EXTERN_C()
+ 
+ using HttpCookie = swoole::http::Cookie;
+-
+-#define ILLEGAL_COOKIE_CHARACTER_PRINT "\",\", \";\", \" \", \"\\t\", \"\\r\", \"\\n\", \"\\013\", or \"\\014\""
+-#define ILLEGAL_COOKIE_CHARACTER ",; \t\r\n\013\014"
+-
+-static constexpr zend_long maxValidSeconds = 253402300800;
+ 
+ zend_class_entry *swoole_http_cookie_ce;
+ static zend_object_handlers swoole_http_cookie_handlers;
+@@ -176,98 +175,47 @@
+ 
+ zend_string *HttpCookie::toString() {
+     zend_string *date = nullptr;
+-    if (name == nullptr || ZSTR_LEN(name) == 0) {
+-        php_swoole_error(E_WARNING, "The name cannot be empty");
+-        return nullptr;
+-    }
+-
+-    if (strpbrk(ZSTR_VAL(name), "=" ILLEGAL_COOKIE_CHARACTER) != nullptr) {
+-        php_swoole_error(E_WARNING, "The name cannot contain \"=\", " ILLEGAL_COOKIE_CHARACTER_PRINT);
+-        return nullptr;
+-    }
+-
+-    smart_str_append(&buffer_, name);
+-
+-    if (!value) {
+-        smart_str_appends(&buffer_, "=deleted; expires=");
+-
+-        date = php_format_date(ZEND_STRL("D, d-M-Y H:i:s T"), 1, 0);
+-        smart_str_append(&buffer_, date);
+-        smart_str_appends(&buffer_, "; Max-Age=0");
+-        zend_string_free(date);
+-    } else {
+-        if (!encode_ && strpbrk(ZSTR_VAL(value), ILLEGAL_COOKIE_CHARACTER) != nullptr) {
+-            php_swoole_error(E_WARNING, "The value cannot contain " ILLEGAL_COOKIE_CHARACTER_PRINT);
++    zend_string *encoded_value = nullptr;
++    double age = 0;
++    uint32_t phase = 0;
++    for (;;) {
++        swr_v1_httpbindings_cookie_input input{};
++        zend_string *fields[] = {name, value, path, domain, sameSite, priority};
++        for (size_t i = 0; i < 6; i++) {
++            if (fields[i]) {
++                input.fields[i] = {reinterpret_cast<const uint8_t *>(ZSTR_VAL(fields[i])), ZSTR_LEN(fields[i])};
++            }
++        }
++        input.expires = expires;
++        input.flags = (encode_ ? 1u : 0u) | (secure ? 2u : 0u) | (httpOnly ? 4u : 0u) | (partitioned ? 8u : 0u);
++        input.age = age;
++        swr_v1_httpbindings_action action{};
++        if (swr_v1_httpbindings_cookie(&input, &phase, &action) != 0) {
+             return nullptr;
+         }
+-
+-        smart_str_appendc(&buffer_, '=');
+-
+-        if (encode_) {
+-            zend_string *encoded_value = php_url_encode(ZSTR_VAL(value), ZSTR_LEN(value));
+-            smart_str_append(&buffer_, encoded_value);
+-            zend_string_free(encoded_value);
+-        } else {
+-            smart_str_append(&buffer_, value);
++        switch (action.kind) {
++        case SWR_HTTPBINDINGS_APPEND:
++            smart_str_appendl(&buffer_, reinterpret_cast<const char *>(action.text.data), action.text.length);
++            break;
++        case SWR_HTTPBINDINGS_WARN:
++            php_swoole_error(E_WARNING, "%s", reinterpret_cast<const char *>(action.text.data));
++            return nullptr;
++        case SWR_HTTPBINDINGS_ENCODE:
++            encoded_value = php_url_encode(ZSTR_VAL(value), ZSTR_LEN(value));
++            break;
++        case SWR_HTTPBINDINGS_APPEND_ENCODED: smart_str_append(&buffer_, encoded_value); break;
++        case SWR_HTTPBINDINGS_FREE_ENCODED: zend_string_free(encoded_value); break;
++        case SWR_HTTPBINDINGS_FORMAT_DATE:
++            date = php_format_date(ZEND_STRL("D, d-M-Y H:i:s T"), action.value, 0);
++            break;
++        case SWR_HTTPBINDINGS_APPEND_DATE: smart_str_append(&buffer_, date); break;
++        case SWR_HTTPBINDINGS_FREE_DATE: zend_string_free(date); break;
++        case SWR_HTTPBINDINGS_READ_AGE: age = difftime(expires, php_time()); break;
++        case SWR_HTTPBINDINGS_APPEND_AGE: smart_str_append_long(&buffer_, static_cast<zend_long>(action.value)); break;
++        case SWR_HTTPBINDINGS_DONE: return smart_str_extract(&buffer_);
++        default: return nullptr;
+         }
+-
+-        if (expires > 0) {
+-            if (expires >= maxValidSeconds) {
+-                php_swoole_error(E_WARNING, "The expires cannot have a year greater than 9999");
+-                return nullptr;
+-            }
+-            smart_str_appends(&buffer_, "; expires=");
+-            date = php_format_date(ZEND_STRL("D, d-M-Y H:i:s T"), expires, 0);
+-            smart_str_append(&buffer_, date);
+-            smart_str_appends(&buffer_, "; Max-Age=");
+-
+-            double diff = difftime(expires, php_time());
+-            smart_str_append_long(&buffer_, (zend_long) (diff >= 0 ? diff : 0));
+-            zend_string_free(date);
+-        }
+-    }
+-
+-    if (path && ZSTR_LEN(path) > 0) {
+-        if (strpbrk(ZSTR_VAL(path), ILLEGAL_COOKIE_CHARACTER) != nullptr) {
+-            php_swoole_error(E_WARNING, "The path option cannot contain " ILLEGAL_COOKIE_CHARACTER_PRINT);
+-            return nullptr;
+-        }
+-        smart_str_appends(&buffer_, "; path=");
+-        smart_str_append(&buffer_, path);
+-    }
+-
+-    if (domain && ZSTR_LEN(domain) > 0) {
+-        if (strpbrk(ZSTR_VAL(domain), ILLEGAL_COOKIE_CHARACTER) != nullptr) {
+-            php_swoole_error(E_WARNING, "The domain option cannot contain " ILLEGAL_COOKIE_CHARACTER_PRINT);
+-            return nullptr;
+-        }
+-        smart_str_appends(&buffer_, "; domain=");
+-        smart_str_append(&buffer_, domain);
+-    }
+-
+-    if (secure) {
+-        smart_str_appends(&buffer_, "; secure");
+-    }
+-
+-    if (httpOnly) {
+-        smart_str_appends(&buffer_, "; HttpOnly");
+-    }
+-
+-    if (sameSite && ZSTR_LEN(sameSite) > 0) {
+-        smart_str_appends(&buffer_, "; SameSite=");
+-        smart_str_append(&buffer_, sameSite);
+-    }
+-
+-    if (priority && ZSTR_LEN(priority) > 0) {
+-        smart_str_appends(&buffer_, "; Priority=");
+-        smart_str_append(&buffer_, priority);
+-    }
+-
+-    if (partitioned) {
+-        smart_str_appends(&buffer_, "; Partitioned");
+-    }
+-
+-    return smart_str_extract(&buffer_);
++    }
+ }
+ 
+ void HttpCookie::reset() {

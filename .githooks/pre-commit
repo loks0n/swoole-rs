@@ -1,0 +1,9 @@
+#!/bin/sh
+# Quick checks (~30s warm). Enable with: git config core.hooksPath .githooks
+set -e
+# Tests create scratch repositories; don't let them inherit this commit's git state.
+unset $(git rev-parse --local-env-vars)
+cargo fmt --all --check
+cargo clippy --locked --workspace --all-targets -q -- -D warnings
+python3 tools/check_migration.py > /dev/null
+python3 -m unittest discover -s tests/dev -q

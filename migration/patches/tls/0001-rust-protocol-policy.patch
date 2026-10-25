@@ -1,0 +1,1007 @@
+diff --git a/src/protocol/dtls.cc b/src/protocol/dtls.cc
+index 3b8b4af..345ea90 100644
+--- a/src/protocol/dtls.cc
++++ b/src/protocol/dtls.cc
+@@ -15,6 +15,10 @@
+ */
+ 
+ #include "swoole_server.h"
++#ifndef SWOOLE_RS_TLS
++#error "TLS overlay requires explicit module activation"
++#endif
++#include "swoole_rs_tls.h"
+ 
+ #ifdef SW_SUPPORT_DTLS
+ namespace swoole {
+@@ -32,89 +36,66 @@ int BIO_read(BIO *b, char *data, int len) {
+     auto *session = (Session *) BIO_get_data(b);
+     BIO_clear_retry_flags(b);
+ 
+-    if (!session->rxqueue.empty()) {
+-        Buffer *buffer = session->rxqueue.front();
+-
++    const bool empty = session->rxqueue.empty();
++    Buffer *buffer = empty ? nullptr : session->rxqueue.front();
++    if (buffer) {
+         swoole_trace("BIO_read(%d, peek=%d)=%d", len, session->peek_mode, buffer->length);
+-
+-        int n = (buffer->length <= len) ? buffer->length : len;
+-        memmove(data, buffer->data, n);
+-
+-        if (!session->peek_mode) {
++    }
++    const auto plan = swr_v1_tls_read(empty, buffer ? buffer->length : 0, len, session->peek_mode);
++    if (plan.retry) {
++        BIO_set_retry_read(b);
++    } else {
++        memmove(data, buffer->data, plan.length);
++        if (plan.consume) {
+             session->rxqueue.pop_front();
+             sw_free(buffer);
+         }
+-
+-        return n;
+-    } else {
+-        BIO_set_retry_read(b);
+-        return -1;
+     }
++    return plan.length;
+ }
+ 
+ long BIO_ctrl(BIO *b, int cmd, long lval, void *ptrval) {
+-    long retval = 0;
+     auto *session = (Session *) BIO_get_data(b);
+-
+     swoole_trace_log(SW_TRACE_SSL, "BIO_ctrl(BIO[%p], cmd[%d], lval[%ld], ptrval[%p])", b, cmd, lval, ptrval);
+-
++    uint32_t tag;
++    long observed = 0;
+     switch (cmd) {
+-    case BIO_CTRL_EOF:
+-        return session->rxqueue.empty();
+-    case BIO_CTRL_GET_CLOSE:
+-        return BIO_get_shutdown(b);
+-    case BIO_CTRL_SET_CLOSE:
+-        BIO_set_shutdown(b, (int) lval);
+-        break;
+-    case BIO_CTRL_WPENDING:
+-        return 0;
+-    case BIO_CTRL_PENDING:
+-        return (long) session->get_buffer_length();
+-
++    case BIO_CTRL_EOF: tag = 0; observed = session->rxqueue.empty(); break;
++    case BIO_CTRL_GET_CLOSE: tag = 1; observed = BIO_get_shutdown(b); break;
++    case BIO_CTRL_PENDING: tag = 2; observed = (long) session->get_buffer_length(); break;
++    case BIO_CTRL_SET_CLOSE: tag = 3; break;
+     case BIO_CTRL_FLUSH:
+     case BIO_CTRL_DGRAM_SET_CONNECTED:
+-    case BIO_CTRL_DGRAM_SET_PEER:
+-        retval = 1;
+-        break;
+-    case BIO_CTRL_DGRAM_GET_PEER:
+-        if (ptrval) {
+-            memcpy(ptrval, &session->socket->info, sizeof(session->socket->info.addr));
+-        }
+-        retval = 1;
+-        break;
++    case BIO_CTRL_DGRAM_SET_PEER: tag = 4; break;
++    case BIO_CTRL_DGRAM_GET_PEER: tag = 5; break;
+     case BIO_CTRL_DGRAM_QUERY_MTU:
+-    case BIO_CTRL_DGRAM_GET_FALLBACK_MTU:
+-        retval = 1500;
+-        break;
++    case BIO_CTRL_DGRAM_GET_FALLBACK_MTU: tag = 6; break;
+ #ifdef BIO_CTRL_DGRAM_GET_MTU_OVERHEAD
+-    case BIO_CTRL_DGRAM_GET_MTU_OVERHEAD:
+-        retval = 96;  // random guess
+-        break;
++    case BIO_CTRL_DGRAM_GET_MTU_OVERHEAD: tag = 7; break;
+ #endif
+ #ifdef BIO_CTRL_DGRAM_SET_PEEK_MODE
+-    case BIO_CTRL_DGRAM_SET_PEEK_MODE:
+-        ((Session *) BIO_get_data(b))->peek_mode = !!lval;
+-        retval = 1;
+-        break;
++    case BIO_CTRL_DGRAM_SET_PEEK_MODE: tag = 8; break;
+ #endif
++    case BIO_CTRL_WPENDING:
+     case BIO_CTRL_PUSH:
+     case BIO_CTRL_POP:
+-    case BIO_CTRL_DGRAM_SET_NEXT_TIMEOUT:
+-        retval = 0;
+-        break;
++    case BIO_CTRL_DGRAM_SET_NEXT_TIMEOUT: tag = 9; break;
+ #if OPENSSL_VERSION_NUMBER >= 0x30000000L
+     case BIO_CTRL_GET_KTLS_SEND:
+-    case BIO_CTRL_GET_KTLS_RECV:
+-        retval = 0;
+-        break;
++    case BIO_CTRL_GET_KTLS_RECV: tag = 9; break;
+ #endif
+-    default:
+-        swoole_warning("unknown cmd: %d", cmd);
+-        retval = 0;
++    default: tag = UINT32_MAX; break;
++    }
++    const auto plan = swr_v1_tls_control(tag, observed);
++    switch (plan.effect) {
++    case 1: BIO_set_shutdown(b, (int) lval); break;
++    case 2:
++        if (ptrval) memcpy(ptrval, &session->socket->info, sizeof(session->socket->info.addr));
+         break;
++    case 3: ((Session *) BIO_get_data(b))->peek_mode = !!lval; break;
++    case 4: swoole_warning("unknown cmd: %d", cmd); break;
+     }
+-
+-    return retval;
++    return plan.result;
+ }
+ 
+ int BIO_create(BIO *b) {
+@@ -145,13 +126,9 @@ BIO_METHOD *BIO_get_methods() {
+ 
+ #ifdef OPENSSL_IS_BORINGSSL
+     BIO_meth_set_ctrl(_bio_methods, (long (*)(BIO *, int, long, void *)) BIO_ctrl);
+-#else
+-#if OPENSSL_VERSION_NUMBER > 0x1010007fL
+-    BIO_meth_set_callback_ctrl(_bio_methods, (long (*)(BIO *, int, BIO_info_cb *)) BIO_callback_ctrl);
+-#else
+-    BIO_meth_set_callback_ctrl(_bio_methods, (long (*)(BIO *, int, bio_info_cb *)) BIO_callback_ctrl);
+-#endif
+ #endif
++    // No callback-control leaf is implemented. Leave the native slot unset so
++    // OpenSSL reports unsupported; its public dispatcher is not a method leaf.
+ 
+     return _bio_methods;
+ }
+@@ -172,24 +149,33 @@ void Session::append(const char *data, ssize_t len) {
+ }
+ 
+ bool Session::init() {
+-    if (socket->ssl) {
+-        return false;
+-    }
+-
+-    if (socket->ssl_create(ctx.get(), SW_SSL_SERVER) < 0) {
+-        swoole_set_last_error(SW_ERROR_SSL_CREATE_SESSION_FAILED);
+-        return false;
++    uint32_t stage = SWR_TLS_STAGE_SESSION_PRESENT;
++    int32_t result = 0;
++    for (;;) {
++        const uint32_t facts = stage == SWR_TLS_STAGE_SESSION_PRESENT ? socket->ssl != nullptr : 0;
++        const auto plan = swr_v1_tls_setup(stage, facts, result);
++        stage = plan.next;
++        switch (plan.action) {
++        case SWR_TLS_FALSE: return false;
++        case SWR_TLS_TRUE: return true;
++        case SWR_TLS_SESSION_CREATE:
++            result = socket->ssl_create(ctx.get(), SW_SSL_SERVER);
++            break;
++        case SWR_TLS_SESSION_CREATE_FAILED:
++            swoole_set_last_error(SW_ERROR_SSL_CREATE_SESSION_FAILED);
++            break;
++        case SWR_TLS_SESSION_BIND_BIO: {
++            socket->set_buffer_size(Socket::default_buffer_size);
++            socket->dtls = 1;
++            BIO *bio = BIO_new(BIO_get_methods());
++            BIO_set_data(bio, (void *) this);
++            BIO_set_init(bio, 1);
++            SSL_set_bio(socket->ssl, bio, bio);
++            break;
++        }
++        default: return false;
++        }
+     }
+-
+-    socket->set_buffer_size(Socket::default_buffer_size);
+-    socket->dtls = 1;
+-
+-    BIO *bio = BIO_new(BIO_get_methods());
+-    BIO_set_data(bio, (void *) this);
+-    BIO_set_init(bio, 1);
+-    SSL_set_bio(socket->ssl, bio, bio);
+-
+-    return true;
+ }
+ 
+ bool Session::listen() {
+@@ -204,9 +190,10 @@ bool Session::listen() {
+     ERR_clear_error();
+ 
+     int retval = DTLSv1_listen(socket->ssl, nullptr);
+-    if (retval == 0) {
++    const auto plan = swr_v1_tls_listen(retval);
++    if (plan == 1) {
+         return true;
+-    } else if (retval < 0) {
++    } else if (plan == 0) {
+         int reason = ERR_GET_REASON(ERR_peek_error());
+         swoole_warning("DTLSv1_listen() failed, client[%s:%d], reason=%d, error_string=%s",
+                        socket->get_addr(),
+diff --git a/src/protocol/ssl.cc b/src/protocol/ssl.cc
+index 1af3c1e..f4f14ac 100644
+--- a/src/protocol/ssl.cc
++++ b/src/protocol/ssl.cc
+@@ -18,6 +18,10 @@
+ #include "swoole_socket.h"
+ #include "swoole_ssl.h"
+ #include "swoole_util.h"
++#ifndef SWOOLE_RS_TLS
++#error "TLS overlay requires explicit module activation"
++#endif
++#include "swoole_rs_tls.h"
+ 
+ using swoole::SSLContext;
+ using swoole::network::Address;
+@@ -32,9 +36,6 @@ static int ssl_connection_index = 0;
+ static int ssl_port_index = 0;
+ 
+ static int swoole_ssl_verify_callback(int ok, X509_STORE_CTX *x509_store);
+-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+-static int swoole_ssl_set_default_dhparam(SSL_CTX *ssl_context);
+-#endif
+ 
+ #ifdef SW_SUPPORT_DTLS
+ static int swoole_ssl_generate_cookie(SSL *ssl, uchar *cookie, uint *cookie_len);
+@@ -102,38 +103,44 @@ const char *swoole_ssl_get_error() {
+ }
+ 
+ static void swoole_ssl_info_callback(const SSL *ssl, int where, int ret) {
+-    Socket *sock;
+-
+-    if (where & SSL_CB_HANDSHAKE_START) {
+-        sock = (Socket *) SSL_get_ex_data(ssl, ssl_connection_index);
+-
+-        if (sock->ssl_state == SW_SSL_STATE_READY) {
++    uint32_t stage = SWR_TLS_STAGE_INFO_START;
++    int32_t result = 0;
++    Socket *sock = nullptr;
++    BIO *wbio = nullptr;
++    for (;;) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case SWR_TLS_STAGE_INFO_START: facts = (where & SSL_CB_HANDSHAKE_START) != 0; break;
++        case SWR_TLS_STAGE_INFO_ACCEPT: facts = (where & SSL_CB_ACCEPT_LOOP) == SSL_CB_ACCEPT_LOOP; break;
++        }
++        const auto plan = swr_v1_tls_setup(stage, facts, result);
++        stage = plan.next;
++        switch (plan.action) {
++        case SWR_TLS_TRUE: return;
++        case SWR_TLS_OBSERVE: break;
++        case SWR_TLS_INFO_START_SOCKET:
++            sock = (Socket *) SSL_get_ex_data(ssl, ssl_connection_index);
++            result = sock->ssl_state == SW_SSL_STATE_READY;
++            break;
++        case SWR_TLS_INFO_RENEGOTIATE:
+             sock->ssl_renegotiation = 1;
+             swoole_debug("SSL renegotiation");
+-        }
+-    }
+-
+-    if ((where & SSL_CB_ACCEPT_LOOP) == SSL_CB_ACCEPT_LOOP) {
+-        sock = (Socket *) SSL_get_ex_data(ssl, ssl_connection_index);
+-
+-        if (!sock->ssl_handshake_buffer_set) {
+-            /*
+-             * By default, OpenSSL uses 4k buffer during a handshake,
+-             * which is too low for long certificate chains and might
+-             * result in extra round-trips.
+-             *
+-             * To adjust a buffer size we detect that buffering was added
+-             * to write side of the connection by comparing rbio and wbio.
+-             * If they are different, we assume that it's due to buffering
+-             * added to wbio, and set buffer size.
+-             */
++            break;
++        case SWR_TLS_INFO_LOOP_SOCKET:
++            sock = (Socket *) SSL_get_ex_data(ssl, ssl_connection_index);
++            result = !sock->ssl_handshake_buffer_set;
++            break;
++        case SWR_TLS_INFO_BIOS: {
+             BIO *rbio = SSL_get_rbio(ssl);
+-            BIO *wbio = SSL_get_wbio(ssl);
+-
+-            if (rbio != wbio) {
+-                (void) BIO_set_write_buffer_size(wbio, SW_SSL_BUFFER_SIZE);
+-                sock->ssl_handshake_buffer_set = 1;
+-            }
++            wbio = SSL_get_wbio(ssl);
++            result = rbio != wbio;
++            break;
++        }
++        case SWR_TLS_INFO_BUFFER:
++            (void) BIO_set_write_buffer_size(wbio, SW_SSL_BUFFER_SIZE);
++            sock->ssl_handshake_buffer_set = 1;
++            break;
++        default: return;
+         }
+     }
+ }
+@@ -141,8 +148,6 @@ static void swoole_ssl_info_callback(const SSL *ssl, int where, int ret) {
+ namespace swoole {
+ 
+ #define HTTP2_H2_ALPN "\x02h2"
+-#define HTTP2_H2_16_ALPN "\x05h2-16"
+-#define HTTP2_H2_14_ALPN "\x05h2-14"
+ #define HTTP1_NPN "\x08http/1.1"
+ 
+ #define ssl_error(_fmt, ...)                                                                                           \
+@@ -173,34 +178,260 @@ static int ssl_alpn_advertised(SSL *ssl, const uchar **out, uchar *outlen, const
+ 
+ static int ssl_passwd_callback(char *buf, int num, int verify, void *data) {
+     const auto *ctx = static_cast<SSLContext *>(data);
+-    if (!ctx->passphrase.empty()) {
+-        const int len = static_cast<int>(ctx->passphrase.length());
+-        if (len < num - 1) {
+-            memcpy(buf, ctx->passphrase.c_str(), len);
+-            buf[len] = '\0';
+-            return len;
++    return swr_v1_tls_password((const uint8_t *) ctx->passphrase.c_str(), !ctx->passphrase.empty(),
++                               static_cast<int>(ctx->passphrase.length()), (uint8_t *) buf, num);
++}
++
++// Keep original public-method warning identities after sharing native effects.
++#pragma push_macro("__SW_FUNC__")
++#undef __SW_FUNC__
++#define __SW_FUNC__ (swoole::Logger::get_pretty_name(original_pretty_function).c_str())
++static bool ssl_context_setup(const SSLContext *cfg, uint32_t stage, const char *original_pretty_function) {
++    int result = 1;
++    const char *client_cert_file = nullptr;
++    STACK_OF(X509_NAME) *client_ca_names = nullptr;
++    const char *dh_file = nullptr;
++    BIO *dh_bio = nullptr;
++#if OPENSSL_VERSION_MAJOR >= 3
++    EVP_PKEY *dh_key = nullptr;
++#else
++    DH *dh_key = nullptr;
++#endif
++#if !defined(OPENSSL_NO_ECDH) && !defined(SSL_CTX_set1_curves_list) && !defined(SSL_CTRL_SET_CURVES_LIST)
++    EC_KEY *curve_key = nullptr;
++#endif
++    for (;;) {
++        // Observe only the original next field. Eager snapshots would read
++        // indeterminate trailing fields on otherwise-defined early-return paths.
++        uint32_t facts = 0;
++        switch (stage) {
++        case SWR_TLS_STAGE_CURVE_CAPABILITY:
++#ifndef OPENSSL_NO_ECDH
++#if defined(SSL_CTX_set1_curves_list) || defined(SSL_CTRL_SET_CURVES_LIST)
++            facts = 1;
++#else
++            facts = 2;
++#endif
++#endif
++            break;
++        case SWR_TLS_STAGE_CURVE_AUTO:
++            facts = strcmp(cfg->ecdh_curve.c_str(), "auto") == 0;
++            break;
++        case SWR_TLS_STAGE_CA_CONFIG: facts = !cfg->cafile.empty() || !cfg->capath.empty(); break;
++        case SWR_TLS_STAGE_CA_DEPTH: facts = cfg->verify_depth > 0; break;
++        case SWR_TLS_STAGE_CIPHER_CONFIG: facts = !cfg->ciphers.empty(); break;
++        case SWR_TLS_STAGE_CIPHER_PREFERENCE: facts = cfg->prefer_server_ciphers; break;
++        case SWR_TLS_STAGE_DH_CONFIG: facts = !cfg->dhparam.empty(); break;
++        case SWR_TLS_STAGE_CURVE_CONFIG: facts = !cfg->ecdh_curve.empty(); break;
++        case SWR_TLS_STAGE_PASSWORD: facts = !cfg->passphrase.empty() ? SWR_TLS_HAS_PASSWORD : 0; break;
++        case SWR_TLS_STAGE_CERT: facts = !cfg->cert_file.empty() ? SWR_TLS_HAS_CERT : 0; break;
++        case SWR_TLS_STAGE_KEY: facts = !cfg->key_file.empty() ? SWR_TLS_HAS_KEY : 0; break;
++#if defined(SW_SUPPORT_DTLS) && !defined(OPENSSL_IS_BORINGSSL)
++        case SWR_TLS_STAGE_COOKIE: facts = cfg->protocols & SW_SSL_DTLS ? SWR_TLS_HAS_COOKIE : 0; break;
++#endif
++        case SWR_TLS_STAGE_VERIFY: facts = cfg->verify_peer ? SWR_TLS_HAS_VERIFY : 0; break;
++        case SWR_TLS_STAGE_HTTP: facts = cfg->http || cfg->http_v2 ? SWR_TLS_HAS_HTTP : 0; break;
++#ifdef OPENSSL_IS_BORINGSSL
++        case SWR_TLS_STAGE_GREASE: facts = SWR_TLS_HAS_BORING; break;
++#endif
++        case SWR_TLS_STAGE_CLIENT_CA: facts = !cfg->client_cert_file.empty() ? SWR_TLS_HAS_CLIENT_CA : 0; break;
++        }
++        const auto plan = swr_v1_tls_setup(stage, facts, result);
++        stage = plan.next;
++        switch (plan.action) {
++#ifndef OPENSSL_NO_ECDH
++#if defined(SSL_CTX_set1_curves_list) || defined(SSL_CTRL_SET_CURVES_LIST)
++        case SWR_TLS_CURVE_OPTIONS:
++            SSL_CTX_set_options(cfg->context, SSL_OP_SINGLE_ECDH_USE);
++#if SSL_CTRL_SET_ECDH_AUTO
++            SSL_CTX_set_ecdh_auto(cfg->context, 1);
++#endif
++            break;
++        case SWR_TLS_CURVE_LIST:
++            result = SSL_CTX_set1_curves_list(cfg->context, cfg->ecdh_curve.c_str()) != 0;
++            break;
++        case SWR_TLS_CURVE_LIST_FAILED:
++            swoole_warning("SSL_CTX_set1_curves_list(\"%s\") failed", cfg->ecdh_curve.c_str());
++            break;
++#else
++        case SWR_TLS_CURVE_NAME:
++            result = OBJ_sn2nid(cfg->ecdh_curve.c_str());
++            break;
++        case SWR_TLS_CURVE_UNKNOWN:
++            swoole_warning("Unknown curve name \"%s\"", cfg->ecdh_curve.c_str());
++            break;
++        case SWR_TLS_CURVE_KEY:
++            curve_key = EC_KEY_new_by_curve_name(result);
++            result = curve_key != nullptr;
++            break;
++        case SWR_TLS_CURVE_KEY_FAILED:
++            swoole_warning("Unable to create curve \"%s\"", cfg->ecdh_curve.c_str());
++            break;
++        case SWR_TLS_CURVE_INSTALL:
++            SSL_CTX_set_options(cfg->context, SSL_OP_SINGLE_ECDH_USE);
++            SSL_CTX_set_tmp_ecdh(cfg->context, curve_key);
++            EC_KEY_free(curve_key);
++            break;
++#endif
++#endif
++        case SWR_TLS_DH_OPEN:
++            dh_file = cfg->dhparam.c_str();
++            dh_bio = BIO_new_file(dh_file, "r");
++            result = dh_bio != nullptr;
++            break;
++        case SWR_TLS_DH_PARSE:
++#if OPENSSL_VERSION_MAJOR >= 3
++            dh_key = PEM_read_bio_Parameters(dh_bio, nullptr);
++#else
++            dh_key = PEM_read_bio_DHparams(dh_bio, nullptr, nullptr, nullptr);
++#endif
++            result = dh_key != nullptr;
++            break;
++        case SWR_TLS_DH_INSTALL:
++#if OPENSSL_VERSION_MAJOR >= 3
++            result = SSL_CTX_set0_tmp_dh_pkey(cfg->context, dh_key) == 1;
++#else
++            SSL_CTX_set_tmp_dh(cfg->context, dh_key);
++            result = 1; // The original legacy return value is deliberately ignored.
++#endif
++            break;
++        case SWR_TLS_DH_OPEN_FAILED:
++            { ssl_error("BIO_new_file(%s) failed", dh_file); }
++            break;
++        case SWR_TLS_DH_PARSE_FAILED:
++#if OPENSSL_VERSION_MAJOR >= 3
++            { ssl_error("PEM_read_bio_Parameters('%s') failed", dh_file); }
++#else
++            { ssl_error("PEM_read_bio_DHparams(%s) failed", dh_file); }
++#endif
++            BIO_free(dh_bio);
++            break;
++#if OPENSSL_VERSION_MAJOR >= 3
++        case SWR_TLS_DH_INSTALL_FAILED:
++            { ssl_error("SSL_CTX_set0_tmp_dh_pkey('%s') failed", dh_file); }
++            EVP_PKEY_free(dh_key);
++            BIO_free(dh_bio);
++            break;
++#endif
++        case SWR_TLS_DH_RELEASE:
++#if OPENSSL_VERSION_MAJOR < 3
++            DH_free(dh_key);
++#endif
++            BIO_free(dh_bio);
++            break;
++        case SWR_TLS_LOAD_CA:
++            result = SSL_CTX_load_verify_locations(cfg->context,
++                cfg->cafile.empty() ? nullptr : cfg->cafile.c_str(),
++                cfg->capath.empty() ? nullptr : cfg->capath.c_str());
++            break;
++        case SWR_TLS_DEFAULT_CA:
++            result = SSL_CTX_set_default_verify_paths(cfg->context);
++            if (!result) { ssl_error("SSL_CTX_set_default_verify_paths() failed"); }
++            break;
++        case SWR_TLS_VERIFY_DEPTH: SSL_CTX_set_verify_depth(cfg->context, cfg->verify_depth); break;
++        case SWR_TLS_CIPHER_LIST:
++            result = SSL_CTX_set_cipher_list(cfg->context, cfg->ciphers.c_str());
++            if (!result) { ssl_error("SSL_CTX_set_cipher_list(\"%s\") failed", cfg->ciphers.c_str()); }
++            break;
++        case SWR_TLS_CIPHER_PREFERENCE:
++            result = !!SSL_CTX_set_options(cfg->context, SSL_OP_CIPHER_SERVER_PREFERENCE);
++            if (!result) { ssl_error("SSL_CTX_set_options(SSL_OP_CIPHER_SERVER_PREFERENCE) failed"); }
++            break;
++        case SWR_TLS_DHPARAM: result = cfg->set_dhparam(); break;
++        case SWR_TLS_ECDH_CURVE: result = cfg->set_ecdh_curve(); break;
++        case SWR_TLS_CLIENT_VERIFY_INSTALL: {
++            client_cert_file = cfg->client_cert_file.c_str();
++            const int depth = cfg->verify_depth;
++            SSL_CTX_set_verify(cfg->context, SSL_VERIFY_PEER, swoole_ssl_verify_callback);
++            SSL_CTX_set_verify_depth(cfg->context, depth);
++            break;
++        }
++        case SWR_TLS_CLIENT_TRUST:
++            result = SSL_CTX_load_verify_locations(cfg->context, client_cert_file, nullptr);
++            if (!result) { ssl_error("SSL_CTX_load_verify_locations(\"%s\") failed", client_cert_file); }
++            break;
++        case SWR_TLS_CLIENT_NAMES:
++            ERR_clear_error();
++            client_ca_names = SSL_load_client_CA_file(client_cert_file);
++            result = client_ca_names != nullptr;
++            if (!result) { ssl_error("SSL_load_client_CA_file(\"%s\") failed", client_cert_file); }
++            break;
++        case SWR_TLS_CLIENT_NAMES_INSTALL:
++            ERR_clear_error();
++            SSL_CTX_set_client_CA_list(cfg->context, client_ca_names);
++            break;
++        case SWR_TLS_FALSE: return false;
++        case SWR_TLS_TRUE: return true;
++        case SWR_TLS_OBSERVE: break;
++        case SWR_TLS_PASSWORD:
++            SSL_CTX_set_default_passwd_cb_userdata(cfg->context, (void *) cfg);
++            SSL_CTX_set_default_passwd_cb(cfg->context, ssl_passwd_callback);
++            break;
++        case SWR_TLS_CERT:
++            result = SSL_CTX_use_certificate_file(cfg->context, cfg->cert_file.c_str(), SSL_FILETYPE_PEM);
++            if (result <= 0) { ssl_error("SSL_CTX_use_certificate_file(%s) failed", cfg->cert_file.c_str()); }
++            break;
++        case SWR_TLS_CHAIN:
++            result = SSL_CTX_use_certificate_chain_file(cfg->context, cfg->cert_file.c_str());
++            if (result <= 0) { ssl_error("SSL_CTX_use_certificate_chain_file(%s) failed", cfg->cert_file.c_str()); }
++            break;
++        case SWR_TLS_KEY:
++            result = SSL_CTX_use_PrivateKey_file(cfg->context, cfg->key_file.c_str(), SSL_FILETYPE_PEM);
++            if (result <= 0) { ssl_error("SSL_CTX_use_PrivateKey_file(%s) failed", cfg->key_file.c_str()); }
++            break;
++        case SWR_TLS_CHECK_KEY:
++            result = SSL_CTX_check_private_key(cfg->context);
++            if (!result) { ssl_error("SSL_CTX_check_private_key() failed"); }
++            break;
++#if defined(SW_SUPPORT_DTLS) && !defined(OPENSSL_IS_BORINGSSL)
++        case SWR_TLS_COOKIE:
++            SSL_CTX_set_cookie_generate_cb(cfg->context, swoole_ssl_generate_cookie);
++            SSL_CTX_set_cookie_verify_cb(cfg->context, swoole_ssl_verify_cookie);
++            break;
++#endif
++        case SWR_TLS_CAPATH: result = cfg->set_capath(); break;
++        case SWR_TLS_NO_VERIFY: SSL_CTX_set_verify(cfg->context, SSL_VERIFY_NONE, nullptr); break;
++        case SWR_TLS_ALPN: {
++            const char *protos = cfg->http_v2 ? HTTP2_H2_ALPN HTTP1_NPN : HTTP1_NPN;
++            const unsigned int length = cfg->http_v2 ? sizeof(HTTP2_H2_ALPN HTTP1_NPN) - 1 : sizeof(HTTP1_NPN) - 1;
++            result = SSL_CTX_set_alpn_protos(cfg->context, (const uchar *) protos, length);
++            if (result < 0) { ssl_error("SSL_CTX_set_alpn_protos(%s) failed", protos); }
++            break;
++        }
++        case SWR_TLS_ALPN_INSTALL:
++#ifdef TLSEXT_TYPE_application_layer_protocol_negotiation
++            SSL_CTX_set_alpn_select_cb(cfg->context, ssl_alpn_advertised, (void *) cfg);
++#endif
++            SSL_CTX_set_session_id_context(cfg->context, (const uchar *) "HTTP", sizeof("HTTP") - 1);
++            SSL_CTX_set_session_cache_mode(cfg->context, SSL_SESS_CACHE_SERVER);
++            break;
++#ifdef OPENSSL_IS_BORINGSSL
++        case SWR_TLS_GREASE: SSL_CTX_set_grease_enabled(cfg->context, cfg->grease); break;
++#endif
++        case SWR_TLS_CLIENT_CA: result = cfg->set_client_certificate(); break;
++        case SWR_TLS_CIPHERS:
++            result = cfg->set_ciphers();
++            if (!result) swoole_warning("set_cipher() error");
++            break;
+         }
+     }
+-    return 0;
+ }
++#pragma pop_macro("__SW_FUNC__")
+ 
+ bool SSLContext::create() {
+     if (!openssl_init) {
+         swoole_ssl_init();
+     }
+ 
+-    const SSL_METHOD *method;
++    static_assert(SW_SSL_ALL == 0x7e && SW_SSL_DTLS == 0x80, "TLS protocol policy constants");
+ #ifdef SW_SUPPORT_DTLS
+-    if (protocols & SW_SSL_DTLS) {
+-        method = DTLS_method();
+-    } else
++    const auto policy = swr_v1_tls_context(protocols, 1);
++    const SSL_METHOD *method = policy.dtls ? DTLS_method() : SSLv23_method();
++#else
++    const auto policy = swr_v1_tls_context(protocols, 0);
++    const SSL_METHOD *method = SSLv23_method();
+ #endif
+-    {
+-        method = SSLv23_method();
+-    }
+-    if (protocols == 0) {
+-        protocols = SW_SSL_ALL;
+-    }
++    protocols = policy.protocols;
+     context = SSL_CTX_new(method);
+     if (context == nullptr) {
+         ssl_error("SSL_CTX_new() failed");
+@@ -245,41 +476,38 @@ bool SSLContext::create() {
+     SSL_CTX_set_options(context, SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS);
+ #endif
+ 
+-#if OPENSSL_VERSION_NUMBER >= 0x009080dfL
+-    /* only in 0.9.8m+ */
+     SSL_CTX_clear_options(context, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3 | SSL_OP_NO_TLSv1);
+-#endif
+ 
+ #ifdef SSL_OP_NO_SSLv2
+-    if (!(protocols & SW_SSL_SSLv2)) {
++    if ((policy.disabled & SW_SSL_SSLv2)) {
+         SSL_CTX_set_options(context, SSL_OP_NO_SSLv2);
+     }
+ #endif
+ #ifdef SSL_OP_NO_SSLv3
+-    if (!(protocols & SW_SSL_SSLv3)) {
++    if ((policy.disabled & SW_SSL_SSLv3)) {
+         SSL_CTX_set_options(context, SSL_OP_NO_SSLv3);
+     }
+ #endif
+ #ifdef SSL_OP_NO_TLSv1
+-    if (!(protocols & SW_SSL_TLSv1)) {
++    if ((policy.disabled & SW_SSL_TLSv1)) {
+         SSL_CTX_set_options(context, SSL_OP_NO_TLSv1);
+     }
+ #endif
+ #ifdef SSL_OP_NO_TLSv1_1
+     SSL_CTX_clear_options(context, SSL_OP_NO_TLSv1_1);
+-    if (!(protocols & SW_SSL_TLSv1_1)) {
++    if ((policy.disabled & SW_SSL_TLSv1_1)) {
+         SSL_CTX_set_options(context, SSL_OP_NO_TLSv1_1);
+     }
+ #endif
+ #ifdef SSL_OP_NO_TLSv1_2
+     SSL_CTX_clear_options(context, SSL_OP_NO_TLSv1_2);
+-    if (!(protocols & SW_SSL_TLSv1_2) && !(protocols & SW_SSL_DTLS)) {
++    if ((policy.disabled & SW_SSL_TLSv1_2)) {
+         SSL_CTX_set_options(context, SSL_OP_NO_TLSv1_2);
+     }
+ #endif
+ #ifdef SSL_OP_NO_TLSv1_3
+     SSL_CTX_clear_options(context, SSL_OP_NO_TLSv1_3);
+-    if (!(protocols & SW_SSL_TLSv1_3)) {
++    if ((policy.disabled & SW_SSL_TLSv1_3)) {
+         SSL_CTX_set_options(context, SSL_OP_NO_TLSv1_3);
+     }
+ #endif
+@@ -301,277 +529,31 @@ bool SSLContext::create() {
+     SSL_CTX_set_read_ahead(context, 1);
+     SSL_CTX_set_info_callback(context, swoole_ssl_info_callback);
+ 
+-    if (!passphrase.empty()) {
+-        SSL_CTX_set_default_passwd_cb_userdata(context, this);
+-        SSL_CTX_set_default_passwd_cb(context, ssl_passwd_callback);
+-    }
+-
+-    if (!cert_file.empty()) {
+-        /*
+-         * set the local certificate from CertFile
+-         */
+-        if (SSL_CTX_use_certificate_file(context, cert_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
+-            ssl_error("SSL_CTX_use_certificate_file(%s) failed", cert_file.c_str());
+-            return true;
+-        }
+-        /*
+-         * if the crt file have many certificate entry ,means certificate chain
+-         * we need call this function
+-         */
+-        if (SSL_CTX_use_certificate_chain_file(context, cert_file.c_str()) <= 0) {
+-            ssl_error("SSL_CTX_use_certificate_chain_file(%s) failed", cert_file.c_str());
+-            return false;
+-        }
+-    }
+-    if (!key_file.empty()) {
+-        /*
+-         * set the private key from KeyFile (maybe the same as CertFile)
+-         */
+-        if (SSL_CTX_use_PrivateKey_file(context, key_file.c_str(), SSL_FILETYPE_PEM) <= 0) {
+-            ssl_error("SSL_CTX_use_PrivateKey_file(%s) failed", key_file.c_str());
+-            return false;
+-        }
+-        /*
+-         * verify private key
+-         */
+-        if (!SSL_CTX_check_private_key(context)) {
+-            ssl_error("SSL_CTX_check_private_key() failed");
+-            return false;
+-        }
+-    }
+-
+-#ifdef SW_SUPPORT_DTLS
+-    if (protocols & SW_SSL_DTLS) {
+-#ifndef OPENSSL_IS_BORINGSSL
+-        SSL_CTX_set_cookie_generate_cb(context, swoole_ssl_generate_cookie);
+-        SSL_CTX_set_cookie_verify_cb(context, swoole_ssl_verify_cookie);
+-#endif
+-    }
+-#endif
+-
+-    auto rs = set_capath();
+-    if (verify_peer) {
+-        if (!rs) {
+-            return false;
+-        }
+-    } else {
+-        SSL_CTX_set_verify(context, SSL_VERIFY_NONE, nullptr);
+-    }
+-
+-    if (http || http_v2) {
+-        unsigned int protos_len;
+-        const char *protos;
+-        if (http_v2) {
+-            protos = HTTP2_H2_ALPN HTTP1_NPN;
+-            protos_len = sizeof(HTTP2_H2_ALPN HTTP1_NPN) - 1;
+-        } else {
+-            protos = HTTP1_NPN;
+-            protos_len = sizeof(HTTP1_NPN) - 1;
+-        }
+-        if (SSL_CTX_set_alpn_protos(context, (const uchar *) protos, protos_len) < 0) {
+-            ssl_error("SSL_CTX_set_alpn_protos(%s) failed", protos);
+-            return false;
+-        }
+-#ifdef TLSEXT_TYPE_application_layer_protocol_negotiation
+-        SSL_CTX_set_alpn_select_cb(context, ssl_alpn_advertised, (void *) this);
+-#endif
+-        SSL_CTX_set_session_id_context(context, (const uchar *) "HTTP", sizeof("HTTP") - 1);
+-        SSL_CTX_set_session_cache_mode(context, SSL_SESS_CACHE_SERVER);
+-    }
+-
+-#ifdef OPENSSL_IS_BORINGSSL
+-    SSL_CTX_set_grease_enabled(context, grease);
+-#endif
+-
+-    if (!client_cert_file.empty() && !set_client_certificate()) {
+-        return false;
+-    }
+-
+-    if (!set_ciphers()) {
+-        swoole_warning("set_cipher() error");
+-        return false;
+-    }
+-
+-    return true;
++    return ssl_context_setup(this, SWR_TLS_STAGE_PASSWORD, __PRETTY_FUNCTION__);
+ }
+ 
+ bool SSLContext::set_capath() const {
+-    if (!cafile.empty() || !capath.empty()) {
+-        const char *_cafile = cafile.empty() ? nullptr : cafile.c_str();
+-        const char *_capath = capath.empty() ? nullptr : capath.c_str();
+-        if (!SSL_CTX_load_verify_locations(context, _cafile, _capath)) {
+-            return false;
+-        }
+-    } else {
+-        if (!SSL_CTX_set_default_verify_paths(context)) {
+-            ssl_error("SSL_CTX_set_default_verify_paths() failed");
+-            return false;
+-        }
+-    }
+-
+-    if (verify_depth > 0) {
+-        SSL_CTX_set_verify_depth(context, verify_depth);
+-    }
+-
+-    return true;
++    return ssl_context_setup(this, SWR_TLS_STAGE_CA_CONFIG, __PRETTY_FUNCTION__);
+ }
+ 
+ bool SSLContext::set_ciphers() const {
+ #ifndef TLS1_2_VERSION
+     return true;
++#else
++    return ssl_context_setup(this, SWR_TLS_STAGE_CIPHER_CONFIG, __PRETTY_FUNCTION__);
+ #endif
+-
+-    if (!ciphers.empty()) {
+-        if (SSL_CTX_set_cipher_list(context, ciphers.c_str()) == 0) {
+-            ssl_error("SSL_CTX_set_cipher_list(\"%s\") failed", ciphers.c_str());
+-            return false;
+-        }
+-        if (prefer_server_ciphers && !SSL_CTX_set_options(context, SSL_OP_CIPHER_SERVER_PREFERENCE)) {
+-            ssl_error("SSL_CTX_set_options(SSL_OP_CIPHER_SERVER_PREFERENCE) failed");
+-            return false;
+-        }
+-    }
+-
+-    if (!dhparam.empty() && !set_dhparam()) {
+-        return false;
+-    }
+-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+-    else {
+-        swoole_ssl_set_default_dhparam(context);
+-    }
+-#endif
+-    if (!ecdh_curve.empty() && !set_ecdh_curve()) {
+-        return false;
+-    }
+-    return true;
+ }
+ 
+ bool SSLContext::set_client_certificate() const {
+-    const char *_cert_file = client_cert_file.c_str();
+-    int depth = verify_depth;
+-
+-    SSL_CTX_set_verify(context, SSL_VERIFY_PEER, swoole_ssl_verify_callback);
+-    SSL_CTX_set_verify_depth(context, depth);
+-
+-    if (SSL_CTX_load_verify_locations(context, _cert_file, nullptr) == 0) {
+-        ssl_error("SSL_CTX_load_verify_locations(\"%s\") failed", _cert_file);
+-        return false;
+-    }
+-
+-    ERR_clear_error();
+-    STACK_OF(X509_NAME) *list = SSL_load_client_CA_file(_cert_file);
+-    if (list == nullptr) {
+-        ssl_error("SSL_load_client_CA_file(\"%s\") failed", _cert_file);
+-        return false;
+-    }
+-
+-    ERR_clear_error();
+-    SSL_CTX_set_client_CA_list(context, list);
+-
+-    return true;
++    return ssl_context_setup(this, SWR_TLS_STAGE_CLIENT_VERIFY_CONFIG, __PRETTY_FUNCTION__);
+ }
+ 
+ bool SSLContext::set_ecdh_curve() const {
+-#ifndef OPENSSL_NO_ECDH
+-    /*
+-     * Elliptic-Curve Diffie-Hellman parameters are either "named curves"
+-     * from RFC 4492 section 5.1.1, or explicitly described curves over
+-     * binary fields.  OpenSSL only supports the "named curves", which provide
+-     * maximum interoperability.
+-     */
+-#if (defined SSL_CTX_set1_curves_list || defined SSL_CTRL_SET_CURVES_LIST)
+-    /*
+-     * OpenSSL 1.0.2+ allows configuring a curve list instead of a single
+-     * curve previously supported.  By default, an internal list is used,
+-     * with prime256v1 being preferred by server in OpenSSL 1.0.2b+
+-     * and X25519 in OpenSSL 1.1.0+.
+-     *
+-     * By default, a curve preferred by the client will be used for
+-     * key exchange.  The SSL_OP_CIPHER_SERVER_PREFERENCE option can
+-     * be used to prefer server curves instead, similar to what it
+-     * does for ciphers.
+-     */
+-    SSL_CTX_set_options(context, SSL_OP_SINGLE_ECDH_USE);
+-#if SSL_CTRL_SET_ECDH_AUTO
+-    /* not needed in OpenSSL 1.1.0+ */
+-    SSL_CTX_set_ecdh_auto(context, 1);
+-#endif
+-    if (strcmp(ecdh_curve.c_str(), "auto") == 0) {
+-        return true;
+-    }
+-    if (SSL_CTX_set1_curves_list(context, ecdh_curve.c_str()) == 0) {
+-        swoole_warning("SSL_CTX_set1_curves_list(\"%s\") failed", ecdh_curve.c_str());
+-        return false;
+-    }
+-#else
+-    EC_KEY *ecdh;
+-    /*
+-     * Elliptic-Curve Diffie-Hellman parameters are either "named curves"
+-     * from RFC 4492 section 5.1.1, or explicitly described curves over
+-     * binary fields. OpenSSL only supports the "named curves", which provide
+-     * maximum interoperability.
+-     */
+-    int nid = OBJ_sn2nid(ecdh_curve.c_str());
+-    if (nid == 0) {
+-        swoole_warning("Unknown curve name \"%s\"", ecdh_curve.c_str());
+-        return false;
+-    }
+-
+-    ecdh = EC_KEY_new_by_curve_name(nid);
+-    if (ecdh == nullptr) {
+-        swoole_warning("Unable to create curve \"%s\"", ecdh_curve.c_str());
+-        return false;
+-    }
+-
+-    SSL_CTX_set_options(context, SSL_OP_SINGLE_ECDH_USE);
+-    SSL_CTX_set_tmp_ecdh(context, ecdh);
+-
+-    EC_KEY_free(ecdh);
+-#endif
+-#endif
+-
+-    return true;
++    return ssl_context_setup(this, SWR_TLS_STAGE_CURVE_CAPABILITY, __PRETTY_FUNCTION__);
+ }
+ 
+ bool SSLContext::set_dhparam() const {
+-    const char *file = dhparam.c_str();
+-
+-    BIO *bio = BIO_new_file(file, "r");
+-    if (bio == nullptr) {
+-        ssl_error("BIO_new_file(%s) failed", file);
+-        return false;
+-    }
+-
+-#if OPENSSL_VERSION_MAJOR >= 3
+-    EVP_PKEY *pkey = PEM_read_bio_Parameters(bio, nullptr);
+-    if (pkey == nullptr) {
+-        ssl_error("PEM_read_bio_Parameters('%s') failed", file);
+-        BIO_free(bio);
+-        return false;
+-    }
+-
+-    if (SSL_CTX_set0_tmp_dh_pkey(context, pkey) != 1) {
+-        ssl_error("SSL_CTX_set0_tmp_dh_pkey('%s') failed", file);
+-        EVP_PKEY_free(pkey);
+-        BIO_free(bio);
+-        return false;
+-    }
+-#else
+-    DH *dh = PEM_read_bio_DHparams(bio, nullptr, nullptr, nullptr);
+-    if (dh == nullptr) {
+-        ssl_error("PEM_read_bio_DHparams(%s) failed", file);
+-        BIO_free(bio);
+-        return false;
+-    }
+-
+-    SSL_CTX_set_tmp_dh(context, dh);
+-
+-    DH_free(dh);
+-#endif
+-
+-    BIO_free(bio);
+-
+-    return true;
++    return ssl_context_setup(this, SWR_TLS_STAGE_DH_OPEN, __PRETTY_FUNCTION__);
+ }
+ 
+ SSLContext::~SSLContext() {
+@@ -581,32 +563,6 @@ SSLContext::~SSLContext() {
+ }  // namespace swoole
+ 
+ static int swoole_ssl_verify_callback(int ok, X509_STORE_CTX *x509_store) {
+-#if 0
+-    char *subject, *issuer;
+-    int err, depth;
+-    X509 *cert;
+-    X509_NAME *sname, *iname;
+-    X509_STORE_CTX_get_ex_data(x509_store, SSL_get_ex_data_X509_STORE_CTX_idx());
+-    cert = X509_STORE_CTX_get_current_cert(x509_store);
+-    err = X509_STORE_CTX_get_error(x509_store);
+-    depth = X509_STORE_CTX_get_error_depth(x509_store);
+-
+-    sname = X509_get_subject_name(cert);
+-    subject = sname ? X509_NAME_oneline(sname, nullptr, 0) : "(none)";
+-
+-    iname = X509_get_issuer_name(cert);
+-    issuer = iname ? X509_NAME_oneline(iname, nullptr, 0) : "(none)";
+-    swoole_warning("verify:%d, error:%d, depth:%d, subject:\"%s\", issuer:\"%s\"", ok, err, depth, subject, issuer);
+-
+-    if (sname)
+-    {
+-        OPENSSL_free(subject);
+-    }
+-    if (iname)
+-    {
+-        OPENSSL_free(issuer);
+-    }
+-#endif
+ 
+     return 1;
+ }
+@@ -690,34 +646,3 @@ static int swoole_ssl_verify_cookie(SSL *ssl, const uchar *cookie, uint cookie_l
+ }
+ #endif
+ 
+-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+-static int swoole_ssl_set_default_dhparam(SSL_CTX *ssl_context) {
+-    DH *dh;
+-    static unsigned char dh1024_p[] = {
+-        0xBB, 0xBC, 0x2D, 0xCA, 0xD8, 0x46, 0x74, 0x90, 0x7C, 0x43, 0xFC, 0xF5, 0x80, 0xE9, 0xCF, 0xDB,
+-        0xD9, 0x58, 0xA3, 0xF5, 0x68, 0xB4, 0x2D, 0x4B, 0x08, 0xEE, 0xD4, 0xEB, 0x0F, 0xB3, 0x50, 0x4C,
+-        0x6C, 0x03, 0x02, 0x76, 0xE7, 0x10, 0x80, 0x0C, 0x5C, 0xCB, 0xBA, 0xA8, 0x92, 0x26, 0x14, 0xC5,
+-        0xBE, 0xEC, 0xA5, 0x65, 0xA5, 0xFD, 0xF1, 0xD2, 0x87, 0xA2, 0xBC, 0x04, 0x9B, 0xE6, 0x77, 0x80,
+-        0x60, 0xE9, 0x1A, 0x92, 0xA7, 0x57, 0xE3, 0x04, 0x8F, 0x68, 0xB0, 0x76, 0xF7, 0xD3, 0x6C, 0xC8,
+-        0xF2, 0x9B, 0xA5, 0xDF, 0x81, 0xDC, 0x2C, 0xA7, 0x25, 0xEC, 0xE6, 0x62, 0x70, 0xCC, 0x9A, 0x50,
+-        0x35, 0xD8, 0xCE, 0xCE, 0xEF, 0x9E, 0xA0, 0x27, 0x4A, 0x63, 0xAB, 0x1E, 0x58, 0xFA, 0xFD, 0x49,
+-        0x88, 0xD0, 0xF6, 0x5D, 0x14, 0x67, 0x57, 0xDA, 0x07, 0x1D, 0xF0, 0x45, 0xCF, 0xE1, 0x6B, 0x9B};
+-
+-    static unsigned char dh1024_g[] = {0x02};
+-    dh = DH_new();
+-    if (dh == nullptr) {
+-        swoole_warning("DH_new() failed");
+-        return SW_ERR;
+-    }
+-
+-    dh->p = BN_bin2bn(dh1024_p, sizeof(dh1024_p), nullptr);
+-    dh->g = BN_bin2bn(dh1024_g, sizeof(dh1024_g), nullptr);
+-
+-    if (dh->p == nullptr || dh->g == nullptr) {
+-        DH_free(dh);
+-    }
+-    SSL_CTX_set_tmp_dh(ssl_context, dh);
+-    DH_free(dh);
+-    return SW_OK;
+-}
+-#endif

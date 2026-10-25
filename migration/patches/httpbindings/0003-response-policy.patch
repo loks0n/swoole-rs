@@ -1,0 +1,599 @@
+diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
+--- a/ext-src/swoole_http_response.cc
++++ b/ext-src/swoole_http_response.cc
+@@ -15,6 +15,13 @@
+ */
+ 
+ #include "php_swoole_http_server.h"
++#ifndef SWOOLE_RS_HTTPBINDINGS
++#error "HTTP PHP binding overlay requires --enable-swoole-rs-httpbindings"
++#endif
++#include "swoole_rs_httpbindings.h"
++static_assert(HTTP_HEADER_SERVER == 2 && HTTP_HEADER_CONNECTION == 4 && HTTP_HEADER_CONTENT_LENGTH == 8 &&
++              HTTP_HEADER_DATE == 16 && HTTP_HEADER_CONTENT_TYPE == 32 && HTTP_HEADER_TRANSFER_ENCODING == 64 &&
++              HTTP_HEADER_CONTENT_ENCODING == 256 && HTTP_HEAD == 2, "Pinned response mapping changed");
+ #include "php_swoole_websocket.h"
+ #include "swoole_util.h"
+ 
+@@ -45,21 +52,7 @@
+ } date_cache{};
+ 
+ static inline void http_response_header_key_format(char *key, int length) {
+-    int state = 0;
+-    for (int i = 0; i < length; i++) {
+-        if (state == 0) {
+-            if (key[i] >= 97 && key[i] <= 122) {
+-                key[i] -= 32;
+-            }
+-            state = 1;
+-        } else if (key[i] == '-') {
+-            state = 0;
+-        } else {
+-            if (key[i] >= 65 && key[i] <= 90) {
+-                key[i] += 32;
+-            }
+-        }
+-    }
++    if (length > 0) swr_v1_httpbindings_response_key(reinterpret_cast<uint8_t *>(key), static_cast<size_t>(length));
+ }
+ 
+ String *HttpContext::get_write_buffer() {
+@@ -239,22 +232,7 @@
+ }
+ 
+ static int http_response_parse_header_name(const char *key, size_t keylen) {
+-    if (SW_STRCASEEQ(key, keylen, "Server")) {
+-        return HTTP_HEADER_SERVER;
+-    } else if (SW_STRCASEEQ(key, keylen, "Connection")) {
+-        return HTTP_HEADER_CONNECTION;
+-    } else if (SW_STRCASEEQ(key, keylen, "Date")) {
+-        return HTTP_HEADER_DATE;
+-    } else if (SW_STRCASEEQ(key, keylen, "Content-Length")) {
+-        return HTTP_HEADER_CONTENT_LENGTH;
+-    } else if (SW_STRCASEEQ(key, keylen, "Content-Type")) {
+-        return HTTP_HEADER_CONTENT_TYPE;
+-    } else if (SW_STRCASEEQ(key, keylen, "Transfer-Encoding")) {
+-        return HTTP_HEADER_TRANSFER_ENCODING;
+-    } else if (SW_STRCASEEQ(key, keylen, "Content-Encoding")) {
+-        return HTTP_HEADER_CONTENT_ENCODING;
+-    }
+-    return 0;
++    return swr_v1_httpbindings_response_header({reinterpret_cast<const uint8_t *>(key), keylen});
+ }
+ 
+ zend_string *php_swoole_http_get_date() {
+@@ -401,59 +379,60 @@
+         SW_HASHTABLE_FOREACH_END();
+     }
+ 
+-    if (!(header_flags & HTTP_HEADER_SERVER)) {
+-        http_buffer->append(ZEND_STRL("Server: " SW_HTTP_SERVER_SOFTWARE "\r\n"));
+-    }
+-
+-    if (!(header_flags & HTTP_HEADER_DATE)) {
+-        http_response_set_date_header(http_buffer);
+-    }
+-
+-    // websocket protocol (subsequent header info is unnecessary)
+-    if (upgrade == 1) {
+-        http_buffer->append(ZEND_STRL("\r\n"));
+-        send_header_ = 1;
+-        return;
+-    }
+-    if (!(header_flags & HTTP_HEADER_CONNECTION)) {
+-        if (keepalive) {
+-            http_buffer->append(ZEND_STRL("Connection: keep-alive\r\n"));
+-        } else {
+-            http_buffer->append(ZEND_STRL("Connection: close\r\n"));
+-        }
+-    }
+-    if (!(header_flags & HTTP_HEADER_CONTENT_TYPE)) {
+-        http_buffer->append(ZEND_STRL("Content-Type: " SW_HTTP_DEFAULT_CONTENT_TYPE "\r\n"));
+-    }
+-    if (send_chunked) {
+-        SW_ASSERT(length == 0);
+-        if (!(header_flags & HTTP_HEADER_TRANSFER_ENCODING)) {
+-            http_buffer->append(ZEND_STRL("Transfer-Encoding: chunked\r\n"));
+-        }
+-    }
+-    // Content-Length
+-    else if (length > 0 || parser.method != HTTP_HEAD) {
++    uint32_t phase = 0;
++    bool compressed = false;
++    for (;;) {
++        uint32_t facts = (upgrade == 1 ? 1u : 0u) | (keepalive ? 2u : 0u) |
++            (send_chunked ? 4u : 0u) | (parser.method == HTTP_HEAD ? 8u : 0u);
+ #ifdef SW_HAVE_COMPRESSION
+-        if (compress(body, length)) {
++        facts |= 16u | (compressed ? 32u : 0u);
++#endif
++        swr_v1_httpbindings_action action{};
++        if (swr_v1_httpbindings_response_tail(&phase, header_flags, facts, length, &action) != 0) return;
++        switch (action.kind) {
++        case SWR_HTTPBINDINGS_RESPONSE_APPEND:
++            http_buffer->append(reinterpret_cast<const char *>(action.text.data), action.text.length);
++            break;
++        case SWR_HTTPBINDINGS_RESPONSE_SERVER:
++            http_buffer->append(ZEND_STRL("Server: " SW_HTTP_SERVER_SOFTWARE "\r\n"));
++            break;
++        case SWR_HTTPBINDINGS_RESPONSE_DATE:
++            http_response_set_date_header(http_buffer);
++            break;
++        case SWR_HTTPBINDINGS_RESPONSE_TYPE:
++            http_buffer->append(ZEND_STRL("Content-Type: " SW_HTTP_DEFAULT_CONTENT_TYPE "\r\n"));
++            break;
++        case SWR_HTTPBINDINGS_RESPONSE_ASSERT_CHUNKED:
++            SW_ASSERT(length == 0);
++            break;
++#ifdef SW_HAVE_COMPRESSION
++        case SWR_HTTPBINDINGS_RESPONSE_COMPRESS:
++            compressed = compress(body, length);
++            break;
++        case SWR_HTTPBINDINGS_RESPONSE_ENCODING: {
+             length = zlib_buffer->length;
+             const char *content_encoding = get_content_encoding();
+             http_buffer->append(ZEND_STRL("Content-Encoding: "));
+             http_buffer->append((char *) content_encoding, strlen(content_encoding));
+             http_buffer->append(ZEND_STRL("\r\n"));
+-        }
+-#endif
+-        if (!(header_flags & HTTP_HEADER_CONTENT_LENGTH)) {
++            break;
++        }
++#endif
++        case SWR_HTTPBINDINGS_RESPONSE_LENGTH: {
+             http_buffer->append(ZEND_STRL("Content-Length: "));
+-
+             char result[128];
+             int convert_result = swoole_itoa(result, length);
+             http_buffer->append(result, convert_result);
+             http_buffer->append(ZEND_STRL("\r\n"));
+-        }
+-    }
+-
+-    http_buffer->append(ZEND_STRL("\r\n"));
+-    send_header_ = 1;
++            break;
++        }
++        case SWR_HTTPBINDINGS_RESPONSE_PUBLISH:
++            send_header_ = 1;
++            return;
++        default:
++            return;
++        }
++    }
+ }
+ 
+ ssize_t HttpContext::build_trailer(String *http_buffer) const {
+@@ -515,33 +494,40 @@
+ #ifdef SW_HAVE_COMPRESSION
+ bool HttpContext::compress(const char *data, size_t length) {
+ #ifdef SW_HAVE_ZLIB
+-    int encoding;
+-#endif
+-
+-    if (!accept_compression || length < compression_min_length) {
+-        return false;
+-    }
+-
+-    if (false) {
++    int encoding = 0;
++#endif
++
++    uint32_t capabilities = 0;
++#ifdef SW_HAVE_ZLIB
++    capabilities |= 1u;
++    static_assert(Z_NO_COMPRESSION == 0 && Z_DEFAULT_COMPRESSION == -1 &&
++                  Z_BEST_SPEED == 1 && Z_BEST_COMPRESSION == 9, "Zlib level mapping changed");
++#endif
++#ifdef SW_HAVE_BROTLI
++    capabilities |= 2u;
++#endif
++#ifdef SW_HAVE_ZSTD
++    capabilities |= 4u;
++#endif
++    int method = swr_v1_httpbindings_codec(compression_method, capabilities, accept_compression, length, compression_min_length);
++    if (method == 0) return false;
++    if (method < 0) {
++        swoole_warning("Unknown compression method");
+         return false;
+     }
+ #ifdef SW_HAVE_ZLIB
+     // gzip: 0x1f
+-    else if (compression_method == HTTP_COMPRESS_GZIP) {
++    if (method == HTTP_COMPRESS_GZIP) {
+         encoding = 0x1f;
+     }
+     // deflate: -0xf
+-    else if (compression_method == HTTP_COMPRESS_DEFLATE) {
++    else if (method == HTTP_COMPRESS_DEFLATE) {
+         encoding = -0xf;
+     }
+ #endif
+ #ifdef SW_HAVE_BROTLI
+-    else if (compression_method == HTTP_COMPRESS_BR) {
+-        if (compression_level < BROTLI_MIN_QUALITY) {
+-            compression_level = BROTLI_MIN_QUALITY;
+-        } else if (compression_level > BROTLI_MAX_QUALITY) {
+-            compression_level = BROTLI_MAX_QUALITY;
+-        }
++    if (method == HTTP_COMPRESS_BR) {
++        compression_level = swr_v1_httpbindings_codec_level(method, compression_level, BROTLI_MIN_QUALITY, BROTLI_MAX_QUALITY);
+ 
+         size_t memory_size = BrotliEncoderMaxCompressedSize(length);
+         zlib_buffer = std::make_shared<String>(memory_size);
+@@ -568,13 +554,11 @@
+     }
+ #endif
+ #ifdef SW_HAVE_ZSTD
+-    else if (compression_method == HTTP_COMPRESS_ZSTD) {
++    if (method == HTTP_COMPRESS_ZSTD) {
+         int zstd_compress_level = compression_level;
+         int zstd_max_level = ZSTD_maxCLevel();
+         int zstd_min_level = ZSTD_minCLevel();
+-        zstd_compress_level = (zstd_compress_level > zstd_max_level)
+-                                  ? zstd_max_level
+-                                  : (zstd_compress_level < zstd_min_level ? zstd_min_level : zstd_compress_level);
++        zstd_compress_level = swr_v1_httpbindings_codec_level(method, zstd_compress_level, zstd_min_level, zstd_max_level);
+ 
+         size_t compress_size = ZSTD_compressBound(length);
+         zlib_buffer = std::make_shared<String>(compress_size);
+@@ -591,18 +575,8 @@
+         return true;
+     }
+ #endif
+-    else {
+-        swoole_warning("Unknown compression method");
+-        return false;
+-    }
+ #ifdef SW_HAVE_ZLIB
+-    if (compression_level < Z_NO_COMPRESSION) {
+-        compression_level = Z_DEFAULT_COMPRESSION;
+-    } else if (compression_level == Z_NO_COMPRESSION) {
+-        compression_level = Z_BEST_SPEED;
+-    } else if (compression_level > Z_BEST_COMPRESSION) {
+-        compression_level = Z_BEST_COMPRESSION;
+-    }
++    compression_level = swr_v1_httpbindings_codec_level(method, compression_level, 0, 0);
+ 
+     size_t memory_size = ((size_t)((double) length * (double) 1.015)) + 10 + 8 + 4 + 1;
+     zlib_buffer = std::make_shared<String>(memory_size);
+@@ -636,6 +610,7 @@
+     content_compressed = 1;
+     return true;
+ #endif
++    return false;
+ }
+ #endif
+ 
+@@ -701,70 +676,86 @@
+ }
+ 
+ bool HttpContext::send_file(zend_string *file, off_t offset, size_t length) {
+-    if (http2) {
+-        return swoole_http2_server_send_file(this, file, offset, length);
+-    }
+-
+-    zval *zheader =
+-        sw_zend_read_and_convert_property_array(swoole_http_response_ce, response.zobject, ZEND_STRL("header"), 0);
+-    if (!zend_hash_str_exists(Z_ARRVAL_P(zheader), ZEND_STRL("Content-Type"))) {
+-        auto mime_type = swoole::mime_type::get({file->val, file->len});
+-        add_assoc_stringl(zheader, "Content-Type", mime_type.c_str(), mime_type.length());
+-    }
+-
+-    if (!send_header_) {
++    uint32_t phase = 0;
++    zval *zheader = nullptr;
++    bool sent = false;
++    for (;;) {
++        uint32_t fact = 0;
++        switch (phase) {
++        case 0: fact = http2; break;
++        case 1: fact = zend_hash_str_exists(Z_ARRVAL_P(zheader), ZEND_STRL("Content-Type")); break;
++        case 2: fact = send_header_; break;
++        case 3: case 5: fact = sent; break;
++        case 4: fact = length > 0; break;
++        case 6: fact = keepalive; break;
++        }
++        switch (swr_v1_httpbindings_file(&phase, fact)) {
++        case 0: break;
++        case SWR_HTTPBINDINGS_FILE_HTTP2: return swoole_http2_server_send_file(this, file, offset, length);
++        case SWR_HTTPBINDINGS_FILE_READ_HEADERS:
++            zheader = sw_zend_read_and_convert_property_array(swoole_http_response_ce, response.zobject, ZEND_STRL("header"), 0);
++            break;
++        case SWR_HTTPBINDINGS_FILE_MIME: {
++            auto mime_type = swoole::mime_type::get({file->val, file->len});
++            add_assoc_stringl(zheader, "Content-Type", mime_type.c_str(), mime_type.length());
++            break;
++        }
++        case SWR_HTTPBINDINGS_FILE_HEADER: {
+ #ifdef SW_HAVE_COMPRESSION
+-        accept_compression = 0;
+-#endif
+-        String *http_buffer = get_write_buffer();
+-        http_buffer->clear();
+-
+-        build_header(http_buffer, nullptr, length);
+-
+-        if (!send(this, http_buffer->str, http_buffer->length)) {
+-            send_header_ = 0;
+-            return false;
+-        }
+-    }
+-
+-    if (length > 0 && !sendfile(this, file, offset, length)) {
+-        close(this);
+-        return false;
+-    }
+-
+-    end_ = 1;
+-
+-    if (!keepalive) {
+-        close(this);
+-    }
+-    return true;
++            accept_compression = 0;
++#endif
++            String *http_buffer = get_write_buffer();
++            http_buffer->clear();
++            build_header(http_buffer, nullptr, length);
++            sent = send(this, http_buffer->str, http_buffer->length);
++            break;
++        }
++        case SWR_HTTPBINDINGS_FILE_SEND: sent = sendfile(this, file, offset, length); break;
++        case SWR_HTTPBINDINGS_FILE_HEADER_FAILED: send_header_ = 0; return false;
++        case SWR_HTTPBINDINGS_FILE_CLOSE_FAILED: close(this); return false;
++        case SWR_HTTPBINDINGS_FILE_MARK_END: end_ = 1; break;
++        case SWR_HTTPBINDINGS_FILE_CLOSE_DONE: close(this); return true;
++        case SWR_HTTPBINDINGS_FILE_DONE: return true;
++        default: return false;
++        }
++    }
+ }
+ 
+ void HttpContext::write(zend_string *sdata, zval *return_value) {
+-    if (http2) {
+-        RETURN_BOOL(swoole_http2_server_write(this, sdata));
+-    }
+-
+-    String *http_buffer = get_write_buffer();
+-    if (!send_header_) {
+-        send_chunked = 1;
+-        http_buffer->clear();
+-        build_header(http_buffer, nullptr, 0);
+-        if (!send(this, http_buffer->str, http_buffer->length)) {
++    uint32_t phase = 0;
++    bool sent = false;
++    String *http_buffer = nullptr;
++    const char *data = nullptr;
++    size_t length = 0;
++    for (;;) {
++        uint32_t fact = 0;
++        switch (phase) {
++        case 0: fact = http2; break;
++        case 1: fact = send_header_; break;
++        case 2: fact = sent; break;
++        case 3: fact = length != 0; break;
++        }
++        switch (swr_v1_httpbindings_write(&phase, fact)) {
++        case SWR_HTTPBINDINGS_WRITE_HTTP2: RETURN_BOOL(swoole_http2_server_write(this, sdata));
++        case SWR_HTTPBINDINGS_WRITE_BUFFER: http_buffer = get_write_buffer(); break;
++        case SWR_HTTPBINDINGS_WRITE_HEADER:
++            send_chunked = 1;
++            http_buffer->clear();
++            build_header(http_buffer, nullptr, 0);
++            sent = send(this, http_buffer->str, http_buffer->length);
++            break;
++        case SWR_HTTPBINDINGS_WRITE_READ:
++            data = ZSTR_VAL(sdata);
++            length = ZSTR_LEN(sdata);
++            break;
++        case SWR_HTTPBINDINGS_WRITE_EMPTY:
++            php_swoole_error_ex(E_WARNING, SW_ERROR_NO_PAYLOAD, "the data sent must not be empty");
++            RETURN_FALSE;
++        case SWR_HTTPBINDINGS_WRITE_HEADER_FAILED:
+             send_chunked = 0;
+             send_header_ = 0;
+             RETURN_FALSE;
+-        }
+-    }
+-
+-    auto data = ZSTR_VAL(sdata);
+-    size_t length = ZSTR_LEN(sdata);
+-
+-    if (length == 0) {
+-        php_swoole_error_ex(E_WARNING, SW_ERROR_NO_PAYLOAD, "the data sent must not be empty");
+-        RETURN_FALSE;
+-    }
+-
++        case SWR_HTTPBINDINGS_WRITE_CHUNK: {
+     http_buffer->clear();
+     char *hex_string = swoole_dec2hex(length, 16);
+     int hex_len = strlen(hex_string);
+@@ -775,41 +766,50 @@
+     http_buffer->append(ZEND_STRL("\r\n"));
+     sw_free(hex_string);
+ 
+-    RETURN_BOOL(send(this, http_buffer->str, http_buffer->length));
++            RETURN_BOOL(send(this, http_buffer->str, http_buffer->length));
++        }
++        default: return;
++        }
++    }
+ }
+ 
+ void HttpContext::end(zend_string *sdata, zval *return_value) {
+-    if (http2) {
+-        RETURN_BOOL(swoole_http2_server_end(this, sdata));
+-    }
+-
+-    if (send_chunked) {
+-        if (sdata && ZSTR_LEN(sdata) > 0) {
+-            zval retval;
+-            write(sdata, &retval);
+-            if (ZVAL_IS_FALSE(&retval)) {
+-                RETURN_FALSE;
+-            }
+-        }
+-        if (send_trailer_) {
+-            if (!send(this, ZEND_STRL("0\r\n"))) {
+-                RETURN_FALSE;
+-            }
++    uint32_t phase = 0;
++    bool sent = false;
++    zval retval;
++    String *http_buffer = nullptr;
++    const char *data = nullptr;
++    size_t length = 0;
++    for (;;) {
++        uint32_t fact = 0;
++        switch (phase) {
++        case 0: fact = http2; break;
++        case 1: fact = send_chunked ? 1 | ((sdata && ZSTR_LEN(sdata) > 0) ? 2 : 0) : 0; break;
++        case 2: fact = !ZVAL_IS_FALSE(&retval); break;
++        case 3: fact = send_trailer_; break;
++        case 4: case 5: case 8: case 9: case 11: fact = sent; break;
++        case 6: fact = length > 0; break;
++        case 7: fact = length > SW_HTTP_MAX_APPEND_DATA; break;
++        case 10: fact = upgrade && !is_co_socket(); break;
++        case 12: fact = keepalive; break;
++        }
++        switch (swr_v1_httpbindings_end(&phase, fact)) {
++        case 0: break;
++        case SWR_HTTPBINDINGS_END_HTTP2: RETURN_BOOL(swoole_http2_server_end(this, sdata));
++        case SWR_HTTPBINDINGS_END_WRITE_CHUNK: write(sdata, &retval); break;
++        case SWR_HTTPBINDINGS_END_TRAILER_ZERO: sent = send(this, ZEND_STRL("0\r\n")); break;
++        case SWR_HTTPBINDINGS_END_CHUNK_ZERO: sent = send(this, ZEND_STRL("0\r\n\r\n")); break;
++        case SWR_HTTPBINDINGS_END_TRAILER:
+             send_trailer(return_value);
+             send_trailer_ = 0;
+-        } else {
+-            if (!send(this, ZEND_STRL("0\r\n\r\n"))) {
+-                RETURN_FALSE;
+-            }
+-        }
+-        send_chunked = 0;
+-    } else {
+-        const char *data = sdata ? ZSTR_VAL(sdata) : nullptr;
+-        size_t length = sdata ? ZSTR_LEN(sdata) : 0;
+-
+-        String *http_buffer = get_write_buffer();
+-        http_buffer->clear();
+-
++            send_chunked = 0;
++            break;
++        case SWR_HTTPBINDINGS_END_CLEAR_CHUNK: send_chunked = 0; break;
++        case SWR_HTTPBINDINGS_END_PREPARE:
++            data = sdata ? ZSTR_VAL(sdata) : nullptr;
++            length = sdata ? ZSTR_LEN(sdata) : 0;
++            http_buffer = get_write_buffer();
++            http_buffer->clear();
+ #ifdef SW_HAVE_ZLIB
+         if (upgrade) {
+             Server *serv = nullptr;
+@@ -838,41 +838,33 @@
+         }
+ #endif
+ 
+-        build_header(http_buffer, data, length);
+-
+-        if (length > 0) {
++            build_header(http_buffer, data, length);
++            break;
++        case SWR_HTTPBINDINGS_END_COMPRESSION:
+ #ifdef SW_HAVE_COMPRESSION
+             if (content_compressed) {
+                 data = zlib_buffer->str;
+                 length = zlib_buffer->length;
+             }
+ #endif
+-            // send twice to reduce memory copy
+-            if (length > SW_HTTP_MAX_APPEND_DATA) {
+-                if (!send(this, http_buffer->str, http_buffer->length)) {
+-                    send_header_ = 0;
+-                    RETURN_FALSE;
+-                }
+-                if (!send(this, data, length)) {
+-                    end_ = 1;
+-                    close(this);
+-                    RETURN_FALSE;
+-                }
+-                goto _skip_copy;
+-            } else {
+-                http_buffer->append(data, length);
+-            }
+-        }
+-
+-        if (!send(this, http_buffer->str, http_buffer->length)) {
++            break;
++        case SWR_HTTPBINDINGS_END_HEADERS:
++            sent = send(this, http_buffer->str, http_buffer->length);
++            break;
++        case SWR_HTTPBINDINGS_END_BODY: sent = send(this, data, length); break;
++        case SWR_HTTPBINDINGS_END_APPEND_SEND:
++            http_buffer->append(data, length);
++            sent = send(this, http_buffer->str, http_buffer->length);
++            break;
++        case SWR_HTTPBINDINGS_END_SEND_WHOLE:
++            sent = send(this, http_buffer->str, http_buffer->length);
++            break;
++        case SWR_HTTPBINDINGS_END_HEADER_FAILED: send_header_ = 0; RETURN_FALSE;
++        case SWR_HTTPBINDINGS_END_CLOSE_FAILED:
+             end_ = 1;
+             close(this);
+             RETURN_FALSE;
+-        }
+-    }
+-
+-_skip_copy:
+-    if (upgrade && !is_co_socket()) {
++        case SWR_HTTPBINDINGS_END_UPGRADE: {
+         auto *serv = get_async_server();
+         auto *conn = serv->get_connection_verify(fd);
+ 
+@@ -885,12 +877,14 @@
+                 keepalive = 0;
+             }
+         }
+-    }
+-    if (!keepalive) {
+-        close(this);
+-    }
+-    end_ = 1;
+-    RETURN_TRUE;
++            break;
++        }
++        case SWR_HTTPBINDINGS_END_CLOSE: close(this); break;
++        case SWR_HTTPBINDINGS_END_DONE: end_ = 1; RETURN_TRUE;
++        case SWR_HTTPBINDINGS_END_FAILED: RETURN_FALSE;
++        default: return;
++        }
++    }
+ }
+ 
+ bool HttpContext::set_header(const char *k, size_t klen, const char *v, size_t vlen, bool format) {
+@@ -965,17 +959,19 @@
+         swoole_set_last_error(SW_ERROR_SERVER_IS_NOT_REGULAR_FILE);
+         RETURN_FALSE;
+     }
+-    if (file_stat.st_size < offset) {
++    static_assert(sizeof(off_t) == sizeof(int64_t) && sizeof(zend_long) == sizeof(int64_t), "HTTP file range ABI");
++    int64_t resolved_length = 0;
++    int32_t range = swr_v1_httpbindings_file_range(file_stat.st_size, offset, length, &resolved_length);
++    if (range == 1 || range == 3) {
+         php_swoole_error(E_WARNING, "parameter $offset[" ZEND_LONG_FMT "] exceeds the file size", offset);
+         RETURN_FALSE;
+     }
+-    if (length > file_stat.st_size - offset) {
++    if (range == 2) {
+         php_swoole_error(E_WARNING, "parameter $length[" ZEND_LONG_FMT "] exceeds the file size", length);
+         RETURN_FALSE;
+     }
+-    if (length == 0) {
+-        length = file_stat.st_size - offset;
+-    }
++    if (range != 0) RETURN_FALSE;
++    length = resolved_length;
+ 
+     if (ctx->onAfterResponse) {
+         ctx->onAfterResponse(ctx);

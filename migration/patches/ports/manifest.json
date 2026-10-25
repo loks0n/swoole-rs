@@ -1,0 +1,19 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-port.patch",
+      "sha256": "ec724d23fe0d478850d1e611a6b9605fb6cca1e88b3b37f794daf8595a745a2a",
+      "upstream_paths": [
+        "src/server/port.cc"
+      ]
+    },
+    {
+      "path": "0002-swoole_server_port.patch",
+      "sha256": "c8fd0944795753a62eb40c0b32464a053dc8f651e8224b814698b3398e957a40",
+      "upstream_paths": [
+        "ext-src/swoole_server_port.cc"
+      ]
+    }
+  ]
+}

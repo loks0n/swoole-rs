@@ -1,0 +1,920 @@
+diff --git a/src/core/base.cc b/src/core/base.cc
+index f67d872..31da8ef 100644
+--- a/src/core/base.cc
++++ b/src/core/base.cc
+@@ -15,8 +15,13 @@
+  */
+ 
+ #include "swoole.h"
++#ifndef SWOOLE_RS_COREBASE
++#error "Corebase overlay requires --enable-swoole-rs-corebase"
++#endif
++#include "swoole_rs_corebase.h"
+ 
+ #include <cstdarg>
++#include <cstdlib>
+ #include <cassert>
+ #include <fcntl.h>
+ 
+@@ -93,66 +98,96 @@ static void bug_report_message_init() {
+ }
+ 
+ void swoole_init() {
+-    if (SwooleG.init) {
+-        return;
+-    }
+-
+-    SwooleG = {};
+-    sw_memset_zero(sw_error, SW_ERROR_MSG_SIZE);
+-
+-    SwooleG.running = 1;
+-    SwooleG.init = 1;
+-    SwooleG.enable_coroutine = 1;
+-    SwooleG.std_allocator = {malloc, calloc, realloc, free};
+-    SwooleG.stdout_ = stdout;
+-    SwooleG.fatal_error = swoole_fatal_error_impl;
+-    SwooleG.cpu_num = SW_MAX(1, sysconf(_SC_NPROCESSORS_ONLN));
+-    SwooleG.pagesize = getpagesize();
+-    SwooleG.max_file_content = SW_MAX_FILE_CONTENT;
+-
+-    // DNS options
+-    SwooleG.dns_tries = 1;
+-    SwooleG.dns_resolvconf_path = SW_DNS_RESOLV_CONF;
+-
+-    // get system uname
+-    uname(&SwooleG.uname);
+-    // random seed
+-    srandom(time(nullptr));
+-
+-    if (!SwooleG.logger) {
+-        SwooleG.logger = new Logger();
+-    }
+-
+-    swoole_thread_init(true);
+-
++    swr_v1_corebase_lifecycle_state state = {};
++    uint64_t observed = 0;
++    while (true) {
++        switch (swr_v1_corebase_init_next(&state, observed, SW_SESSION_LIST_SIZE)) {
++        case SWR_COREBASE_OBSERVE_INITIALIZED:
++            observed = SwooleG.init;
++            break;
++        case SWR_COREBASE_PUBLISH_INIT:
++            SwooleG = {};
++            sw_memset_zero(sw_error, SW_ERROR_MSG_SIZE);
++            SwooleG.running = 1;
++            SwooleG.init = 1;
++            SwooleG.enable_coroutine = 1;
++            SwooleG.std_allocator = {malloc, calloc, realloc, free};
++            SwooleG.stdout_ = stdout;
++            SwooleG.fatal_error = swoole_fatal_error_impl;
++            break;
++        case SWR_COREBASE_QUERY_CPU:
++            // The original SW_MAX evaluates sysconf once for its comparison.
++            observed = sysconf(_SC_NPROCESSORS_ONLN) < 1;
++            break;
++        case SWR_COREBASE_PUBLISH_CPU_ONE:
++            SwooleG.cpu_num = 1;
++            break;
++        case SWR_COREBASE_QUERY_CPU_AGAIN:
++            // SW_MAX evaluates its second operand again when the first is >= 1.
++            SwooleG.cpu_num = sysconf(_SC_NPROCESSORS_ONLN);
++            break;
++        case SWR_COREBASE_HOST_DEFAULTS:
++            SwooleG.pagesize = getpagesize();
++            SwooleG.max_file_content = SW_MAX_FILE_CONTENT;
++            SwooleG.dns_tries = 1;
++            SwooleG.dns_resolvconf_path = SW_DNS_RESOLV_CONF;
++            uname(&SwooleG.uname);
++            srandom(time(nullptr));
++            break;
++        case SWR_COREBASE_OBSERVE_LOGGER:
++            observed = SwooleG.logger != nullptr;
++            break;
++        case SWR_COREBASE_ALLOCATE_LOGGER:
++            SwooleG.logger = new Logger();
++            break;
++        case SWR_COREBASE_INIT_MAIN_THREAD:
++            swoole_thread_init(true);
++            break;
++        case SWR_COREBASE_LOG_DEFAULTS:
+ #ifdef SW_DEBUG
+-    sw_logger()->set_level(0);
+-    SwooleG.trace_flags = 0x7fffffff;
++            sw_logger()->set_level(0);
++            SwooleG.trace_flags = 0x7fffffff;
+ #else
+-    sw_logger()->set_level(SW_LOG_INFO);
++            sw_logger()->set_level(SW_LOG_INFO);
+ #endif
+-
+-    // init global shared memory
+-    SwooleG.memory_pool = new swoole::GlobalMemory(SW_GLOBAL_MEMORY_PAGESIZE, true);
+-    SwooleG.max_sockets = SW_MAX_SOCKETS_DEFAULT;
+-    rlimit rlmt;
+-    if (getrlimit(RLIMIT_NOFILE, &rlmt) < 0) {
+-        swoole_sys_warning("getrlimit() failed");
+-    } else {
+-        SwooleG.max_sockets = SW_MAX((uint32_t) rlmt.rlim_cur, SW_MAX_SOCKETS_DEFAULT);
+-        SwooleG.max_sockets = SW_MIN((uint32_t) rlmt.rlim_cur, SW_SESSION_LIST_SIZE);
+-    }
+-
+-    SwooleG.task_tmpfile = SW_TASK_TMP_DIR "/" SW_TASK_TMP_FILE;
+-
+-    // init signalfd
++            break;
++        case SWR_COREBASE_REPLACE_POOL:
++            SwooleG.memory_pool = new swoole::GlobalMemory(SW_GLOBAL_MEMORY_PAGESIZE, true);
++            break;
++        case SWR_COREBASE_DEFAULT_SOCKETS:
++            SwooleG.max_sockets = SW_MAX_SOCKETS_DEFAULT;
++            break;
++        case SWR_COREBASE_QUERY_RLIMIT: {
++            rlimit rlmt;
++            observed = getrlimit(RLIMIT_NOFILE, &rlmt) < 0 ? 0 :
++                (static_cast<uint64_t>(static_cast<uint32_t>(rlmt.rlim_cur)) << 1) | 1;
++            break;
++        }
++        case SWR_COREBASE_WARN_RLIMIT:
++            // Preserve original facade identity and lazy warning allocation.
++            swoole_sys_warning("getrlimit() failed");
++            break;
++        case SWR_COREBASE_PUBLISH_RLIMIT:
++            SwooleG.max_sockets = state.index;
++            break;
++        case SWR_COREBASE_TASK_TEMPLATE:
++            SwooleG.task_tmpfile = SW_TASK_TMP_DIR "/" SW_TASK_TMP_FILE;
++            break;
++        case SWR_COREBASE_SIGNAL_FD:
+ #ifdef HAVE_SIGNALFD
+-    swoole_signalfd_init();
+-    SwooleG.enable_signalfd = 1;
++            swoole_signalfd_init();
++            SwooleG.enable_signalfd = 1;
+ #endif
+-
+-    // init bug report message
+-    bug_report_message_init();
++            break;
++        case SWR_COREBASE_BUG_MESSAGE:
++            bug_report_message_init();
++            break;
++        case SWR_COREBASE_DONE:
++            return;
++        default:
++            std::abort();
++        }
++    }
+ }
+ 
+ SW_EXTERN_C_BEGIN
+@@ -186,23 +221,78 @@ SW_API int swoole_api_version_id(void) {
+ 
+ SW_EXTERN_C_END
+ 
+-void swoole_clean() {
+-    SW_LOOP_N(SW_MAX_HOOK_TYPE) {
+-        if (SwooleG.hooks[i]) {
+-            auto hooks = static_cast<std::list<swoole::Callback> *>(SwooleG.hooks[i]);
+-            delete hooks;
++// Native effect shim shared by the three real lifecycle facades. The Rust
++// cursor never spans a native callback, destructor, allocation or exception.
++static void corebase_lifecycle(uint32_t operation, uint32_t argument) {
++    swr_v1_corebase_lifecycle_state state = {};
++    uint64_t observed = 0;
++    while (true) {
++        switch (swr_v1_corebase_lifecycle_next(operation, &state, observed, argument)) {
++        case SWR_COREBASE_OBSERVE_HOOK:
++            observed = SwooleG.hooks[state.index] != nullptr;
++            break;
++        case SWR_COREBASE_DELETE_HOOK:
++            delete static_cast<std::list<swoole::Callback> *>(SwooleG.hooks[state.index]);
++            break;
++        case SWR_COREBASE_CLEAR_SIGNALS:
++            swoole_signal_clear();
++            break;
++        case SWR_COREBASE_CLEAN_THREAD:
++            swoole_thread_clean(true);
++            break;
++        case SWR_COREBASE_OBSERVE_LOGGER:
++            observed = SwooleG.logger != nullptr;
++            break;
++        case SWR_COREBASE_CLOSE_LOGGER:
++            SwooleG.logger->close();
++            break;
++        case SWR_COREBASE_DELETE_LOGGER:
++            delete SwooleG.logger;
++            break;
++        case SWR_COREBASE_DELETE_POOL:
++            delete SwooleG.memory_pool;
++            break;
++        case SWR_COREBASE_RESET_GLOBAL:
++            SwooleG = {};
++            break;
++        case SWR_COREBASE_DONE:
++            return;
++        case SWR_COREBASE_OBSERVE_BUFFER:
++            observed = SwooleTG.buffer_stack != nullptr;
++            break;
++        case SWR_COREBASE_ALLOCATE_BUFFER:
++            SwooleTG.buffer_stack = new String(SW_STACK_BUFFER_SIZE);
++            break;
++        case SWR_COREBASE_BLOCK_SIGNALS:
++            swoole_signal_block_all();
++            break;
++        case SWR_COREBASE_PUBLISH_MAIN:
++            SwooleTG.main_thread = argument != 0;
++            break;
++        case SWR_COREBASE_OBSERVE_TIMER:
++            observed = SwooleTG.timer != nullptr;
++            break;
++        case SWR_COREBASE_FREE_TIMER:
++            swoole_timer_free();
++            break;
++        case SWR_COREBASE_OBSERVE_REACTOR:
++            observed = SwooleTG.reactor != nullptr;
++            break;
++        case SWR_COREBASE_FREE_REACTOR:
++            swoole_event_free();
++            break;
++        case SWR_COREBASE_DELETE_BUFFER:
++            delete SwooleTG.buffer_stack;
++            SwooleTG.buffer_stack = nullptr;
++            break;
++        default:
++            std::abort();
+         }
+     }
++}
+ 
+-    swoole_signal_clear();
+-    swoole_thread_clean(true);
+-
+-    if (SwooleG.logger) {
+-        SwooleG.logger->close();
+-    }
+-    delete SwooleG.logger;
+-    delete SwooleG.memory_pool;
+-    SwooleG = {};
++void swoole_clean() {
++    corebase_lifecycle(SWR_COREBASE_CLEAN, SW_MAX_HOOK_TYPE);
+ }
+ 
+ SW_API void swoole_set_log_level(int level) {
+@@ -246,6 +336,45 @@ bool swoole_set_task_tmpdir(const std::string &dir) {
+     std::unique_lock<std::mutex> _lock(sw_thread_lock);
+ #endif
+ 
++#ifdef SWOOLE_RS_COREBASE
++    swr_v1_corebase_lifecycle_state cursor{};
++    uint64_t observed = 0;
++    for (;;) {
++        switch (swr_v1_corebase_task_tmp_next(&cursor, observed, SW_TASK_TMP_PATH_SIZE)) {
++        case SWR_COREBASE_OBSERVE_TASK_BYTE:
++            observed = static_cast<uint8_t>(dir.at(0));
++            break;
++        case SWR_COREBASE_WARN_TASK_ABSOLUTE:
++            swoole_warning("wrong absolute path '%s'", dir.c_str());
++            break;
++        case SWR_COREBASE_ACCESS_TASK:
++            observed = access(dir.c_str(), R_OK) >= 0;
++            break;
++        case SWR_COREBASE_MKDIR_TASK:
++            observed = swoole_mkdir_recursive(dir);
++            break;
++        case SWR_COREBASE_WARN_TASK_CREATE:
++            swoole_warning("create task tmp dir('%s') failed", dir.c_str());
++            break;
++        case SWR_COREBASE_PUBLISH_TASK:
++            sw_tg_buffer()->format("%s/" SW_TASK_TMP_FILE, dir.c_str());
++            SwooleG.task_tmpfile = sw_tg_buffer()->to_std_string();
++            break;
++        case SWR_COREBASE_OBSERVE_TASK_LENGTH:
++            observed = SwooleG.task_tmpfile.length();
++            break;
++        case SWR_COREBASE_WARN_TASK_LONG:
++            swoole_warning("task tmp_dir is too large, the max size is '%d'", SW_TASK_TMP_PATH_SIZE - 1);
++            break;
++        case SWR_COREBASE_REJECT_TASK:
++            return false;
++        case SWR_COREBASE_ACCEPT_TASK:
++            return true;
++        default:
++            std::abort();
++        }
++    }
++#else
+     if (dir.at(0) != '/') {
+         swoole_warning("wrong absolute path '%s'", dir.c_str());
+         return false;
+@@ -265,87 +394,112 @@ bool swoole_set_task_tmpdir(const std::string &dir) {
+     }
+ 
+     return true;
++#endif
+ }
+ 
+ const std::string &swoole_get_task_tmpdir() {
+     return SwooleG.task_tmpfile;
+ }
+ 
++// Rust selects the sequence; all native effects and callbacks run after return.
++// Pinned flag values are checked rather than silently translating a new ABI.
++static_assert(SW_FORK_EXEC == 2 && SW_FORK_DAEMON == 4 && SW_FORK_PRECHECK == 8,
++              "corebase Rust fork policy requires pinned flag values");
++
+ pid_t swoole_fork_exec(const std::function<void(void)> &fn) {
+-    pid_t pid = fork();
+-    switch (pid) {
+-    case -1:
+-        return false;
+-    case 0:
+-        fn();
+-        exit(0);
+-    default:
+-        break;
++    swr_v1_corebase_lifecycle_state state = {};
++    uint64_t observed = 0;
++    pid_t pid = 0;
++    while (true) {
++        switch (swr_v1_corebase_lifecycle_next(SWR_COREBASE_FORK_EXEC, &state, observed, 0)) {
++        case SWR_COREBASE_FORK_CALL:
++            pid = fork();
++            observed = pid < 0 ? 0 : (pid == 0 ? 1 : 2);
++            break;
++        case SWR_COREBASE_FAILED_EXEC:
++            return false;
++        case SWR_COREBASE_EXEC_CALLBACK:
++            fn();
++            break;
++        case SWR_COREBASE_EXIT_CHILD:
++            exit(0);
++        case SWR_COREBASE_DONE:
++            return pid;
++        default:
++            std::abort();
++        }
+     }
+-    return pid;
+ }
+ 
+ pid_t swoole_fork(int flags) {
+-    if (!(flags & SW_FORK_EXEC)) {
+-        if (swoole_coroutine_is_in()) {
++    swr_v1_corebase_lifecycle_state state = {};
++    uint64_t observed = 0;
++    pid_t pid = 0;
++    while (true) {
++        switch (swr_v1_corebase_lifecycle_next(SWR_COREBASE_FORK, &state, observed,
++                                              static_cast<uint32_t>(flags))) {
++        case SWR_COREBASE_OBSERVE_COROUTINE:
++            observed = swoole_coroutine_is_in();
++            break;
++        case SWR_COREBASE_REJECT_COROUTINE:
+             swoole_fatal_error(SW_ERROR_OPERATION_NOT_SUPPORT, "must be forked outside the coroutine");
+-        }
+-        if (SwooleTG.async_threads) {
++            break;
++        case SWR_COREBASE_OBSERVE_ASYNC:
++            observed = SwooleTG.async_threads != nullptr;
++            break;
++        case SWR_COREBASE_REJECT_ASYNC:
+             swoole_trace("aio_task_num=%lu, reactor=%p", SwooleTG.async_threads->task_num, sw_reactor());
+             swoole_fatal_error(SW_ERROR_OPERATION_NOT_SUPPORT, "can not fork after using async-threads");
+-        }
+-    }
+-
+-    if (flags & SW_FORK_PRECHECK) {
+-        return 0;
+-    }
+-
+-    pid_t pid;
+-    while (true) {
+-        pid = fork();
+-        if (pid < 0) {
++            break;
++        case SWR_COREBASE_FORK_CALL:
++            pid = fork();
++            observed = pid < 0 ? 0 : (pid == 0 ? 1 : 2);
++            break;
++        case SWR_COREBASE_WARN_FORK:
++            // Keep warning formatting in the original facade and at this point.
+             swoole_sys_warning("fork() failed");
++            break;
++        case SWR_COREBASE_SLEEP_RETRY:
+             sleep(1);
+-        } else {
+             break;
+-        }
+-    }
+-
+-    if (pid == 0) {
+-        if (flags & SW_FORK_DAEMON) {
+-            return pid;
+-        }
+-        /**
+-         * [!!!] All timers and event loops must be cleaned up after fork
+-         */
+-        if (swoole_timer_is_available()) {
++        case SWR_COREBASE_OBSERVE_TIMER:
++            observed = swoole_timer_is_available();
++            break;
++        case SWR_COREBASE_FREE_TIMER:
+             swoole_timer_free();
+-        }
+-        if (!(flags & SW_FORK_EXEC)) {
+-            /**
+-             * Do not release the allocated memory pages.
+-             * The global memory will be returned to the OS upon process termination.
+-             */
++            break;
++        case SWR_COREBASE_REPLACE_POOL:
++            // The child's old shared pages remain owned by the OS as before.
+             SwooleG.memory_pool = new swoole::GlobalMemory(SW_GLOBAL_MEMORY_PAGESIZE, true);
+-            // reopen log file
++            break;
++        case SWR_COREBASE_REOPEN_LOGGER:
+             sw_logger()->reopen();
+-            // reset eventLoop
+-            if (swoole_event_is_available()) {
+-                swoole_event_free();
+-                swoole_trace_log(SW_TRACE_REACTOR, "reactor has been destroyed");
+-            }
+-        } else {
++            break;
++        case SWR_COREBASE_OBSERVE_REACTOR:
++            observed = swoole_event_is_available();
++            break;
++        case SWR_COREBASE_FREE_FORK_REACTOR:
++            swoole_event_free();
++            swoole_trace_log(SW_TRACE_REACTOR, "reactor has been destroyed");
++            break;
++        case SWR_COREBASE_CLOSE_LOGGER:
+             sw_logger()->close();
+-        }
+-        // reset signal handler
+-        swoole_signal_clear();
+-
+-        if (swoole_isset_hook(SW_GLOBAL_HOOK_AFTER_FORK)) {
++            break;
++        case SWR_COREBASE_CLEAR_SIGNALS:
++            swoole_signal_clear();
++            break;
++        case SWR_COREBASE_OBSERVE_AFTER_FORK:
++            observed = swoole_isset_hook(SW_GLOBAL_HOOK_AFTER_FORK);
++            break;
++        case SWR_COREBASE_CALL_AFTER_FORK:
+             swoole_call_hook(SW_GLOBAL_HOOK_AFTER_FORK, nullptr);
++            break;
++        case SWR_COREBASE_DONE:
++            return pid;
++        default:
++            std::abort();
+         }
+     }
+-
+-    return pid;
+ }
+ 
+ bool swoole_is_main_thread() {
+@@ -353,26 +507,11 @@ bool swoole_is_main_thread() {
+ }
+ 
+ void swoole_thread_init(bool main_thread) {
+-    if (!SwooleTG.buffer_stack) {
+-        SwooleTG.buffer_stack = new String(SW_STACK_BUFFER_SIZE);
+-    }
+-    if (!main_thread) {
+-        swoole_signal_block_all();
+-    }
+-    SwooleTG.main_thread = main_thread;
++    corebase_lifecycle(SWR_COREBASE_THREAD_INIT, main_thread);
+ }
+ 
+ void swoole_thread_clean(bool main_thread) {
+-    if (SwooleTG.timer) {
+-        swoole_timer_free();
+-    }
+-    if (SwooleTG.reactor) {
+-        swoole_event_free();
+-    }
+-    if (SwooleTG.buffer_stack) {
+-        delete SwooleTG.buffer_stack;
+-        SwooleTG.buffer_stack = nullptr;
+-    }
++    corebase_lifecycle(SWR_COREBASE_THREAD_CLEAN, 0);
+ }
+ 
+ void swoole_dump_ascii(const char *data, size_t size) {
+@@ -412,107 +551,39 @@ void swoole_dump_hex(const uchar *data, size_t outlen) {
+  */
+ bool swoole_mkdir_recursive(const std::string &dir) {
+     char tmp[PATH_MAX];
+-    size_t len = dir.length();
+-
+-    // PATH_MAX limit includes string trailing null character
+-    if (len + 1 > PATH_MAX) {
++    swr_v1_corebase_mkdir_state state = {};
++    int step;
++    while ((step = swr_v1_corebase_mkdir_next(reinterpret_cast<const uint8_t *>(dir.data()),
++                                              dir.length(), reinterpret_cast<uint8_t *>(tmp),
++                                              sizeof(tmp), &state)) == 1) {
++        if (access(tmp, R_OK) != 0 && mkdir(tmp, 0755) == -1) {
++            swoole_sys_warning("mkdir('%s') failed", tmp);
++            return false;
++        }
++    }
++    if (step == 2) {
+         swoole_error_log(SW_LOG_WARNING,
+                          SW_ERROR_NAME_TOO_LONG,
+                          "mkdir() failed. Path exceeds the limit of %d characters",
+                          PATH_MAX - 1);
+-        return false;
+-    }
+-    swoole_strlcpy(tmp, dir.c_str(), PATH_MAX);
+-
+-    if (dir[len - 1] != '/') {
+-        strcat(tmp, "/");
+-    }
+-
+-    len = strlen(tmp);
+-    for (size_t i = 1; i < len; i++) {
+-        if (tmp[i] == '/') {
+-            tmp[i] = 0;
+-            if (access(tmp, R_OK) != 0) {
+-                if (mkdir(tmp, 0755) == -1) {
+-                    swoole_sys_warning("mkdir('%s') failed", tmp);
+-                    return false;
+-                }
+-            }
+-            tmp[i] = '/';
+-        }
+     }
+-
+-    return true;
++    return step == 0;
+ }
+ 
+ int swoole_type_size(char type) {
+-    switch (type) {
+-    case 'c':
+-    case 'C':
+-        return 1;
+-    case 's':
+-    case 'S':
+-    case 'n':
+-    case 'v':
+-        return 2;
+-    case 'l':
+-    case 'L':
+-    case 'N':
+-    case 'V':
+-        return 4;
+-    case 'q':
+-    case 'Q':
+-    case 'J':
+-    case 'P':
+-        return 8;
+-    default:
+-        return 0;
+-    }
++    return swr_v1_corebase_type_size(static_cast<uint8_t>(type));
+ }
+ 
+ char *swoole_dec2hex(ulong_t value, int base) {
+     assert(base > 1 && base < 37);
+-
+-    static char digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+     char buf[(sizeof(ulong_t) << 3) + 1];
+-    char *ptr;
+-
+-    char *end = ptr = buf + sizeof(buf) - 1;
+-    *ptr = '\0';
+-
+-    do {
+-        *--ptr = digits[value % base];
+-        value /= base;
+-    } while (ptr > buf && value);
+-
+-    return sw_strndup(ptr, end - ptr);
++    const size_t first = swr_v1_corebase_radix(value, base, reinterpret_cast<uint8_t *>(buf), sizeof(buf));
++    if (first == SIZE_MAX) return nullptr;
++    return sw_strndup(buf + first, sizeof(buf) - first - 1);
+ }
+ 
+ ulong_t swoole_hex2dec(const char *hex, size_t *parsed_bytes) {
+-    size_t value = 0;
+-    *parsed_bytes = 0;
+-    const char *p = hex;
+-
+-    if (strncasecmp(hex, "0x", 2) == 0) {
+-        p += 2;
+-    }
+-
+-    while (true) {
+-        char c = *p;
+-        if ((c >= '0') && (c <= '9')) {
+-            value = value * 16 + (c - '0');
+-        } else {
+-            c = toupper(c);
+-            if ((c >= 'A') && (c <= 'Z')) {
+-                value = value * 16 + (c - 'A') + 10;
+-            } else {
+-                break;
+-            }
+-        }
+-        p++;
+-    }
+-    *parsed_bytes = p - hex;
+-    return value;
++    return swr_v1_corebase_hex_mode(hex, parsed_bytes, static_cast<char>(-1) < 0);
+ }
+ 
+ #ifndef RAND_MAX
+@@ -521,25 +592,30 @@ ulong_t swoole_hex2dec(const char *hex, size_t *parsed_bytes) {
+ 
+ int swoole_system_random(int min, int max) {
+     static int dev_random_fd = -1;
+-    unsigned random_value;
+-
++    unsigned random_value = 0;
++    bool read_complete = false;
+     assert(max > min);
+-
+-    if (dev_random_fd == -1) {
+-        dev_random_fd = open("/dev/urandom", O_RDONLY);
+-        if (dev_random_fd < 0) {
+-            return swoole_rand(min, max);
++    swr_v1_corebase_random_state state{};
++    for (;;) {
++        const uint32_t flags = (dev_random_fd >= 0 ? 1u : 0u) | (read_complete ? 2u : 0u);
++        switch (swr_v1_corebase_random_next(&state, SWR_COREBASE_RANDOM_SYSTEM,
++                                          flags, 0, random_value, min, max)) {
++        case SWR_COREBASE_RANDOM_OPEN:
++            dev_random_fd = open("/dev/urandom", O_RDONLY);
++            break;
++        case SWR_COREBASE_RANDOM_READ: {
++            constexpr int bytes_to_read = sizeof(random_value);
++            read_complete = read(dev_random_fd, &random_value, bytes_to_read) >= bytes_to_read;
++            break;
++        }
++        case SWR_COREBASE_RANDOM_FALLBACK: return swoole_rand(min, max);
++        case SWR_COREBASE_RANDOM_WARN:
++            swoole_sys_warning("read() from /dev/urandom failed");
++            break;
++        case SWR_COREBASE_RANDOM_RETURN: return state.value;
++        default: std::abort();
+         }
+     }
+-
+-    auto next_random_byte = (char *) &random_value;
+-    constexpr int bytes_to_read = sizeof(random_value);
+-
+-    if (read(dev_random_fd, next_random_byte, bytes_to_read) < bytes_to_read) {
+-        swoole_sys_warning("read() from /dev/urandom failed");
+-        return SW_ERR;
+-    }
+-    return min + (random_value % (max - min + 1));
+ }
+ 
+ void swoole_redirect_stdout(int new_fd) {
+@@ -562,35 +638,7 @@ void swoole_redirect_stdout(const char *file) {
+ }
+ 
+ int swoole_version_compare(const char *version1, const char *version2) {
+-    int result = 0;
+-
+-    while (result == 0) {
+-        char *tail1;
+-        char *tail2;
+-
+-        unsigned long ver1 = strtoul(version1, &tail1, 10);
+-        unsigned long ver2 = strtoul(version2, &tail2, 10);
+-
+-        if (ver1 < ver2) {
+-            result = -1;
+-        } else if (ver1 > ver2) {
+-            result = +1;
+-        } else {
+-            version1 = tail1;
+-            version2 = tail2;
+-            if (*version1 == '\0' && *version2 == '\0') {
+-                break;
+-            } else if (*version1 == '\0') {
+-                result = -1;
+-            } else if (*version2 == '\0') {
+-                result = +1;
+-            } else {
+-                version1++;
+-                version2++;
+-            }
+-        }
+-    }
+-    return result;
++    return swr_v1_corebase_version(version1, version2);
+ }
+ 
+ /**
+@@ -599,15 +647,7 @@ int swoole_version_compare(const char *version1, const char *version2) {
+ uint32_t swoole_common_divisor(uint32_t u, uint32_t v) {
+     assert(u > 0);
+     assert(v > 0);
+-    while (u > 0) {
+-        if (u < v) {
+-            uint32_t t = u;
+-            u = v;
+-            v = t;
+-        }
+-        u = u - v;
+-    }
+-    return v;
++    return swr_v1_corebase_gcd(u, v);
+ }
+ 
+ /**
+@@ -616,17 +656,7 @@ uint32_t swoole_common_divisor(uint32_t u, uint32_t v) {
+ uint32_t swoole_common_multiple(uint32_t u, uint32_t v) {
+     assert(u > 0);
+     assert(v > 0);
+-
+-    uint32_t m_cup = u;
+-    uint32_t n_cup = v;
+-    int res = m_cup % n_cup;
+-
+-    while (res != 0) {
+-        m_cup = n_cup;
+-        n_cup = res;
+-        res = m_cup % n_cup;
+-    }
+-    return u * v / n_cup;
++    return swr_v1_corebase_lcm(u, v);
+ }
+ 
+ size_t sw_snprintf(char *buf, size_t size, const char *format, ...) {
+@@ -687,27 +717,7 @@ bool sw_wait_for(const std::function<bool(void)> &fn, int timeout_ms) {
+ }
+ 
+ int swoole_itoa(char *buf, long value) {
+-    long i = 0, j;
+-
+-    long sign_mask = value >> (sizeof(long) * 8 - 1);
+-    unsigned long nn = (value + sign_mask) ^ sign_mask;
+-    do {
+-        buf[i++] = nn % 10 + '0';
+-    } while (nn /= 10);
+-
+-    buf[i] = '-';
+-    i += sign_mask & 1;
+-    buf[i] = '\0';
+-
+-    int s_len = i;
+-
+-    for (i = 0, j = s_len - 1; i < j; ++i, --j) {
+-        char swap = buf[i];
+-        buf[i] = buf[j];
+-        buf[j] = swap;
+-    }
+-    buf[s_len] = 0;
+-    return s_len;
++    return swr_v1_corebase_itoa(buf, value);
+ }
+ 
+ int swoole_shell_exec(const char *command, pid_t *pid, bool get_error_stream) {
+@@ -770,24 +780,58 @@ char *swoole_string_format(size_t n, const char *format, ...) {
+     return nullptr;
+ }
+ 
+-static constexpr char characters[] = {
+-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U',
+-    'V', 'W', 'X', 'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p',
+-    'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+-};
+-
+ void swoole_random_string(char *buf, size_t len) {
+-    size_t i = 0;
+-    for (; i < len; i++) {
+-        buf[i] = characters[swoole_rand(0, sizeof(characters) - 1)];
++    swr_v1_corebase_random_state state{};
++    uint32_t random_value = 0;
++    uint32_t flags = 0;
++    if (len != 0) {
++        random_value = swoole_rand(0, SWR_COREBASE_RANDOM_DRAW_MAX);
++        flags = SWR_COREBASE_RANDOM_FIRST_DRAW_READY;
++    }
++    for (;;) {
++        const uint32_t action = swr_v1_corebase_random_next(&state, SWR_COREBASE_RANDOM_BUFFER,
++                                                           flags, len, random_value, 0, 0);
++        flags = 0;
++        switch (action) {
++        case SWR_COREBASE_RANDOM_DRAW: random_value = swoole_rand(0, SWR_COREBASE_RANDOM_DRAW_MAX); break;
++        case SWR_COREBASE_RANDOM_STORE_DRAW:
++            buf[state.index] = static_cast<char>(state.value);
++            random_value = swoole_rand(0, SWR_COREBASE_RANDOM_DRAW_MAX);
++            break;
++        case SWR_COREBASE_RANDOM_STORE_NUL:
++            buf[state.index] = static_cast<char>(state.value);
++            buf[state.index + 1] = '\0';
++            return;
++        case SWR_COREBASE_RANDOM_NUL: buf[state.index] = '\0'; return;
++        default: std::abort();
++        }
+     }
+-    buf[i] = '\0';
+ }
+ 
+ void swoole_random_string(std::string &str, size_t len) {
+-    size_t i = 0;
+-    for (; i < len; i++) {
+-        str.append(1, characters[swoole_rand(0, sizeof(characters) - 1)]);
++    swr_v1_corebase_random_state state{};
++    uint32_t random_value = 0;
++    uint32_t flags = 0;
++    if (len != 0) {
++        random_value = swoole_rand(0, SWR_COREBASE_RANDOM_DRAW_MAX);
++        flags = SWR_COREBASE_RANDOM_FIRST_DRAW_READY;
++    }
++    for (;;) {
++        const uint32_t action = swr_v1_corebase_random_next(&state, SWR_COREBASE_RANDOM_APPEND,
++                                                           flags, len, random_value, 0, 0);
++        flags = 0;
++        switch (action) {
++        case SWR_COREBASE_RANDOM_DRAW: random_value = swoole_rand(0, SWR_COREBASE_RANDOM_DRAW_MAX); break;
++        case SWR_COREBASE_RANDOM_STORE_DRAW:
++            str.append(1, static_cast<char>(state.value));
++            random_value = swoole_rand(0, SWR_COREBASE_RANDOM_DRAW_MAX);
++            break;
++        case SWR_COREBASE_RANDOM_STORE_DONE:
++            str.append(1, static_cast<char>(state.value));
++            return;
++        case SWR_COREBASE_RANDOM_DONE: return;
++        default: std::abort();
++        }
+     }
+ }
+ 
+@@ -816,16 +860,31 @@ bool swoole_get_env(const char *name, int *value) {
+     if (!e) {
+         return false;
+     }
+-    *value = std::stoi(e);
++    const std::string input(e);
++    int32_t parsed;
++    const int saved_errno = errno;
++    errno = 0;
++    const bool parsed_ok = swr_v1_corebase_parse_stoi(input.c_str(), &parsed);
++    const int parse_errno = errno;
++    errno = saved_errno;
++    if (parsed_ok && parse_errno != ERANGE) {
++        *value = parsed;
++    } else {
++        *value = std::stoi(input);
++    }
+     return true;
+ }
+ 
+ int swoole_get_systemd_listen_fds() {
+     int ret;
+-    if (!swoole_get_env("LISTEN_FDS", &ret)) {
++    const bool found = swoole_get_env("LISTEN_FDS", &ret);
++    const uint32_t action = swr_v1_corebase_systemd_listen_fds_action(
++        found, found ? ret : 0, SW_MAX_LISTEN_PORT);
++    if (action == SWR_COREBASE_SYSTEMD_LISTEN_FDS_WARN_MISSING) {
+         swoole_warning("invalid LISTEN_FDS");
+         return -1;
+-    } else if (ret >= SW_MAX_LISTEN_PORT) {
++    }
++    if (action == SWR_COREBASE_SYSTEMD_LISTEN_FDS_ERROR_LIMIT) {
+         swoole_error_log(SW_LOG_ERROR, SW_ERROR_SERVER_TOO_MANY_LISTEN_PORT, "LISTEN_FDS is too big");
+         return -1;
+     }
+@@ -923,22 +982,21 @@ void DataHead::print() {
+ }
+ 
+ std::string dirname(const std::string &file) {
+-    size_t index = file.find_last_of('/');
+-    if (index == std::string::npos) {
+-        return {};
+-    } else if (index == 0) {
+-        return "/";
+-    }
+-    return file.substr(0, index);
++    const size_t length = swr_v1_corebase_dirname(reinterpret_cast<const uint8_t *>(file.data()), file.length());
++    return file.substr(0, length);
+ }
+ 
+ void hook_add(void **hooks, int type, const Callback &func, int push_back) {
+-    if (hooks[type] == nullptr) {
++    const auto action = swr_v1_corebase_hook_add_action(hooks[type] != nullptr, push_back);
++    if (action < SWR_COREBASE_HOOK_CREATE_FRONT || action > SWR_COREBASE_HOOK_PUSH_BACK) {
++        std::abort();
++    }
++    if (action == SWR_COREBASE_HOOK_CREATE_FRONT || action == SWR_COREBASE_HOOK_CREATE_BACK) {
+         hooks[type] = new std::list<Callback>;
+     }
+ 
+     auto *l = static_cast<std::list<Callback> *>(hooks[type]);
+-    if (push_back) {
++    if (action == SWR_COREBASE_HOOK_CREATE_BACK || action == SWR_COREBASE_HOOK_PUSH_BACK) {
+         l->push_back(func);
+     } else {
+         l->push_front(func);

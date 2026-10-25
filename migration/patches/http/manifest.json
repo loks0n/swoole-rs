@@ -1,0 +1,26 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-http-helpers.patch",
+      "sha256": "9f41f764eb785863c89b854433c7664f0e12e9a314698ef6810005e5483f28bb",
+      "upstream_paths": [
+        "src/protocol/http.cc"
+      ]
+    },
+    {
+      "path": "0002-static-ranges.patch",
+      "sha256": "177a3713761d3d36b4c225724ee7f0e3271183eda7fb0358b4c8e5697aa393d5",
+      "upstream_paths": [
+        "src/server/static_handler.cc"
+      ]
+    },
+    {
+      "path": "0003-static-inline.patch",
+      "sha256": "d7bd3bcf004d1c7760fac92beb2833af172f9c351aa287d3a2cd09d30911b646",
+      "upstream_paths": [
+        "include/swoole_static_handler.h"
+      ]
+    }
+  ]
+}

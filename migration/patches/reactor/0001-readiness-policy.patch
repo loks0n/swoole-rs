@@ -1,0 +1,1397 @@
+diff --git a/include/swoole_reactor.h b/include/swoole_reactor.h
+--- a/include/swoole_reactor.h
++++ b/include/swoole_reactor.h
+@@ -19,4 +19,11 @@
+ 
+ #include "swoole_socket.h"
++#ifndef SWOOLE_RS_REACTOR
++#error "Reactor overlay requires --enable-swoole-rs-reactor"
++#endif
++#include "swoole_rs_reactor.h"
++#include "swoole_rs_reactor_defer.h"
++#include "swoole_rs_reactor_sockets.h"
++static_assert(SW_EVENT_READ == (1 << 9) && SW_EVENT_WRITE == (1 << 10) && SW_EVENT_DEAULT == 256 && SW_EVENT_ERROR == (1 << 11), "Reactor event ABI");
+ 
+ #include <list>
+@@ -165,6 +172,11 @@
+     }
+ 
++#if defined(SWOOLE_RS_REACTOR_DEFER_OWNED) && SWOOLE_RS_REACTOR_DEFER_OWNED
++    ReactorDeferredQueue *defer_tasks = nullptr;
++    ReactorDeferredQueue destroy_callbacks;
++#else
+     CallbackManager *defer_tasks = nullptr;
+     CallbackManager destroy_callbacks;
++#endif
+ 
+     DeferCallback idle_task;
+@@ -181,7 +193,10 @@
+   private:
+     ReactorImpl *impl;
+-    std::map<int, std::function<void(Reactor *)>> end_callbacks;
+-    std::map<int, std::function<bool(Reactor *, size_t &)>> exit_conditions;
++    ReactorCallbacks callbacks_;
++#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
++    ReactorSocketRegistry sockets_;
++#else
+     std::unordered_map<int, network::Socket *> sockets_;
++#endif
+ 
+   public:
+@@ -209,59 +224,33 @@
+ 
+     size_t remove_exit_condition(const ExitCondition _id) {
+-        return exit_conditions.erase(_id);
++        return callbacks_.erase_exit(_id);
+     }
+ 
+     bool isset_exit_condition(const ExitCondition _id) {
+-        return exit_conditions.find(_id) != exit_conditions.end();
++        return callbacks_.has_exit(_id);
+     }
+ 
+     int add_event(network::Socket *_socket, EventType event_type) const {
+-        if (!(_socket->events & event_type)) {
+-            return set(_socket, _socket->events | event_type);
+-        }
+-        return SW_OK;
++        return swr_reactor_interest(this, _socket, 0, event_type);
+     }
+ 
+     int del_event(network::Socket *_socket, EventType event_type) const {
+-        if (_socket->events & event_type) {
+-            return set(_socket, _socket->events & (~event_type));
+-        }
+-        return SW_OK;
++        return swr_reactor_interest(this, _socket, 1, event_type);
+     }
+ 
+     int remove_read_event(network::Socket *_socket) const {
+-        if (_socket->events & SW_EVENT_WRITE) {
+-            _socket->events &= (~SW_EVENT_READ);
+-            return set(_socket, _socket->events);
+-        } else {
+-            return del(_socket);
+-        }
++        return swr_reactor_interest(this, _socket, 2, 0);
+     }
+ 
+     int remove_write_event(network::Socket *_socket) const {
+-        if (_socket->events & SW_EVENT_READ) {
+-            _socket->events &= (~SW_EVENT_WRITE);
+-            return set(_socket, _socket->events);
+-        } else {
+-            return del(_socket);
+-        }
++        return swr_reactor_interest(this, _socket, 3, 0);
+     }
+ 
+     int add_read_event(network::Socket *_socket) const {
+-        if (_socket->events & SW_EVENT_WRITE) {
+-            _socket->events |= SW_EVENT_READ;
+-            return set(_socket, _socket->events);
+-        } else {
+-            return add(_socket, SW_EVENT_READ);
+-        }
++        return swr_reactor_interest(this, _socket, 4, 0);
+     }
+ 
+     int add_write_event(network::Socket *_socket) const {
+-        if (_socket->events & SW_EVENT_READ) {
+-            _socket->events |= SW_EVENT_WRITE;
+-            return set(_socket, _socket->events);
+-        } else {
+-            return add(_socket, SW_EVENT_WRITE);
+-        }
++        return swr_reactor_interest(this, _socket, 5, 0);
+     }
+ 
+@@ -271,5 +260,9 @@
+ 
+     bool exists(const int fd) const {
++#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
++        return sockets_.contains(fd);
++#else
+         return sockets_.find(fd) != sockets_.end();
++#endif
+     }
+ 
+@@ -286,14 +279,28 @@
+     }
+ 
++    #if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
++    ReactorSocketView socket_registry_view() const { return sockets_.view(); }
++    ReactorSocketSnapshot socket_registry_snapshot() const { return sockets_.snapshot(); }
++#else
+     const std::unordered_map<int, network::Socket *> &get_sockets() {
+         return sockets_;
+     }
++#endif
+ 
+     network::Socket *get_socket(const int fd) {
++#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
++        return sockets_.get(fd);
++#else
+         return sockets_[fd];
++#endif
+     }
+ 
+     void foreach_socket(const std::function<void(int, network::Socket *)> &callback) const {
+-        for (auto &kv : sockets_) {
++#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
++        for (auto kv : sockets_.view())
++#else
++        for (auto &kv : sockets_)
++#endif
++        {
+             callback(kv.first, kv.second);
+         }
+@@ -301,26 +308,9 @@
+ 
+     ReactorHandler get_handler(const FdType fd_type, const EventType event) const {
+-        switch (event) {
+-        case SW_EVENT_READ:
+-            return read_handler[fd_type];
+-        case SW_EVENT_WRITE:
+-            return write_handler[fd_type] ? write_handler[fd_type] : default_write_handler;
+-        case SW_EVENT_ERROR:
+-            return error_handler[fd_type] ? error_handler[fd_type] : default_error_handler;
+-        default:
+-            abort();
+-        }
++        return swr_reactor_resolve_handler(this, fd_type, event, 2);
+     }
+ 
+     ReactorHandler get_error_handler(const FdType fd_type) const {
+-        ReactorHandler handler = get_handler(fd_type, SW_EVENT_ERROR);
+-        // error callback is not set, try to use readable or writable callback
+-        if (handler == nullptr) {
+-            handler = get_handler(fd_type, SW_EVENT_READ);
+-            if (handler == nullptr) {
+-                handler = get_handler(fd_type, SW_EVENT_WRITE);
+-            }
+-        }
+-        return handler;
++        return swr_reactor_resolve_handler(this, fd_type, 0, 3);
+     }
+ 
+@@ -343,5 +333,9 @@
+         _socket->events = events;
+         _socket->removed = 0;
++#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
++        sockets_.put(_socket->fd, _socket);
++#else
+         sockets_[_socket->fd] = _socket;
++#endif
+     }
+ 
+@@ -351,5 +345,9 @@
+ 
+     bool _exists(const network::Socket *_socket) {
++#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
++        return sockets_.contains(_socket->fd);
++#else
+         return sockets_.find(_socket->fd) != sockets_.end();
++#endif
+     }
+ 
+diff --git a/src/reactor/poll.cc b/src/reactor/poll.cc
+--- a/src/reactor/poll.cc
++++ b/src/reactor/poll.cc
+@@ -17,4 +17,7 @@
+ #include "swoole_socket.h"
+ #include "swoole_reactor.h"
++#ifndef SWOOLE_RS_REACTOR
++#error "Reactor overlay requires --enable-swoole-rs-reactor"
++#endif
+ 
+ namespace swoole {
+@@ -22,4 +25,5 @@
+ 
+ class ReactorPoll final : public ReactorImpl {
++    swr_v1_reactor_poll_snapshot *snapshot_;
+     pollfd *events_;
+     int max_events_;
+@@ -43,5 +47,9 @@
+ 
+ ReactorPoll::ReactorPoll(Reactor *_reactor, int max_events) : ReactorImpl(_reactor) {
+-    events_ = new pollfd[max_events];
++    // Preserve negative array-bound exception type before crossing into Rust.
++    if (max_events < 0) throw std::bad_array_new_length();
++    snapshot_ = swr_v1_reactor_poll_new(static_cast<size_t>(max_events));
++    if (!snapshot_) throw std::bad_alloc();
++    events_ = swr_v1_reactor_poll_data(snapshot_);
+     max_events_ = max_events;
+     reactor_->max_event_num = max_events;
+@@ -49,15 +57,18 @@
+ 
+ ReactorPoll::~ReactorPoll() {
+-    delete[] events_;
++    swr_v1_reactor_poll_free(snapshot_);
+ }
+ 
+ int ReactorPoll::set_events() const {
++#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
++    const auto sockets = reactor_->socket_registry_snapshot();
++#else
+     const auto sockets = reactor_->get_sockets();
++#endif
++    if (swr_v1_reactor_poll_reset(snapshot_) != 0) throw std::bad_alloc();
+     int count = 0;
+     for (const auto pair : sockets) {
+         const auto _socket = pair.second;
+-        events_[count].fd = _socket->fd;
+-        events_[count].events = translate_events_to_poll(_socket->events);
+-        events_[count].revents = 0;
++        if (swr_v1_reactor_poll_push(snapshot_, _socket->fd, _socket->events) != 0) throw std::bad_alloc();
+         count++;
+     }
+@@ -66,5 +77,7 @@
+ 
+ int ReactorPoll::add(Socket *socket, const int events) {
+-    if (reactor_->_exists(socket)) {
++    bool exists = reactor_->_exists(socket);
++    int decision = swr_v1_reactor_poll_registration(0, exists, 0, exists ? 0 : reactor_->get_event_num(), max_events_);
++    if (decision == 1) {
+         swoole_error_log(
+             SW_LOG_WARNING,
+@@ -80,5 +93,5 @@
+     }
+ 
+-    if (reactor_->get_event_num() == static_cast<size_t>(max_events_)) {
++    if (decision == 2) {
+         swoole_error_log(
+             SW_LOG_WARNING, SW_ERROR_EVENT_ADD_FAILED, "too many sockets, the max events is %d", max_events_);
+@@ -94,5 +107,6 @@
+ 
+ int ReactorPoll::set(Socket *socket, int events) {
+-    if (!reactor_->_exists(socket)) {
++    int decision = swr_v1_reactor_poll_registration(1, reactor_->_exists(socket), 0, 0, max_events_);
++    if (decision == 3) {
+         swoole_error_log(
+             SW_LOG_WARNING,
+@@ -115,5 +129,7 @@
+ 
+ int ReactorPoll::del(Socket *socket) {
+-    if (socket->removed) {
++    bool removed = socket->removed;
++    int decision = swr_v1_reactor_poll_registration(2, removed ? 0 : reactor_->_exists(socket), removed, 0, max_events_);
++    if (decision == 4) {
+         swoole_error_log(
+             SW_LOG_WARNING,
+@@ -128,5 +144,5 @@
+     }
+ 
+-    if (!reactor_->_exists(socket)) {
++    if (decision == 5) {
+         swoole_error_log(SW_LOG_WARNING,
+                          SW_ERROR_SOCKET_NOT_EXISTS,
+@@ -147,13 +163,90 @@
+     Event event;
+     ReactorHandler handler;
+-
+-    reactor_->before_wait();
+-
+-    while (reactor_->running) {
+-        reactor_->execute_begin_callback();
+-        const int event_num = set_events();
+-        int ret = poll(events_, event_num, reactor_->get_timeout_msec());
+-        if (ret < 0) {
+-            if (!reactor_->catch_error()) {
++    int event_num = 0;
++    swr_v1_reactor_wait_state loop{};
++    int wait_result = 0;
++    int observed = 0;
++    for (;;) {
++        switch (swr_v1_reactor_wait_workflow(&loop, 0, observed)) {
++        case 0: return SW_OK;
++        case 1: reactor_->before_wait(); break;
++        case 2: reactor_->execute_begin_callback(); break;
++        case 3: {
++                event_num = set_events();
++                wait_result = poll(events_, event_num, reactor_->get_timeout_msec());
++                observed = wait_result;
++                break;
++            }
++        case 4: observed = reactor_->catch_error(); break;
++        case 5: reactor_->execute_end_callbacks(true); break;
++        case 6: {
++                swr_v1_reactor_batch_cursor batch{};
++                swr_v1_reactor_batch_record record{};
++                int32_t batch_result;
++                while ((batch_result = swr_v1_reactor_poll_record(events_, event_num, &batch, 1, &record)) > 0) {
++
++                if (!reactor_->exists(record.fd)) {
++                    continue;
++                }
++
++                event.socket = reactor_->get_socket(record.fd);
++                event.fd = record.fd;
++                event.reactor_id = reactor_->id;
++                event.type = event.socket->fd_type;
++
++                if (record.mask & 4) {
++                    event.socket->event_hup = 1;
++                }
++                swoole_trace("Event: fd=%d|reactor_id=%d|type=%d", event.fd, reactor_->id, event.type);
++                swr_v1_reactor_ready_workflow_state ready{};
++                int ready_observed = 0;
++                for (;;) {
++                    int32_t ready_action = swr_v1_reactor_ready_workflow(&ready, 0, ready_observed);
++                    if (ready_action <= 0) break;
++                    switch (ready_action) {
++                    case 10:
++                        if (swr_v1_reactor_poll_record(events_, event_num, &batch, 0, &record) != 1) return SW_ERR;
++                        ready_observed = record.mask;
++                        break;
++                    case 11: ready_observed = event.socket->removed; break;
++                    case 12: ready_observed = (event.socket->events & SW_EVENT_ONCE) != 0; break;
++                    case 1:
++                        handler = reactor_->get_handler(event.type, SW_EVENT_READ);
++                        ready_observed = handler(reactor_, &event);
++                        
++                        break;
++case 2:
++                        handler = reactor_->get_handler(event.type, SW_EVENT_WRITE);
++                        ready_observed = handler(reactor_, &event);
++                        
++                        break;
++case 3:
++                        handler = reactor_->get_error_handler(event.type);
++                        ready_observed = handler(reactor_, &event);
++                        
++                        break;
++case 4: del(event.socket); break;
++case 6: 
++                            swoole_sys_warning("POLLIN handle failed. fd=%d", event.fd);
++                            swoole_print_backtrace_on_error();
++                         break;
++case 7: 
++                            swoole_sys_warning("POLLOUT handle failed. fd=%d", event.fd);
++                            swoole_print_backtrace_on_error();
++                         break;
++case 8: 
++                            swoole_sys_warning("POLLERR handle failed. fd=%d", event.fd);
++                            swoole_print_backtrace_on_error();
++                         break;
++                    default: return SW_ERR;
++                    }
++                    if (ready_action == 4) break;
++                }
++
++                }
++                if (batch_result < 0) return SW_ERR;
++                break;
++            }
++        case 7: {
+                 swoole_sys_warning("[Reactor#%d] poll(nfds=%d, timeout=%d) failed",
+                                    reactor_->id,
+@@ -162,100 +255,20 @@
+                 break;
+             }
+-        } else if (ret == 0) {
+-            reactor_->execute_end_callbacks(true);
+-            SW_REACTOR_CONTINUE;
+-        } else {
+-            for (int i = 0; i < event_num; i++) {
+-                /**
+-                 * A revents value of 0 indicates that no events have occurred on this socket,
+-                 * so the next file descriptor should be checked;
+-                 * likewise, if the file descriptor has already been removed, it should be skipped.
+-                 * It is essential to check whether this file descriptor exists in the reactor,
+-                 * as the event handler may remove a file descriptor with pending but already triggered readable or
+-                 * writable events that have not yet been processed.
+-                 */
+-                if (events_[i].revents == 0 || !reactor_->exists(events_[i].fd)) {
+-                    continue;
+-                }
+-
+-                event.socket = reactor_->get_socket(events_[i].fd);
+-                event.fd = events_[i].fd;
+-                event.reactor_id = reactor_->id;
+-                event.type = event.socket->fd_type;
+-
+-                if (events_[i].revents & (POLLHUP | POLLERR)) {
+-                    event.socket->event_hup = 1;
+-                }
+-                swoole_trace("Event: fd=%d|reactor_id=%d|type=%d", event.fd, reactor_->id, event.type);
+-                // in
+-                if ((events_[i].revents & POLLIN) && !event.socket->removed) {
+-                    handler = reactor_->get_handler(event.type, SW_EVENT_READ);
+-                    ret = handler(reactor_, &event);
+-                    if (ret < 0) {
+-                        swoole_sys_warning("POLLIN handle failed. fd=%d", event.fd);
+-                        swoole_print_backtrace_on_error();
+-                    }
+-                }
+-                // out
+-                if ((events_[i].revents & POLLOUT) && !event.socket->removed) {
+-                    handler = reactor_->get_handler(event.type, SW_EVENT_WRITE);
+-                    ret = handler(reactor_, &event);
+-                    if (ret < 0) {
+-                        swoole_sys_warning("POLLOUT handle failed. fd=%d", event.fd);
+-                        swoole_print_backtrace_on_error();
+-                    }
+-                }
+-                // error
+-                if ((events_[i].revents & (POLLHUP | POLLERR)) && !event.socket->removed) {
+-                    // ignore ERR and HUP, because event is already processed at IN and OUT handler.
+-                    if ((events_[i].revents & POLLIN) || (events_[i].revents & POLLOUT)) {
+-                        continue;
+-                    }
+-                    handler = reactor_->get_error_handler(event.type);
+-                    ret = handler(reactor_, &event);
+-                    if (ret < 0) {
+-                        swoole_sys_warning("POLLERR handle failed. fd=%d", event.fd);
+-                        swoole_print_backtrace_on_error();
+-                    }
+-                }
+-                if (!event.socket->removed && (event.socket->events & SW_EVENT_ONCE)) {
+-                    del(event.socket);
+-                }
+-            }
++        case 8:
++            break;
++        case 9: reactor_->execute_end_callbacks(false); break;
++        case 10: observed = reactor_->running; break;
++        case 13: observed = reactor_->once; break;
++        default: return SW_ERR;
+         }
+-        reactor_->execute_end_callbacks(false);
+-        SW_REACTOR_CONTINUE;
+-    }
+-    return SW_OK;
++    }
+ }
+ 
+ int16_t translate_events_to_poll(int events) {
+-    int16_t poll_events = 0;
+-
+-    if (events & SW_EVENT_READ) {
+-        poll_events |= POLLIN;
+-    }
+-    if (events & SW_EVENT_WRITE) {
+-        poll_events |= POLLOUT;
+-    }
+-
+-    return poll_events;
++    return swr_v1_reactor_poll_to(events);
+ }
+ 
+ int translate_events_from_poll(int16_t events) {
+-    int sw_events = 0;
+-
+-    if (events & POLLIN) {
+-        sw_events |= SW_EVENT_READ;
+-    }
+-    if (events & POLLOUT) {
+-        sw_events |= SW_EVENT_WRITE;
+-    }
+-    // ignore ERR and HUP, because event is already processed at IN and OUT handler.
+-    if ((events & POLLERR || events & POLLHUP) && !(events & POLLIN || events & POLLOUT)) {
+-        sw_events |= SW_EVENT_ERROR;
+-    }
+-
+-    return sw_events;
++    return swr_v1_reactor_poll_from(events);
+ }
+ }  // namespace swoole
+diff --git a/src/reactor/epoll.cc b/src/reactor/epoll.cc
+--- a/src/reactor/epoll.cc
++++ b/src/reactor/epoll.cc
+@@ -17,4 +17,7 @@
+ #include "swoole_socket.h"
+ #include "swoole_reactor.h"
++#ifndef SWOOLE_RS_REACTOR
++#error "Reactor overlay requires --enable-swoole-rs-reactor"
++#endif
+ 
+ #ifdef HAVE_EPOLL
+@@ -35,4 +38,5 @@
+     int epfd_;
+     epoll_event *events_ = nullptr;
++    swr_v1_reactor_epoll_events *rs_events_ = nullptr;
+ 
+   public:
+@@ -46,18 +50,6 @@
+ 
+     static int get_events(const int fd_type) {
+-        int events = 0;
+-        if (Reactor::isset_read_event(fd_type)) {
+-            events |= EPOLLIN;
+-        }
+-        if (Reactor::isset_write_event(fd_type)) {
+-            events |= EPOLLOUT;
+-        }
+-        if (fd_type & SW_EVENT_ONCE) {
+-            events |= EPOLLONESHOT;
+-        }
+-        if (Reactor::isset_error_event(fd_type)) {
+-            events |= (EPOLLRDHUP | EPOLLHUP | EPOLLERR);
+-        }
+-        return events;
++        static_assert(SW_EVENT_ERROR == (1 << 11) && SW_EVENT_ONCE == (1 << 12), "Reactor registration flags ABI");
++        return static_cast<int>(swr_v1_reactor_epoll_mask(fd_type));
+     }
+ };
+@@ -74,5 +66,8 @@
+     }
+ 
+-    events_ = new epoll_event[max_events];
++    if (max_events < 0) throw std::bad_array_new_length();
++    rs_events_ = swr_v1_reactor_epoll_new(static_cast<size_t>(max_events));
++    if (!rs_events_) throw std::bad_alloc();
++    events_ = swr_v1_reactor_epoll_data(rs_events_);
+     reactor_->max_event_num = max_events;
+     reactor_->native_handle = epfd_;
+@@ -87,15 +82,23 @@
+         close(epfd_);
+     }
+-    delete[] events_;
++    swr_v1_reactor_epoll_free(rs_events_);
+ }
+ 
+ int ReactorEpoll::add(Socket *socket, int events) {
+-    epoll_event e;
+-
+-    e.events = get_events(events);
+-    e.data.ptr = socket;
+-
+-    if (epoll_ctl(epfd_, EPOLL_CTL_ADD, socket->fd, &e) < 0) {
+-        swoole_sys_warning("[Reactor#%d] epoll_ctl(epfd=%d, EPOLL_CTL_ADD, fd=%d, fd_type=%d, events=%d) failed",
++    swr_v1_reactor_registration_state state{};
++    int ret = 0;
++    for (;;) {
++        switch (swr_v1_reactor_epoll_registration(&state, 0, socket->removed, ret, errno)) {
++        case 0: {
++                epoll_event e; e.events = get_events(events); e.data.ptr = socket;
++                ret = epoll_ctl(epfd_, EPOLL_CTL_ADD, socket->fd, &e);
++                break;
++            }
++        case 1: {
++                return SW_ERR;
++            }
++        case 2: return SW_ERR;
++        case 3: {
++                swoole_sys_warning("[Reactor#%d] epoll_ctl(epfd=%d, EPOLL_CTL_ADD, fd=%d, fd_type=%d, events=%d) failed",
+                            reactor_->id,
+                            epfd_,
+@@ -105,16 +108,28 @@
+         swoole_print_backtrace_on_error();
+         return SW_ERR;
+-    }
+-
+-    reactor_->_add(socket, events);
++            }
++        case 4: {
++                reactor_->_add(socket, events);
+     swoole_trace_log(
+         SW_TRACE_EVENT, "add events[fd=%d#%d, type=%d, events=%d]", socket->fd, reactor_->id, socket->fd_type, events);
+ 
+     return SW_OK;
++            }
++        default: return SW_ERR;
++        }
++    }
+ }
+ 
+ int ReactorEpoll::del(Socket *_socket) {
+-    if (_socket->removed) {
+-        swoole_error_log(
++    swr_v1_reactor_registration_state state{};
++    int ret = 0;
++    for (;;) {
++        switch (swr_v1_reactor_epoll_registration(&state, 2, _socket->removed, ret, errno)) {
++        case 0: {
++                ret = epoll_ctl(epfd_, EPOLL_CTL_DEL, _socket->fd, nullptr);
++                break;
++            }
++        case 1: {
++                swoole_error_log(
+             SW_LOG_WARNING,
+             SW_ERROR_EVENT_REMOVE_FAILED,
+@@ -125,14 +140,8 @@
+         swoole_print_backtrace_on_error();
+         return SW_ERR;
+-    }
+-
+-    if (epoll_ctl(epfd_, EPOLL_CTL_DEL, _socket->fd, nullptr) < 0) {
+-        after_removal_failure(_socket);
+-        /**
+-         * Before removing it from the epoll event loop, the close operation has be executed,
+-         * must cleanup related resources with this socket.
+-         */
+-        if (errno != EBADF && errno != ENOENT) {
+-            swoole_sys_warning("[Reactor#%d] epoll_ctl(epfd=%d, EPOLL_CTL_DEL, fd=%d, fd_type=%d) failed",
++            }
++        case 2: after_removal_failure(_socket); break;
++        case 3: {
++                swoole_sys_warning("[Reactor#%d] epoll_ctl(epfd=%d, EPOLL_CTL_DEL, fd=%d, fd_type=%d) failed",
+                                reactor_->id,
+                                epfd_,
+@@ -141,23 +150,33 @@
+             swoole_print_backtrace_on_error();
+             return SW_ERR;
+-        }
+-    }
+-
+-    swoole_trace_log(
++            }
++        case 4: {
++                swoole_trace_log(
+         SW_TRACE_REACTOR, "remove event[reactor_id=%d|fd=%d|type=%d]", reactor_->id, _socket->fd, _socket->fd_type);
+     reactor_->_del(_socket);
+ 
+     return SW_OK;
++            }
++        default: return SW_ERR;
++        }
++    }
+ }
+ 
+ int ReactorEpoll::set(Socket *socket, int events) {
+-    epoll_event e;
+-
+-    e.events = get_events(events);
+-    e.data.ptr = socket;
+-
+-    int ret = epoll_ctl(epfd_, EPOLL_CTL_MOD, socket->fd, &e);
+-    if (ret < 0) {
+-        swoole_sys_warning("[Reactor#%d] epoll_ctl(epfd=%d, EPOLL_CTL_MOD, fd=%d, fd_type=%d, events=%d) failed",
++    swr_v1_reactor_registration_state state{};
++    int ret = 0;
++    for (;;) {
++        switch (swr_v1_reactor_epoll_registration(&state, 1, socket->removed, ret, errno)) {
++        case 0: {
++                epoll_event e; e.events = get_events(events); e.data.ptr = socket;
++                ret = epoll_ctl(epfd_, EPOLL_CTL_MOD, socket->fd, &e);
++                break;
++            }
++        case 1: {
++                return SW_ERR;
++            }
++        case 2: return SW_ERR;
++        case 3: {
++                swoole_sys_warning("[Reactor#%d] epoll_ctl(epfd=%d, EPOLL_CTL_MOD, fd=%d, fd_type=%d, events=%d) failed",
+                            reactor_->id,
+                            epfd_,
+@@ -167,10 +186,14 @@
+         swoole_print_backtrace_on_error();
+         return SW_ERR;
+-    }
+-
+-    swoole_trace_log(SW_TRACE_EVENT, "set event[reactor_id=%d, fd=%d, events=%d]", reactor_->id, socket->fd, events);
++            }
++        case 4: {
++                swoole_trace_log(SW_TRACE_EVENT, "set event[reactor_id=%d, fd=%d, events=%d]", reactor_->id, socket->fd, events);
+     reactor_->_set(socket, events);
+ 
+     return SW_OK;
++            }
++        default: return SW_ERR;
++        }
++    }
+ }
+ 
+@@ -178,14 +201,81 @@
+     Event event;
+     ReactorHandler handler;
+-    int n, ret;
+-
+-    reactor_->before_wait();
+-
+-    while (reactor_->running) {
+-        reactor_->execute_begin_callback();
+-
+-        n = epoll_wait(epfd_, events_, reactor_->max_event_num, reactor_->get_timeout_msec());
+-        if (n < 0) {
+-            if (!reactor_->catch_error()) {
++    int n = 0;
++    swr_v1_reactor_wait_state loop{};
++    int wait_result = 0;
++    int observed = 0;
++    for (;;) {
++        switch (swr_v1_reactor_wait_workflow(&loop, 1, observed)) {
++        case 0: return SW_OK;
++        case 1: reactor_->before_wait(); break;
++        case 2: reactor_->execute_begin_callback(); break;
++        case 3: {
++                n = epoll_wait(epfd_, events_, reactor_->max_event_num, reactor_->get_timeout_msec());
++                wait_result = n;
++                observed = wait_result;
++                break;
++            }
++        case 4: observed = reactor_->catch_error(); break;
++        case 5: reactor_->execute_end_callbacks(true); break;
++        case 6: {
++                swr_v1_reactor_batch_cursor batch{};
++                swr_v1_reactor_batch_record record{};
++                int32_t batch_result;
++                while ((batch_result = swr_v1_reactor_epoll_record(events_, n, &batch, 1, &record)) > 0) {
++            event.reactor_id = reactor_->id;
++            event.socket = reinterpret_cast<Socket *>(record.token);
++            event.type = event.socket->fd_type;
++            event.fd = event.socket->fd;
++
++            if (record.mask & 4) {
++                event.socket->event_hup = 1;
++            }
++            swr_v1_reactor_ready_workflow_state ready{};
++                int ready_observed = 0;
++                for (;;) {
++                    int32_t ready_action = swr_v1_reactor_ready_workflow(&ready, 0, ready_observed);
++                    if (ready_action <= 0) break;
++                    switch (ready_action) {
++                    case 10:
++                        if (swr_v1_reactor_epoll_record(events_, n, &batch, 0, &record) != 1) return SW_ERR;
++                        ready_observed = record.mask;
++                        break;
++                    case 11: ready_observed = event.socket->removed; break;
++                    case 12: ready_observed = (event.socket->events & SW_EVENT_ONCE) != 0; break;
++                    case 1:
++                    handler = reactor_->get_handler(event.type, SW_EVENT_READ);
++                    ready_observed = handler(reactor_, &event);
++                    
++                    break;
++case 2:
++                    handler = reactor_->get_handler(event.type, SW_EVENT_WRITE);
++                    ready_observed = handler(reactor_, &event);
++                    
++                    break;
++case 3:
++                    handler = reactor_->get_error_handler(event.type);
++                    ready_observed = handler(reactor_, &event);
++                    
++                    break;
++case 4: reactor_->_del(event.socket); break;
++case 6: 
++                        swoole_sys_warning("EPOLLIN handle failed [fd=%d, type=%d]", event.fd, event.type);
++                     break;
++case 7: 
++                        swoole_sys_warning("EPOLLOUT handle failed [fd=%d, type=%d]", event.fd, event.type);
++                     break;
++case 8: 
++                        swoole_sys_warning("EPOLLERR handle failed [fd=%d, type=%d]", event.fd, event.type);
++                     break;
++                    default: return SW_ERR;
++                    }
++                    if (ready_action == 4) break;
++                }
++
++                }
++                if (batch_result < 0) return SW_ERR;
++                break;
++            }
++        case 7: {
+                 swoole_sys_warning("[Reactor#%d] epoll_wait(epfd=%d, max_events=%d, timeout=%d) failed",
+                                    reactor_->id,
+@@ -193,64 +283,31 @@
+                                    reactor_->max_event_num,
+                                    reactor_->get_timeout_msec());
+-                return SW_ERR;
+-            } else {
++                break;
++            }
++        case 8:
+ #ifdef SW_USE_IOURING
+-                if (sw_likely(errno == EINTR && reactor_->iouring_interrupt_handler)) {
+-                    reactor_->iouring_interrupt_handler(reactor_);
+-                }
+-#endif
+-                goto _continue;
+-            }
+-        } else if (n == 0) {
+-            reactor_->execute_end_callbacks(true);
+-            SW_REACTOR_CONTINUE;
++            reactor_->iouring_interrupt_handler(reactor_);
++#endif
++            break;
++        case 9: reactor_->execute_end_callbacks(false); break;
++        case 10: observed = reactor_->running; break;
++        case 11:
++#ifdef SW_USE_IOURING
++            observed = errno == EINTR;
++#else
++            observed = 0;
++#endif
++            break;
++        case 12:
++#ifdef SW_USE_IOURING
++            observed = reactor_->iouring_interrupt_handler != nullptr;
++#else
++            observed = 0;
++#endif
++            break;
++        case 13: observed = reactor_->once; break;
++        default: return SW_ERR;
+         }
+-        for (int i = 0; i < n; i++) {
+-            event.reactor_id = reactor_->id;
+-            event.socket = static_cast<Socket *>(events_[i].data.ptr);
+-            event.type = event.socket->fd_type;
+-            event.fd = event.socket->fd;
+-
+-            if (events_[i].events & (EPOLLRDHUP | EPOLLERR | EPOLLHUP)) {
+-                event.socket->event_hup = 1;
+-            }
+-            // read
+-            if ((events_[i].events & EPOLLIN) && !event.socket->removed) {
+-                handler = reactor_->get_handler(event.type, SW_EVENT_READ);
+-                ret = handler(reactor_, &event);
+-                if (ret < 0) {
+-                    swoole_sys_warning("EPOLLIN handle failed [fd=%d, type=%d]", event.fd, event.type);
+-                }
+-            }
+-            // write
+-            if ((events_[i].events & EPOLLOUT) && !event.socket->removed) {
+-                handler = reactor_->get_handler(event.type, SW_EVENT_WRITE);
+-                ret = handler(reactor_, &event);
+-                if (ret < 0) {
+-                    swoole_sys_warning("EPOLLOUT handle failed [fd=%d, type=%d]", event.fd, event.type);
+-                }
+-            }
+-            // error
+-            if ((events_[i].events & (EPOLLRDHUP | EPOLLERR | EPOLLHUP)) && !event.socket->removed) {
+-                // ignore ERR and HUP, because event is already processed at IN and OUT handler.
+-                if ((events_[i].events & EPOLLIN) || (events_[i].events & EPOLLOUT)) {
+-                    continue;
+-                }
+-                handler = reactor_->get_error_handler(event.type);
+-                ret = handler(reactor_, &event);
+-                if (ret < 0) {
+-                    swoole_sys_warning("EPOLLERR handle failed [fd=%d, type=%d]", event.fd, event.type);
+-                }
+-            }
+-            if (!event.socket->removed && (event.socket->events & SW_EVENT_ONCE)) {
+-                reactor_->_del(event.socket);
+-            }
+-        }
+-
+-    _continue:
+-        reactor_->execute_end_callbacks(false);
+-        SW_REACTOR_CONTINUE;
+-    }
+-    return 0;
++    }
+ }
+ }  // namespace swoole
+diff --git a/src/reactor/kqueue.cc b/src/reactor/kqueue.cc
+--- a/src/reactor/kqueue.cc
++++ b/src/reactor/kqueue.cc
+@@ -17,4 +17,7 @@
+ #include "swoole_socket.h"
+ #include "swoole_reactor.h"
++#ifndef SWOOLE_RS_REACTOR
++#error "Reactor overlay requires --enable-swoole-rs-reactor"
++#endif
+ #include "swoole_signal.h"
+ 
+@@ -33,10 +36,35 @@
+ using network::Socket;
+ 
++// Native signal/function-pointer/log effects only, after each Rust decision.
++// The handler is observed in original short-circuit order; no post-effect read.
++static void swr_reactor_dispatch_signal(Signal *signal_data) {
++    swr_v1_reactor_signal_state state{};
++    int observed = 0;
++    for (;;) {
++        switch (swr_v1_reactor_signal_workflow(&state, observed)) {
++        case 0: return;
++        case 1: signal_data->handler(signal_data->signo); return;
++        case 2:
++            swoole_error_log(SW_LOG_WARNING,
++                            SW_ERROR_UNREGISTERED_SIGNAL,
++                            SW_UNREGISTERED_SIGNAL_FMT,
++                            swoole_signal_to_str(signal_data->signo));
++            return;
++        case 10: observed = signal_data->activated; break;
++        case 11: observed = signal_data->handler != nullptr; break;
++        case 12: observed = signal_data->handler != SIG_IGN; break;
++        default: std::abort();
++        }
++    }
++}
++
++
+ class ReactorKqueue : public ReactorImpl {
+     int epfd_;
+     int event_max_;
+-    struct kevent *events_;
+-
+-    bool fetch_event(Event *event, void *udata) {
++    struct kevent *events_ = nullptr;
++    swr_v1_reactor_kqueue_events *rs_events_ = nullptr;
++
++    void fill_event(Event *event, void *udata) {
+         event->socket = (Socket *) udata;
+         event->fd = event->socket->fd;
+@@ -44,14 +72,4 @@
+         event->reactor_id = reactor_->id;
+ 
+-        if (event->socket->removed) {
+-            return false;
+-        }
+-        return true;
+-    }
+-
+-    void del_once_socket(Socket *socket) {
+-        if ((socket->events & SW_EVENT_ONCE) && !socket->removed) {
+-            del(socket);
+-        }
+     }
+ 
+@@ -80,5 +98,8 @@
+     reactor_->native_handle = epfd_;
+     event_max_ = max_events;
+-    events_ = new struct kevent[max_events];
++    if (max_events < 0) throw std::bad_array_new_length();
++    rs_events_ = swr_v1_reactor_kqueue_new(static_cast<size_t>(max_events));
++    if (!rs_events_) throw std::bad_alloc();
++    events_ = swr_v1_reactor_kqueue_data(rs_events_);
+ }
+ 
+@@ -91,14 +112,9 @@
+         close(epfd_);
+     }
+-    delete[] events_;
++    swr_v1_reactor_kqueue_free(rs_events_);
+ }
+ 
+ int ReactorKqueue::add(Socket *socket, int events) {
+-    struct kevent e;
+-    int ret;
+-
+     int fd = socket->fd;
+-    int fflags = 0;
+-
+ #if !defined(__NetBSD__) || (defined(__NetBSD__) && __NetBSD_Version__ >= 1000000000)
+     auto sobj = socket;
+@@ -106,51 +122,46 @@
+     auto sobj = reinterpret_cast<intptr_t>(socket);
+ #endif
+-
+-    if (Reactor::isset_read_event(events)) {
++    swr_v1_reactor_registration_state state{};
++    int ret = 0, last_action = 0;
++    for (;;) {
++        int action = swr_v1_reactor_kqueue_registration(&state, 0, events, 0, ret, 0);
++        switch (action) {
++        case 11: case 12: case 13: case 14: {
++                last_action = action;
++                struct kevent e;
++                int fflags = 0;
+ #ifdef NOTE_EOF
+-        fflags = NOTE_EOF;
+-#endif
+-        EV_SET(&e, fd, EVFILT_READ, EV_ADD, fflags, 0, sobj);
+-        ret = ::kevent(epfd_, &e, 1, nullptr, 0, nullptr);
+-        if (ret < 0) {
+-            swoole_error_log(SW_LOG_WARNING,
+-                             SW_ERROR_EVENT_ADD_FAILED,
+-                             "add events[fd=%d, reactor_id=%d, type=%d, events=read] failed",
+-                             fd,
+-                             reactor_->id,
+-                             socket->fd_type);
+-            swoole_print_backtrace_on_error();
+-            return SW_ERR;
+-        }
+-    }
+-
+-    if (Reactor::isset_write_event(events)) {
+-        EV_SET(&e, fd, EVFILT_WRITE, EV_ADD, 0, 0, sobj);
+-        ret = ::kevent(epfd_, &e, 1, nullptr, 0, nullptr);
+-        if (ret < 0) {
+-            swoole_error_log(SW_LOG_WARNING,
+-                             SW_ERROR_EVENT_ADD_FAILED,
+-                             "add events[fd=%d, reactor_id=%d, type=%d, events=write] failed",
+-                             fd,
+-                             reactor_->id,
+-                             socket->fd_type);
+-            swoole_print_backtrace_on_error();
+-            return SW_ERR;
+-        }
+-    }
+-
+-    reactor_->_add(socket, events);
++                if (action == 11) fflags = NOTE_EOF;
++#endif
++                EV_SET(&e, fd, action == 11 || action == 13 ? EVFILT_READ : EVFILT_WRITE,
++                       action <= 12 ? EV_ADD : EV_DELETE, fflags, 0, sobj);
++                ret = ::kevent(epfd_, &e, 1, nullptr, 0, nullptr);
++                break;
++            }
++        case 0: {
++                reactor_->_add(socket, events);
+     swoole_trace_log(SW_TRACE_EVENT, "[THREAD #%d]epfd=%d, fd=%d, events=%d", SwooleTG.id, epfd_, fd, socket->events);
+ 
+     return SW_OK;
++            }
++        case 1: {
++                return SW_ERR;
++            }
++        case 2: after_removal_failure(socket); break;
++        case 5: {
++                swoole_error_log(SW_LOG_WARNING, SW_ERROR_EVENT_ADD_FAILED,
++                    "add events[fd=%d, reactor_id=%d, type=%d, events=%s] failed",
++                    fd, reactor_->id, socket->fd_type, last_action == 11 ? "read" : "write");
++                swoole_print_backtrace_on_error(); return SW_ERR;
++            }
++        case 6: return SW_ERR;
++        case 7: break;
++        default: return SW_ERR;
++        }
++    }
+ }
+ 
+ int ReactorKqueue::set(Socket *socket, int events) {
+-    struct kevent e;
+-    int ret;
+-
+     int fd = socket->fd;
+-    int fflags = 0;
+-
+ #if !defined(__NetBSD__) || (defined(__NetBSD__) && __NetBSD_Version__ >= 1000000000)
+     auto sobj = socket;
+@@ -158,57 +169,47 @@
+     auto sobj = reinterpret_cast<intptr_t>(socket);
+ #endif
+-
+-    if (Reactor::isset_read_event(events)) {
++    swr_v1_reactor_registration_state state{};
++    int ret = 0, last_action = 0;
++    for (;;) {
++        int action = swr_v1_reactor_kqueue_registration(&state, 1, events, 0, ret, 0);
++        switch (action) {
++        case 11: case 12: case 13: case 14: {
++                last_action = action;
++                struct kevent e;
++                int fflags = 0;
+ #ifdef NOTE_EOF
+-        fflags = NOTE_EOF;
+-#endif
+-        EV_SET(&e, fd, EVFILT_READ, EV_ADD, fflags, 0, sobj);
+-        ret = ::kevent(epfd_, &e, 1, nullptr, 0, nullptr);
+-        if (ret < 0) {
+-            swoole_error_log(SW_LOG_WARNING, SW_ERROR_EVENT_UPDATE_FAILED, "kqueue->set(%d, SW_EVENT_READ) failed", fd);
+-            swoole_print_backtrace_on_error();
+-            return SW_ERR;
+-        }
+-    } else {
+-        EV_SET(&e, fd, EVFILT_READ, EV_DELETE, 0, 0, sobj);
+-        ret = ::kevent(epfd_, &e, 1, nullptr, 0, nullptr);
+-        if (ret < 0) {
+-            swoole_error_log(SW_LOG_WARNING, SW_ERROR_EVENT_REMOVE_FAILED, "kqueue->del(%d, SW_EVENT_READ) failed", fd);
+-            swoole_print_backtrace_on_error();
+-            return SW_ERR;
+-        }
+-    }
+-
+-    if (Reactor::isset_write_event(events)) {
+-        EV_SET(&e, fd, EVFILT_WRITE, EV_ADD, 0, 0, sobj);
+-        ret = ::kevent(epfd_, &e, 1, nullptr, 0, nullptr);
+-        if (ret < 0) {
+-            swoole_error_log(
+-                SW_LOG_WARNING, SW_ERROR_EVENT_UPDATE_FAILED, "kqueue->set(%d, SW_EVENT_WRITE) failed", fd);
+-            swoole_print_backtrace_on_error();
+-            return SW_ERR;
+-        }
+-    } else {
+-        EV_SET(&e, fd, EVFILT_WRITE, EV_DELETE, 0, 0, sobj);
+-        ret = ::kevent(epfd_, &e, 1, nullptr, 0, nullptr);
+-        if (ret < 0) {
+-            swoole_error_log(
+-                SW_LOG_WARNING, SW_ERROR_EVENT_REMOVE_FAILED, "kqueue->del(%d, SW_EVENT_WRITE) failed", fd);
+-            swoole_print_backtrace_on_error();
+-            return SW_ERR;
+-        }
+-    }
+-
+-    reactor_->_set(socket, events);
++                if (action == 11) fflags = NOTE_EOF;
++#endif
++                EV_SET(&e, fd, action == 11 || action == 13 ? EVFILT_READ : EVFILT_WRITE,
++                       action <= 12 ? EV_ADD : EV_DELETE, fflags, 0, sobj);
++                ret = ::kevent(epfd_, &e, 1, nullptr, 0, nullptr);
++                break;
++            }
++        case 0: {
++                reactor_->_set(socket, events);
+     swoole_trace_log(SW_TRACE_EVENT, "[THREAD #%d]epfd=%d, fd=%d, events=%d", SwooleTG.id, epfd_, fd, socket->events);
+ 
+     return SW_OK;
++            }
++        case 1: {
++                return SW_ERR;
++            }
++        case 2: after_removal_failure(socket); break;
++        case 5: {
++                swoole_error_log(SW_LOG_WARNING,
++                    last_action <= 12 ? SW_ERROR_EVENT_UPDATE_FAILED : SW_ERROR_EVENT_REMOVE_FAILED,
++                    "kqueue->%s(%d, %s) failed", last_action <= 12 ? "set" : "del", fd,
++                    last_action == 11 || last_action == 13 ? "SW_EVENT_READ" : "SW_EVENT_WRITE");
++                swoole_print_backtrace_on_error(); return SW_ERR;
++            }
++        case 6: return SW_ERR;
++        case 7: break;
++        default: return SW_ERR;
++        }
++    }
+ }
+ 
+ int ReactorKqueue::del(Socket *socket) {
+-    struct kevent e;
+-    int ret;
+     int fd = socket->fd;
+-
+ #if !defined(__NetBSD__) || (defined(__NetBSD__) && __NetBSD_Version__ >= 1000000000)
+     auto sobj = socket;
+@@ -216,38 +217,46 @@
+     auto sobj = reinterpret_cast<intptr_t>(socket);
+ #endif
+-
+-    if (socket->removed) {
+-        swoole_error_log(
++    swr_v1_reactor_registration_state state{};
++    int ret = 0;
++    for (;;) {
++        bool removed = state.phase == 0 && socket->removed;
++        bool observe_events = (state.phase == 0 && !removed) || state.phase == 1 ||
++                              (state.phase == 2 && ret >= 0);
++        int current_events = observe_events ? socket->events : 0;
++        int action = swr_v1_reactor_kqueue_registration(&state, 2, current_events, removed, ret,
++                                                       state.phase == 3 ? errno : 0);
++        switch (action) {
++        case 11: case 12: case 13: case 14: {
++                struct kevent e;
++                int fflags = 0;
++#ifdef NOTE_EOF
++                if (action == 11) fflags = NOTE_EOF;
++#endif
++                EV_SET(&e, fd, action == 11 || action == 13 ? EVFILT_READ : EVFILT_WRITE,
++                       action <= 12 ? EV_ADD : EV_DELETE, fflags, 0, sobj);
++                ret = ::kevent(epfd_, &e, 1, nullptr, 0, nullptr);
++                break;
++            }
++        case 0: {
++                reactor_->_del(socket);
++    swoole_trace_log(SW_TRACE_EVENT, "[THREAD #%d]epfd=%d, fd=%d", SwooleTG.id, epfd_, fd);
++
++    return SW_OK;
++            }
++        case 1: {
++                swoole_error_log(
+             SW_LOG_WARNING, SW_ERROR_EVENT_REMOVE_FAILED, "failed to delete event[%d], has been removed", socket->fd);
+         swoole_print_backtrace_on_error();
+         return SW_ERR;
+-    }
+-
+-    if (socket->events & SW_EVENT_READ) {
+-        EV_SET(&e, fd, EVFILT_READ, EV_DELETE, 0, 0, sobj);
+-        ret = ::kevent(epfd_, &e, 1, nullptr, 0, nullptr);
+-        if (ret < 0) {
+-            after_removal_failure(socket);
+-            if (errno != EBADF && errno != ENOENT) {
++            }
++        case 2: after_removal_failure(socket); break;
++        case 5: {
+                 return SW_ERR;
+             }
+-        }
+-    }
+-
+-    if (socket->events & SW_EVENT_WRITE) {
+-        EV_SET(&e, fd, EVFILT_WRITE, EV_DELETE, 0, 0, sobj);
+-        ret = ::kevent(epfd_, &e, 1, nullptr, 0, nullptr);
+-        if (ret < 0) {
+-            after_removal_failure(socket);
+-            if (errno != EBADF && errno != ENOENT) {
+-                return SW_ERR;
+-            }
+-        }
+-    }
+-
+-    reactor_->_del(socket);
+-    swoole_trace_log(SW_TRACE_EVENT, "[THREAD #%d]epfd=%d, fd=%d", SwooleTG.id, epfd_, fd);
+-
+-    return SW_OK;
++        case 6: return SW_ERR;
++        case 7: break;
++        default: return SW_ERR;
++        }
++    }
+ }
+ 
+@@ -255,91 +264,94 @@
+     Event event;
+     ReactorHandler handler;
+-
+-    int i, n;
++    int n = 0;
+     struct timespec t = {};
+     struct timespec *t_ptr;
+-
+-    reactor_->before_wait();
+-
+-    while (reactor_->running) {
+-        reactor_->execute_begin_callback();
+-
+-        if (reactor_->timeout_msec > 0) {
+-            t.tv_sec = reactor_->timeout_msec / 1000;
+-            t.tv_nsec = (reactor_->timeout_msec - t.tv_sec * 1000) * 1000 * 1000;
+-            t_ptr = &t;
+-        } else if (reactor_->defer_tasks) {
+-            t.tv_sec = 0;
+-            t.tv_nsec = 0;
+-            t_ptr = &t;
+-        } else {
+-            t_ptr = nullptr;
+-        }
+-
+-        n = ::kevent(epfd_, nullptr, 0, events_, event_max_, t_ptr);
+-        if (n < 0) {
+-            if (!reactor_->catch_error()) {
+-                swoole_sys_warning("kevent(epfd=%d) failed ", epfd_);
+-                return SW_ERR;
+-            } else {
+-                goto _continue;
+-            }
+-        } else if (n == 0) {
+-            reactor_->execute_end_callbacks(true);
+-            SW_REACTOR_CONTINUE;
+-        }
+-
+-        swoole_trace_log(SW_TRACE_EVENT, "n %d events", n);
+-
+-        for (i = 0; i < n; i++) {
+-            struct kevent *kevent = &events_[i];
+-            void *udata = (void *) kevent->udata;
+-            if (!udata) {
+-                continue;
+-            }
+-            switch (kevent->filter) {
+-            case EVFILT_READ:
+-            case EVFILT_WRITE: {
+-                if (fetch_event(&event, udata)) {
+-                    handler = reactor_->get_handler(event.type,
+-                                                    kevent->filter == EVFILT_READ ? SW_EVENT_READ : SW_EVENT_WRITE);
+-                    if (sw_unlikely(handler(reactor_, &event) < 0)) {
+-                        swoole_sys_warning("kqueue event %s socket#%d handler failed",
+-                                           kevent->filter == EVFILT_READ ? "read" : "write",
+-                                           event.fd);
+-                        swoole_print_backtrace_on_error();
++    swr_v1_reactor_wait_state loop{};
++    int wait_result = 0;
++    int observed = 0;
++    for (;;) {
++        switch (swr_v1_reactor_wait_workflow(&loop, 2, observed)) {
++        case 0: return SW_OK;
++        case 1: reactor_->before_wait(); break;
++        case 2: reactor_->execute_begin_callback(); break;
++        case 3: {
++                int milliseconds = reactor_->timeout_msec;
++                auto timeout = swr_v1_reactor_kqueue_timeout(milliseconds, milliseconds <= 0 && reactor_->defer_tasks != nullptr);
++                t.tv_sec = timeout.seconds;
++                t.tv_nsec = timeout.nanoseconds;
++                t_ptr = timeout.finite ? &t : nullptr;
++                n = ::kevent(epfd_, nullptr, 0, events_, event_max_, t_ptr);
++                wait_result = n;
++                observed = wait_result;
++                break;
++            }
++        case 4: observed = reactor_->catch_error(); break;
++        case 5: reactor_->execute_end_callbacks(true); break;
++        case 6: {
++                swoole_trace_log(SW_TRACE_EVENT, "n %d events", n);
++swr_v1_reactor_batch_cursor batch{};
++                swr_v1_reactor_batch_record record{};
++                int32_t batch_result;
++                while ((batch_result = swr_v1_reactor_kqueue_record(events_, n, &batch, 1, &record)) > 0) {
++            void *udata = reinterpret_cast<void *>(record.token);
++            switch (record.kind) {
++            case 1: {
++                fill_event(&event, udata);
++                    swr_v1_reactor_ready_workflow_state ready{};
++                int ready_observed = 0;
++                for (;;) {
++                    int32_t ready_action = swr_v1_reactor_ready_workflow(&ready, 1, ready_observed);
++                    if (ready_action <= 0) break;
++                    switch (ready_action) {
++                    case 10:
++                        if (swr_v1_reactor_kqueue_record(events_, n, &batch, 0, &record) != 1) return SW_ERR;
++                        ready_observed = record.mask;
++                        break;
++                    case 11: ready_observed = event.socket->removed; break;
++                    case 12: ready_observed = (event.socket->events & SW_EVENT_ONCE) != 0; break;
++                    case 1: case 2:
++                        handler = reactor_->get_handler(event.type, ready_action == 1 ? SW_EVENT_READ : SW_EVENT_WRITE);
++                        ready_observed = handler(reactor_, &event);
++                        break;
++                    case 4: del(event.socket); break;
++                    case 6: case 7: {
++                            if (swr_v1_reactor_kqueue_record(events_, n, &batch, 0, &record) != 1) return SW_ERR;
++                            swoole_sys_warning("kqueue event %s socket#%d handler failed",
++                                               record.filter == EVFILT_READ ? "read" : "write", event.fd);
++                            swoole_print_backtrace_on_error();
++                         } break;
++                    default: return SW_ERR;
+                     }
+-                    del_once_socket(event.socket);
++                    if (ready_action == 4) break;
+                 }
+-                break;
+-            }
+-            case EVFILT_SIGNAL: {
+-                Signal *signal_data = (Signal *) udata;
+-                if (signal_data->activated) {
+-                    if (signal_data->handler) {
+-                        if (sw_likely(signal_data->handler != SIG_IGN)) {
+-                            signal_data->handler(signal_data->signo);
+-                        }
+-                    } else {
+-                        swoole_error_log(SW_LOG_WARNING,
+-                                         SW_ERROR_UNREGISTERED_SIGNAL,
+-                                         SW_UNREGISTERED_SIGNAL_FMT,
+-                                         swoole_signal_to_str(signal_data->signo));
+-                    }
+-                }
++
++                break;
++            }
++            case 2: {
++                swr_reactor_dispatch_signal(static_cast<Signal *>(udata));
+                 break;
+             }
+             default:
+                 swoole_error_log(
+-                    SW_LOG_WARNING, SW_ERROR_EVENT_UNKNOWN_DATA, "unknown event filter[%d]", kevent->filter);
+-                break;
+-            }
+-        }
+-
+-    _continue:
+-        reactor_->execute_end_callbacks(false);
+-        SW_REACTOR_CONTINUE;
+-    }
+-    return 0;
++                    SW_LOG_WARNING, SW_ERROR_EVENT_UNKNOWN_DATA, "unknown event filter[%d]", record.filter);
++                break;
++            }
++
++                }
++                if (batch_result < 0) return SW_ERR;
++                break;
++            }
++        case 7: {
++                swoole_sys_warning("kevent(epfd=%d) failed ", epfd_);
++                break;
++            }
++        case 8:
++            break;
++        case 9: reactor_->execute_end_callbacks(false); break;
++        case 10: observed = reactor_->running; break;
++        case 13: observed = reactor_->once; break;
++        default: return SW_ERR;
++        }
++    }
+ }
+ }  // namespace swoole

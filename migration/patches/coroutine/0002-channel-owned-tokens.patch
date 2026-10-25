@@ -1,0 +1,167 @@
+diff --git a/include/swoole_coroutine_channel.h b/include/swoole_coroutine_channel.h
+--- a/include/swoole_coroutine_channel.h
++++ b/include/swoole_coroutine_channel.h
+@@ -23,9 +23,25 @@
+ #include <string>
+ #include <list>
+ #include <queue>
++#ifdef SWOOLE_RS_COROUTINE
++#include "swoole_rs_channel_tokens.h"
++#endif
+
+ namespace swoole {
+ namespace coroutine {
++#ifdef SWOOLE_RS_COROUTINE
++// Exact qualified scalar prefix. Queue members retain their existing offsets.
++struct ChannelNativeScalarLayout { size_t capacity; bool closed; int error; };
++static_assert(sizeof(size_t) == 8 && sizeof(void *) == 8 && sizeof(bool) == 1 && sizeof(int) == 4,
++              "Channel Rust metadata requires qualified 64-bit scalar ABI");
++static_assert(sizeof(swr_v1_channel_state) == 16 && alignof(swr_v1_channel_state) == 8 &&
++              sizeof(swr_v1_channel_state) == sizeof(ChannelNativeScalarLayout) &&
++              alignof(swr_v1_channel_state) == alignof(ChannelNativeScalarLayout) &&
++              offsetof(swr_v1_channel_state, capacity) == offsetof(ChannelNativeScalarLayout, capacity) &&
++              offsetof(swr_v1_channel_state, closed) == offsetof(ChannelNativeScalarLayout, closed) &&
++              offsetof(swr_v1_channel_state, error) == offsetof(ChannelNativeScalarLayout, error),
++              "Channel Rust metadata prefix ABI");
++#endif
+ //-------------------------------------------------------------------------------
+ class Channel {
+   public:
+@@ -53,7 +69,11 @@
+     bool push(void *data, double timeout = -1);
+     bool close();
+
++#ifdef SWOOLE_RS_COROUTINE
++    explicit Channel(size_t _capacity = 1) : state_(swr_v1_channel_state_new(_capacity)) {}
++#else
+     explicit Channel(size_t _capacity = 1) : capacity(_capacity) {}
++#endif
+
+     ~Channel() {
+         if (!producer_queue.empty()) {
+@@ -71,49 +91,98 @@
+     }
+
+     bool is_closed() const {
++#ifdef SWOOLE_RS_COROUTINE
++        return view().closed;
++#else
+         return closed;
++    #endif
+     }
+
+     bool is_empty() const {
++#ifdef SWOOLE_RS_COROUTINE
++        return view().empty;
++#else
+         return data_queue.empty();
++    #endif
+     }
+
+     bool is_full() const {
++#ifdef SWOOLE_RS_COROUTINE
++        return view().full;
++#else
+         return data_queue.size() == capacity;
++    #endif
+     }
+
+     size_t length() const {
++#ifdef SWOOLE_RS_COROUTINE
++        return view().length;
++#else
+         return data_queue.size();
++    #endif
+     }
+
+     size_t consumer_num() const {
++#ifdef SWOOLE_RS_COROUTINE
++        return view().consumers;
++#else
+         return consumer_queue.size();
++    #endif
+     }
+
+     size_t producer_num() const {
++#ifdef SWOOLE_RS_COROUTINE
++        return view().producers;
++#else
+         return producer_queue.size();
++    #endif
+     }
+
+     void *pop_data() {
++#ifdef SWOOLE_RS_COROUTINE
++        return swr_v1_channel_pop_data(data_queue.native_handle());
++#else
+         if (data_queue.empty()) {
+             return nullptr;
+         }
+         void *data = data_queue.front();
+         data_queue.pop();
+         return data;
++    #endif
+     }
+
+     int get_error() const {
++#ifdef SWOOLE_RS_COROUTINE
++        return view().error;
++#else
+         return error_;
++    #endif
+     }
+
+   protected:
++#ifdef SWOOLE_RS_COROUTINE
++    swr_v1_channel_state state_;
++#else
+     size_t capacity = 1;
+     bool closed = false;
+     int error_ = 0;
++#endif
++#ifdef SWOOLE_RS_COROUTINE
++    ChannelTokens<Coroutine *> producer_queue;
++    ChannelTokens<Coroutine *> consumer_queue;
++    ChannelTokens<void *> data_queue;
++#else
+     std::list<Coroutine *> producer_queue;
+     std::list<Coroutine *> consumer_queue;
+     std::queue<void *> data_queue;
++#endif
++
++#ifdef SWOOLE_RS_COROUTINE
++    swr_v1_channel_view view() const {
++        return swr_v1_channel_view_read(&state_, data_queue.native_handle(),
++                                       producer_queue.native_handle(), consumer_queue.native_handle());
++    }
++#endif
+
+     static void timer_callback(Timer *timer, TimerNode *tnode);
+
+@@ -128,6 +197,18 @@
+     }
+
+     Coroutine *pop_coroutine(Opcode type) {
++#ifdef SWOOLE_RS_COROUTINE
++        const auto plan = swr_v1_channel_waiter(producer_queue.native_handle(), consumer_queue.native_handle(),
++                                              SWR_CH_WAITER_POP, type, nullptr);
++        if (plan.status != 0) abort();
++        auto *co = static_cast<Coroutine *>(plan.token);
++        if (plan.role == PRODUCER) {
++            swoole_trace_log(SW_TRACE_CHANNEL, "resume producer cid=%ld", co->get_cid());
++        } else {
++            swoole_trace_log(SW_TRACE_CHANNEL, "resume consumer cid=%ld", co->get_cid());
++        }
++        return co;
++#else
+         Coroutine *co;
+         if (type == PRODUCER) {
+             co = producer_queue.front();
+@@ -140,6 +221,7 @@
+             swoole_trace_log(SW_TRACE_CHANNEL, "resume consumer cid=%ld", co->get_cid());
+         }
+         return co;
++    #endif
+     }
+ };
+ //-------------------------------------------------------------------------------

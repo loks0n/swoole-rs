@@ -1,0 +1,15 @@
+{
+  "repository": "https://github.com/swoole/swoole-src",
+  "tag": "v6.2.2",
+  "commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "tests": [
+    {
+      "path": "tests/swoole_function/swoole_error_log.phpt",
+      "sha256": "86858cea6369d45a70cfb20bbd42eb9dbbe846ce39a7b11071c0ad2e4b0f98f7",
+      "module": "utilities",
+      "requires": [
+        "upstream_test_bootstrap"
+      ]
+    }
+  ]
+}

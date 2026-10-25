@@ -1,0 +1,15 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-worker-transitions.patch",
+      "sha256": "2c846947340a565eee31bc4c251840d381e142957194352d3fc10380bb03161d",
+      "upstream_paths": [
+        "src/server/worker.cc",
+        "src/server/task_worker.cc",
+        "src/server/manager.cc",
+        "src/os/process_pool.cc"
+      ]
+    }
+  ]
+}

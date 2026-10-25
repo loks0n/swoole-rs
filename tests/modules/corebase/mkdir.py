@@ -1,0 +1,115 @@
+#!/usr/bin/env python3
+"""Compare real mkdir callers with scoped IO traces and private filesystem cases."""
+import argparse
+from datetime import datetime, timezone
+import hashlib
+import json
+import os
+from pathlib import Path
+import platform
+import signal
+import subprocess
+import tempfile
+from patching import apply_corebase, check_git_environment, prove_calls
+from cases import mkdir_cases
+
+ROOT = Path(__file__).resolve().parents[3]
+PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+LOCAL = Path(__file__).resolve().parent
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--source', type=Path, required=True)
+    parser.add_argument('--archive', type=Path, required=True)
+    parser.add_argument('--include', type=Path, action='append', default=[])
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--sanitize', action='store_true')
+    args = parser.parse_args()
+    report = dict(passed=False, upstream_commit=PIN, created_utc=datetime.now(timezone.utc).isoformat(),
+                  commands=[], native_sanitizers=args.sanitize,
+                  rust_sanitizers='External archive; inspect exact artifact provenance',
+                  scope='Whole original/patched native TU. Deterministic IO trace and actual private filesystem; logging/last_error are explicit modeled shims, not native logger/global validation.',
+                  exclusions=['Original empty-input UB and full C-visible PATH_MAX-1 nontrailing append overflow'])
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+
+    def sha(path):
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+    def run(argv, cwd=None, data=None):
+        env = os.environ.copy()
+        if args.sanitize:
+            env.update(ASAN_OPTIONS='abort_on_error=1:detect_leaks=' + ('0' if platform.system() == 'Darwin' else '1'),
+                       UBSAN_OPTIONS='halt_on_error=1:print_stacktrace=1')
+        process = subprocess.Popen(list(map(str, argv)), cwd=cwd, env=env, stdin=subprocess.PIPE,
+                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        try:
+            stdout, stderr = process.communicate(data, timeout=60)
+        except BaseException:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            stdout, stderr = process.communicate()
+            report['commands'].append(dict(argv=list(map(str, argv)), interrupted=True,
+                                            stdout=stdout.decode(errors='replace'), stderr=stderr.decode(errors='replace')))
+            raise
+        report['commands'].append(dict(argv=list(map(str, argv)), returncode=process.returncode,
+                                       stderr=stderr.decode(errors='replace')))
+        if process.returncode:
+            raise RuntimeError('Command failed; original diagnostics retained in report')
+        return stdout
+
+    def scoped(body):
+        start = body.index('bool swoole_mkdir_recursive(')
+        opening = body.index('{', start)
+        depth = 1;end = opening + 1
+        while depth:
+            depth += (body[end] == '{') - (body[end] == '}');end += 1
+        names = ['access', 'mkdir', 'swoole_sys_warning', 'swoole_error_log']
+        before = ''.join('#pragma push_macro("' + n + '")\n' for n in names) + '#include "mkdir-shim.h"\n'
+        after = '\n' + ''.join('#pragma pop_macro("' + n + '")\n' for n in reversed(names))
+        return body[:start] + before + body[start:end] + after + body[end:] + '\n#include "mkdir-driver.h"\n'
+
+    try:
+        check_git_environment()
+        source = args.source.resolve();archive = args.archive.resolve()
+        original = run(['git', '-C', source, 'show', PIN + ':src/core/base.cc']).decode()
+        manifest = json.loads((ROOT / 'migration/patches/corebase/manifest.json').read_text())
+        assert manifest['upstream_commit'] == PIN and len(manifest['patches']) == 1
+        entry = manifest['patches'][0];patch = ROOT / 'migration/patches/corebase' / entry['path']
+        assert entry['upstream_paths'] == ['src/core/base.cc'] and sha(patch) == entry['sha256']
+        with tempfile.TemporaryDirectory(prefix='swoole-mkdir-') as temporary:
+            work = Path(temporary);(work / 'src/core').mkdir(parents=True)
+            path = work / 'src/core/base.cc';path.write_text(original)
+            report['patch_application'] = apply_corebase(work, patch, run, entry['sha256'])
+            patched = path.read_text()
+            flags = ['-std=c++17', '-O2', '-ffunction-sections', '-fdata-sections', '-DHAVE_CONFIG_H',
+                     '-DSWOOLE_RS_COREBASE', '-I' + str(LOCAL), '-I' + str(ROOT / 'native/corebase'),
+                     '-I' + str(ROOT / 'native/include'), '-I' + str(source), '-I' + str(source / 'include')]
+            flags += ['-I' + str(p.resolve()) for p in args.include]
+            if args.sanitize:
+                flags += ['-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer']
+            link = ['-Wl,-dead_strip'] if platform.system() == 'Darwin' else ['-Wl,--gc-sections', '-ldl', '-lpthread', '-lm']
+            outputs = {}
+            for engine, body in [('original', original), ('rust', patched)]:
+                cpp = work / (engine + '.cc');cpp.write_text(scoped(body))
+                binary = work / engine
+                run(['c++', *flags, cpp, *([archive] if engine == 'rust' else []), *link, '-o', binary])
+                report.setdefault('actual_calls', {})[engine] = prove_calls(binary, ['mkdir_next'],
+                    engine == 'rust', run, args.output.with_suffix('.' + engine))
+                outputs[engine] = run([binary], data=mkdir_cases())
+                args.output.with_suffix('.' + engine + '.jsonl').write_bytes(outputs[engine])
+                filesystem = work / (engine + '-filesystem');filesystem.mkdir()
+                assert run([binary, '--real', filesystem]) == b'real filesystem PASS\n'
+            assert outputs['original'] == outputs['rust'], 'Actual mkdir IO-order/bytes/result/errno mismatch'
+            rows = [json.loads(row) for row in outputs['original'].splitlines()]
+            assert len(rows) == 270
+            report.update(passed=True, matched=len(rows), path_max=rows[0]['path_max'], real_filesystem_engines=2)
+    finally:
+        args.output.write_text(json.dumps(report, indent=2) + '\n')
+    print(json.dumps({k: report[k] for k in ['passed', 'matched', 'path_max', 'real_filesystem_engines']}))
+
+
+if __name__ == '__main__':
+    main()

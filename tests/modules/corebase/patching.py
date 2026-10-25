@@ -1,0 +1,59 @@
+"""Module-local staging and actual-call proof for corebase correctness gates."""
+import os
+from pathlib import Path
+import platform
+import re
+import shutil
+import sys
+
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+from tools.build_hybrid import apply_patch_verified
+
+CALLS = ('type_size', 'gcd', 'lcm', 'parse_stoi', 'systemd_listen_fds_action', 'itoa', 'radix', 'hex_mode', 'version', 'dirname', 'mkdir_next', 'lifecycle_next', 'init_next', 'hook_add_action')
+
+
+def check_git_environment():
+    redirected = {'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_INDEX_FILE',
+                  'GIT_OBJECT_DIRECTORY', 'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+                  'GIT_CEILING_DIRECTORIES', 'GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS'}
+    injected = sorted(key for key in os.environ if key in redirected
+                      or key.startswith(('GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_')))
+    if injected:
+        raise ValueError('Git environment requires a separate protocol: ' + ', '.join(injected))
+
+
+def apply_corebase(work, patch, run, expected_sha256):
+    check_git_environment()
+    work = work.resolve()
+    proof = apply_patch_verified(work, patch, ['src/core/base.cc'], expected_sha256)
+    actual = Path(run(['git', '-C', work, 'rev-parse', '--show-toplevel']).decode().strip()).resolve()
+    if actual != work:
+        raise ValueError('Patch staging does not own its Git root')
+    patched = (work / 'src/core/base.cc').read_bytes()
+    if any(('swr_v1_corebase_' + name + '(').encode() not in patched for name in CALLS):
+        raise ValueError('Required corebase caller absent')
+    cpu_actions = (b'case SWR_COREBASE_QUERY_CPU:',
+                   b'case SWR_COREBASE_PUBLISH_CPU_ONE:',
+                   b'case SWR_COREBASE_QUERY_CPU_AGAIN:')
+    if any(action not in patched for action in cpu_actions):
+        raise ValueError('Rust-selected native CPU initialization actions absent')
+    return {**proof, 'git_root': str(actual), 'required_callers': list(CALLS),
+            'cpu_init_actions': [action.decode().removeprefix('case ').removesuffix(':')
+                                 for action in cpu_actions]}
+
+
+def prove_calls(binary, names, selected, run, prefix):
+    nm = run(['nm', '-g', binary])
+    disassembly = run(['otool', '-tvV', binary] if platform.system() == 'Darwin' else ['objdump', '-d', '-C', binary])
+    text = disassembly.decode(errors='replace')
+    calls = {name: bool(re.search(r'\b(?:bl|callq?|b|jmpq?)\s+[^\n]*\b_?swr_v1_corebase_' + name + r'\b', text)) for name in names}
+    definitions = {name: bool(re.search(rb'\b[Tt] _?swr_v1_corebase_' + name.encode() + rb'\s*$', nm, re.M)) for name in names}
+    Path(str(prefix) + '.nm').write_bytes(nm)
+    Path(str(prefix) + '.asm').write_bytes(disassembly)
+    shutil.copy2(binary, str(prefix) + '.bin')
+    if selected and (not all(calls.values()) or not all(definitions.values())):
+        raise ValueError('Selected binary lacks actual corebase Rust calls/definitions')
+    if not selected and b'swr_v1_corebase_' in nm:
+        raise ValueError('Original comparator unexpectedly contains corebase Rust symbols')
+    return {'calls': calls, 'definitions': definitions}

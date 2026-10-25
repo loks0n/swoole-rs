@@ -1,0 +1,54 @@
+diff --git a/src/server/base.cc b/src/server/base.cc
+index cf0058d..5d8b742 100644
+--- a/src/server/base.cc
++++ b/src/server/base.cc
+@@ -196,7 +196,7 @@ bool BaseFactory::end(SessionId session_id, int flags) {
+     } else {
+         _socket->out_buffer->alloc(BufferChunk::TYPE_CLOSE, 0);
+         conn->close_queued = 1;
+-        return true;
++        return SwooleTG.reactor->remove_read_event(_socket) == SW_OK;
+     }
+ }
+
+diff --git a/src/server/master.cc b/src/server/master.cc
+index af6d1b8..c3a7ffa 100644
+--- a/src/server/master.cc
++++ b/src/server/master.cc
+@@ -1484,24 +1484,17 @@ int Server::send_to_connection(const SendData *_send) const {
+         if (_socket->removed || !(_socket->events & SW_EVENT_READ)) {
+             return SW_OK;
+         }
+-        if (_socket->events & SW_EVENT_WRITE) {
+-            return reactor->set(conn->socket, SW_EVENT_WRITE);
+-        } else {
+-            return reactor->del(conn->socket);
+-        }
++        return reactor->remove_read_event(_socket);
+     }
+     /**
+      * resume recv data
+      */
+     else if (_send->info.type == SW_SERVER_EVENT_RESUME_RECV) {
+-        if (!_socket->removed || (_socket->events & SW_EVENT_READ)) {
++        if (conn->closed || conn->peer_closed || conn->close_queued || _socket->close_notified ||
++            (_socket->events & SW_EVENT_READ)) {
+             return SW_OK;
+         }
+-        if (_socket->events & SW_EVENT_WRITE) {
+-            return reactor->set(_socket, SW_EVENT_READ | SW_EVENT_WRITE);
+-        } else {
+-            return reactor->add(_socket, SW_EVENT_READ);
+-        }
++        return reactor->add_read_event(_socket);
+     }
+
+     if (Buffer::empty(_socket->out_buffer)) {
+@@ -1547,6 +1540,7 @@ int Server::send_to_connection(const SendData *_send) const {
+     if (_send->info.type == SW_SERVER_EVENT_CLOSE) {
+         _socket->out_buffer->alloc(BufferChunk::TYPE_CLOSE, 0);
+         conn->close_queued = 1;
++        reactor->remove_read_event(_socket);
+     } else if (_send->info.type == SW_SERVER_EVENT_SEND_FILE) {
+         auto *task = (SendfileTask *) _send_data;
+         if (conn->socket->sendfile_async(task->filename, task->offset, task->length) < 0) {

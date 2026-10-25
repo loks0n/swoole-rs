@@ -1,0 +1,12 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-rust-base64.patch",
+      "sha256": "231887804872f3e52a44ac251721d03d8793ce129a63bc369a2f6201d374ae85",
+      "upstream_paths": [
+        "src/core/base64.cc"
+      ]
+    }
+  ]
+}

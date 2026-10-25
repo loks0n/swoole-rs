@@ -1,0 +1,136 @@
+{
+  "commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "scope": "Additional unchanged local verification originals: self-signed allow/reject, server client-certificate success, expired-client native verification notice, absent-client-certificate rejection. Separate from first8cohort; actual artifact/source scope retained.",
+  "tests": [
+    {
+      "path": "tests/swoole_http_client_coro/ssl_verify_peer_1.phpt",
+      "sha256": "9ad81982dc45b4dc063385b2141e41602f619bf2fbd36d0008636033ccf68491",
+      "module": "tls-dtls",
+      "requires": [
+        "upstream_test_bootstrap",
+        "coroutines",
+        "event_loop",
+        "php_sockets",
+        "tcp",
+        "processes",
+        "atomics",
+        "coroutine_http_client"
+      ],
+      "status": "NOT_RUN",
+      "execution_preconditions": [
+        "Unchanged original certificate dates, explicit expired-client expectation, OpenSSL capabilities and native notices",
+        "Own isolated loopback/ephemeral helper port; no host path/log reservation assumed"
+      ]
+    },
+    {
+      "path": "tests/swoole_server/ssl/verify_01.phpt",
+      "sha256": "7eee2fb77b97fbf02e6b4534eaf0c28e6d35a312f80bf0ff1805fb14d097b275",
+      "module": "tls-dtls",
+      "requires": [
+        "upstream_test_bootstrap",
+        "coroutines",
+        "event_loop",
+        "php_sockets",
+        "tcp",
+        "processes",
+        "atomics",
+        "sync_tcp_client"
+      ],
+      "status": "NOT_RUN",
+      "execution_preconditions": [
+        "Unchanged original certificate dates, explicit expired-client expectation, OpenSSL capabilities and native notices",
+        "Own isolated loopback/ephemeral helper port; no host path/log reservation assumed"
+      ]
+    },
+    {
+      "path": "tests/swoole_server/ssl/verify_02.phpt",
+      "sha256": "b80d0550ea91983c29aff6626107ac01406e3bd36b24a831466e8dc61944686a",
+      "module": "tls-dtls",
+      "requires": [
+        "upstream_test_bootstrap",
+        "coroutines",
+        "event_loop",
+        "php_sockets",
+        "tcp",
+        "processes",
+        "atomics",
+        "sync_tcp_client"
+      ],
+      "status": "NOT_RUN",
+      "execution_preconditions": [
+        "Unchanged original certificate dates, explicit expired-client expectation, OpenSSL capabilities and native notices",
+        "Own isolated loopback/ephemeral helper port; no host path/log reservation assumed"
+      ]
+    },
+    {
+      "path": "tests/swoole_server/ssl/verify_03.phpt",
+      "sha256": "c33cfc414bf30db6c47267ed4b6afe74185f8e73d47a3efcb3255b9357cbd313",
+      "module": "tls-dtls",
+      "requires": [
+        "upstream_test_bootstrap",
+        "coroutines",
+        "event_loop",
+        "php_sockets",
+        "tcp",
+        "processes",
+        "atomics",
+        "sync_tcp_client"
+      ],
+      "status": "NOT_RUN",
+      "execution_preconditions": [
+        "Unchanged original certificate dates, explicit expired-client expectation, OpenSSL capabilities and native notices",
+        "Own isolated loopback/ephemeral helper port; no host path/log reservation assumed"
+      ]
+    }
+  ],
+  "support_files": [
+    {
+      "path": "tests/include/ssl_certs/client-cert.pem",
+      "sha256": "c70127da85f01fbe7e3f9204d08aabfc7ce116ce23955f49381ef2df75dfcf0f"
+    },
+    {
+      "path": "tests/include/ssl_certs/client-key.pem",
+      "sha256": "86749582c5af3abba324092cef764982d71c554e52bf66f130ec331055c74708"
+    },
+    {
+      "path": "tests/include/ssl_certs/server-cert.pem",
+      "sha256": "c0364269ec46e62e56962b40f846cd9db2b67947bfd6bb9174e4714e5e39e194"
+    },
+    {
+      "path": "tests/include/ssl_certs/server-key.pem",
+      "sha256": "bcd0690389ee3d2b8335e7ca2103056d6a53a1f879c4482415bd46d9802b456d"
+    },
+    {
+      "path": "tests/include/ssl_certs/ca-cert.pem",
+      "sha256": "8927200ae1fbb3462a694e0e4bbbc9652eebd20b58316340b0532be4c548d3e3"
+    },
+    {
+      "path": "tests/include/ssl_certs/client-expired.crt",
+      "sha256": "b3b8a2a7bc93d7ac27993d073110043c1254bf0d6c0a21ac414eec25bcf23230"
+    },
+    {
+      "path": "tests/include/ssl_certs/client-expired.key",
+      "sha256": "6e754a79b3f3f9a5986316cf5b9ddb4073da9c1a055d46bcb8df10786fc06a97"
+    },
+    {
+      "path": "tests/include/ssl_certs/server.crt",
+      "sha256": "cb2809c74166767557de3cf43e89042a2342040dd92e173b8db406abd6f9788c"
+    },
+    {
+      "path": "tests/include/ssl_certs/server.key",
+      "sha256": "abdaa59b78721c6236e32d41a96935efedf8901d80667ec96fc487c8c80bc875"
+    },
+    {
+      "path": "tests/include/ssl_certs/ca.crt",
+      "sha256": "d7c2e1e4b31210f60de6483d20fba172b64fbf7141bd749e1b0adf6d775d942a"
+    },
+    {
+      "path": "examples/ssl/ssl.crt",
+      "sha256": "f72aabb10815c3e0a8dab12919c636f780897e9e0e289de9967a1469175f54e3"
+    },
+    {
+      "path": "examples/ssl/ssl.key",
+      "sha256": "be09726334587cac5a6cf75a1ad9ce99bad3e2ab9f179256d6f3d9a70693788b"
+    }
+  ]
+}

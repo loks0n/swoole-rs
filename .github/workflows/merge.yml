@@ -1,0 +1,41 @@
+name: Merge
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: merge-${{ github.ref }}
+jobs:
+  full-gates:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt-get update -q && sudo apt-get install -yq php-dev php-sqlite3 php-curl php-xml php-mbstring composer libclang-dev libpcre2-dev libssl-dev pkg-config cmake libgtest-dev libnghttp2-dev libpq-dev libcurl4-openssl-dev ccache
+      - id: upstream
+        uses: actions/cache@v4
+        with:
+          path: target/upstream
+          key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
+      - if: steps.upstream.outputs.cache-hit != 'true'
+        run: python3 tools/build_upstream.py
+      - uses: actions/cache@v4
+        with:
+          path: target/shared-cache/ccache
+          key: ccache-merge-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-merge-${{ runner.os }}-
+      - run: python3 corpus/thirdparty/hyperf.py --prepare
+      - run: python3 tests/modules/buffer/baseline.py --sanitize
+      # Unit, native, ABI, model and PHP gates, every application and original PHPT, upstream as control.
+      - run: python3 tools/dev.py integrate --all-modules --php-extension pdo --php-extension pdo_sqlite --php-extension curl --php-extension sockets --php-extension tokenizer
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: validation-reports
+          path: |
+            target/reports/
+            target/upstream/build.log
+            target/hybrid/*/build-manifest.json

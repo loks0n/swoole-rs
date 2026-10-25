@@ -1,0 +1,16 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-os-policy.patch",
+      "sha256": "0433d7c0d1a5293f3087e05e2e74b2ea9eed40422c241206759ab41c298c0fb4",
+      "upstream_paths": [
+        "src/os/async_thread.cc",
+        "src/os/file.cc",
+        "src/os/msg_queue.cc",
+        "src/os/base.cc",
+        "src/os/sendfile.cc"
+      ]
+    }
+  ]
+}

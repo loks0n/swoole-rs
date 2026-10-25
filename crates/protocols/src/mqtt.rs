@@ -1,0 +1,54 @@
+/// Parse MQTT remaining-length bytes; packet type and nonminimal representations
+/// are intentionally not validated, matching the pinned protocol.
+pub fn mqtt_frame_length(bytes: &[u8]) -> i64 {
+    let mut length = 0;
+    for (position, byte) in bytes.iter().skip(1).take(4).enumerate() {
+        length += i64::from(byte & 127) << (7 * position);
+        if byte & 128 == 0 {
+            return length + position as i64 + 2;
+        }
+        if position == 3 {
+            return -1;
+        }
+    }
+    0
+}
+
+/// # Safety
+/// Input covers `length` readable bytes; null is allowed at zero length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_mqtt_frame_length(data: *const u8, length: usize) -> i64 {
+    unsafe { crate::input(data, length) }.map_or(-1, mqtt_frame_length)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn boundaries_prefixes_and_nonminimal_lengths() {
+        for payload in [0u32, 1, 127, 128, 16383, 16384, 2097151, 2097152, 268435455] {
+            let mut packet = vec![0x30];
+            let mut value = payload;
+            loop {
+                let mut byte = (value % 128) as u8;
+                value /= 128;
+                if value != 0 {
+                    byte |= 128;
+                }
+                packet.push(byte);
+                if value == 0 {
+                    break;
+                }
+            }
+            for size in 0..packet.len() {
+                assert_eq!(mqtt_frame_length(&packet[..size]), 0);
+            }
+            assert_eq!(
+                mqtt_frame_length(&packet),
+                i64::from(payload) + packet.len() as i64
+            );
+        }
+        assert_eq!(mqtt_frame_length(&[0, 0x80, 0]), 3);
+        assert_eq!(mqtt_frame_length(&[0, 0x80, 0x80, 0x80, 0x80]), -1);
+    }
+}

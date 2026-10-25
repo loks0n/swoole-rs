@@ -1,0 +1,18 @@
+{
+  "repository": "https://github.com/swoole/swoole-src",
+  "tag": "v6.2.2",
+  "commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "tests": [
+    {
+      "path": "tests/swoole_http_server/trailer.phpt",
+      "sha256": "25259817daa1bf890e678d76770001a664c77948bd1840077cd8ed5f161da7fa",
+      "module": "utilities-lowercase",
+      "requires": [
+        "upstream_test_bootstrap",
+        "http",
+        "coroutine_http_client",
+        "php_sockets"
+      ]
+    }
+  ]
+}

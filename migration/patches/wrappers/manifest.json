@@ -1,0 +1,19 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-event.patch",
+      "sha256": "561e6197422bf15848bbed2943654c051b199add808449de6a758f90a7d068c2",
+      "upstream_paths": [
+        "src/wrapper/event.cc"
+      ]
+    },
+    {
+      "path": "0002-http.patch",
+      "sha256": "1c061e3d8a2d7fa31c8b282833056779d341c14110e44601a909aad9374fa253",
+      "upstream_paths": [
+        "src/wrapper/http.cc"
+      ]
+    }
+  ]
+}

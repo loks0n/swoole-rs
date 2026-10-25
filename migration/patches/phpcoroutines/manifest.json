@@ -1,0 +1,33 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-scheduler-queue.patch",
+      "sha256": "c1fd14a77cf0de78309c09cb5cac08e808214bd305c532e3a2367544536d226c",
+      "upstream_paths": [
+        "ext-src/swoole_coroutine_scheduler.cc"
+      ]
+    },
+    {
+      "path": "0002-user-yield-registry.patch",
+      "sha256": "5f8d7a3f2d42e48e4d629d4a01d321fe0eb555f12f8bdec166e191d6ecf723c0",
+      "upstream_paths": [
+        "ext-src/swoole_coroutine.cc"
+      ]
+    },
+    {
+      "path": "0003-system-file-admission.patch",
+      "sha256": "96e353f34c0c7522f928ffb4ed01c7d1876c0f5751055009219ea533f83a1663",
+      "upstream_paths": [
+        "ext-src/swoole_coroutine_system.cc"
+      ]
+    },
+    {
+      "path": "0004-deferred-context-header.patch",
+      "sha256": "af1e4464dfa16b899e3e52b0baa1fd6d444ce031521c69be922b9fd550121c88",
+      "upstream_paths": [
+        "ext-src/php_swoole_coroutine.h"
+      ]
+    }
+  ]
+}

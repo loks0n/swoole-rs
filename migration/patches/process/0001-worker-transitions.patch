@@ -1,0 +1,231 @@
+diff --git a/src/server/worker.cc b/src/server/worker.cc
+--- a/src/server/worker.cc
++++ b/src/server/worker.cc
+@@ -18,6 +18,11 @@
+ #include <sys/mman.h>
+ 
+ #include "swoole_server.h"
++
++#ifndef SWOOLE_RS_PROCESS
++#error "Process overlay requires --enable-swoole-rs-process"
++#endif
++#include "swoole_rs_process.h"
+ #include "swoole_memory.h"
+ #include "swoole_coroutine.h"
+ 
+@@ -76,19 +81,11 @@
+ }
+ 
+ static sw_inline bool Worker_discard_data(const Server *serv, const Connection *conn, const DataHead *info) {
+-    if (conn == nullptr) {
+-        if (serv->disable_notify && !serv->discard_timeout_request) {
+-            return false;
+-        }
+-        goto _discard_data;
+-    } else {
+-        if (conn->closed) {
+-            goto _discard_data;
+-        } else {
+-            return false;
+-        }
+-    }
+-_discard_data:
++    const bool disable_notify = !conn && serv->disable_notify;
++    if (!swr_v1_process_discard_data(conn != nullptr, conn && conn->closed,
++        disable_notify, disable_notify && serv->discard_timeout_request)) {
++        return false;
++    }
+     swoole_error_log(SW_LOG_WARNING,
+                      SW_ERROR_SESSION_DISCARD_TIMEOUT_DATA,
+                      "[2] ignore data[%u bytes] received from session#%ld",
+@@ -428,24 +425,23 @@
+ 
+     bool has_call_worker_exit_func = false;
+     while (true) {
+-        if (reactor->if_exit()) {
++        const bool can_exit = reactor->if_exit();
++        const auto step = swr_v1_process_worker_exit(can_exit, !can_exit && bool(serv->onWorkerExit), has_call_worker_exit_func);
++        has_call_worker_exit_func = step.callback_called;
++        if (step.action == 0) {
+             reactor->running = false;
++        } else if (step.action == 1) {
++            serv->onWorkerExit(serv, sw_worker());
++            continue;
+         } else {
+-            if (serv->onWorkerExit && !has_call_worker_exit_func) {
+-                has_call_worker_exit_func = true;
+-                serv->onWorkerExit(serv, sw_worker());
+-                continue;
+-            }
+             int remaining_time = serv->max_wait_time - (::time(nullptr) - SwooleWG.exit_time);
+-            if (remaining_time <= 0) {
++            const auto budget = swr_v1_process_exit_budget(remaining_time, remaining_time > 0 ? reactor->timeout_msec : 0);
++            if (budget.timed_out) {
+                 swoole_error_log(
+                     SW_LOG_WARNING, SW_ERROR_SERVER_WORKER_EXIT_TIMEOUT, "worker exit timeout, forced termination");
+                 reactor->running = false;
+-            } else {
+-                int timeout_msec = remaining_time * 1000;
+-                if (reactor->timeout_msec < 0 || reactor->timeout_msec > timeout_msec) {
+-                    reactor->timeout_msec = timeout_msec;
+-                }
++            } else if (budget.update_timeout) {
++                reactor->timeout_msec = budget.timeout_msec;
+             }
+         }
+         break;
+diff --git a/src/server/task_worker.cc b/src/server/task_worker.cc
+--- a/src/server/task_worker.cc
++++ b/src/server/task_worker.cc
+@@ -15,6 +15,11 @@
+ */
+ 
+ #include "swoole_server.h"
++
++#ifndef SWOOLE_RS_PROCESS
++#error "Process overlay requires --enable-swoole-rs-process"
++#endif
++#include "swoole_rs_process.h"
+ 
+ namespace swoole {
+ using network::Socket;
+@@ -91,15 +96,17 @@
+     latest_task = task;
+ 
+     worker->set_status_to_busy();
+-    if (task->info.type == SW_SERVER_EVENT_PIPE_MESSAGE) {
++    const auto action = swr_v1_process_task_action(task->info.type == SW_SERVER_EVENT_PIPE_MESSAGE,
++        task->info.type == SW_SERVER_EVENT_SHUTDOWN, task->info.type == SW_SERVER_EVENT_COMMAND_REQUEST);
++    if (action == 1) {
+         serv->onPipeMessage(serv, task);
+-    } else if (task->info.type == SW_SERVER_EVENT_SHUTDOWN) {
++    } else if (action == 2) {
+         worker->shutdown();
+         if (swoole_event_is_available()) {
+             serv->stop_async_worker(worker);
+         }
+         return SW_OK;
+-    } else if (task->info.type == SW_SERVER_EVENT_COMMAND_REQUEST) {
++    } else if (action == 3) {
+         ret = TaskWorker_call_command_handler(pool, worker, task);
+     } else {
+         ret = serv->onTask(serv, task);
+@@ -440,11 +447,14 @@
+     if (current_task == nullptr) {
+         current_task = latest_task;
+     }
+-    if (current_task->info.type == SW_SERVER_EVENT_PIPE_MESSAGE) {
++    const bool pipe_message = current_task->info.type == SW_SERVER_EVENT_PIPE_MESSAGE;
++    const auto finish_error = swr_v1_process_finish_error(pipe_message,
++        !pipe_message && (current_task->info.ext_flags & SW_TASK_NOREPLY));
++    if (finish_error == 1) {
+         swoole_warning("Server::task()/Server::finish() is not supported in onPipeMessage callback");
+         return false;
+     }
+-    if (current_task->info.ext_flags & SW_TASK_NOREPLY) {
++    if (finish_error == 2) {
+         swoole_warning("Server::finish() can only be used in the worker process");
+         return false;
+     }
+@@ -467,11 +477,10 @@
+             return false;
+         }
+         // callback function
+-        if (current_task->info.ext_flags & SW_TASK_CALLBACK) {
+-            flags |= SW_TASK_CALLBACK;
+-        } else if (current_task->info.ext_flags & SW_TASK_COROUTINE) {
+-            flags |= SW_TASK_COROUTINE;
+-        }
++        const bool callback_result = current_task->info.ext_flags & SW_TASK_CALLBACK;
++        flags = swr_v1_process_result_flags(flags, callback_result,
++            !callback_result && (current_task->info.ext_flags & SW_TASK_COROUTINE),
++            SW_TASK_CALLBACK, SW_TASK_COROUTINE);
+         buf.info.ext_flags |= flags;
+         buf.info.type = SW_SERVER_EVENT_FINISH;
+         buf.info.fd = get_task_id(current_task);
+diff --git a/src/server/manager.cc b/src/server/manager.cc
+--- a/src/server/manager.cc
++++ b/src/server/manager.cc
+@@ -15,6 +15,11 @@
+ */
+ 
+ #include "swoole_server.h"
++
++#ifndef SWOOLE_RS_PROCESS
++#error "Process overlay requires --enable-swoole-rs-process"
++#endif
++#include "swoole_rs_process.h"
+ #include "swoole_util.h"
+ 
+ #include <unordered_map>
+@@ -201,7 +206,9 @@
+         }
+ 
+         if (_server->running) {
+-            if (reload_all_worker) {  // reload task & event workers
++            const bool reload_all = reload_all_worker;
++            const auto reload_action = swr_v1_process_reload_action(reload_all, !reload_all && reload_task_worker);
++            if (reload_action == 1) {  // reload task & event workers
+                 pool->reload_init = reload_all_worker = false;
+                 swoole_info("Server is reloading all workers now");
+                 if (_server->onBeforeReload != nullptr) {
+@@ -226,7 +233,7 @@
+                 } else {
+                     goto _kill_worker;
+                 }
+-            } else if (reload_task_worker) {  // only reload task workers
++            } else if (reload_action == 2) {  // only reload task workers
+                 pool->reload_init = reload_task_worker = false;
+                 if (_server->task_worker_num == 0) {
+                     swoole_warning("cannot reload task workers, task workers is not started");
+diff --git a/src/os/process_pool.cc b/src/os/process_pool.cc
+--- a/src/os/process_pool.cc
++++ b/src/os/process_pool.cc
+@@ -15,6 +15,11 @@
+ */
+ 
+ #include "swoole_memory.h"
++
++#ifndef SWOOLE_RS_PROCESS
++#error "Process overlay requires --enable-swoole-rs-process"
++#endif
++#include "swoole_rs_process.h"
+ #include "swoole_socket.h"
+ #include "swoole_string.h"
+ #include "swoole_msg_queue.h"
+@@ -1162,10 +1167,12 @@
+ 
+ void ReloadTask::kill_all(int signal_number) {
+     for (auto &kv : workers) {
+-        if (swoole_kill(kv.first, signal_number) < 0) {
+-            if (errno == ECHILD || errno == ESRCH) {
+-                continue;
+-            }
++        const int result = swoole_kill(kv.first, signal_number);
++        const int error = result < 0 ? errno : 0;
++        const auto action = swr_v1_process_reload_kill(result < 0, error == ECHILD, error == ESRCH);
++        if (action == 1) {
++            continue;
++        } else if (action == 2) {
+             swoole_sys_warning("failed to kill(%d, SIGTERM) worker#[%d]", kv.first, kv.second->id);
+         } else if (signal_number == SIGKILL) {
+             swoole_warning("force kill worker process(pid=%d, id=%d)", kv.first, kv.second->id);
+@@ -1183,11 +1190,13 @@
+         if (iter == workers.end()) {
+             continue;
+         }
+-        if (swoole_kill(pid, signal_number) < 0) {
+-            if (errno == ECHILD || errno == ESRCH) {
+-                workers.erase(iter);
+-                continue;
+-            }
++        const int result = swoole_kill(pid, signal_number);
++        const int error = result < 0 ? errno : 0;
++        const auto action = swr_v1_process_reload_kill(result < 0, error == ECHILD, error == ESRCH);
++        if (action == 1) {
++            workers.erase(iter);
++            continue;
++        } else if (action == 2) {
+             swoole_sys_warning("kill(%d, SIGTERM) [%d] failed", pid, iter->second->id);
+         }
+         break;

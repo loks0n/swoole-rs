@@ -1,0 +1,20 @@
+diff --git a/include/swoole_channel.h b/include/swoole_channel.h
+--- a/include/swoole_channel.h
++++ b/include/swoole_channel.h
+@@ -20,2 +20,9 @@
+ #pragma once
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif
++#ifndef SWOOLE_RS_MEMORY
++#error "Memory overlay requires --enable-swoole-rs-memory"
++#endif
++#include "swoole_rs_memory.h"
+
+@@ -56,3 +63,5 @@
+     bool full() const {
+-        return ((head == tail && tail_tag != head_tag) || (bytes + sizeof(int) * num == size));
++        const swr_v1_memory_channel_capacity state{head, tail, size, bytes, num,
++            static_cast<uint8_t>(head_tag), static_cast<uint8_t>(tail_tag)};
++        return swr_v1_memory_channel_full(&state) == 1;
+     }

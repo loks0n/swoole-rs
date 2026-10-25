@@ -1,0 +1,10 @@
+[package]
+name = "swoole-rs-reactor"
+version = "0.1.0"
+edition = "2024"
+
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.191"
+
+[lib]
+crate-type = ["rlib", "staticlib"]

@@ -1,0 +1,12 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-rust-core-helpers.patch",
+      "sha256": "802a5f78466333140f8c5e3785eb13ee0ce45aca36dad4787ef6e38b4802d3c4",
+      "upstream_paths": [
+        "src/core/base.cc"
+      ]
+    }
+  ]
+}

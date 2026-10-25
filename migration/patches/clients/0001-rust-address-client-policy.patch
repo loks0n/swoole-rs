@@ -1,0 +1,3144 @@
+diff --git a/ext-src/swoole_client.cc b/ext-src/swoole_client.cc
+index f861adb..ff48dc1 100644
+--- a/ext-src/swoole_client.cc
++++ b/ext-src/swoole_client.cc
+@@ -15,12 +15,15 @@
+ */
+
+ #include "php_swoole_cxx.h"
++#ifndef SWOOLE_RS_CLIENTS
++#error "Clients overlay requires --enable-swoole-rs-clients"
++#endif
++#include "swoole_rs_clients.h"
++#include "swoole_rs_clients_pool.h"
+ #include "php_swoole_client.h"
+ #include "swoole_mqtt.h"
+
+ #include <string>
+-#include <queue>
+-#include <unordered_map>
+
+ BEGIN_EXTERN_C()
+ #include "stubs/php_swoole_client_arginfo.h"
+@@ -36,7 +39,7 @@ using swoole::network::Address;
+ using swoole::network::Client;
+ using swoole::network::Socket;
+
+-static std::unordered_map<std::string, std::queue<Client *> *> long_connections;
++static SwooleRustClientPool long_connections;
+
+ zend_class_entry *swoole_client_ce;
+ zend_object_handlers swoole_client_handlers;
+@@ -445,37 +448,44 @@ bool php_swoole_client_check_setting(Client *cli, const zval *zset) {
+ }
+
+ void php_swoole_client_free(const zval *zobject, Client *cli) {
+-    if (cli->timer) {
+-        swoole_timer_del(cli->timer);
+-        cli->timer = nullptr;
+-    }
+-    if (cli->protocol.private_data_1) {
+-        sw_callable_free(cli->protocol.private_data_1);
+-        cli->protocol.private_data_1 = nullptr;
+-    }
+-    // long tcp connection, delete from connection pool
+-    if (cli->keep) {
+-        auto i = long_connections.find(cli->server_id);
+-        if (i != long_connections.end()) {
+-            std::queue<Client *> *q = i->second;
+-            if (q->empty()) {
+-                delete q;
+-                long_connections.erase(cli->server_id);
+-            }
++    uint32_t stage = 100;
++    bool pool_present = false;
++#ifdef SWOOLE_SOCKETS_SUPPORT
++    zval *zsocket = nullptr;
++#endif
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 100: facts = cli->timer != nullptr; break;
++        case 101: facts = cli->protocol.private_data_1 != nullptr; break;
++        case 102: facts = cli->keep; break;
++        case 103: facts = pool_present; break;
++#ifdef SWOOLE_SOCKETS_SUPPORT
++        case 105: zsocket = client_get_zsocket(zobject); facts = zsocket != nullptr; break;
++#endif
+         }
+-    }
+-
+-    delete cli;
+-
++        const auto plan = swr_v1_clients_persistent_next(stage, facts);
++        switch (plan.action) {
++        case SWR_CLIENTS_PERSISTENT_ADVANCE: break;
++        case SWR_CLIENTS_PERSISTENT_DELETE_TIMER: swoole_timer_del(cli->timer); cli->timer = nullptr; break;
++        case SWR_CLIENTS_PERSISTENT_FREE_CALLABLE:
++            sw_callable_free(cli->protocol.private_data_1);
++            cli->protocol.private_data_1 = nullptr;
++            break;
++        case SWR_CLIENTS_PERSISTENT_FIND: {
++            pool_present = long_connections.state(cli->server_id).kind == 1;
++            break;
++        }
++        case SWR_CLIENTS_PERSISTENT_ERASE_POOL: long_connections.remove_empty(cli->server_id); break;
++        case SWR_CLIENTS_PERSISTENT_DELETE_CLIENT: delete cli; break;
+ #ifdef SWOOLE_SOCKETS_SUPPORT
+-    zval *zsocket = client_get_zsocket(zobject);
+-    if (zsocket) {
+-        sw_zval_free(zsocket);
+-        client_set_zsocket(zobject, nullptr);
+-    }
++        case SWR_CLIENTS_PERSISTENT_FREE_SOCKET_OBJECT: sw_zval_free(zsocket); client_set_zsocket(zobject, nullptr); break;
+ #endif
+-    // unset object
+-    php_swoole_client_set_cli(zobject, nullptr);
++        case SWR_CLIENTS_PERSISTENT_DETACH: php_swoole_client_set_cli(zobject, nullptr); return;
++        default: return;
++        }
++        stage = plan.stage;
++    }
+ }
+
+ ssize_t php_swoole_length_func(const Protocol *protocol, Socket *_socket, PacketLength *pl) {
+@@ -512,7 +522,7 @@ static Client *php_swoole_client_new(zval *zobject, char *host, int host_len, in
+         return nullptr;
+     }
+
+-    Client *cli;
++    Client *cli = nullptr;
+     std::string conn_key;
+     zval *zconnection_id =
+         sw_zend_read_property_not_null_ex(Z_OBJCE_P(zobject), zobject, SW_ZSTR_KNOWN(SW_ZEND_STR_ID), 1);
+@@ -524,48 +534,53 @@ static Client *php_swoole_client_new(zval *zobject, char *host, int host_len, in
+         conn_key = std::string(sw_tg_buffer()->str, size);
+     }
+
+-    // keep the tcp connection
+-    if (type & SW_FLAG_KEEP) {
+-        auto i = long_connections.find(conn_key);
+-        if (i == long_connections.end() || i->second->empty()) {
+-            goto _create_socket;
+-        } else {
+-            std::queue<Client *> *q = i->second;
+-            cli = q->front();
+-            q->pop();
+-            if (!cli->socket->check_liveness()) {
+-                cli->close();
+-                php_swoole_client_free(zobject, cli);
+-                goto _create_socket;
+-            }
+-            cli->reuse_count++;
+-            zend_update_property_long(
+-                Z_OBJCE_P(zobject), SW_Z8_OBJ_P(zobject), ZEND_STRL("reuseCount"), cli->reuse_count);
++    uint32_t stage = 0;
++    bool pool_present = false;
++    bool live = false;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 0: case 7: facts = (type & SW_FLAG_KEEP) != 0; break;
++        case 1: facts = pool_present; break;
++        case 2: facts = live; break;
++        case 4: facts = cli->socket != nullptr; break;
++        case 8: facts = (type & SW_SOCK_SSL) != 0; break;
+         }
+-    } else {
+-    _create_socket:
+-        cli = new Client(php_swoole_client_get_type(type), false);
+-        if (cli->socket == nullptr) {
++        const auto plan = swr_v1_clients_persistent_next(stage, facts);
++        switch (plan.action) {
++        case SWR_CLIENTS_PERSISTENT_ADVANCE: break;
++        case SWR_CLIENTS_PERSISTENT_FIND: {
++            pool_present = long_connections.state(conn_key).kind == 2;
++            break;
++        }
++        case SWR_CLIENTS_PERSISTENT_TAKE:
++            cli = static_cast<Client *>(long_connections.take(conn_key));
++            live = cli->socket->check_liveness();
++            break;
++        case SWR_CLIENTS_PERSISTENT_REUSE:
++            cli->reuse_count++;
++            zend_update_property_long(Z_OBJCE_P(zobject), SW_Z8_OBJ_P(zobject), ZEND_STRL("reuseCount"), cli->reuse_count);
++            break;
++        case SWR_CLIENTS_PERSISTENT_DROP_STALE:
++            cli->close();
++            php_swoole_client_free(zobject, cli);
++            break;
++        case SWR_CLIENTS_PERSISTENT_CREATE: cli = new Client(php_swoole_client_get_type(type), false); break;
++        case SWR_CLIENTS_PERSISTENT_CREATE_FAILED:
+             php_swoole_sys_error(E_WARNING, "Client_create() failed");
+             zend_update_property_long(Z_OBJCE_P(zobject), SW_Z8_OBJ_P(zobject), ZEND_STRL("errCode"), errno);
+             delete cli;
+             return nullptr;
++        case SWR_CLIENTS_PERSISTENT_SET_IDENTITY: cli->server_id = std::string(conn_key.c_str(), conn_key.length()); break;
++        case SWR_CLIENTS_PERSISTENT_PUBLISH_SOCKET:
++            zend_update_property_long(Z_OBJCE_P(zobject), SW_Z8_OBJ_P(zobject), ZEND_STRL("sock"), cli->socket->fd);
++            break;
++        case SWR_CLIENTS_PERSISTENT_KEEP: cli->keep = true; break;
++        case SWR_CLIENTS_PERSISTENT_ENABLE_SSL: cli->enable_ssl_encrypt(); return cli;
++        default: return cli;
+         }
+-
+-        cli->server_id = std::string(conn_key.c_str(), conn_key.length());
++        stage = plan.stage;
+     }
+-
+-    zend_update_property_long(Z_OBJCE_P(zobject), SW_Z8_OBJ_P(zobject), ZEND_STRL("sock"), cli->socket->fd);
+-
+-    if (type & SW_FLAG_KEEP) {
+-        cli->keep = true;
+-    }
+-
+-    if (type & SW_SOCK_SSL) {
+-        cli->enable_ssl_encrypt();
+-    }
+-
+-    return cli;
+ }
+
+ static PHP_METHOD(swoole_client, __construct) {
+@@ -1093,15 +1108,7 @@ static PHP_METHOD(swoole_client, close) {
+         php_swoole_client_free(ZEND_THIS, cli);
+     } else {
+         if (cli->keep) {
+-            std::queue<Client *> *q;
+-            auto i = long_connections.find(cli->server_id);
+-            if (i == long_connections.end()) {
+-                q = new std::queue<Client *>;
+-                long_connections[cli->server_id] = q;
+-            } else {
+-                q = i->second;
+-            }
+-            q->push(cli);
++            long_connections.push(cli->server_id, cli);
+         }
+         // unset object
+         php_swoole_client_set_cli(ZEND_THIS, nullptr);
+diff --git a/ext-src/swoole_client_async.cc b/ext-src/swoole_client_async.cc
+index 2593ab9..d0f7b0f 100644
+--- a/ext-src/swoole_client_async.cc
++++ b/ext-src/swoole_client_async.cc
+@@ -15,6 +15,12 @@
+ */
+
+ #include "php_swoole_client.h"
++#ifndef SWOOLE_RS_CLIENTS
++#error "Clients overlay requires --enable-swoole-rs-clients"
++#endif
++#include "swoole_rs_clients.h"
++#include <algorithm>
++#include <cctype>
+ #include "swoole_mqtt.h"
+
+ BEGIN_EXTERN_C()
+@@ -48,6 +54,19 @@ enum AsyncClientCallbackType {
+     CLIENT_CB_onSSLReady,
+ };
+
++static zend::Callable **clients_async_slot(const ClientObject *object, uint32_t slot) {
++    switch (slot) {
++    case 1: return &object->async->onConnect;
++    case 2: return &object->async->onReceive;
++    case 3: return &object->async->onClose;
++    case 4: return &object->async->onError;
++    case 5: return &object->async->onBufferFull;
++    case 6: return &object->async->onBufferEmpty;
++    case 7: return &object->async->onSSLReady;
++    default: abort(); return nullptr;
++    }
++}
++
+ static void client_onConnect(Client *cli);
+ static void client_onReceive(const Client *cli, const char *data, size_t length);
+ static void client_onClose(Client *cli);
+@@ -59,70 +78,33 @@ zend_class_entry *swoole_client_async_ce;
+ static zend_object_handlers swoole_client_async_handlers;
+
+ void php_swoole_client_async_free_object(const ClientObject *client_obj) {
+-    if (client_obj->async->onConnect) {
+-        sw_callable_free(client_obj->async->onConnect);
+-    }
+-    if (client_obj->async->onReceive) {
+-        sw_callable_free(client_obj->async->onReceive);
+-    }
+-    if (client_obj->async->onClose) {
+-        sw_callable_free(client_obj->async->onClose);
+-    }
+-    if (client_obj->async->onError) {
+-        sw_callable_free(client_obj->async->onError);
+-    }
+-    if (client_obj->async->onBufferFull) {
+-        sw_callable_free(client_obj->async->onBufferFull);
+-    }
+-    if (client_obj->async->onBufferEmpty) {
+-        sw_callable_free(client_obj->async->onBufferEmpty);
+-    }
+-    if (client_obj->async->onSSLReady) {
+-        sw_callable_free(client_obj->async->onSSLReady);
++    uint32_t stage = 1;
++    while (true) {
++        const uint32_t facts = stage <= 7 ? *clients_async_slot(client_obj, stage) != nullptr : false;
++        const auto plan = swr_v1_clients_async_next(0, stage, facts);
++        if (plan.action == 1) {
++            sw_callable_free(*clients_async_slot(client_obj, stage));
++        } else if (plan.action == 2) {
++            delete client_obj->async;
++            return;
++        }
++        stage = plan.stage;
+     }
+-    delete client_obj->async;
+ }
+
+ static sw_inline void client_execute_callback(zval *zobject, AsyncClientCallbackType type) {
+     auto client_obj = php_swoole_client_fetch_object(zobject);
+-    const char *callback_name;
+-    zend::Callable *cb;
+-
+-    switch (type) {
+-    case CLIENT_CB_onConnect:
+-        callback_name = "onConnect";
+-        cb = client_obj->async->onConnect;
+-        break;
+-    case CLIENT_CB_onError:
+-        callback_name = "onError";
+-        cb = client_obj->async->onError;
+-        break;
+-    case CLIENT_CB_onClose:
+-        callback_name = "onClose";
+-        cb = client_obj->async->onClose;
+-        break;
+-    case CLIENT_CB_onBufferFull:
+-        callback_name = "onBufferFull";
+-        cb = client_obj->async->onBufferFull;
+-        break;
+-    case CLIENT_CB_onBufferEmpty:
+-        callback_name = "onBufferEmpty";
+-        cb = client_obj->async->onBufferEmpty;
+-        break;
+-    case CLIENT_CB_onSSLReady:
+-        callback_name = "onSSLReady";
+-        cb = client_obj->async->onSSLReady;
+-        break;
+-    default:
++    const auto meta = swr_v1_clients_async_meta(type);
++    if (meta.slot == 0 || meta.slot == CLIENT_CB_onReceive) {
+         abort();
+         return;
+     }
+-
++    const char *callback_name = reinterpret_cast<const char *>(meta.name);
++    zend::Callable *cb = *clients_async_slot(client_obj, meta.slot);
+     if (!cb) {
+         php_swoole_fatal_error(E_WARNING, "%s has no %s callback", SW_Z_OBJCE_NAME_VAL_P(zobject), callback_name);
+         return;
+     }
+-
+     if (UNEXPECTED(sw_zend_call_function_ex2(nullptr, cb->ptr(), 1, zobject, nullptr) != SUCCESS)) {
+         php_swoole_fatal_error(E_WARNING, "%s->%s handler error", SW_Z_OBJCE_NAME_VAL_P(zobject), callback_name);
+     }
+@@ -185,7 +167,8 @@ static void client_onReceive(const Client *cli, const char *data, size_t length)
+
+ static void client_onConnect(Client *cli) {
+     auto zobject = static_cast<zval *>(cli->object);
+-    if (cli->ssl_wait_handshake) {
++    const auto plan = swr_v1_clients_async_next(1, 0, cli->ssl_wait_handshake);
++    if (plan.action == 4) {
+         cli->ssl_wait_handshake = false;
+         client_execute_callback(zobject, CLIENT_CB_onSSLReady);
+         return;
+@@ -300,101 +283,86 @@ static PHP_METHOD(swoole_client_async, connect) {
+     Z_PARAM_LONG(sock_flag)
+     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
+
+-    if (host_len == 0) {
++    // Keep the original host guard before even fetching the object.
++    if (swr_v1_clients_async_next(2, 0, host_len != 0).action == 32) {
+         php_swoole_fatal_error(E_WARNING, "The host is empty");
+         RETURN_FALSE;
+     }
+-
+     auto client_obj = php_swoole_client_fetch_object(ZEND_THIS);
+-    if (client_obj->cli) {
+-        php_swoole_fatal_error(E_WARNING, "connection to the server has already been established");
+-        RETURN_FALSE;
+-    }
+-
+-    if (!client_obj->async) {
+-        php_swoole_fatal_error(E_WARNING, "async client is not initialized");
+-        RETURN_FALSE;
+-    }
+-
+-    auto cli = php_swoole_client_async_new(ZEND_THIS, host, host_len, port);
+-    if (cli == nullptr) {
+-        RETURN_FALSE;
+-    }
+-
+-    zval *zset = sw_zend_read_property(swoole_client_async_ce, ZEND_THIS, ZEND_STRL("setting"), 0);
+-    if (zset && ZVAL_IS_ARRAY(zset)) {
+-        php_swoole_client_check_setting(cli, zset);
+-    }
+-    if (!client_obj->async->onReceive) {
+-        php_swoole_fatal_error(E_ERROR, "no 'onReceive' callback function");
+-        RETURN_FALSE;
+-    }
+-    if (cli->get_socket()->is_stream()) {
+-        if (!client_obj->async->onConnect) {
+-            php_swoole_fatal_error(E_ERROR, "no 'onConnect' callback function");
+-            RETURN_FALSE;
+-        }
+-        if (!client_obj->async->onError) {
+-            php_swoole_fatal_error(E_ERROR, "no 'onError' callback function");
+-            RETURN_FALSE;
++    Client *cli = nullptr, *remaining = nullptr;
++    zval *zset = nullptr;
++    bool predicate = false;
++    int error = 0;
++    uint32_t stage = 1;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 1: facts = client_obj->cli != nullptr; break;
++        case 2: facts = client_obj->async != nullptr; break;
++        case 3: facts = cli != nullptr; break;
++        case 4: facts = zset && ZVAL_IS_ARRAY(zset); break;
++        case 5: facts = client_obj->async->onReceive != nullptr; break;
++        case 6: case 32: facts = predicate; break;
++        case 7: case 20: facts = client_obj->async->onConnect != nullptr; break;
++        case 8: case 22: facts = client_obj->async->onError != nullptr; break;
++        case 9: case 21: facts = client_obj->async->onClose != nullptr; break;
++        case 10: facts = client_obj->async->onBufferFull != nullptr; break;
++        case 11: facts = client_obj->async->onBufferEmpty != nullptr; break;
++        case 33: facts = errno == 0; break;
++        case 34: facts = error == SW_ERROR_DNSLOOKUP_RESOLVE_FAILED; break;
++        case 37: facts = remaining && remaining->onError == nullptr; break;
+         }
+-        if (!client_obj->async->onClose) {
+-            php_swoole_fatal_error(E_ERROR, "no 'onClose' callback function");
+-            RETURN_FALSE;
+-        }
+-        cli->onConnect = client_onConnect;
+-        cli->onClose = client_onClose;
+-        cli->onError = client_onError;
+-        cli->onReceive = client_onReceive;
+-        if (client_obj->async->onBufferFull) {
+-            cli->onBufferFull = client_onBufferFull;
+-        }
+-        if (client_obj->async->onBufferEmpty) {
+-            cli->onBufferEmpty = client_onBufferEmpty;
+-        }
+-    } else {
+-        if (client_obj->async->onConnect) {
++        const auto plan = swr_v1_clients_async_next(2, stage, facts);
++        switch (plan.action) {
++        case 0: break;
++        case 33: php_swoole_fatal_error(E_WARNING, "connection to the server has already been established"); RETURN_FALSE;
++        case 35: php_swoole_fatal_error(E_WARNING, "async client is not initialized"); RETURN_FALSE;
++        case 34: cli = php_swoole_client_async_new(ZEND_THIS, host, host_len, port); break;
++        case 36: zset = sw_zend_read_property(swoole_client_async_ce, ZEND_THIS, ZEND_STRL("setting"), 0); break;
++        case 37: php_swoole_client_check_setting(cli, zset); break;
++        case 38: predicate = cli->get_socket()->is_stream(); break;
++        case 39: php_swoole_fatal_error(E_ERROR, "no 'onReceive' callback function"); RETURN_FALSE;
++        case 40: php_swoole_fatal_error(E_ERROR, "no 'onConnect' callback function"); RETURN_FALSE;
++        case 41: php_swoole_fatal_error(E_ERROR, "no 'onError' callback function"); RETURN_FALSE;
++        case 43: php_swoole_fatal_error(E_ERROR, "no 'onClose' callback function"); RETURN_FALSE;
++        case 42:
+             cli->onConnect = client_onConnect;
+-        }
+-        if (client_obj->async->onClose) {
+             cli->onClose = client_onClose;
+-        }
+-        if (client_obj->async->onError) {
+             cli->onError = client_onError;
+-        }
+-        cli->onReceive = client_onReceive;
+-    }
+-
+-    client_obj->async->_zobject = *ZEND_THIS;
+-    client_obj->cli = cli;
+-    cli->object = &client_obj->async->_zobject;
+-    zval_addref_p(ZEND_THIS);
+-
+-    // nonblock async
+-    if (cli->connect(host, port, timeout, sock_flag) < 0) {
+-        if (errno == 0) {
+-            const auto error = swoole_get_last_error();
+-            if (error == SW_ERROR_DNSLOOKUP_RESOLVE_FAILED) {
+-                php_swoole_error(E_WARNING,
+-                                 "connect to server[%s:%d] failed. Error: %s[%d]",
+-                                 host,
+-                                 (int) port,
+-                                 swoole_strerror(error),
+-                                 error);
+-            }
+-            zend_update_property_long(swoole_client_async_ce, Z_OBJ_P(ZEND_THIS), ZEND_STRL("errCode"), error);
+-        } else {
++            cli->onReceive = client_onReceive;
++            break;
++        case 44: cli->onBufferFull = client_onBufferFull; break;
++        case 45: cli->onBufferEmpty = client_onBufferEmpty; break;
++        case 46: cli->onConnect = client_onConnect; break;
++        case 47: cli->onClose = client_onClose; break;
++        case 48: cli->onError = client_onError; break;
++        case 49: cli->onReceive = client_onReceive; break;
++        case 50:
++            client_obj->async->_zobject = *ZEND_THIS;
++            client_obj->cli = cli;
++            cli->object = &client_obj->async->_zobject;
++            zval_addref_p(ZEND_THIS);
++            break;
++        case 51: predicate = cli->connect(host, port, timeout, sock_flag) < 0; break;
++        case 52: error = swoole_get_last_error(); break;
++        case 54:
++            php_swoole_error(E_WARNING, "connect to server[%s:%d] failed. Error: %s[%d]", host, (int) port, swoole_strerror(error), error);
++            break;
++        case 55: zend_update_property_long(swoole_client_async_ce, Z_OBJ_P(ZEND_THIS), ZEND_STRL("errCode"), error); break;
++        case 53:
+             php_swoole_sys_error(E_WARNING, "connect to server[%s:%d] failed", host, (int) port);
+             zend_update_property_long(swoole_client_async_ce, Z_OBJ_P(ZEND_THIS), ZEND_STRL("errCode"), errno);
+-        }
+-        auto _cli = php_swoole_client_get_cli(ZEND_THIS);
+-        if (_cli && _cli->onError == nullptr) {
+-            php_swoole_client_free(ZEND_THIS, _cli);
++            break;
++        case 56: remaining = php_swoole_client_get_cli(ZEND_THIS); break;
++        case 57:
++            php_swoole_client_free(ZEND_THIS, remaining);
+             zval_delref_p(ZEND_THIS);
++            break;
++        case 5: RETURN_TRUE;
++        default: RETURN_FALSE;
+         }
+-        RETURN_FALSE;
++        stage = plan.stage;
+     }
+-    RETURN_TRUE;
+ }
+
+ static PHP_METHOD(swoole_client_async, isConnected) {
+@@ -436,47 +404,24 @@ static PHP_METHOD(swoole_client_async, on) {
+         client_obj->async = new AsyncClientObject();
+     }
+
+-    if (strncasecmp("connect", cb_name, cb_name_len) == 0) {
+-        zend_update_property(swoole_client_async_ce, Z_OBJ_P(ZEND_THIS), ZEND_STRL("onConnect"), zcallback);
+-        if (client_obj->async->onConnect) {
+-            sw_callable_free(client_obj->async->onConnect);
+-        }
+-        client_obj->async->onConnect = cb;
+-    } else if (strncasecmp("receive", cb_name, cb_name_len) == 0) {
+-        zend_update_property(swoole_client_async_ce, Z_OBJ_P(ZEND_THIS), ZEND_STRL("onReceive"), zcallback);
+-        if (client_obj->async->onReceive) {
+-            sw_callable_free(client_obj->async->onReceive);
+-        }
+-        client_obj->async->onReceive = cb;
+-    } else if (strncasecmp("close", cb_name, cb_name_len) == 0) {
+-        zend_update_property(swoole_client_async_ce, Z_OBJ_P(ZEND_THIS), ZEND_STRL("onClose"), zcallback);
+-        if (client_obj->async->onClose) {
+-            sw_callable_free(client_obj->async->onClose);
+-        }
+-        client_obj->async->onClose = cb;
+-    } else if (strncasecmp("error", cb_name, cb_name_len) == 0) {
+-        zend_update_property(swoole_client_async_ce, Z_OBJ_P(ZEND_THIS), ZEND_STRL("onError"), zcallback);
+-        if (client_obj->async->onError) {
+-            sw_callable_free(client_obj->async->onError);
+-        }
+-        client_obj->async->onError = cb;
+-    } else if (strncasecmp("bufferFull", cb_name, cb_name_len) == 0) {
+-        zend_update_property(swoole_client_async_ce, Z_OBJ_P(ZEND_THIS), ZEND_STRL("onBufferFull"), zcallback);
+-        if (client_obj->async->onBufferFull) {
+-            sw_callable_free(client_obj->async->onBufferFull);
+-        }
+-        client_obj->async->onBufferFull = cb;
+-    } else if (strncasecmp("bufferEmpty", cb_name, cb_name_len) == 0) {
+-        zend_update_property(swoole_client_async_ce, Z_OBJ_P(ZEND_THIS), ZEND_STRL("onBufferEmpty"), zcallback);
+-        if (client_obj->async->onBufferEmpty) {
+-            sw_callable_free(client_obj->async->onBufferEmpty);
+-        }
+-        client_obj->async->onBufferEmpty = cb;
+-    } else {
++    uint8_t folded[12];
++    const size_t folded_length = std::min(cb_name_len, sizeof(folded));
++    for (size_t i = 0; i < folded_length; ++i) {
++        folded[i] = static_cast<uint8_t>(std::tolower(static_cast<unsigned char>(cb_name[i])));
++    }
++    const auto slot = swr_v1_clients_async_event(folded, folded_length, cb_name_len);
++    if (!slot) {
+         php_swoole_fatal_error(E_WARNING, "Unknown event callback type name '%s'", cb_name);
+         sw_callable_free(cb);
+         RETURN_FALSE;
+     }
++    const auto meta = swr_v1_clients_async_meta(slot);
++    zend_update_property(swoole_client_async_ce, Z_OBJ_P(ZEND_THIS), reinterpret_cast<const char *>(meta.name), meta.length, zcallback);
++    // Reobserve the native slot after each potentially reentrant native effect.
++    if (*clients_async_slot(client_obj, slot)) {
++        sw_callable_free(*clients_async_slot(client_obj, slot));
++    }
++    *clients_async_slot(client_obj, slot) = cb;
+     RETURN_TRUE;
+ }
+
+diff --git a/ext-src/swoole_client_coro.cc b/ext-src/swoole_client_coro.cc
+index 9ed23f2..cc0c946 100644
+--- a/ext-src/swoole_client_coro.cc
++++ b/ext-src/swoole_client_coro.cc
+@@ -15,6 +15,10 @@
+ */
+
+ #include "php_swoole_client.h"
++#ifndef SWOOLE_RS_CLIENTS
++#error "Clients overlay requires --enable-swoole-rs-clients"
++#endif
++#include "swoole_rs_clients.h"
+
+ #include "swoole_string.h"
+ #include "swoole_socket.h"
+@@ -187,28 +191,44 @@ void php_swoole_client_coro_minit(int module_number) {
+
+ static sw_inline SocketImpl *client_coro_get_socket_for_connect(zval *zobject, int port) {
+     auto client = client_coro_get_client(zobject);
+-    if (client->socket) {
+-        php_swoole_socket_set_error_properties(zobject, EISCONN, strerror(EISCONN));
+-        return nullptr;
+-    }
+-
+-    zval *ztype = sw_zend_read_property(swoole_client_coro_ce, zobject, ZEND_STRL("type"), 1);
+-    auto socket_type = php_swoole_client_get_type(zval_get_long(ztype));
+-    if (NetSocket::is_tcp(socket_type) && !Address::verify_port(port, true)) {
+-        php_swoole_fatal_error(E_WARNING, "The port is invalid");
+-        return nullptr;
+-    }
+-
+-    auto sock = client_coro_create_socket(zobject, zval_get_long(ztype));
+-    if (!sock) {
+-        return nullptr;
+-    }
+-    client->socket = sock;
+-    zval *zset = sw_zend_read_property_ex(swoole_client_coro_ce, zobject, SW_ZSTR_KNOWN(SW_ZEND_STR_SETTING), 0);
+-    if (zset && ZVAL_IS_ARRAY(zset)) {
+-        php_swoole_socket_set(sock, zset);
++    zval *ztype = nullptr, *zset = nullptr;
++    SocketImpl *sock = nullptr;
++    bool predicate = false;
++    uint32_t stage = 0;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 0: facts = client->socket != nullptr; break;
++        case 1: case 2: facts = predicate; break;
++        case 3: facts = sock != nullptr; break;
++        case 4: facts = zset && ZVAL_IS_ARRAY(zset); break;
++        }
++        const auto plan = swr_v1_clients_coro_next(0, stage, facts, 0, 0);
++        switch (plan.action) {
++        case SWR_CLIENTS_CC_EISCONN:
++            php_swoole_socket_set_error_properties(zobject, EISCONN, strerror(EISCONN));
++            return nullptr;
++        case SWR_CLIENTS_CC_READ_TYPE: {
++            ztype = sw_zend_read_property(swoole_client_coro_ce, zobject, ZEND_STRL("type"), 1);
++            auto socket_type = php_swoole_client_get_type(zval_get_long(ztype));
++            predicate = NetSocket::is_tcp(socket_type);
++            break;
++        }
++        case SWR_CLIENTS_CC_VERIFY_PORT: predicate = Address::verify_port(port, true); break;
++        case SWR_CLIENTS_CC_PORT_WARNING:
++            php_swoole_fatal_error(E_WARNING, "The port is invalid");
++            return nullptr;
++        case SWR_CLIENTS_CC_CREATE: sock = client_coro_create_socket(zobject, zval_get_long(ztype)); break;
++        case SWR_CLIENTS_CC_PUBLISH:
++            client->socket = sock;
++            zset = sw_zend_read_property_ex(swoole_client_coro_ce, zobject, SW_ZSTR_KNOWN(SW_ZEND_STR_SETTING), 0);
++            break;
++        case SWR_CLIENTS_CC_APPLY: php_swoole_socket_set(sock, zset); break;
++        case SWR_CLIENTS_CC_SOCKET: return sock;
++        default: return nullptr;
++        }
++        stage = plan.stage;
+     }
+-    return sock;
+ }
+
+ static PHP_METHOD(swoole_client_coro, __construct) {
+@@ -271,24 +291,32 @@ static PHP_METHOD(swoole_client_coro, connect) {
+     Z_PARAM_LONG(sock_flag)
+     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
+
+-    if (host_len == 0) {
+-        php_swoole_fatal_error(E_WARNING, "The host is empty");
+-        RETURN_FALSE;
+-    }
+-
+-    SocketImpl *socket = client_coro_get_socket_for_connect(ZEND_THIS, port);
+-    if (!socket) {
+-        RETURN_FALSE;
+-    }
+-    socket->set_timeout(timeout, SW_TIMEOUT_CONNECT);
+-    if (!socket->connect(host, port, sock_flag)) {
+-        php_swoole_socket_set_error_properties(ZEND_THIS, socket);
+-        socket->close();
+-        RETURN_FALSE;
++    SocketImpl *socket = nullptr;
++    uint32_t stage = 0;
++    bool predicate = false;
++    while (true) {
++        const uint32_t facts = stage == 1 ? socket != nullptr : (stage == 3 ? predicate : false);
++        const auto plan = swr_v1_clients_coro_next(1, stage, facts, 0, host_len);
++        switch (plan.action) {
++        case SWR_CLIENTS_CC_HOST_WARNING:
++            php_swoole_fatal_error(E_WARNING, "The host is empty");
++            RETURN_FALSE;
++        case SWR_CLIENTS_CC_GET_SOCKET: socket = client_coro_get_socket_for_connect(ZEND_THIS, port); break;
++        case SWR_CLIENTS_CC_CONNECT_TIMEOUT: socket->set_timeout(timeout, SW_TIMEOUT_CONNECT); break;
++        case SWR_CLIENTS_CC_CONNECT: predicate = socket->connect(host, port, sock_flag); break;
++        case SWR_CLIENTS_CC_CONNECT_ERROR:
++            php_swoole_socket_set_error_properties(ZEND_THIS, socket);
++            socket->close();
++            RETURN_FALSE;
++        case SWR_CLIENTS_CC_RDWR_TIMEOUT: socket->set_timeout(timeout, SW_TIMEOUT_RDWR); break;
++        case SWR_CLIENTS_CC_CONNECTED:
++            zend_update_property_bool(swoole_client_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("connected"), 1);
++            break;
++        case SWR_CLIENTS_CC_TRUE: RETURN_TRUE;
++        default: RETURN_FALSE;
++        }
++        stage = plan.stage;
+     }
+-    socket->set_timeout(timeout, SW_TIMEOUT_RDWR);
+-    zend_update_property_bool(swoole_client_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("connected"), 1);
+-    RETURN_TRUE;
+ }
+
+ static PHP_METHOD(swoole_client_coro, send) {
+@@ -302,26 +330,35 @@ static PHP_METHOD(swoole_client_coro, send) {
+     Z_PARAM_DOUBLE(timeout)
+     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
+
+-    if (data_len == 0) {
++    if (swr_v1_clients_coro_next(2, 0, 0, 0, data_len).action == SWR_CLIENTS_CC_DATA_WARNING) {
+         php_swoole_fatal_error(E_WARNING, "data to send is empty");
+         RETURN_FALSE;
+     }
+-
+     CLIENT_CORO_GET_SOCKET_SAFE(cli);
+-
+     SocketImpl::TimeoutSetter ts(cli, timeout, SW_TIMEOUT_WRITE);
+     ssize_t ret = cli->send_all(data, data_len);
+-    if (ret < 0) {
++    const uint32_t facts = ret >= 0 && static_cast<size_t>(ret) < data_len ? cli->errCode != 0 : false;
++    const auto plan = swr_v1_clients_coro_next(2, 1, facts, ret, data_len);
++    if (plan.action == SWR_CLIENTS_CC_ERROR_FALSE) {
+         php_swoole_socket_set_error_properties(ZEND_THIS, cli);
+         RETURN_FALSE;
+     }
+-
+-    if ((size_t) ret < data_len && cli->errCode) {
++    if (plan.action == SWR_CLIENTS_CC_ERROR_LONG) {
+         php_swoole_socket_set_error_properties(ZEND_THIS, cli);
+     }
+     RETURN_LONG(ret);
+ }
+
++static SocketImpl *clients_coro_datagram_socket(zval *zobject) {
++    auto client = client_coro_get_client(zobject);
++    const auto plan = swr_v1_clients_coro_next(5, 1, client->socket != nullptr, 0, 0);
++    switch (plan.action) {
++    case SWR_CLIENTS_CC_SOCKET: return client->socket;
++    case SWR_CLIENTS_CC_CREATE: return client_coro_get_socket_for_connect(zobject, 0);
++    default: return nullptr;
++    }
++}
++
+ static PHP_METHOD(swoole_client_coro, sendto) {
+     char *host;
+     size_t host_len;
+@@ -335,28 +372,23 @@ static PHP_METHOD(swoole_client_coro, sendto) {
+     Z_PARAM_STRING(data, len)
+     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
+
+-    if (len == 0) {
++    if (swr_v1_clients_coro_next(5, 0, 0, 0, len).action == SWR_CLIENTS_CC_FALSE) {
+         RETURN_FALSE;
+     }
+
+-    SocketImpl *socket = nullptr;
+-    const auto client = client_coro_get_client(ZEND_THIS);
+-    if (client->socket == nullptr) {
+-        socket = client_coro_get_socket_for_connect(ZEND_THIS, 0);
+-    } else {
+-        socket = client->socket;
+-    }
++    SocketImpl *socket = clients_coro_datagram_socket(ZEND_THIS);
+     if (!socket) {
+         RETURN_FALSE;
+     }
+
+-    if (socket->get_socket()->is_tcp() && !Address::verify_port(port, true)) {
++    if (swr_v1_clients_coro_next(5, 2, socket->get_socket()->is_tcp(), 0, 0).action == SWR_CLIENTS_CC_VERIFY_PORT &&
++        swr_v1_clients_coro_next(5, 3, Address::verify_port(port, true), 0, 0).action == SWR_CLIENTS_CC_PORT_WARNING) {
+         php_swoole_fatal_error(E_WARNING, "The port is invalid");
+         RETURN_FALSE;
+     }
+
+     auto ret = socket->sendto(std::string(host, host_len), port, data, len);
+-    if (ret < 0) {
++    if (swr_v1_clients_coro_next(5, 4, 0, ret, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
+         php_swoole_socket_set_error_properties(ZEND_THIS, socket);
+         RETURN_FALSE;
+     }
+@@ -371,31 +403,25 @@ static PHP_METHOD(swoole_client_coro, recvfrom) {
+         RETURN_FALSE;
+     }
+
+-    if (length <= 0) {
++    if (swr_v1_clients_coro_next(6, 0, 0, length, 0).action == SWR_CLIENTS_CC_FALSE) {
+         RETURN_FALSE;
+     }
+
+-    SocketImpl *socket = nullptr;
+-    auto client = client_coro_get_client(ZEND_THIS);
+-    if (client->socket == nullptr) {
+-        socket = client_coro_get_socket_for_connect(ZEND_THIS, 0);
+-    } else {
+-        socket = client->socket;
+-    }
++    SocketImpl *socket = clients_coro_datagram_socket(ZEND_THIS);
+     if (!socket) {
+         RETURN_FALSE;
+     }
+
+     zend_string *retval = zend_string_alloc(length, false);
+     ssize_t n_bytes = socket->recvfrom(ZSTR_VAL(retval), length);
+-    if (n_bytes < 0) {
++    if (swr_v1_clients_coro_next(6, 1, 0, n_bytes, 0).action == SWR_CLIENTS_CC_FREE) {
+         zend_string_free(retval);
+         php_swoole_socket_set_error_properties(ZEND_THIS, socket);
+         RETURN_FALSE;
+     } else {
+         zval_ptr_dtor(address);
+         ZVAL_STRING(address, socket->get_addr());
+-        if (port) {
++        if (swr_v1_clients_coro_next(6, 2, port != nullptr, 0, 0).action == SWR_CLIENTS_CC_TRUE) {
+             zval_ptr_dtor(port);
+             ZVAL_LONG(port, socket->get_port());
+         }
+@@ -415,22 +441,19 @@ static PHP_METHOD(swoole_client_coro, sendfile) {
+     if (zend_parse_parameters(ZEND_NUM_ARGS(), "s|ll", &file, &file_len, &offset, &length) == FAILURE) {
+         RETURN_FALSE;
+     }
+-    if (file_len == 0) {
++    if (swr_v1_clients_coro_next(4, 0, 0, 0, file_len).action == SWR_CLIENTS_CC_FILE_WARNING) {
+         php_swoole_fatal_error(E_WARNING, "file to send is empty");
+         RETURN_FALSE;
+     }
+-
+     CLIENT_CORO_GET_SOCKET_SAFE(cli);
+-
+-    // only stream socket can sendfile
+-    if (!(cli->get_type() == SW_SOCK_TCP || cli->get_type() == SW_SOCK_TCP6 ||
+-          cli->get_type() == SW_SOCK_UNIX_STREAM)) {
++    const bool stream = cli->get_type() == SW_SOCK_TCP || cli->get_type() == SW_SOCK_TCP6 || cli->get_type() == SW_SOCK_UNIX_STREAM;
++    if (swr_v1_clients_coro_next(4, 1, stream, 0, 0).action == SWR_CLIENTS_CC_DGRAM_FILE) {
+         zend_update_property_long(swoole_client_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("errCode"), EINVAL);
+-        zend_update_property_string(
+-            swoole_client_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("errMsg"), "dgram socket cannot use sendfile");
++        zend_update_property_string(swoole_client_coro_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("errMsg"), "dgram socket cannot use sendfile");
+         RETURN_FALSE;
+     }
+-    if (!cli->sendfile(file, offset, length)) {
++    const bool sent = cli->sendfile(file, offset, length);
++    if (swr_v1_clients_coro_next(4, 2, sent, 0, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
+         php_swoole_socket_set_error_properties(ZEND_THIS, cli);
+         RETVAL_FALSE;
+     } else {
+@@ -447,15 +470,14 @@ static PHP_METHOD(swoole_client_coro, recv) {
+     ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
+
+     CLIENT_CORO_GET_SOCKET_SAFE(cli);
+-
+     ssize_t retval;
+     zend_string *result = nullptr;
+-
+-    if (cli->open_length_check || cli->open_eof_check) {
++    const auto mode = swr_v1_clients_coro_next(3, 0, cli->open_length_check || cli->open_eof_check, 0, 0);
++    if (mode.action == SWR_CLIENTS_CC_PACKET) {
+         retval = cli->recv_packet(timeout);
+-        if (retval > 0) {
++        if (swr_v1_clients_coro_next(3, 1, 0, retval, 0).action == SWR_CLIENTS_CC_POP) {
+             auto strval = cli->pop_packet();
+-            if (strval == nullptr) {
++            if (swr_v1_clients_coro_next(3, 2, strval != nullptr, 0, 0).action == SWR_CLIENTS_CC_NOMEM) {
+                 retval = -1;
+                 cli->set_err(ENOMEM);
+             } else {
+@@ -466,14 +488,15 @@ static PHP_METHOD(swoole_client_coro, recv) {
+         result = zend_string_alloc(SW_PHP_CLIENT_BUFFER_SIZE - sizeof(zend_string), false);
+         SocketImpl::TimeoutSetter ts(cli, timeout, SW_TIMEOUT_READ);
+         retval = cli->recv(ZSTR_VAL(result), SW_PHP_CLIENT_BUFFER_SIZE - sizeof(zend_string));
+-        if (retval <= 0) {
++        if (swr_v1_clients_coro_next(3, 3, 0, retval, 0).action == SWR_CLIENTS_CC_FREE) {
+             zend_string_free(result);
+         }
+     }
+-    if (retval < 0) {
++    const auto outcome = swr_v1_clients_coro_next(3, 4, 0, retval, 0);
++    if (outcome.action == SWR_CLIENTS_CC_ERROR_FALSE) {
+         php_swoole_socket_set_error_properties(ZEND_THIS, cli);
+         RETURN_FALSE;
+-    } else if (retval == 0) {
++    } else if (outcome.action == SWR_CLIENTS_CC_EMPTY) {
+         RETURN_EMPTY_STRING();
+     } else {
+         ZSTR_VAL(result)[retval] = '\0';
+@@ -495,7 +518,7 @@ static PHP_METHOD(swoole_client_coro, peek) {
+
+     buf = static_cast<char *>(emalloc((size_t) buf_len + 1));
+     auto ret = cli->peek(buf, buf_len);
+-    if (ret < 0) {
++    if (swr_v1_clients_coro_next(7, 0, 0, ret, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
+         php_swoole_socket_set_error_properties(ZEND_THIS, cli);
+         efree(buf);
+         RETURN_FALSE;
+@@ -508,7 +531,8 @@ static PHP_METHOD(swoole_client_coro, peek) {
+
+ static PHP_METHOD(swoole_client_coro, isConnected) {
+     SocketImpl *cli = client_coro_get_socket(ZEND_THIS);
+-    if (cli && cli->is_connected()) {
++    if (swr_v1_clients_coro_next(8, 0, cli != nullptr, 0, 0).action != SWR_CLIENTS_CC_FALSE &&
++        swr_v1_clients_coro_next(8, 1, cli->is_connected(), 0, 0).action == SWR_CLIENTS_CC_TRUE) {
+         RETURN_TRUE;
+     } else {
+         RETURN_FALSE;
+@@ -518,7 +542,7 @@ static PHP_METHOD(swoole_client_coro, isConnected) {
+ static PHP_METHOD(swoole_client_coro, getsockname) {
+     CLIENT_CORO_GET_SOCKET_SAFE(cli);
+
+-    if (!cli->getsockname()) {
++    if (swr_v1_clients_coro_next(9, 0, cli->getsockname(), 0, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
+         php_swoole_socket_set_error_properties(ZEND_THIS, cli);
+         RETURN_FALSE;
+     }
+@@ -543,7 +567,7 @@ static PHP_METHOD(swoole_client_coro, getpeername) {
+     CLIENT_CORO_GET_SOCKET_SAFE(cli);
+
+     Address sa;
+-    if (!cli->getpeername(&sa)) {
++    if (swr_v1_clients_coro_next(9, 0, cli->getpeername(&sa), 0, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
+         php_swoole_socket_set_error_properties(ZEND_THIS, cli);
+         RETURN_FALSE;
+     }
+@@ -560,7 +584,7 @@ static PHP_METHOD(swoole_client_coro, getpeername) {
+ static PHP_METHOD(swoole_client_coro, close) {
+     CLIENT_CORO_GET_SOCKET_SAFE(_socket);
+     zend_update_property_bool(Z_OBJCE_P(ZEND_THIS), SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("connected"), 0);
+-    if (!_socket->close()) {
++    if (swr_v1_clients_coro_next(10, 0, _socket->close(), 0, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
+         php_swoole_socket_set_error_properties(ZEND_THIS, _socket);
+         RETURN_FALSE;
+     }
+diff --git a/ext-src/swoole_http_client_coro.cc b/ext-src/swoole_http_client_coro.cc
+index b50e860..e57fa9c 100644
+--- a/ext-src/swoole_http_client_coro.cc
++++ b/ext-src/swoole_http_client_coro.cc
+@@ -18,6 +18,10 @@
+  */
+
+ #include "php_swoole_cxx.h"
++#ifndef SWOOLE_RS_CLIENTS
++#error "Clients overlay requires --enable-swoole-rs-clients"
++#endif
++#include "swoole_rs_clients.h"
+ #include "php_swoole_http.h"
+ #include "php_swoole_websocket.h"
+
+@@ -77,6 +81,19 @@ static constexpr llhttp_settings_t http_parser_settings =
+ };
+ // clang-format on
+
++static swr_v1_clients_format_span clients_format_span(const char *data, size_t length) {
++    return {reinterpret_cast<const uint8_t *>(data), length};
++}
++static size_t clients_format_request(uint32_t kind, swr_v1_clients_format_span first,
++                                    swr_v1_clients_format_span second, swr_v1_clients_format_span third,
++                                    swr_v1_clients_format_span fourth, size_t number, char *output, size_t capacity) {
++    static_assert(sizeof(int) == 4, "Clients formatting requires32-bit native printf precision");
++    const auto result = swr_v1_clients_http_format(kind, first, second, third, fourth, number,
++                                                 reinterpret_cast<uint8_t *>(output), capacity);
++    if (result.error) errno = result.error == 2 ? EOVERFLOW : EINVAL;
++    return result.written;
++}
++
+ namespace swoole {
+ namespace coroutine {
+ namespace http {
+@@ -175,7 +192,7 @@ class Client {
+
+     static void add_content_length(String *buf, size_t length) {
+         char content_length_str[64];
+-        size_t n = sw_snprintf(SW_STRS(content_length_str), "Content-Length: %zu\r\n\r\n", length);
++        size_t n = clients_format_request(0, {}, {}, {}, {}, length, SW_STRS(content_length_str));
+         buf->append(content_length_str, n);
+     }
+
+@@ -364,24 +381,10 @@ static const zend_function_entry swoole_http_client_coro_methods[] =
+ // clang-format on
+
+ void php_swoole_http_parse_set_cookies(const char *at, size_t length, zval *zcookies, zval *zset_cookie_headers) {
+-    const char *eof = at + length;
+-    size_t key_len = 0, value_len = 0;
++    const auto plan = swr_v1_clients_cookie(reinterpret_cast<const uint8_t *>(at), length);
++    const size_t key_len = plan.key_length, value_len = plan.value_length;
++    const char *p = at + plan.value_offset;
+     zval zvalue;
+-
+-    // key
+-    const char *p = (char *) memchr(at, '=', length);
+-    if (p) {
+-        key_len = p - at;
+-        p++;  // point to value
+-    } else {
+-        p = at;  // key is empty
+-    }
+-    // value
+-    eof = (char *) memchr(p, ';', at + length - p);
+-    if (!eof) {
+-        eof = at + length;
+-    }
+-    value_len = eof - p;
+     if (value_len != 0) {
+         ZVAL_STRINGL(&zvalue, p, value_len);
+         Z_STRLEN(zvalue) = php_url_decode(Z_STRVAL(zvalue), value_len);
+@@ -794,56 +797,68 @@ void Client::add_header(const char *key, size_t key_len, const char *str, size_t
+ }
+
+ bool Client::connect() {
+-    if (socket) {
+-        return true;
+-    }
+-    if (!body) {
+-        body = new String(SW_HTTP_RESPONSE_INIT_SIZE);
+-        if (!body) {
++    uint32_t stage = 0;
++    zend_object *object = nullptr;
++    bool effect_result = false;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 0: facts = socket != nullptr; break;
++        case 1: case 2: facts = body != nullptr; break;
++        case 3: facts = object != nullptr; break;
++        case 4: facts = ssl; break;
++        case 5: case 10: facts = effect_result; break;
++        }
++        const auto plan = swr_v1_clients_http_connection_next(0, stage, facts, 0, 0);
++        switch (plan.action) {
++        case SWR_CLIENTS_HC_ADVANCE: break;
++        case SWR_CLIENTS_HC_TRUE: return true;
++        case SWR_CLIENTS_HC_ALLOC_BODY: body = new String(SW_HTTP_RESPONSE_INIT_SIZE); break;
++        case SWR_CLIENTS_HC_CREATE_SOCKET:
++            php_swoole_check_reactor();
++            object = php_swoole_create_socket(socket_type);
++            break;
++        case SWR_CLIENTS_HC_NOMEM:
+             set_error(ENOMEM, swoole_strerror(ENOMEM), HTTP_ESTATUS_CONNECT_FAILED);
+             return false;
+-        }
+-    }
+-
+-    php_swoole_check_reactor();
+-    auto object = php_swoole_create_socket(socket_type);
+-    if (UNEXPECTED(!object)) {
+-        set_error(errno, swoole_strerror(errno), HTTP_ESTATUS_CONNECT_FAILED);
+-        return false;
+-    }
+-    ZVAL_OBJ(&zsocket, object);
+-    socket = php_swoole_get_socket(&zsocket);
+-
+-    if (ssl && !socket->enable_ssl_encrypt()) {
+-        set_error(socket->errCode, socket->errMsg, HTTP_ESTATUS_CONNECT_FAILED);
+-        close();
+-        return false;
+-    }
+-
+-    // apply settings
+-    apply_setting(sw_zend_read_property_ex(Z_OBJCE_P(zobject), zobject, SW_ZSTR_KNOWN(SW_ZEND_STR_SETTING), 0), false);
+-
+-    // reset the properties that depend on the connection
+-    websocket = false;
++        case SWR_CLIENTS_HC_ERRNO:
++            set_error(errno, swoole_strerror(errno), HTTP_ESTATUS_CONNECT_FAILED);
++            return false;
++        case SWR_CLIENTS_HC_PUBLISH_SOCKET:
++            ZVAL_OBJ(&zsocket, object);
++            socket = php_swoole_get_socket(&zsocket);
++            break;
++        case SWR_CLIENTS_HC_SSL: effect_result = socket->enable_ssl_encrypt(); break;
++        case SWR_CLIENTS_HC_SOCKET_ERROR_CLOSE:
++            set_error(socket->errCode, socket->errMsg, HTTP_ESTATUS_CONNECT_FAILED);
++            close();
++            return false;
++        case SWR_CLIENTS_HC_APPLY:
++            apply_setting(sw_zend_read_property_ex(Z_OBJCE_P(zobject), zobject, SW_ZSTR_KNOWN(SW_ZEND_STR_SETTING), 0), false);
++            break;
++        case SWR_CLIENTS_HC_RESET_CONNECTION:
++            websocket = false;
+ #ifdef SW_HAVE_ZLIB
+-    accept_websocket_compression = false;
++            accept_websocket_compression = false;
+ #endif
+-
+-    double _timeout = connect_timeout == 0 ? network::Socket::default_connect_timeout : connect_timeout;
+-    socket->set_timeout(_timeout, SW_TIMEOUT_CONNECT);
+-    socket->set_resolve_context(&resolve_context_);
+-    socket->set_dtor([this](Socket *_socket) { socket_dtor(); });
+-    socket->set_buffer_allocator(sw_zend_string_allocator());
+-
+-    if (!socket->connect(host, port)) {
+-        set_error(socket->errCode, socket->errMsg, HTTP_ESTATUS_CONNECT_FAILED);
+-        close();
+-        return false;
++            break;
++        case SWR_CLIENTS_HC_CONFIGURE: {
++            double _timeout = connect_timeout == 0 ? network::Socket::default_connect_timeout : connect_timeout;
++            socket->set_timeout(_timeout, SW_TIMEOUT_CONNECT);
++            socket->set_resolve_context(&resolve_context_);
++            socket->set_dtor([this](Socket *_socket) { socket_dtor(); });
++            socket->set_buffer_allocator(sw_zend_string_allocator());
++            break;
++        }
++        case SWR_CLIENTS_HC_CONNECT: effect_result = socket->connect(host, port); break;
++        case SWR_CLIENTS_HC_PUBLISH_PROPERTIES:
++            zend_update_property(swoole_http_client_coro_ce, SW_Z8_OBJ_P(zobject), ZEND_STRL("socket"), &zsocket);
++            zend_update_property_bool(swoole_http_client_coro_ce, SW_Z8_OBJ_P(zobject), ZEND_STRL("connected"), 1);
++            break;
++        default: return false;
++        }
++        stage = plan.stage;
+     }
+-
+-    zend_update_property(swoole_http_client_coro_ce, SW_Z8_OBJ_P(zobject), ZEND_STRL("socket"), &zsocket);
+-    zend_update_property_bool(swoole_http_client_coro_ce, SW_Z8_OBJ_P(zobject), ZEND_STRL("connected"), 1);
+-    return true;
+ }
+
+ void Client::set_error(int error, const char *msg, int status) const {
+@@ -855,21 +870,30 @@ void Client::set_error(int error, const char *msg, int status) const {
+ }
+
+ bool Client::keep_liveness() {
+-    if (!socket || !socket->check_liveness()) {
+-        if (socket) {
+-            /* in progress */
++    uint32_t stage = 0, iteration = 0;
++    bool effect_result = false;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 0: case 2: facts = socket != nullptr; break;
++        case 1: case 4: facts = effect_result; break;
++        }
++        const auto plan = swr_v1_clients_http_connection_next(1, stage, facts, iteration, stage == 3 ? max_retries : 0);
++        switch (plan.action) {
++        case SWR_CLIENTS_HC_ADVANCE: break;
++        case SWR_CLIENTS_HC_TRUE: return true;
++        case SWR_CLIENTS_HC_LIVENESS: effect_result = socket->check_liveness(); break;
++        case SWR_CLIENTS_HC_CLOSE_DEAD:
+             socket->check_bound_co(SW_EVENT_RDWR);
+             set_error(socket->errCode, socket->errMsg, HTTP_ESTATUS_SERVER_RESET);
+             close(false);
++            break;
++        case SWR_CLIENTS_HC_RETRY_CONNECT: effect_result = connect(); break;
++        default: return false;
+         }
+-        SW_LOOP_N(max_retries + 1) {
+-            if (connect()) {
+-                return true;
+-            }
+-        }
+-        return false;
++        stage = plan.stage;
++        iteration = plan.iteration;
+     }
+-    return true;
+ }
+
+ bool Client::send_request() {
+@@ -963,11 +987,8 @@ bool Client::send_request() {
+         }
+         size_t proxy_uri_len = path.length() + _host_len + strlen(pre) + 10;
+         char *proxy_uri = (char *) emalloc(proxy_uri_len);
+-        if (nullptr == memchr(_host, ':', _host_len)) {
+-            proxy_uri_len = sw_snprintf(proxy_uri, proxy_uri_len, "%s%s:%u%s", pre, _host, port, path.c_str());
+-        } else {
+-            proxy_uri_len = sw_snprintf(proxy_uri, proxy_uri_len, "%s%s%s", pre, _host, path.c_str());
+-        }
++        proxy_uri_len = clients_format_request(1, clients_format_span(_host, _host_len),
++            clients_format_span(path.data(), path.length()), {}, {}, port, proxy_uri, proxy_uri_len);
+         buffer->append(proxy_uri, proxy_uri_len);
+         if (!socket->http_proxy->password.empty()) {
+             require_proxy_authentication = true;
+@@ -1118,11 +1139,8 @@ bool Client::send_request() {
+         memcpy(boundary_str, SW_HTTP_CLIENT_BOUNDARY_PREKEY, sizeof(SW_HTTP_CLIENT_BOUNDARY_PREKEY) - 1);
+         swoole_random_string(boundary_str + sizeof(SW_HTTP_CLIENT_BOUNDARY_PREKEY) - 1,
+                              sizeof(boundary_str) - sizeof(SW_HTTP_CLIENT_BOUNDARY_PREKEY));
+-        ssize_t n = sw_snprintf(header_buf,
+-                                sizeof(header_buf),
+-                                "Content-Type: multipart/form-data; boundary=%.*s\r\n",
+-                                (int) (sizeof(boundary_str) - 1),
+-                                boundary_str);
++        ssize_t n = clients_format_request(2, clients_format_span(boundary_str, sizeof(boundary_str) - 1),
++            {}, {}, {}, 0, SW_STRS(header_buf));
+         buffer->append(header_buf, n);
+
+         // ============ content-length ============
+@@ -1185,13 +1203,8 @@ bool Client::send_request() {
+                     continue;
+                 }
+                 zend::String str_value(zvalue);
+-                n = sw_snprintf(header_buf,
+-                                sizeof(header_buf),
+-                                SW_HTTP_FORM_RAW_DATA_FMT,
+-                                (int) (sizeof(boundary_str) - 1),
+-                                boundary_str,
+-                                keylen,
+-                                key);
++                n = clients_format_request(3, clients_format_span(boundary_str, sizeof(boundary_str) - 1),
++                    clients_format_span(key, keylen), {}, {}, 0, SW_STRS(header_buf));
+                 buffer->append(header_buf, n);
+                 buffer->append(str_value.val(), str_value.len());
+                 buffer->append(ZEND_STRL("\r\n"));
+@@ -1238,17 +1251,10 @@ bool Client::send_request() {
+                 /**
+                  * part header
+                  */
+-                n = sw_snprintf(header_buf,
+-                                sizeof(header_buf),
+-                                SW_HTTP_FORM_FILE_DATA_FMT,
+-                                (int) (sizeof(boundary_str) - 1),
+-                                boundary_str,
+-                                (int) Z_STRLEN_P(zname),
+-                                Z_STRVAL_P(zname),
+-                                (int) Z_STRLEN_P(zfilename),
+-                                Z_STRVAL_P(zfilename),
+-                                (int) Z_STRLEN_P(ztype),
+-                                Z_STRVAL_P(ztype));
++                n = clients_format_request(4, clients_format_span(boundary_str, sizeof(boundary_str) - 1),
++                    clients_format_span(Z_STRVAL_P(zname), Z_STRLEN_P(zname)),
++                    clients_format_span(Z_STRVAL_P(zfilename), Z_STRLEN_P(zfilename)),
++                    clients_format_span(Z_STRVAL_P(ztype), Z_STRLEN_P(ztype)), 0, SW_STRS(header_buf));
+                 /**
+                  * from memory
+                  */
+@@ -1280,7 +1286,7 @@ bool Client::send_request() {
+             SW_HASHTABLE_FOREACH_END();
+         }
+
+-        n = sw_snprintf(header_buf, sizeof(header_buf), "--%.*s--\r\n", (int) (sizeof(boundary_str) - 1), boundary_str);
++        n = clients_format_request(5, clients_format_span(boundary_str, sizeof(boundary_str) - 1), {}, {}, {}, 0, SW_STRS(header_buf));
+         if (socket->send_all(header_buf, n) != n) {
+             goto _send_fail;
+         }
+@@ -1349,28 +1355,36 @@ bool Client::exec(const std::string &_path) {
+     if (use_default_port) {
+         resolve_context_.with_port = true;
+     }
+-    SW_LOOP_N(max_retries + 1) {
+-        if (send_request() == false) {
+-            return false;
+-        }
+-        if (defer) {
++    uint32_t stage = 0, iteration = 0;
++    while (true) {
++        // Observe only original fields at their original stage, after native
++        // send/receive/close effects may have reentered and changed settings.
++        const uint8_t retries = stage == 0 || stage == 2 ? max_retries : 0;
++        const uint8_t deferred = stage == 1 ? defer : false;
++        const uint16_t status = stage == 2 && retries > 0 ? parser.status_code : 0;
++        const auto plan = swr_v1_clients_http_exec(stage, iteration, retries, deferred, status);
++        switch (plan.action) {
++        case 1:
++            if (!send_request()) return false;
++            break;
++        case 2:
++            if (!recv_response()) return false;
++            break;
++        case 3:
++            close(true);
++            break;
++        case 4:
+             return true;
+-        }
+-        if (recv_response() == false) {
++        default:
+             return false;
+         }
+-        if (max_retries > 0 &&
+-            (parser.status_code == SW_HTTP_BAD_GATEWAY || parser.status_code == SW_HTTP_SERVICE_UNAVAILABLE)) {
+-            close(true);
+-            continue;
+-        }
+-        return true;
++        stage = plan.stage;
++        iteration = plan.iteration;
+     }
+-    return false;
+ }
+
+ bool Client::recv_response(double timeout) {
+-    if (!wait_response) {
++    if (swr_v1_clients_http_response_next(0, wait_response, 0, 0, 0).action == SWR_CLIENTS_HR_FALSE) {
+         return false;
+     }
+     ssize_t retval = 0;
+@@ -1378,111 +1392,82 @@ bool Client::recv_response(double timeout) {
+     String *buffer = socket->get_read_buffer();
+     bool header_completed = false;
+     off_t header_crlf_offset = 0;
+-
+-    // re-init http response parser
+     swoole_llhttp_parser_init(&parser, HTTP_RESPONSE, (void *) this);
+-
+     if (timeout == 0) {
+         timeout = response_timeout == 0 ? network::Socket::default_read_timeout : response_timeout;
+     }
+     Socket::TimeoutController tc(socket, timeout, SW_TIMEOUT_READ);
+-    bool success = false;
++    uint32_t stage = 1;
++    bool header_found = false;
+     while (true) {
+-        if (sw_unlikely(tc.has_timedout(SW_TIMEOUT_READ))) {
+-            break;
+-        }
+-        retval = socket->recv(buffer->str + buffer->length, buffer->size - buffer->length);
+-        if (sw_unlikely(retval <= 0)) {
+-            if (retval == 0) {
+-                socket->set_err(ECONNRESET);
+-                if (total_bytes > 0 && !llhttp_should_keep_alive(&parser)) {
+-                    llhttp_finish(&parser);
+-                    success = true;
+-                    break;
+-                }
+-            }
++        uint32_t facts = 0;
++        size_t size = 0;
++        switch (stage) {
++        case 1: facts = tc.has_timedout(SW_TIMEOUT_READ); break;
++        case 2: facts = retval < 0 ? 0 : (retval == 0 ? 1 : 2); break;
++        case 3: facts = total_bytes > 0 && !llhttp_should_keep_alive(&parser); break;
++        case 4: facts = header_completed; break;
++        case 5: facts = header_found ? 1 : (buffer->length == buffer->size ? 2 : 0); size = buffer->length; break;
++        case 9: facts = socket->get_socket()->close_wait; break;
++        case 10: facts = parser.error == HPE_OK; break;
++        case 11: facts = event_stream && llhttp_message_needs_eof(&parser); break;
++        case 12: facts = completed; break;
++        case 13: facts = parser.upgrade; size = static_cast<size_t>(retval); break;
++        case 30: facts = websocket; break;
++        case 31: facts = !websocket && (!keep_alive || connection_close); break;
++        }
++        const auto plan = swr_v1_clients_http_response_next(stage, facts, size, parsed_n, SW_WEBSOCKET_HEADER_LEN);
++        switch (plan.action) {
++        case SWR_CLIENTS_HR_ADVANCE: break;
++        case SWR_CLIENTS_HR_RECV:
++            retval = socket->recv(buffer->str + buffer->length, buffer->size - buffer->length);
+             break;
+-        }
+-
+-        if (!header_completed) {
++        case SWR_CLIENTS_HR_EOF_ERROR: socket->set_err(ECONNRESET); break;
++        case SWR_CLIENTS_HR_FINISH: llhttp_finish(&parser); break;
++        case SWR_CLIENTS_HR_HEADER_APPEND:
+             buffer->length += retval;
+-            if (swoole_strnpos(
+-                    buffer->str + header_crlf_offset, buffer->length - header_crlf_offset, ZEND_STRL("\r\n\r\n")) < 0) {
+-                if (buffer->length == buffer->size) {
+-                    swoole_error_log(SW_LOG_TRACE, SW_ERROR_HTTP_INVALID_PROTOCOL, "Http header too large");
+-                    socket->set_err(SW_ERROR_HTTP_INVALID_PROTOCOL);
+-                    break;
+-                }
+-                header_crlf_offset = buffer->length > 4 ? buffer->length - 4 : 0;
+-                continue;
+-            } else {
+-                header_completed = true;
+-                header_crlf_offset = 0;
+-                retval = buffer->length;
+-                buffer->clear();
+-            }
+-        }
+-
+-        total_bytes += retval;
+-        parsed_n = swoole_llhttp_parser_execute(&parser, &http_parser_settings, buffer->str, retval);
+-        swoole_trace_log(SW_TRACE_HTTP_CLIENT,
+-                         "parsed_n=%ld, retval=%ld, total_bytes=%ld, completed=%d",
+-                         parsed_n,
+-                         retval,
+-                         total_bytes,
+-                         completed);
+-
+-        if (sw_unlikely(socket->get_socket()->close_wait)) {
+-            success = false;
++            header_found = swoole_strnpos(buffer->str + header_crlf_offset, buffer->length - header_crlf_offset, ZEND_STRL("\r\n\r\n")) >= 0;
+             break;
+-        }
+-
+-        if (sw_likely(parser.error == HPE_OK)) {
+-            if (sw_unlikely(event_stream && llhttp_message_needs_eof(&parser)) == 1) {
+-                llhttp_finish(&parser);
+-            }
+-
+-            if (completed) {
+-                if (parser.upgrade && (size_t) retval > parsed_n + SW_WEBSOCKET_HEADER_LEN) {
+-                    buffer->length = retval;
+-                    buffer->offset = parsed_n;
+-                    buffer->reduce(parsed_n);
+-                }
+-                success = true;
+-                break;
+-            }
+-        } else {
++        case SWR_CLIENTS_HR_HEADER_COMPLETE:
++            header_completed = true;
++            header_crlf_offset = 0;
++            retval = buffer->length;
++            buffer->clear();
++            break;
++        case SWR_CLIENTS_HR_PARSE:
++            total_bytes += retval;
++            parsed_n = swoole_llhttp_parser_execute(&parser, &http_parser_settings, buffer->str, retval);
++            swoole_trace_log(SW_TRACE_HTTP_CLIENT, "parsed_n=%ld, retval=%ld, total_bytes=%ld, completed=%d", parsed_n, retval, total_bytes, completed);
++            break;
++        case SWR_CLIENTS_HR_HEADER_ERROR:
++            swoole_error_log(SW_LOG_TRACE, SW_ERROR_HTTP_INVALID_PROTOCOL, "Http header too large");
+             socket->set_err(SW_ERROR_HTTP_INVALID_PROTOCOL);
+             break;
++        case SWR_CLIENTS_HR_HEADER_CONTINUE: header_crlf_offset = plan.offset; break;
++        case SWR_CLIENTS_HR_PROTOCOL_ERROR: socket->set_err(SW_ERROR_HTTP_INVALID_PROTOCOL); break;
++        case SWR_CLIENTS_HR_UPGRADE_BUFFER:
++            buffer->length = retval;
++            buffer->offset = parsed_n;
++            buffer->reduce(parsed_n);
++            break;
++        case SWR_CLIENTS_HR_WEBSOCKET:
++            socket->open_length_check = true;
++            socket->protocol.package_length_size = SW_WEBSOCKET_HEADER_LEN;
++            socket->protocol.package_length_offset = 0;
++            socket->protocol.package_body_offset = 0;
++            socket->protocol.get_package_length = websocket::get_package_length;
++            break;
++        case SWR_CLIENTS_HR_FAIL:
++            php_swoole_socket_set_error_properties(zobject, socket);
++            zend::object_set(zobject, ZEND_STRL("statusCode"), socket->errCode == ETIMEDOUT ? HTTP_ESTATUS_REQUEST_TIMEOUT : HTTP_ESTATUS_SERVER_RESET);
++            close();
++            return false;
++        case SWR_CLIENTS_HR_CLOSE_SUCCESS: close(); return true;
++        case SWR_CLIENTS_HR_RESET_SUCCESS: reset(); return true;
++        default: return false;
+         }
++        stage = plan.stage;
+     }
+-
+-    if (!success) {
+-        php_swoole_socket_set_error_properties(zobject, socket);
+-        zend::object_set(zobject,
+-                         ZEND_STRL("statusCode"),
+-                         socket->errCode == ETIMEDOUT ? HTTP_ESTATUS_REQUEST_TIMEOUT : HTTP_ESTATUS_SERVER_RESET);
+-        close();
+-        return false;
+-    }
+-    /**
+-     * TODO: Sec-WebSocket-Accept check
+-     */
+-    if (websocket) {
+-        socket->open_length_check = true;
+-        socket->protocol.package_length_size = SW_WEBSOCKET_HEADER_LEN;
+-        socket->protocol.package_length_offset = 0;
+-        socket->protocol.package_body_offset = 0;
+-        socket->protocol.get_package_length = websocket::get_package_length;
+-    }
+-    // handler keep alive
+-    if (!websocket && (!keep_alive || connection_close)) {
+-        close();
+-    } else {
+-        reset();
+-    }
+-
+-    return true;
+ }
+
+ void Client::recv_websocket_frame(zval *return_value, double timeout) {
+@@ -1623,23 +1608,34 @@ void Client::socket_dtor() {
+  */
+ bool Client::close(const bool should_be_reset) {
+     SocketImpl *_socket = socket;
+-    if (!_socket) {
+-        return false;
+-    }
+-    if (in_callback) {
+-        _socket->get_socket()->close_wait = 1;
+-        return true;
+-    }
+-
+-    zend_update_property_bool(Z_OBJCE_P(zobject), SW_Z8_OBJ_P(zobject), ZEND_STRL("connected"), 0);
+-    if (!_socket->close()) {
+-        php_swoole_socket_set_error_properties(zobject, _socket);
+-        return false;
+-    }
+-    if (should_be_reset) {
+-        reset();
++    uint32_t stage = 0;
++    bool effect_result = false;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 0: facts = _socket ? 1u | (in_callback ? 2u : 0u) : 0u; break;
++        case 2: facts = effect_result; break;
++        case 3: facts = should_be_reset; break;
++        }
++        const auto plan = swr_v1_clients_http_connection_next(2, stage, facts, 0, 0);
++        switch (plan.action) {
++        case SWR_CLIENTS_HC_ADVANCE: break;
++        case SWR_CLIENTS_HC_TRUE: return true;
++        case SWR_CLIENTS_HC_DEFER_CLOSE:
++            _socket->get_socket()->close_wait = 1;
++            return true;
++        case SWR_CLIENTS_HC_DISCONNECTED:
++            zend_update_property_bool(Z_OBJCE_P(zobject), SW_Z8_OBJ_P(zobject), ZEND_STRL("connected"), 0);
++            break;
++        case SWR_CLIENTS_HC_CLOSE: effect_result = _socket->close(); break;
++        case SWR_CLIENTS_HC_SAVED_ERROR:
++            php_swoole_socket_set_error_properties(zobject, _socket);
++            return false;
++        case SWR_CLIENTS_HC_RESET: reset(); break;
++        default: return false;
++        }
++        stage = plan.stage;
+     }
+-    return true;
+ }
+
+ Client::~Client() {
+diff --git a/ext-src/swoole_name_resolver.cc b/ext-src/swoole_name_resolver.cc
+index e959b5e..fe217f5 100644
+--- a/ext-src/swoole_name_resolver.cc
++++ b/ext-src/swoole_name_resolver.cc
+@@ -15,6 +15,10 @@
+  */
+
+ #include "php_swoole_cxx.h"
++#ifndef SWOOLE_RS_CLIENTS
++#error "Clients overlay requires --enable-swoole-rs-clients"
++#endif
++#include "swoole_rs_clients.h"
+
+ BEGIN_EXTERN_C()
+ #include "stubs/php_swoole_name_resolver_arginfo.h"
+@@ -175,17 +179,36 @@ bool php_swoole_name_resolver_add(zval *zresolver) {
+ }
+
+ std::string php_swoole_name_resolver_lookup(const std::string &name, NameResolver::Context *ctx, void *_resolver) {
+-    zval *zcluster_object;
++    zval *zcluster_object = nullptr, *zhost = nullptr, *zport = nullptr;
+     zval retval;
+     zval *zresolver = (zval *) _resolver;
+-
+-    if (!ctx->private_data) {
+-    _lookup:
+-        zval zname;
+-        ZVAL_STRINGL(&zname, name.c_str(), name.length());
+-        zend_call_method_with_1_params(SW_Z8_OBJ_P(zresolver), nullptr, nullptr, "lookup", &retval, &zname);
+-        zval_dtor(&zname);
+-        if (Z_TYPE(retval) == IS_OBJECT) {
++    std::string result;
++    uint32_t stage = 0;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 0: facts = ctx->private_data != nullptr; break;
++        case 1: facts = Z_TYPE(retval) == IS_OBJECT ? 1 : (Z_TYPE(retval) == IS_STRING ? 2 : 0); break;
++        case 3: facts = zval_get_long(&retval) == 0; break;
++        case 4: facts = ZVAL_IS_ARRAY(&retval); break;
++        case 5: facts = zhost != nullptr && ZVAL_IS_STRING(zhost); break;
++        case 6: facts = ctx->with_port; break;
++        case 7: facts = zport != nullptr; break;
++        }
++        const auto plan = swr_v1_clients_resolver_next(stage, facts);
++        switch (plan.action) {
++        case SWR_CLIENTS_RESOLVER_LOOKUP: {
++            zval zname;
++            ZVAL_STRINGL(&zname, name.c_str(), name.length());
++            zend_call_method_with_1_params(SW_Z8_OBJ_P(zresolver), nullptr, nullptr, "lookup", &retval, &zname);
++            zval_dtor(&zname);
++            break;
++        }
++        case SWR_CLIENTS_RESOLVER_COUNT:
++            zcluster_object = (zval *) ctx->private_data;
++            sw_zend_call_method_with_0_params(zcluster_object, nullptr, nullptr, "count", &retval);
++            break;
++        case SWR_CLIENTS_RESOLVER_STORE_CLUSTER:
+             ctx->private_data = zcluster_object = (zval *) ecalloc(1, sizeof(zval));
+             ctx->dtor = [](NameResolver::Context *ctx) {
+                 zval *_zcluster_object = (zval *) ctx->private_data;
+@@ -195,45 +218,46 @@ std::string php_swoole_name_resolver_lookup(const std::string &name, NameResolve
+             *zcluster_object = retval;
+             ctx->cluster_ = true;
+             ctx->final_ = false;
+-        } else if (Z_TYPE(retval) == IS_STRING) {
++            break;
++        case SWR_CLIENTS_RESOLVER_STRING:
+             ctx->final_ = true;
+             ctx->cluster_ = false;
+             return {Z_STRVAL(retval), Z_STRLEN(retval)};
+-        } else {
++        case SWR_CLIENTS_RESOLVER_RESET:
+             ctx->final_ = false;
+             ctx->cluster_ = false;
+             return "";
+-        }
+-    } else {
+-        zcluster_object = (zval *) ctx->private_data;
+-        // no available node, resolve again
+-        sw_zend_call_method_with_0_params(zcluster_object, nullptr, nullptr, "count", &retval);
+-        if (zval_get_long(&retval) == 0) {
++        case SWR_CLIENTS_RESOLVER_RELEASE:
+             ctx->dtor(ctx);
+             ctx->private_data = nullptr;
+-            goto _lookup;
+-        }
+-    }
+-
+-    sw_zend_call_method_with_0_params(zcluster_object, nullptr, nullptr, "pop", &retval);
+-    if (!ZVAL_IS_ARRAY(&retval)) {
+-        return "";
+-    }
+-    zval *zhost = zend_hash_str_find(HASH_OF(&retval), ZEND_STRL("host"));
+-    if (zhost == nullptr || !ZVAL_IS_STRING(zhost)) {
+-        return "";
+-    }
+-    std::string result(Z_STRVAL_P(zhost), Z_STRLEN_P(zhost));
+-    if (ctx->with_port) {
+-        result.append(":");
+-        zval *zport = zend_hash_str_find(HASH_OF(&retval), ZEND_STRL("port"));
+-        if (zport == nullptr) {
++            break;
++        case SWR_CLIENTS_RESOLVER_POP:
++            sw_zend_call_method_with_0_params(zcluster_object, nullptr, nullptr, "pop", &retval);
++            break;
++        case SWR_CLIENTS_RESOLVER_FIND_HOST:
++            zhost = zend_hash_str_find(HASH_OF(&retval), ZEND_STRL("host"));
++            break;
++        case SWR_CLIENTS_RESOLVER_COPY_HOST:
++            result.assign(Z_STRVAL_P(zhost), Z_STRLEN_P(zhost));
++            break;
++        case SWR_CLIENTS_RESOLVER_COLON_PORT:
++            result.append(":");
++            zport = zend_hash_str_find(HASH_OF(&retval), ZEND_STRL("port"));
++            break;
++        case SWR_CLIENTS_RESOLVER_APPEND_PORT:
++            result.append(std::to_string(zval_get_long(zport)));
++            break;
++        case SWR_CLIENTS_RESOLVER_DTOR:
++            zval_ptr_dtor(&retval);
++            break;
++        case SWR_CLIENTS_RESOLVER_RESULT:
++            return result;
++        default:
++            // Original early returns intentionally do not destroy retval.
+             return "";
+         }
+-        result.append(std::to_string(zval_get_long(zport)));
++        stage = plan.stage;
+     }
+-    zval_ptr_dtor(&retval);
+-    return result;
+ }
+
+ NameResolver::Context *php_swoole_name_resolver_get_context(zval *zobject) {
+diff --git a/src/network/address.cc b/src/network/address.cc
+index 04e0462..23ca259 100644
+--- a/src/network/address.cc
++++ b/src/network/address.cc
+@@ -16,15 +16,39 @@
+
+ #include "swoole_socket.h"
+
+-#include <regex>
+-
+-static bool IN_IS_ADDR_LOOPBACK(const in_addr *a) {
+-    return a->s_addr == htonl(INADDR_LOOPBACK);
+-}
++#ifndef SWOOLE_RS_CLIENTS
++#error "Clients overlay requires --enable-swoole-rs-clients"
++#endif
++#include "swoole_rs_clients.h"
++#include <locale>
+
+ namespace swoole {
+ namespace network {
+ static thread_local char tmp_address[INET6_ADDRSTRLEN];
++static int clients_parse_ip(int family, const std::string &host, void *destination) {
++    if (family != AF_INET && family != AF_INET6) {
++        // Unsupported-family errno remains an actual native platform effect.
++        return inet_pton(family, host.c_str(), destination);
++    }
++#ifdef __APPLE__
++    if (family == AF_INET6 && strchr(host.c_str(), '%') != nullptr) {
++        // Scope/interface lookup can succeed while changing native errno.
++        // Keep that platform execution boundary outside Rust frames.
++        return inet_pton(family, host.c_str(), destination);
++    }
++    constexpr uint8_t allow_decimal_zeroes = 1;
++#else
++    constexpr uint8_t allow_decimal_zeroes = 0;
++#endif
++    const auto plan = swr_v1_clients_ip(family == AF_INET ? 4 : 6,
++                                      reinterpret_cast<const uint8_t *>(host.data()), host.size(), allow_decimal_zeroes);
++    if (plan.length == 0) {
++        return 0;
++    }
++    memcpy(destination, plan.bytes, plan.length);
++    return 1;
++}
++
+
+ const char *Address::addr_str(int family, const void *addr) {
+     if (inet_ntop(family, addr, tmp_address, sizeof(tmp_address))) {
+@@ -34,17 +58,11 @@ const char *Address::addr_str(int family, const void *addr) {
+ }
+
+ bool Address::verify_ip(int family, const std::string &str) {
+-    return inet_pton(family, str.c_str(), tmp_address) == 1;
++    return clients_parse_ip(family, str, tmp_address) == 1;
+ }
+
+ bool Address::verify_port(const int port, const bool for_connect) {
+-    if (port < 0 || port > 65535) {
+-        return false;
+-    }
+-    if (for_connect && port == 0) {
+-        return false;
+-    }
+-    return true;
++    return swr_v1_clients_port(port, for_connect);
+ }
+
+ const char *Address::get_addr() const {
+@@ -96,7 +114,7 @@ bool Address::assign(SocketType _type, const std::string &_host, int _port, bool
+         addr.inet_v4.sin_port = htons(_port);
+         len = sizeof(addr.inet_v4);
+
+-        if (inet_pton(AF_INET, host, &addr.inet_v4.sin_addr.s_addr) != 1) {
++        if (clients_parse_ip(AF_INET, _host, &addr.inet_v4.sin_addr.s_addr) != 1) {
+             if (!_resolve_name) {
+                 swoole_set_last_error(SW_ERROR_BAD_HOST_ADDR);
+                 return false;
+@@ -110,7 +128,7 @@ bool Address::assign(SocketType _type, const std::string &_host, int _port, bool
+         addr.inet_v6.sin6_family = AF_INET6;
+         addr.inet_v6.sin6_port = htons(_port);
+         len = sizeof(addr.inet_v6);
+-        if (inet_pton(AF_INET6, host, addr.inet_v6.sin6_addr.s6_addr) != 1) {
++        if (clients_parse_ip(AF_INET6, _host, addr.inet_v6.sin6_addr.s6_addr) != 1) {
+             if (!_resolve_name) {
+                 swoole_set_last_error(SW_ERROR_BAD_HOST_ADDR);
+                 return false;
+@@ -151,30 +169,31 @@ const char *Address::type_str(SocketType type) {
+ }
+
+ bool Address::assign(const std::string &url) {
+-    static const std::regex unix_pattern(R"(^(unix|udg)://(/[^?#]+))");
+-    static const std::regex inet4_pattern(R"(^(tcp|udp)://([^:\[]+):(\d+)$)");
+-    static const std::regex inet6_pattern(R"(^(tcp|udp)://\[([^\]]+)\]:(\d+)$)");
+-    std::smatch match;
+-
+-    if (std::regex_match(url, match, unix_pattern)) {
+-        std::string proto = match[1];
+-        std::string path = match[2];
+-        type = proto == "unix" ? SW_SOCK_UNIX_STREAM : SW_SOCK_UNIX_DGRAM;
+-        return assign(type, path, 0);
+-    }
+-    if (std::regex_match(url, match, inet4_pattern)) {
+-        std::string proto = match[1];
+-        std::string host = match[2];
+-        int port = std::stoi(match[3]);
+-        type = proto == "tcp" ? SW_SOCK_TCP : SW_SOCK_UDP;
+-        return assign(type, host, port);
+-    }
+-    if (std::regex_match(url, match, inet6_pattern)) {
+-        std::string proto = match[1];
+-        std::string host = match[2];
+-        int port = std::stoi(match[3]);
+-        type = proto == "tcp" ? SW_SOCK_TCP6 : SW_SOCK_UDP6;
+-        return assign(type, host, port);
++    // The old static regexes capture the process C++ locale on first use.
++    // Preserve its digit facet and std::stoi exceptions instead of substituting
++    // Rust numeric parsing or silently accepting a new URL grammar.
++    static const std::locale url_locale;
++    const auto plan = swr_v1_clients_url(reinterpret_cast<const uint8_t *>(url.data()), url.size());
++    if (plan.kind == 3) {
++        type = plan.datagram ? SW_SOCK_UNIX_DGRAM : SW_SOCK_UNIX_STREAM;
++        return assign(type, url.substr(plan.host_offset, plan.host_length), 0);
++    }
++    if (plan.kind == 1 || plan.kind == 2) {
++        const auto &facet = std::use_facet<std::ctype<char>>(url_locale);
++        bool digits = true;
++        for (size_t i = 0; i < plan.port_length; ++i) {
++            if (!facet.is(std::ctype_base::digit, url[plan.port_offset + i])) {
++                digits = false;
++                break;
++            }
++        }
++        if (digits) {
++            std::string host = url.substr(plan.host_offset, plan.host_length);
++            int port = std::stoi(url.substr(plan.port_offset, plan.port_length));
++            type = plan.kind == 2 ? (plan.datagram ? SW_SOCK_UDP6 : SW_SOCK_TCP6)
++                                  : (plan.datagram ? SW_SOCK_UDP : SW_SOCK_TCP);
++            return assign(type, host, port);
++        }
+     }
+     swoole_error_log(SW_LOG_NOTICE, SW_ERROR_BAD_HOST_ADDR, "Invalid address '%s'", url.c_str());
+     return false;
+@@ -182,10 +201,10 @@ bool Address::assign(const std::string &url) {
+
+ bool Address::is_loopback_addr() const {
+     if (Socket::is_inet4(type)) {
+-        return IN_IS_ADDR_LOOPBACK(&addr.inet_v4.sin_addr);
++        return swr_v1_clients_loopback(4, reinterpret_cast<const uint8_t *>(&addr.inet_v4.sin_addr));
+     }
+     if (Socket::is_inet6(type)) {
+-        return IN6_IS_ADDR_LOOPBACK(&addr.inet_v6.sin6_addr);
++        return swr_v1_clients_loopback(6, addr.inet_v6.sin6_addr.s6_addr);
+     }
+     return false;
+ }
+diff --git a/src/network/client.cc b/src/network/client.cc
+index 56678c7..54b4c87 100644
+--- a/src/network/client.cc
++++ b/src/network/client.cc
+@@ -23,6 +23,10 @@
+ #include "swoole_async.h"
+
+ #include <cassert>
++#ifndef SWOOLE_RS_CLIENTS
++#error "Clients overlay requires --enable-swoole-rs-clients"
++#endif
++#include "swoole_rs_clients.h"
+
+ namespace swoole {
+ namespace network {
+@@ -65,42 +69,50 @@ void Client::init_reactor(Reactor *reactor) {
+ }
+
+ Client::Client(SocketType _type, bool _async) : async(_async) {
+-    fd_type = Socket::is_stream(_type) ? SW_FD_STREAM_CLIENT : SW_FD_DGRAM_CLIENT;
+-    socket = make_socket(_type, fd_type, (async ? SW_SOCK_NONBLOCK : 0) | SW_SOCK_CLOEXEC);
+-    if (socket == nullptr) {
+-        swoole_sys_warning("socket() failed");
+-        return;
+-    }
+-
+-    socket->object = this;
+-    input_buffer_size = SW_CLIENT_BUFFER_SIZE;
+-    socket->chunk_size = SW_SEND_BUFFER_SIZE;
+-
+-    if (socket->is_stream()) {
+-        recv_ = Client_tcp_recv_sync;
+-        if (async) {
+-            connect_ = Client_tcp_connect_async;
+-            send_ = Client_tcp_send_async;
+-            sendfile_ = Client_tcp_sendfile_async;
+-        } else {
+-            connect_ = Client_tcp_connect_sync;
+-            send_ = Client_tcp_send_sync;
+-            sendfile_ = Client_tcp_sendfile_sync;
+-        }
+-    } else {
+-        connect_ = Client_udp_connect;
+-        recv_ = Client_udp_recv;
+-        send_ = Client_udp_send;
++    uint32_t stage = 0;
++    for (;;) {
++        uint8_t fact = 0;
++        switch (stage) {
++        case 0: fact = Socket::is_stream(_type); break;
++        case 2: fact = socket != nullptr; break;
++        case 3: fact = socket->is_stream(); break;
++        case 4: fact = async; break;
++        }
++        const auto plan = swr_v1_clients_object_next(0, stage, fact);
++        switch (plan.action) {
++        case SWR_CLIENTS_OBJECT_FD_STREAM: fd_type = SW_FD_STREAM_CLIENT; break;
++        case SWR_CLIENTS_OBJECT_FD_DGRAM: fd_type = SW_FD_DGRAM_CLIENT; break;
++        case SWR_CLIENTS_OBJECT_MAKE:
++            socket = make_socket(_type, fd_type, (async ? SW_SOCK_NONBLOCK : 0) | SW_SOCK_CLOEXEC);
++            break;
++        case SWR_CLIENTS_OBJECT_INITIALIZE:
++            socket->object = this;
++            input_buffer_size = SW_CLIENT_BUFFER_SIZE;
++            socket->chunk_size = SW_SEND_BUFFER_SIZE;
++            break;
++        case SWR_CLIENTS_OBJECT_WARN: swoole_sys_warning("socket() failed"); return;
++        case SWR_CLIENTS_OBJECT_STREAM: recv_ = Client_tcp_recv_sync; break;
++        case SWR_CLIENTS_OBJECT_ASYNC:
++            connect_ = Client_tcp_connect_async; send_ = Client_tcp_send_async; sendfile_ = Client_tcp_sendfile_async;
++            break;
++        case SWR_CLIENTS_OBJECT_SYNC:
++            connect_ = Client_tcp_connect_sync; send_ = Client_tcp_send_sync; sendfile_ = Client_tcp_sendfile_sync;
++            break;
++        case SWR_CLIENTS_OBJECT_DGRAM:
++            connect_ = Client_udp_connect; recv_ = Client_udp_recv; send_ = Client_udp_send;
++            break;
++        case SWR_CLIENTS_OBJECT_DOMAIN:
++            Socket::get_domain_and_type(_type, &sock_domain_, &sock_type_); remote_addr.type = _type;
++            break;
++        case SWR_CLIENTS_OBJECT_PROTOCOL:
++            protocol.package_length_type = 'N'; protocol.package_length_size = 4;
++            protocol.package_body_offset = 0; protocol.package_max_length = SW_INPUT_BUFFER_SIZE;
++            protocol.onPackage = Client_onPackage;
++            break;
++        default: return;
++        }
++        stage = plan.stage;
+     }
+-
+-    Socket::get_domain_and_type(_type, &sock_domain_, &sock_type_);
+-    remote_addr.type = _type;
+-
+-    protocol.package_length_type = 'N';
+-    protocol.package_length_size = 4;
+-    protocol.package_body_offset = 0;
+-    protocol.package_max_length = SW_INPUT_BUFFER_SIZE;
+-    protocol.onPackage = Client_onPackage;
+ }
+
+ int Client::bind(const std::string &addr, int port) const {
+@@ -186,35 +198,32 @@ int Client::get_peer_name(Address *addr) const {
+ }
+
+ int Client::shutdown(int _how) {
++    const uint32_t request = _how == SHUT_RD ? 0 : (_how == SHUT_WR ? 1 : (_how == SHUT_RDWR ? 2 : 3));
++    // Do not observe any shutdown flag until the original live guard passed.
+     if (!socket || closed) {
+         return SW_ERR;
+     }
+     swoole_trace_log(SW_TRACE_CLIENT, "how=%d, fd=%d", _how, socket->fd);
+-    if (_how == SHUT_RD) {
+-        if (shutdown_read || shutdown_rw || ::shutdown(socket->fd, SHUT_RD)) {
+-            return SW_ERR;
+-        } else {
+-            shutdown_read = true;
+-            return SW_OK;
+-        }
+-    } else if (_how == SHUT_WR) {
+-        if (shutdown_write || shutdown_rw || ::shutdown(socket->fd, SHUT_WR) < 0) {
+-            return SW_ERR;
+-        } else {
+-            shutdown_write = true;
+-            return SW_OK;
+-        }
+-    } else if (_how == SHUT_RDWR) {
+-        if (shutdown_rw || ::shutdown(socket->fd, SHUT_RDWR) < 0) {
+-            return SW_ERR;
+-        } else {
+-            shutdown_read = true;
+-            return SW_OK;
+-        }
+-    } else {
++    const auto action = swr_v1_clients_shutdown(1, (shutdown_read ? 1u : 0u) |
++        (shutdown_write ? 2u : 0u) | (shutdown_rw ? 4u : 0u), request);
++    if (action == 4) {
+         swoole_set_last_error(EINVAL);
+         return SW_ERR;
+     }
++    if (action == 0) {
++        return SW_ERR;
++    }
++    const int result = ::shutdown(socket->fd, _how);
++    if ((action == 1 && result != 0) || (action != 1 && result < 0)) {
++        return SW_ERR;
++    }
++    // Pinned SHUT_RDWR publishes shutdown_read only; do not silently fix it.
++    if (action == 2) {
++        shutdown_write = true;
++    } else {
++        shutdown_read = true;
++    }
++    return SW_OK;
+ }
+
+ bool Client::socks5_handshake(const char *recv_data, size_t length) {
+@@ -334,25 +343,26 @@ static int Client_inet_addr(Client *cli, const char *host, int port) {
+ }
+
+ Client::~Client() {
+-    if (!socket) {
+-        return;
+-    }
+-    assert(socket->fd != 0);
+-    // remove from reactor
+-    if (!closed) {
+-        close();
+-    }
+-    // clear buffer
+-    if (buffer) {
+-        delete buffer;
+-        buffer = nullptr;
+-    }
+-    if (async) {
+-        // The object must be set to empty here, indicating that the client has been released in the onClose callback
+-        socket->object = nullptr;
+-        socket->free();
+-    } else {
+-        delete socket;
++    uint32_t stage = 0;
++    for (;;) {
++        uint8_t fact = 0;
++        switch (stage) {
++        case 0: fact = socket != nullptr; break;
++        case 1: fact = closed; break;
++        case 2: fact = buffer != nullptr; break;
++        case 3: fact = async; break;
++        }
++        const auto plan = swr_v1_clients_object_next(1, stage, fact);
++        switch (plan.action) {
++        case SWR_CLIENTS_OBJECT_ASSERT: assert(socket->fd != 0); break;
++        case SWR_CLIENTS_OBJECT_CLOSE: close(); break;
++        case SWR_CLIENTS_OBJECT_BUFFER: delete buffer; buffer = nullptr; break;
++        case SWR_CLIENTS_OBJECT_ASYNC_FREE: socket->object = nullptr; socket->free(); break;
++        case SWR_CLIENTS_OBJECT_SYNC_DELETE: delete socket; break;
++        case SWR_CLIENTS_OBJECT_ADVANCE: break;
++        default: return;
++        }
++        stage = plan.stage;
+     }
+ }
+
+@@ -361,117 +371,107 @@ Client::~Client() {
+  * connection. 2 Received readable or writable, close event, and executed the close function at the underlying level
+  */
+ int Client::close() {
+-    if (socket == nullptr || closed) {
+-        return SW_ERR;
++    uint32_t stage = 0;
++    Socket *saved_socket = nullptr;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 0: facts = socket ? (closed ? 3u : 1u) : 0u; break;
++        case 1: facts = open_ssl && ssl_context && socket->ssl; break;
++        case 2: facts = socket->socket_type == SW_SOCK_UNIX_DGRAM; break;
++        case 3: facts = async; break;
++        case 4: facts = socket->removed; break;
++        case 5: facts = timer != nullptr; break;
++        case 6: facts = active; break;
++        // onClose may have deleted this. Only the saved native Socket may be
++        // inspected until its original object-null guard authorizes Client use.
++        case 8: facts = saved_socket->object == nullptr; break;
++        }
++        const auto plan = swr_v1_clients_close_next(stage, facts);
++        switch (plan.action) {
++        case SWR_CLIENTS_CLOSE_PUBLISH: closed = true; saved_socket = socket; break;
++        case SWR_CLIENTS_CLOSE_SSL: socket->ssl_close(); break;
++        case SWR_CLIENTS_CLOSE_UNLINK: unlink(socket->info.addr.un.sun_path); break;
++        case SWR_CLIENTS_CLOSE_EVENT: swoole_event_del(socket); break;
++        case SWR_CLIENTS_CLOSE_TIMER: swoole_timer_del(timer); timer = nullptr; break;
++        case SWR_CLIENTS_CLOSE_CALLBACK: active = false; onClose(this); break;
++        case SWR_CLIENTS_CLOSE_DEACTIVATE: active = false; break;
++        case SWR_CLIENTS_CLOSE_ADVANCE: break;
++        case SWR_CLIENTS_CLOSE_SUCCESS: return SW_OK;
++        case SWR_CLIENTS_CLOSE_FD: {
++            const int fd = socket->fd;
++            socket->fd = -1;
++            swoole_trace_log(SW_TRACE_CLIENT, "fd=%d", fd);
++            return ::close(fd);
++        }
++        default: return SW_ERR;
++        }
++        stage = plan.stage;
+     }
+-    closed = true;
+-    auto _socket = socket;
+-
+-    if (open_ssl && ssl_context) {
+-        if (socket->ssl) {
+-            socket->ssl_close();
+-        }
+-    }
+-
+-    if (socket->socket_type == SW_SOCK_UNIX_DGRAM) {
+-        unlink(socket->info.addr.un.sun_path);
+-    }
+-    if (async) {
+-        // remove from reactor
+-        if (!socket->removed) {
+-            swoole_event_del(socket);
+-        }
+-        if (timer) {
+-            swoole_timer_del(timer);
+-            timer = nullptr;
+-        }
+-        // execute `onClose` callback
+-        if (active) {
+-            active = false;
+-            // In the `onClose` callback, the destructor may be executed and the C++ object will be released
+-            onClose(this);
+-        }
+-    } else {
+-        active = false;
+-    }
+-
+-    if (_socket->object == nullptr) {
+-        return SW_OK;
+-    }
+-
+-    // Set `socket->fd` to -1 to prevent duplicate closure of file descriptors
+-    const int fd = socket->fd;
+-    socket->fd = -1;
+-    swoole_trace_log(SW_TRACE_CLIENT, "fd=%d", fd);
+-
+-    return ::close(fd);
+ }
+
+ static int Client_tcp_connect_sync(Client *cli, const char *host, int port, double timeout, int nonblock) {
+-    cli->set_timeout(timeout);
+-    if (timeout > 0) {
+-        cli->socket->set_kernel_timeout(timeout);
+-    }
+-
+-    if (Client_inet_addr(cli, host, port) < 0) {
+-        return SW_ERR;
+-    }
+-
+-    if (nonblock) {
+-        auto rc = cli->socket->connect_async(cli->server_addr);
+-        if (rc == SW_READY) {
+-            return SW_OK;
+-        }
+-        if (rc == SW_WAIT) {
+-            cli->async_connect = true;
+-        }
+-        return SW_ERR;
+-    }
+-
+-    int ret = cli->socket->connect_sync(cli->server_addr);
+-    if (ret >= 0) {
+-        cli->active = true;
+-        auto recv_buf = sw_tg_buffer();
+-
+-        if (cli->socks5_proxy) {
+-            const auto ctx = cli->socks5_proxy.get();
+-            const auto len = ctx->pack_negotiate_request();
+-            if (cli->send(ctx->buf, len) < 0) {
+-                return SW_ERR;
+-            }
+-            ctx->state = SW_SOCKS5_STATE_HANDSHAKE;
+-            while (true) {
+-                const ssize_t n = cli->recv(recv_buf->str, recv_buf->size, 0);
+-                if (n > 0 && cli->socks5_handshake(recv_buf->str, n)) {
+-                    if (cli->socks5_proxy->state == SW_SOCKS5_STATE_READY) {
+-                        break;
+-                    }
+-                    continue;
+-                }
+-                return SW_ERR;
+-            }
+-        } else if (cli->http_proxy) {
++    uint32_t stage = 0;
++    int result = 0;
++    ssize_t io_result = 0;
++    ssize_t received = 0;
++    bool handshake_ok = false;
++    String *recv_buf = nullptr;
++    Socks5Proxy *socks = nullptr;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 1: facts = timeout > 0; break;
++        case 3: facts = io_result < 0; break;
++        case 4: facts = nonblock != 0; break;
++        case 5: facts = result == SW_READY ? 1u : (result == SW_WAIT ? 2u : 0u); break;
++        case 6: facts = result < 0; break;
++        case 7: facts = cli->socks5_proxy != nullptr; break;
++        case 8: case 15: case 21: facts = io_result < 0; break;
++        case 10: facts = received > 0; break;
++        case 11: case 17: facts = handshake_ok; break;
++        case 12: facts = cli->socks5_proxy->state == SW_SOCKS5_STATE_READY; break;
++        case 14: facts = cli->http_proxy != nullptr; break;
++        case 16: facts = received <= 0; break;
++        case 20: facts = cli->open_ssl; break;
++        }
++        const auto plan = swr_v1_clients_connect_next(stage, facts);
++        switch (plan.action) {
++        case SWR_CLIENTS_CONNECT_ADVANCE: break;
++        case SWR_CLIENTS_CONNECT_SET_TIMEOUT: cli->set_timeout(timeout); break;
++        case SWR_CLIENTS_CONNECT_KERNEL_TIMEOUT: cli->socket->set_kernel_timeout(timeout); break;
++        case SWR_CLIENTS_CONNECT_ADDRESS: io_result = Client_inet_addr(cli, host, port); break;
++        case SWR_CLIENTS_CONNECT_NONBLOCKING: result = cli->socket->connect_async(cli->server_addr); break;
++        case SWR_CLIENTS_CONNECT_BLOCKING: result = cli->socket->connect_sync(cli->server_addr); break;
++        case SWR_CLIENTS_CONNECT_ASYNC_PENDING: cli->async_connect = true; return SW_ERR;
++        case SWR_CLIENTS_CONNECT_ACTIVATE: cli->active = true; recv_buf = sw_tg_buffer(); break;
++        case SWR_CLIENTS_CONNECT_SOCKS_SEND: {
++            socks = cli->socks5_proxy.get();
++            const auto length = socks->pack_negotiate_request();
++            io_result = cli->send(socks->buf, length);
++            break;
++        }
++        case SWR_CLIENTS_CONNECT_SOCKS_PUBLISH: socks->state = SW_SOCKS5_STATE_HANDSHAKE; break;
++        case SWR_CLIENTS_CONNECT_SOCKS_RECEIVE: received = cli->recv(recv_buf->str, recv_buf->size, 0); break;
++        case SWR_CLIENTS_CONNECT_SOCKS_HANDSHAKE: handshake_ok = cli->socks5_handshake(recv_buf->str, received); break;
++        case SWR_CLIENTS_CONNECT_HTTP_SEND: {
+             auto target_host = cli->get_http_proxy_host_name();
+-            const size_t n_write = cli->http_proxy->pack(recv_buf, target_host);
+-            if (cli->send(recv_buf->str, n_write, 0) < 0) {
+-                return SW_ERR;
+-            }
+-            const ssize_t n_read = cli->recv(recv_buf->str, recv_buf->size, 0);
+-            if (n_read <= 0) {
+-                return SW_ERR;
+-            }
+-            recv_buf->length = n_read;
+-            if (!cli->http_proxy->handshake(recv_buf)) {
+-                return SW_ERR;
+-            }
++            const size_t length = cli->http_proxy->pack(recv_buf, target_host);
++            io_result = cli->send(recv_buf->str, length, 0);
++            break;
+         }
+-
+-        if (cli->open_ssl && cli->ssl_handshake() < 0) {
+-            return SW_ERR;
++        case SWR_CLIENTS_CONNECT_HTTP_RECEIVE: received = cli->recv(recv_buf->str, recv_buf->size, 0); break;
++        case SWR_CLIENTS_CONNECT_HTTP_HANDSHAKE:
++            recv_buf->length = received;
++            handshake_ok = cli->http_proxy->handshake(recv_buf);
++            break;
++        case SWR_CLIENTS_CONNECT_SSL_HANDSHAKE: io_result = cli->ssl_handshake(); break;
++        case SWR_CLIENTS_CONNECT_RETURN_RESULT: return result;
++        case SWR_CLIENTS_CONNECT_SUCCESS: return SW_OK;
++        default: return SW_ERR;
+         }
++        stage = plan.stage;
+     }
+-
+-    return ret;
+ }
+
+ static int Client_dns_lookup(Client *cli) {
+@@ -486,82 +486,73 @@ static int Client_dns_lookup(Client *cli) {
+ }
+
+ static int Client_tcp_connect_async(Client *cli, const char *host, int port, double timeout, int nonblock) {
+-    int ret;
+-
+-    if (!(cli->onConnect && cli->onError && cli->onClose && cli->onReceive)) {
+-        swoole_warning("onConnect/onError/onReceive/onClose callback have not set");
+-        return SW_ERR;
+-    }
+-
+-    cli->set_timeout(timeout);
+-
+-    if (!cli->buffer) {
+-        cli->buffer = new String(cli->input_buffer_size);
+-    }
+-
+-    if (cli->onBufferFull && cli->buffer_high_watermark == 0) {
+-        cli->buffer_high_watermark = cli->socket->buffer_size * 0.8;
+-    }
+-
+-    if (Client_inet_addr(cli, host, port) < 0) {
+-        return SW_ERR;
+-    }
+-
+-    if (cli->wait_dns) {
+-        return Client_dns_lookup(cli);
+-    }
+-
+-    do {
+-        ret = cli->socket->connect(cli->server_addr);
+-        if (ret < 0 && errno == EINTR) {
+-            continue;
+-        }
+-        if ((ret < 0 && errno == EINPROGRESS) || ret == 0) {
+-            /**
+-             * A return value of 0 indicates that the connection has been successfully established,
+-             * and there is no need to add a timer to check for connection timeouts.
+-             */
+-            if (ret < 0 && timeout > 0) {
+-                cli->timer = swoole_timer_add(timeout, false, Client_onTimeout, cli);
+-                if (!cli->timer) {
+-                    return SW_ERR;
+-                }
++    uint32_t stage = 100;
++    int result = 0;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 100: facts = cli->onConnect && cli->onError && cli->onClose && cli->onReceive; break;
++        case 101: facts = cli->buffer == nullptr; break;
++        case 102: facts = cli->onBufferFull && cli->buffer_high_watermark == 0; break;
++        case 104: facts = result < 0; break;
++        case 105: facts = cli->wait_dns; break;
++        case 106: facts = result < 0 && errno == EINTR; break;
++        case 107: facts = (result < 0 && errno == EINPROGRESS) || result == 0; break;
++        case 108: facts = result < 0 && timeout > 0; break;
++        case 109: facts = cli->timer != nullptr; break;
++        }
++        const auto plan = swr_v1_clients_connect_next(stage, facts);
++        switch (plan.action) {
++        case SWR_CLIENTS_CONNECT_ADVANCE: break;
++        case SWR_CLIENTS_CONNECT_WARN_CALLBACKS:
++            swoole_warning("onConnect/onError/onReceive/onClose callback have not set");
++            return SW_ERR;
++        case SWR_CLIENTS_CONNECT_SET_TIMEOUT: cli->set_timeout(timeout); break;
++        case SWR_CLIENTS_CONNECT_ALLOCATE_BUFFER: cli->buffer = new String(cli->input_buffer_size); break;
++        case SWR_CLIENTS_CONNECT_WATERMARK: cli->buffer_high_watermark = cli->socket->buffer_size * 0.8; break;
++        case SWR_CLIENTS_CONNECT_ADDRESS: result = Client_inet_addr(cli, host, port); break;
++        case SWR_CLIENTS_CONNECT_DNS_LOOKUP: return Client_dns_lookup(cli);
++        case SWR_CLIENTS_CONNECT_ASYNC_CONNECT: result = cli->socket->connect(cli->server_addr); break;
++        case SWR_CLIENTS_CONNECT_ADD_TIMER: cli->timer = swoole_timer_add(timeout, false, Client_onTimeout, cli); break;
++        case SWR_CLIENTS_CONNECT_ADD_EVENT: return swoole_event_add(cli->socket, SW_EVENT_WRITE);
++        case SWR_CLIENTS_CONNECT_FAIL_CALLBACK:
++            cli->active = false;
++            cli->socket->removed = 1;
++            cli->close();
++            if (cli->onError) {
++                cli->onerror_called = true;
++                cli->onError(cli);
+             }
+-            /**
+-             * Regardless of whether the connection has been successfully established or is still in progress,
+-             *  listen for writable events to handle the proxy and SSL handshake within those events.
+-             */
+-            return swoole_event_add(cli->socket, SW_EVENT_WRITE);
++            return result;
++        default: return SW_ERR;
+         }
+-        cli->active = false;
+-        cli->socket->removed = 1;
+-        cli->close();
+-        if (cli->onError) {
+-            cli->onerror_called = true;
+-            cli->onError(cli);
+-        }
+-        break;
+-    } while (true);
+-
+-    return ret;
++        stage = plan.stage;
++    }
+ }
+
+ static ssize_t Client_tcp_send_async(Client *cli, const char *data, size_t length, int flags) {
++    uint32_t stage = 100;
+     ssize_t n = length;
+-    if (swoole_event_write(cli->socket, data, length) < 0) {
+-        if (swoole_get_last_error() == SW_ERROR_OUTPUT_BUFFER_OVERFLOW) {
+-            n = -1;
+-            cli->high_watermark = true;
+-        } else {
+-            return SW_ERR;
++    int result = 0;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 101: facts = result < 0; break;
++        case 102: facts = swoole_get_last_error() == SW_ERROR_OUTPUT_BUFFER_OVERFLOW; break;
++        case 104: facts = cli->onBufferFull && !cli->high_watermark &&
++            cli->socket->get_out_buffer_length() >= cli->buffer_high_watermark; break;
+         }
++        const auto plan = swr_v1_clients_transport_next(stage, facts);
++        switch (plan.action) {
++        case SWR_CLIENTS_TRANSPORT_ADVANCE: break;
++        case SWR_CLIENTS_TRANSPORT_EVENT_WRITE: result = swoole_event_write(cli->socket, data, length); break;
++        case SWR_CLIENTS_TRANSPORT_OVERFLOW: n = -1; cli->high_watermark = true; break;
++        case SWR_CLIENTS_TRANSPORT_BUFFER_FULL: cli->high_watermark = true; cli->onBufferFull(cli); return n;
++        case SWR_CLIENTS_TRANSPORT_RETURN_WRITE: return n;
++        default: return SW_ERR;
++        }
++        stage = plan.stage;
+     }
+-    if (cli->onBufferFull && !cli->high_watermark &&
+-        cli->socket->get_out_buffer_length() >= cli->buffer_high_watermark) {
+-        cli->high_watermark = true;
+-        cli->onBufferFull(cli);
+-    }
+-    return n;
+ }
+
+ static ssize_t Client_tcp_send_sync(Client *cli, const char *data, size_t length, int flags) {
+@@ -601,103 +592,71 @@ static ssize_t Client_tcp_recv_sync(Client *cli, char *data, size_t len, int fla
+ }
+
+ static int Client_udp_connect(Client *cli, const char *host, int port, double timeout, int udp_connect) {
+-    cli->set_timeout(timeout);
+-    if (!cli->async && timeout > 0) {
+-        cli->socket->set_kernel_timeout(timeout);
+-    }
+-    cli->sock_flags_ = udp_connect;
+-
+-    if (Client_inet_addr(cli, host, port) < 0) {
+-        return SW_ERR;
+-    }
+-
+-    if (cli->async && !cli->onReceive) {
+-        swoole_warning("`onReceive` callback have not set");
+-        return SW_ERR;
+-    }
+-
+-    if (cli->wait_dns && cli->async) {
+-        /**
+-         * Domain name resolution is required, and UDP connect cannot return immediately.
+-         * If an `onError` callback is not set, the caller will not receive any notification in case of a resolution
+-         * failure. Therefore, it is essential to set the onError callback; otherwise, an error will be returned
+-         * immediately.
+-         */
+-        if (!cli->onError) {
+-            swoole_warning("`onError` callback have not set");
+-            return SW_ERR;
+-        }
+-        return Client_dns_lookup(cli);
+-    }
+-
+-    cli->active = true;
+-    cli->socket->set_buffer_size(Socket::default_buffer_size);
+-
+-    if (timeout > 0) {
+-        cli->socket->set_timeout(timeout);
+-    }
+-
+-    if (cli->socket->socket_type == SW_SOCK_UNIX_DGRAM) {
+-        sockaddr_un *client_addr = &cli->socket->info.addr.un;
+-        sprintf(client_addr->sun_path, "/tmp/swoole-client.%d.%d.sock", getpid(), cli->socket->fd);
+-        client_addr->sun_family = AF_UNIX;
+-        unlink(client_addr->sun_path);
+-
+-        if (bind(cli->socket->fd, reinterpret_cast<sockaddr *>(client_addr), sizeof(cli->socket->info.addr.un)) < 0) {
+-            swoole_sys_warning("bind(%s) failed", client_addr->sun_path);
+-            return SW_ERR;
+-        }
+-    }
+-
+-    if (cli->open_ssl)
++    uint32_t stage = 0;
++    int result = 0;
++    sockaddr_un *unix_address = nullptr;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 1: facts = !cli->async && timeout > 0; break;
++        case 4: case 13: case 19: case 22: facts = result < 0; break;
++        case 5: facts = cli->async && !cli->onReceive; break;
++        case 6: facts = cli->wait_dns && cli->async; break;
++        case 7: facts = bool(cli->onError); break;
++        case 11: facts = timeout > 0; break;
++        case 12: facts = cli->socket->socket_type == SW_SOCK_UNIX_DGRAM; break;
++        case 14: case 21: facts = cli->open_ssl; break;
++        case 15: facts = udp_connect == 1; break;
++        case 16: facts = result == 0; break;
++        case 18: facts = cli->async && cli->onConnect; break;
++        case 30: facts = cli->async && cli->onError; break;
++        }
++        const auto plan = swr_v1_clients_transport_next(stage, facts);
++        switch (plan.action) {
++        case SWR_CLIENTS_TRANSPORT_ADVANCE: break;
++        case SWR_CLIENTS_TRANSPORT_SET_TIMEOUT: cli->set_timeout(timeout); break;
++        case SWR_CLIENTS_TRANSPORT_KERNEL_TIMEOUT: cli->socket->set_kernel_timeout(timeout); break;
++        case SWR_CLIENTS_TRANSPORT_PUBLISH_FLAGS: cli->sock_flags_ = udp_connect; break;
++        case SWR_CLIENTS_TRANSPORT_ADDRESS: result = Client_inet_addr(cli, host, port); break;
++        case SWR_CLIENTS_TRANSPORT_WARN_RECEIVE: swoole_warning("`onReceive` callback have not set"); return SW_ERR;
++        case SWR_CLIENTS_TRANSPORT_WARN_ERROR: swoole_warning("`onError` callback have not set"); return SW_ERR;
++        case SWR_CLIENTS_TRANSPORT_DNS_LOOKUP: return Client_dns_lookup(cli);
++        case SWR_CLIENTS_TRANSPORT_ACTIVATE: cli->active = true; cli->socket->set_buffer_size(Socket::default_buffer_size); break;
++        case SWR_CLIENTS_TRANSPORT_SOCKET_TIMEOUT: cli->socket->set_timeout(timeout); break;
++        case SWR_CLIENTS_TRANSPORT_BIND_UNIX:
++            unix_address = &cli->socket->info.addr.un;
++            sprintf(unix_address->sun_path, "/tmp/swoole-client.%d.%d.sock", getpid(), cli->socket->fd);
++            unix_address->sun_family = AF_UNIX;
++            unlink(unix_address->sun_path);
++            result = bind(cli->socket->fd, reinterpret_cast<sockaddr *>(unix_address), sizeof(cli->socket->info.addr.un));
++            break;
++        case SWR_CLIENTS_TRANSPORT_WARN_BIND: swoole_sys_warning("bind(%s) failed", unix_address->sun_path); return SW_ERR;
++        case SWR_CLIENTS_TRANSPORT_ENABLE_DTLS:
+ #ifdef SW_SUPPORT_DTLS
+-    {
+-        udp_connect = 1;
+-        cli->enable_dtls();
+-    }
++            udp_connect = 1;
++            cli->enable_dtls();
++            break;
+ #else
+-    {
+-        swoole_warning("DTLS support require openssl-1.1 or later");
+-        return SW_ERR;
+-    }
+-#endif
+-
+-    if (udp_connect != 1) {
+-        goto _connect_ok;
+-    }
+-
+-    if (cli->socket->connect(cli->server_addr) == 0) {
+-        cli->socket->clean();
+-    _connect_ok:
+-        if (cli->async && cli->onConnect) {
+-            if (swoole_event_add(cli->socket, SW_EVENT_READ) < 0) {
+-                return SW_ERR;
+-            }
+-            execute_onConnect(cli);
+-        }
+-        if (cli->open_ssl && cli->ssl_handshake() < 0) {
++            swoole_warning("DTLS support require openssl-1.1 or later");
+             return SW_ERR;
++#endif
++        case SWR_CLIENTS_TRANSPORT_CONNECT: result = cli->socket->connect(cli->server_addr); break;
++        case SWR_CLIENTS_TRANSPORT_CLEAN: cli->socket->clean(); break;
++        case SWR_CLIENTS_TRANSPORT_ADD_EVENT: result = swoole_event_add(cli->socket, SW_EVENT_READ); break;
++        case SWR_CLIENTS_TRANSPORT_CONNECT_CALLBACK: execute_onConnect(cli); break;
++        case SWR_CLIENTS_TRANSPORT_SSL_HANDSHAKE: result = cli->ssl_handshake(); break;
++        case SWR_CLIENTS_TRANSPORT_FAIL_CLOSE: cli->active = false; cli->socket->removed = 1; cli->close(); break;
++        case SWR_CLIENTS_TRANSPORT_ERROR_CALLBACK: cli->onerror_called = true; cli->onError(cli); return SW_ERR;
++        case SWR_CLIENTS_TRANSPORT_SUCCESS: return SW_OK;
++        default: return SW_ERR;
+         }
+-        return SW_OK;
+-    } else {
+-        cli->active = false;
+-        cli->socket->removed = 1;
+-        cli->close();
+-        if (cli->async && cli->onError) {
+-            cli->onerror_called = true;
+-            cli->onError(cli);
+-        }
+-        return SW_ERR;
++        stage = plan.stage;
+     }
+ }
+
+ static ssize_t Client_udp_send(Client *cli, const char *data, size_t len, int flags) {
+-    ssize_t n = cli->socket->sendto(cli->server_addr, data, len, 0);
+-    if (n < 0 || n < (ssize_t) len) {
+-        return SW_ERR;
+-    } else {
+-        return n;
+-    }
++    const ssize_t result = cli->socket->sendto(cli->server_addr, data, len, 0);
++    return swr_v1_clients_datagram_send(result, static_cast<ssize_t>(len));
+ }
+
+ static ssize_t Client_udp_recv(Client *cli, char *data, size_t length, int flags) {
+@@ -715,116 +674,82 @@ static int Client_onPackage(const Protocol *proto, Socket *conn, const RecvData
+ }
+
+ static int Client_onStreamRead(Reactor *reactor, Event *event) {
+-    ssize_t n;
+     auto *cli = (Client *) event->socket->object;
+     char *buf = cli->buffer->str + cli->buffer->length;
+-    ssize_t buf_size = cli->buffer->size - cli->buffer->length;
+-    bool do_ssl_handshake = cli->open_ssl;
+-
+-    if (cli->http_proxy && cli->http_proxy->state != SW_HTTP_PROXY_STATE_READY) {
+-        n = event->socket->recv(buf, buf_size, 0);
+-        if (n <= 0) {
+-            swoole_set_last_error(SW_ERROR_HTTP_PROXY_HANDSHAKE_ERROR);
+-        _connect_fail:
++    const ssize_t buf_size = cli->buffer->size - cli->buffer->length;
++    const bool do_ssl_handshake = cli->open_ssl;
++    Socket *protocol_socket = nullptr;
++    uint32_t stage = 0;
++    ssize_t n = 0;
++    int read_error = 0;
++    bool handshake_ok = false;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 0: facts = cli->http_proxy && cli->http_proxy->state != SW_HTTP_PROXY_STATE_READY; break;
++        case 1: case 6: facts = n <= 0; break;
++        case 2: case 7: facts = !handshake_ok; break;
++        case 3: case 9: facts = do_ssl_handshake; break;
++        case 5: facts = cli->socks5_proxy && cli->socks5_proxy->state != SW_SOCKS5_STATE_READY; break;
++        case 8: facts = cli->socks5_proxy->state != SW_SOCKS5_STATE_READY; break;
++        case 10: facts = cli->open_ssl && cli->socket->ssl_state != SW_SSL_STATE_READY; break;
++        case 11: case 16: facts = n < 0; break;
++        case 12: facts = cli->socket->ssl_state != SW_SSL_STATE_READY; break;
++        case 15: facts = cli->open_eof_check || cli->open_length_check; break;
++        case 17: facts = !cli->closed; break;
++        case 18: facts = protocol_socket->removed == 0 && cli->remove_delay; break;
++        case 21: facts = n < 0 ? 0u : (n == 0 ? 1u : 2u); break;
++        case 22: facts = read_error == SW_ERROR ? 0u : (read_error == SW_CLOSE ? 1u : 2u); break;
++        }
++        const auto plan = swr_v1_clients_read_next(stage, facts);
++        switch (plan.action) {
++        case SWR_CLIENTS_READ_ADVANCE: break;
++        case SWR_CLIENTS_READ_HTTP_RECEIVE:
++        case SWR_CLIENTS_READ_SOCKS_RECEIVE:
++        case SWR_CLIENTS_READ_RECEIVE:
++            n = event->socket->recv(buf, buf_size, 0);
++            break;
++        case SWR_CLIENTS_READ_HTTP_HANDSHAKE:
++            cli->buffer->length += n;
++            handshake_ok = cli->http_proxy->handshake(cli->buffer);
++            break;
++        case SWR_CLIENTS_READ_HTTP_READY:
++            cli->http_proxy->state = SW_HTTP_PROXY_STATE_READY;
++            cli->buffer->clear();
++            break;
++        case SWR_CLIENTS_READ_SOCKS_HANDSHAKE:
++            cli->buffer->length += n;
++            handshake_ok = cli->socks5_handshake(buf, buf_size);
++            break;
++        case SWR_CLIENTS_READ_CLEAR_BUFFER: cli->buffer->clear(); break;
++        case SWR_CLIENTS_READ_SSL_HANDSHAKE: n = cli->ssl_handshake(); break;
++        case SWR_CLIENTS_READ_PROTOCOL_RECEIVE:
++            protocol_socket = cli->socket;
++            if (cli->open_eof_check) {
++                n = cli->protocol.recv_with_eof_protocol(protocol_socket, cli->buffer);
++            } else {
++                n = cli->protocol.recv_with_length_protocol(protocol_socket, cli->buffer);
++            }
++            break;
++        case SWR_CLIENTS_READ_PROTOCOL_CLOSE: cli->close(); return SW_OK;
++        case SWR_CLIENTS_READ_SLEEP: cli->sleep(); cli->remove_delay = false; return SW_OK;
++        case SWR_CLIENTS_READ_CATCH_ERROR: read_error = event->socket->catch_read_error(errno); break;
++        case SWR_CLIENTS_READ_WARN: swoole_sys_warning("Read from socket[%d] failed", event->fd); return SW_OK;
++        case SWR_CLIENTS_READ_CLOSE: return cli->close();
++        case SWR_CLIENTS_READ_RECEIVE_CALLBACK: cli->onReceive(cli, buf, n); return SW_OK;
++        case SWR_CLIENTS_READ_CONNECT_CALLBACK: execute_onConnect(cli); return SW_OK;
++        case SWR_CLIENTS_READ_FAIL_HTTP: swoole_set_last_error(SW_ERROR_HTTP_PROXY_HANDSHAKE_ERROR); goto connect_fail;
++        case SWR_CLIENTS_READ_FAIL_SOCKS: swoole_set_last_error(SW_ERROR_SOCKS5_HANDSHAKE_FAILED); goto connect_fail;
++        case SWR_CLIENTS_READ_FAIL_SSL: swoole_set_last_error(SW_ERROR_SSL_HANDSHAKE_FAILED);
++        connect_fail:
+             cli->active = false;
+             cli->close();
+-            if (cli->onError) {
+-                cli->onError(cli);
+-            }
+-            return SW_OK;
+-        }
+-        cli->buffer->length += n;
+-        if (!cli->http_proxy->handshake(cli->buffer)) {
+-            swoole_set_last_error(SW_ERROR_HTTP_PROXY_HANDSHAKE_ERROR);
+-            goto _connect_fail;
+-        }
+-        cli->http_proxy->state = SW_HTTP_PROXY_STATE_READY;
+-        cli->buffer->clear();
+-        if (!do_ssl_handshake) {
+-            execute_onConnect(cli);
+-            return SW_OK;
+-        }
+-    }
+-
+-    if (cli->socks5_proxy && cli->socks5_proxy->state != SW_SOCKS5_STATE_READY) {
+-        n = event->socket->recv(buf, buf_size, 0);
+-        if (n <= 0) {
+-            swoole_set_last_error(SW_ERROR_SOCKS5_HANDSHAKE_FAILED);
+-            goto _connect_fail;
+-        }
+-        cli->buffer->length += n;
+-        if (!cli->socks5_handshake(buf, buf_size)) {
+-            swoole_set_last_error(SW_ERROR_SOCKS5_HANDSHAKE_FAILED);
+-            goto _connect_fail;
+-        }
+-        if (cli->socks5_proxy->state != SW_SOCKS5_STATE_READY) {
+-            return SW_OK;
+-        }
+-        cli->buffer->clear();
+-        if (!do_ssl_handshake) {
+-            execute_onConnect(cli);
+-            return SW_OK;
+-        }
+-    }
+-
+-    if (cli->open_ssl && cli->socket->ssl_state != SW_SSL_STATE_READY) {
+-        if (cli->ssl_handshake() < 0) {
+-            swoole_set_last_error(SW_ERROR_SSL_HANDSHAKE_FAILED);
+-            goto _connect_fail;
+-        }
+-        if (cli->socket->ssl_state != SW_SSL_STATE_READY) {
+-            return SW_OK;
+-        } else {
+-            execute_onConnect(cli);
+-            return SW_OK;
+-        }
+-    }
+-
+-    if (cli->open_eof_check || cli->open_length_check) {
+-        Socket *conn = cli->socket;
+-        Protocol *protocol = &cli->protocol;
+-
+-        if (cli->open_eof_check) {
+-            n = protocol->recv_with_eof_protocol(conn, cli->buffer);
+-        } else {
+-            n = protocol->recv_with_length_protocol(conn, cli->buffer);
+-        }
+-
+-        if (n < 0) {
+-            if (!cli->closed) {
+-                cli->close();
+-            }
+-            return SW_OK;
+-        } else {
+-            if (conn->removed == 0 && cli->remove_delay) {
+-                cli->sleep();
+-                cli->remove_delay = false;
+-            }
+-            return SW_OK;
+-        }
+-    }
+-
+-    n = event->socket->recv(buf, buf_size, 0);
+-    if (n < 0) {
+-        switch (event->socket->catch_read_error(errno)) {
+-        case SW_ERROR:
+-            swoole_sys_warning("Read from socket[%d] failed", event->fd);
+-            return SW_OK;
+-        case SW_CLOSE:
+-            goto __close;
+-        case SW_WAIT:
+-            return SW_OK;
+-        default:
++            if (cli->onError) cli->onError(cli);
+             return SW_OK;
++        default: return SW_OK;
+         }
+-    } else if (n == 0) {
+-    __close:
+-        return cli->close();
+-    } else {
+-        cli->onReceive(cli, buf, n);
+-        return SW_OK;
++        stage = plan.stage;
+     }
+-    return SW_OK;
+ }
+
+ static int Client_onDgramRead(Reactor *reactor, Event *event) {
+@@ -902,81 +827,78 @@ static void Client_onResolveCompleted(AsyncEvent *event) {
+
+ static int Client_onWrite(Reactor *reactor, Event *event) {
+     auto *cli = (Client *) event->socket->object;
+-    Socket *_socket = cli->socket;
+-    int ret;
+-    int err;
+-
+-    if (cli->active) {
+-        if (cli->open_ssl && _socket->ssl_state == SW_SSL_STATE_WAIT_STREAM) {
+-            if (cli->ssl_handshake() < 0) {
+-                swoole_set_last_error(SW_ERROR_SSL_HANDSHAKE_FAILED);
+-                goto _connect_fail;
+-            } else if (_socket->ssl_state == SW_SSL_STATE_READY) {
+-                goto _connect_success;
+-            } else {
+-                if (_socket->ssl_want_read) {
+-                    swoole_event_set(event->socket, SW_EVENT_READ);
+-                }
+-                return SW_OK;
+-            }
+-        }
+-        if (Reactor::_writable_callback(reactor, event) < 0) {
+-            return SW_ERR;
+-        }
+-        if (cli->onBufferEmpty && cli->high_watermark &&
+-            _socket->get_out_buffer_length() <= cli->buffer_low_watermark) {
++    Socket *saved_socket = cli->socket;
++    uint32_t stage = 0;
++    int result = 0, error;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 0: facts = cli->active; break;
++        case 1: facts = cli->open_ssl && saved_socket->ssl_state == SW_SSL_STATE_WAIT_STREAM; break;
++        case 2: case 5: case 11: case 16: facts = result < 0; break;
++        case 3: facts = saved_socket->ssl_state == SW_SSL_STATE_READY; break;
++        case 4: facts = saved_socket->ssl_want_read; break;
++        case 6: facts = cli->onBufferEmpty && cli->high_watermark &&
++            saved_socket->get_out_buffer_length() <= cli->buffer_low_watermark; break;
++        case 12: facts = swoole_get_last_error() == 0; break;
++        case 13: facts = cli->socks5_proxy && cli->socks5_proxy->state == SW_SOCKS5_STATE_WAIT; break;
++        case 14: facts = cli->http_proxy && cli->http_proxy->state == SW_HTTP_PROXY_STATE_WAIT; break;
++        case 15: facts = cli->open_ssl; break;
++        }
++        const auto plan = swr_v1_clients_write_next(stage, facts);
++        switch (plan.action) {
++        case SWR_CLIENTS_WRITE_ADVANCE: break;
++        case SWR_CLIENTS_WRITE_HANDSHAKE: result = cli->ssl_handshake(); break;
++        case SWR_CLIENTS_WRITE_WRITABLE: result = Reactor::_writable_callback(reactor, event); break;
++        case SWR_CLIENTS_WRITE_GET_OPTION:
++            result = saved_socket->get_option(SOL_SOCKET, SO_ERROR, &error);
++            swoole_set_last_error(error);
++            break;
++        case SWR_CLIENTS_WRITE_READ_INTEREST:
++            swoole_event_set(event->socket, SW_EVENT_READ);
++            return SW_OK;
++        case SWR_CLIENTS_WRITE_DRAIN_CALLBACK:
+             cli->high_watermark = false;
+             cli->onBufferEmpty(cli);
+-        }
+-        return SW_OK;
+-    }
+-
+-    ret = _socket->get_option(SOL_SOCKET, SO_ERROR, &err);
+-    swoole_set_last_error(err);
+-    if (ret < 0) {
+-        swoole_sys_warning("getsockopt(%d) failed", event->fd);
+-        return SW_ERR;
+-    }
+-
+-    // success
+-    if (swoole_get_last_error() == 0) {
+-        // listen read event
+-        swoole_event_set(event->socket, SW_EVENT_READ);
+-        // connected
+-        cli->active = true;
+-        // socks5 proxy
+-        if (cli->socks5_proxy && cli->socks5_proxy->state == SW_SOCKS5_STATE_WAIT) {
+-            const auto len = cli->socks5_proxy->pack_negotiate_request();
++            return SW_OK;
++        case SWR_CLIENTS_WRITE_MARK_CONNECTED:
++            swoole_event_set(event->socket, SW_EVENT_READ);
++            cli->active = true;
++            break;
++        case SWR_CLIENTS_WRITE_SOCKS_SEND: {
++            const auto length = cli->socks5_proxy->pack_negotiate_request();
+             cli->socks5_proxy->state = SW_SOCKS5_STATE_HANDSHAKE;
+-            return cli->send(cli->socks5_proxy->buf, len, 0);
++            return cli->send(cli->socks5_proxy->buf, length, 0);
+         }
+-        // http proxy
+-        if (cli->http_proxy && cli->http_proxy->state == SW_HTTP_PROXY_STATE_WAIT) {
++        case SWR_CLIENTS_WRITE_HTTP_SEND: {
+             auto proxy_buf = sw_tg_buffer();
+             auto host_name = cli->get_http_proxy_host_name();
+-            size_t n = cli->http_proxy->pack(proxy_buf, host_name);
+-            swoole_trace_log(SW_TRACE_HTTP_CLIENT, "proxy request: <<EOF\n%.*sEOF", (int) n, proxy_buf->str);
+-            return cli->send(proxy_buf->str, n, 0);
+-        }
+-        if (cli->open_ssl) {
+-            if (cli->ssl_handshake() < 0) {
+-                swoole_set_last_error(SW_ERROR_SSL_HANDSHAKE_FAILED);
+-                goto _connect_fail;
+-            } else {
+-                _socket->ssl_state = SW_SSL_STATE_WAIT_STREAM;
+-            }
++            const size_t length = cli->http_proxy->pack(proxy_buf, host_name);
++            swoole_trace_log(SW_TRACE_HTTP_CLIENT, "proxy request: <<EOF\n%.*sEOF", (int) length, proxy_buf->str);
++            return cli->send(proxy_buf->str, length, 0);
++        }
++        case SWR_CLIENTS_WRITE_CONNECT_CALLBACK:
++            execute_onConnect(cli);
++            return SW_OK;
++        case SWR_CLIENTS_WRITE_FAIL_SSL:
++            swoole_set_last_error(SW_ERROR_SSL_HANDSHAKE_FAILED);
++            [[fallthrough]];
++        case SWR_CLIENTS_WRITE_FAIL:
++            cli->active = false;
++            cli->close();
++            cli->onError(cli);
++            return SW_OK;
++        case SWR_CLIENTS_WRITE_WARN_OPTION:
++            swoole_sys_warning("getsockopt(%d) failed", event->fd);
++            return SW_ERR;
++        case SWR_CLIENTS_WRITE_SET_SSL_WAIT:
++            saved_socket->ssl_state = SW_SSL_STATE_WAIT_STREAM;
+             return SW_OK;
++        case SWR_CLIENTS_WRITE_SUCCESS: return SW_OK;
++        default: return SW_ERR;
+         }
+-    _connect_success:
+-        execute_onConnect(cli);
+-    } else {
+-    _connect_fail:
+-        cli->active = false;
+-        cli->close();
+-        cli->onError(cli);
++        stage = plan.stage;
+     }
+-
+-    return SW_OK;
+ }
+
+ }  // namespace network
+diff --git a/src/network/dns.cc b/src/network/dns.cc
+index 6f2945e..6682166 100644
+--- a/src/network/dns.cc
++++ b/src/network/dns.cc
+@@ -20,11 +20,16 @@
+ #include "swoole_util.h"
+
+ #include <string>
+-#include <iostream>
+ #include <vector>
+ #include <unordered_map>
+-#include <sstream>
+ #include <fstream>
++#ifndef SWOOLE_RS_CLIENTS
++#error "Clients overlay requires --enable-swoole-rs-clients"
++#endif
++#include "swoole_rs_clients.h"
++#include <locale>
++#include <limits>
++#include <algorithm>
+
+ #define SW_PATH_HOSTS "/etc/hosts"
+
+@@ -37,45 +42,38 @@ using swoole::coroutine::System;
+ using swoole::network::Address;
+
+ SW_API bool swoole_load_resolv_conf() {
+-    FILE *fp;
+-    char line[100];
+-    char buf[16] = {};
+-
+-    if ((fp = fopen(SwooleG.dns_resolvconf_path.c_str(), "rt")) == nullptr) {
++    FILE *fp = fopen(SwooleG.dns_resolvconf_path.c_str(), "rt");
++    if (!fp) {
+         swoole_sys_warning("fopen(%s) failed", SwooleG.dns_resolvconf_path.c_str());
+         return false;
+     }
+-
+-    while (fgets(line, 100, fp)) {
+-        if (strncmp(line, "nameserver", 10) == 0) {
+-            strcpy(buf, strtok(line, " "));
+-            strcpy(buf, strtok(nullptr, "\n"));
+-            break;
++    char line[100], server[16] = {};
++    while (fgets(line, sizeof(line), fp)) {
++        const auto plan = swr_v1_clients_resolv_line(reinterpret_cast<const uint8_t *>(line), strlen(line));
++        if (plan.kind == 0) continue;
++        if (plan.kind == 1) {
++            memcpy(server, line + plan.offset, plan.length);
++            server[plan.length] = 0;
+         }
++        // Null strtok results and either original16-byte overflow are outside
++        // defined native behavior. Stop without publishing a replacement.
++        break;
+     }
+     fclose(fp);
+-
+-    if (strlen(buf) == 0) {
+-        return false;
+-    }
+-    swoole_set_dns_server(buf);
++    if (server[0] == 0) return false;
++    swoole_set_dns_server(server);
+     return true;
+ }
+
+ SW_API void swoole_set_dns_server(const std::string &server) {
+-    char *_port;
+-    int dns_server_port = SW_DNS_SERVER_PORT;
+-    char dns_server_host[32];
+-    strcpy(dns_server_host, server.c_str());
+-    if ((_port = strchr(const_cast<char *>(server.c_str()), ':'))) {
+-        dns_server_port = sw_atoi(_port + 1);
+-        if (!Address::verify_port(dns_server_port, true)) {
+-            dns_server_port = SW_DNS_SERVER_PORT;
+-        }
+-        dns_server_host[_port - server.c_str()] = '\0';
+-    }
+-    SwooleG.dns_server.host = dns_server_host;
+-    SwooleG.dns_server.port = dns_server_port;
++    const auto plan = swr_v1_clients_dns_endpoint(reinterpret_cast<const uint8_t *>(server.data()), server.size());
++    int port = SW_DNS_SERVER_PORT;
++    if (plan.has_port) {
++        port = sw_atoi(server.c_str() + plan.port_offset);
++        if (!Address::verify_port(port, true)) port = SW_DNS_SERVER_PORT;
++    }
++    SwooleG.dns_server.host.assign(server.data(), plan.host_length);
++    SwooleG.dns_server.port = port;
+ }
+
+ SW_API swoole::DnsServer swoole_get_dns_server() {
+@@ -179,7 +177,7 @@ struct RR_FLAGS {
+ static uint16_t dns_request_id = 1;
+
+ static int domain_encode(const char *src, int n, char *dest);
+-static void domain_decode(char *str);
++static void domain_decode(char *str, size_t capacity);
+ static std::string parse_ip_address(void *vaddr, int type);
+
+ std::string get_ip_by_hosts(const std::string &search_domain) {
+@@ -189,68 +187,35 @@ std::string get_ip_by_hosts(const std::string &search_domain) {
+     }
+
+     std::string line;
+-    std::string domain;
+-    std::string txtaddr;
+-    std::vector<std::string> domains;
+-    std::unordered_map<std::string, std::string> result{};
+-
+     while (getline(file, line)) {
+-        std::string::size_type ops = line.find_first_of('#');
+-        if (ops != std::string::npos) {
+-            line[ops] = '\0';
+-        }
+-
+-        if (line[0] == '\n' || line[0] == '\0' || line[0] == '\r') {
+-            continue;
+-        }
+-
+-        std::istringstream stream(line);
+-        while (stream >> domain) {
+-            domains.push_back(domain);
+-        }
+-        if (domains.empty() || domains.size() == 1) {
+-            domains.clear();
+-            continue;
++        const auto comment = line.find_first_of('#');
++        if (comment != std::string::npos) {
++            line[comment] = '\0';
+         }
+-
+-        txtaddr = domains[0];
+-        for (size_t i = 1; i < domains.size(); i++) {
+-            result.insert(std::make_pair(domains[i], txtaddr));
++        // std::istringstream originally captured the current C++ locale here.
++        const std::locale token_locale;
++        const auto &facet = std::use_facet<std::ctype<char>>(token_locale);
++        uint8_t spaces[256];
++        for (unsigned i = 0; i < 256; ++i) {
++            spaces[i] = facet.is(std::ctype_base::space, static_cast<char>(i));
+         }
+-
+-        auto iter = result.find(search_domain);
+-        if (iter != result.end()) {
+-            return iter->second;
+-        } else {
+-            result.clear();
+-            domains.clear();
+-            continue;
++        const auto match = swr_v1_clients_hosts_match(reinterpret_cast<const uint8_t *>(line.data()), line.size(),
++            reinterpret_cast<const uint8_t *>(search_domain.data()), search_domain.size(), spaces);
++        if (match.found) {
++            return line.substr(match.offset, match.length);
+         }
+     }
+-
+     return "";
+ }
+
+ static std::string parse_ip_address(void *vaddr, int type) {
+-    auto addr = static_cast<unsigned char *>(vaddr);
+-    std::string ip_addr;
+-    if (type == AF_INET) {
+-        char buff[4 * 4 + 3 + 1];
+-        sw_snprintf(buff, sizeof(buff), "%u.%u.%u.%u", addr[0], addr[1], addr[2], addr[3]);
+-        return ip_addr.assign(buff);
+-    } else if (type == AF_INET6) {
+-        for (int i = 0; i < 16; i += 2) {
+-            if (i > 0) {
+-                ip_addr.append(":");
+-            }
+-            char buf[4 + 1];
+-            size_t n = sw_snprintf(buf, sizeof(buf), "%02x%02x", addr[i], addr[i + 1]);
+-            ip_addr.append(buf, n);
+-        }
+-    } else {
++    const uint8_t version = type == AF_INET ? 4 : (type == AF_INET6 ? 6 : 0);
++    if (version == 0) {
+         assert(0);
++        return {};
+     }
+-    return ip_addr;
++    const auto plan = swr_v1_clients_ip_text(version, static_cast<const uint8_t *>(vaddr));
++    return std::string(reinterpret_cast<const char *>(plan.bytes), plan.length);
+ }
+
+ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int family, double timeout) {
+@@ -297,6 +262,8 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
+     qflags->qtype = htons(family == AF_INET6 ? SW_DNS_AAAA_RECORD : SW_DNS_A_RECORD);
+     qflags->qclass = htons(0x0001);
+     steps += sizeof(Q_FLAGS);
++    const size_t query_initialized = std::min(sizeof(packet), std::max(static_cast<size_t>(steps),
++        sizeof(RecordHeader) + static_cast<size_t>(len) + 3));
+
+     Socket _sock(SW_SOCK_UDP);
+     if (timeout > 0) {
+@@ -330,11 +297,12 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
+     }
+
+     packet[ret] = 0;
++    const size_t initialized_size = std::max(query_initialized, static_cast<size_t>(ret) + 1);
+     header = reinterpret_cast<RecordHeader *>(packet);
+     steps = sizeof(RecordHeader);
+
+     _domain_name = &packet[steps];
+-    domain_decode(_domain_name);
++    domain_decode(_domain_name, initialized_size > static_cast<size_t>(steps) ? initialized_size - steps : 0);
+     steps = steps + (strlen(_domain_name) + 2);
+
+     qflags = reinterpret_cast<Q_FLAGS *>(&packet[steps]);
+@@ -363,7 +331,7 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
+         }
+         name[i][j] = '\0';
+
+-        domain_decode(name[i]);
++        domain_decode(name[i], std::min(sizeof(name[i]), static_cast<size_t>(j) + 1));
+         steps = steps + 2;
+
+         /* Parsing the RR flags of the RR */
+@@ -391,7 +359,7 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
+                 }
+             }
+             rdata[i][j] = '\0';
+-            domain_decode((char *) rdata[i]);
++            domain_decode((char *) rdata[i], sizeof(rdata[i]));
+             type[i] = ntohs(rrflags->type);
+         }
+         steps = steps + ntohs(rrflags->rdlength);
+@@ -420,44 +388,26 @@ std::vector<std::string> dns_lookup_impl_with_socket(const char *domain, int fam
+  * (i.e. www.apple.com into 3www5apple3com0)
+  */
+ static int domain_encode(const char *src, int n, char *dest) {
+-    if (src[n] == '.') {
++    // This helper's sole destination is packet + sizeof(RecordHeader).
++    // Oversized native copies were outside defined bounds; reject before Rust.
++    constexpr size_t capacity = SW_BUFFER_SIZE_STD - sizeof(RecordHeader);
++    if (n < 0 || static_cast<size_t>(n) > capacity - 3 || src[n] == '.') {
+         return SW_ERR;
+     }
+-
+-    int pos = 0;
+-    int len = 0;
+-    memcpy(dest + 1, src, n + 1);
+-    dest[n + 1] = '.';
+-    dest[n + 2] = 0;
+-    src = dest + 1;
+-    n++;
+-
+-    for (int i = 0; i < n; i++) {
+-        if (src[i] == '.') {
+-            len = i - pos;
+-            dest[pos] = len;
+-            pos += len + 1;
+-        }
+-    }
+-    dest[pos] = 0;
+-    return SW_OK;
++    return swr_v1_clients_domain_encode(reinterpret_cast<const uint8_t *>(src), n,
++        reinterpret_cast<uint8_t *>(dest), capacity);
+ }
+
+ /**
+  * This function converts a DNS-based hostname into dot-based format
+  * (i.e. 3www5apple3com0 into www.apple.com)
+  */
+-static void domain_decode(char *str) {
+-    size_t i;
+-    for (i = 0; i < strlen(str); i++) {
+-        uint32_t len = str[i];
+-        for (size_t j = 0; j < len; j++) {
+-            str[i] = str[i + 1];
+-            i++;
+-        }
+-        str[i] = '.';
+-    }
+-    str[i - 1] = '\0';
++static void domain_decode(char *str, size_t capacity) {
++    // Caller supplies only initialized bytes: query/received packet prefix, written
++    // name prefix, or the fully zero-initialized rdata row. Plain char differs
++    // between hosts, so preserve its native promotion instead of assuming i8.
++    swr_v1_clients_domain_decode(reinterpret_cast<uint8_t *>(str), capacity,
++        std::numeric_limits<char>::is_signed);
+ }
+
+ #ifdef SW_USE_CARES

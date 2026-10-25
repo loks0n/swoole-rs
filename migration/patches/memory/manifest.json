@@ -1,0 +1,75 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-fixed_pool.patch",
+      "sha256": "d6b02397720808dfe7a35a51f508b77fb95e8fcc2ff219c8f6d7806c728ab274",
+      "upstream_paths": [
+        "src/memory/fixed_pool.cc"
+      ]
+    },
+    {
+      "path": "0002-channel.patch",
+      "sha256": "746cf69e38abefc18a1fb5713a5e2b1980fdbe5e407b0064a98c8351af7a54fe",
+      "upstream_paths": [
+        "src/core/channel.cc"
+      ]
+    },
+    {
+      "path": "0003-heap.patch",
+      "sha256": "a961a43667dfe2b2ef33839f463db2e5f6a91f4aa595fbf1f26e851d8cdd9858",
+      "upstream_paths": [
+        "src/core/heap.cc"
+      ]
+    },
+    {
+      "path": "0004-swoole_heap.patch",
+      "sha256": "bab4a53ec64bd14987471ce03a53f665c142cd693ea481bffb0b8495c608809a",
+      "upstream_paths": [
+        "include/swoole_heap.h"
+      ]
+    },
+    {
+      "path": "0005-global_memory.patch",
+      "sha256": "ef149796ba31c8c430be06a3343e092394140e6ee47c0051b32481410b0da136",
+      "upstream_paths": [
+        "src/memory/global_memory.cc"
+      ]
+    },
+    {
+      "path": "0006-ring_buffer.patch",
+      "sha256": "410f1a628b8dd09090feb2a8444f481772087b78c328b6587970715ebd716ccc",
+      "upstream_paths": [
+        "src/memory/ring_buffer.cc"
+      ]
+    },
+    {
+      "path": "0007-shared_memory.patch",
+      "sha256": "6e3fa67fd3a0027a95156bdf8e3dfdd7093f9aa018c9a17309d2c7b385e06193",
+      "upstream_paths": [
+        "src/memory/shared_memory.cc"
+      ]
+    },
+    {
+      "path": "0009-swoole_table.patch",
+      "sha256": "e5d1f22bc74e119b7efd922c26a93b1478142dacee762077363c952d2b70d579",
+      "upstream_paths": [
+        "include/swoole_table.h"
+      ]
+    },
+    {
+      "path": "0008-table.patch",
+      "sha256": "07c4017448afcf4aef1d45d43a4f9c2300f7c42b911153b32e71170812b2e716",
+      "upstream_paths": [
+        "src/memory/table.cc"
+      ]
+    },
+    {
+      "path": "0010-swoole_channel.patch",
+      "sha256": "24b49e6d83ab779fa9ca65a418fa3783bbc2e36fea3dd51d511474bffed4b680",
+      "upstream_paths": [
+        "include/swoole_channel.h"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-mutex.patch",
+      "sha256": "98a60750c14be6cab455b7d0cd8d9289000b6c88076b864fe919507f34f207ab",
+      "upstream_paths": [
+        "src/lock/mutex.cc"
+      ]
+    },
+    {
+      "path": "0002-rw_lock.patch",
+      "sha256": "23669161b46baa689686f3cba0659625680d6beb15a44dd0b894ec99efdf5e8f",
+      "upstream_paths": [
+        "src/lock/rw_lock.cc"
+      ]
+    },
+    {
+      "path": "0003-spin_lock.patch",
+      "sha256": "330fadedc5b3edceaeaf32db97227e6eafb34632a2a94f7a04ae441e757c7955",
+      "upstream_paths": [
+        "src/lock/spin_lock.cc"
+      ]
+    },
+    {
+      "path": "0004-barrier.patch",
+      "sha256": "5a0fbdc0b0cd1b410245d09d757428250cbe1a11f047889850879e3586ad8a28",
+      "upstream_paths": [
+        "src/lock/barrier.cc"
+      ]
+    },
+    {
+      "path": "0005-swoole_atomic.patch",
+      "sha256": "4bccf1023d234af6c068a1eb1aa17c67b35929ef436cd9e70bd7f2ad843f1e88",
+      "upstream_paths": [
+        "ext-src/swoole_atomic.cc"
+      ]
+    },
+    {
+      "path": "0006-swoole_thread_atomic.patch",
+      "sha256": "b5c460ff7c6224ce2b93cac8e5b750935dceac5df959b3a32071739a929d592f",
+      "upstream_paths": [
+        "ext-src/swoole_thread_atomic.cc"
+      ]
+    },
+    {
+      "path": "0007-coroutine_lock.patch",
+      "sha256": "f3460e0d0e32b00c3ffc61625f6b68cec9253259371af0776a34aa76ae2ea2a1",
+      "upstream_paths": [
+        "src/lock/coroutine_lock.cc"
+      ]
+    }
+  ]
+}

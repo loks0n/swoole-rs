@@ -1,0 +1,91 @@
+diff --git a/ext-src/swoole_timer.cc b/ext-src/swoole_timer.cc
+--- a/ext-src/swoole_timer.cc
++++ b/ext-src/swoole_timer.cc
+@@ -110,9 +110,22 @@
+
+ static void timer_dtor(TimerNode *tnode) {
+     auto *fci = static_cast<Function *>(tnode->data);
+-    sw_zend_fci_params_discard(&fci->fci);
+-    sw_zend_fci_cache_discard(&fci->fci_cache);
++    bool bailed_out = false;
++    zend_try {
++        sw_zend_fci_params_discard(&fci->fci);
++        sw_zend_fci_cache_discard(&fci->fci_cache);
++    }
++    zend_catch {
++        bailed_out = true;
++    }
++    zend_end_try();
+     efree(fci);
++    if (bailed_out) {
++        auto *timer = sw_timer();
++        if (!timer) zend_bailout();
++        // Return through release_node so its detached TimerNode is deleted first.
++        timer->abandon_selection([] { zend_bailout(); });
++    }
+ }
+
+ bool php_swoole_timer_clear(TimerNode *tnode) {
+@@ -124,20 +137,12 @@
+         return false;
+     }
+
+-    size_t num = sw_timer()->count(), index = 0;
+-    auto **list = static_cast<TimerNode **>(emalloc(num * sizeof(TimerNode *)));
+-    for (auto &kv : sw_timer()->get_map()) {
+-        TimerNode *tnode = kv.second;
+-        if (tnode->type == TimerNode::TYPE_PHP) {
+-            list[index++] = tnode;
+-        }
+-    }
+-
+-    while (index--) {
+-        swoole_timer_del(list[index]);
+-    }
+-
+-    efree(list);
++    // Snapshot IDs, then resolve again after destructors may mutate the queue.
++    for (auto id : sw_timer()->get_ids()) {
++        if (auto *tnode = sw_timer()->get(id, TimerNode::TYPE_PHP)) {
++            swoole_timer_del(tnode);
++        }
++    }
+
+     return true;
+ }
+@@ -145,8 +150,20 @@
+ static void timer_callback(Timer *timer, TimerNode *tnode) {
+     auto *fci = static_cast<Function *>(tnode->data);
+
+-    if (UNEXPECTED(!fci->call(nullptr, php_swoole_is_enable_coroutine()))) {
+-        php_swoole_error(E_WARNING, "%s->onTimeout handler error", ZSTR_VAL(swoole_timer_ce->name));
++    bool bailed_out = false;
++    zend_try {
++        if (UNEXPECTED(!fci->call(nullptr, php_swoole_is_enable_coroutine()))) {
++            php_swoole_error(E_WARNING, "%s->onTimeout handler error", ZSTR_VAL(swoole_timer_ce->name));
++        }
++    }
++    zend_catch {
++        bailed_out = true;
++    }
++    zend_end_try();
++    if (bailed_out) {
++        // Keep shutdown-visible metadata until native owner teardown.
++        timer->abandon_selection();
++        zend_bailout();
+     }
+ }
+
+@@ -276,9 +293,9 @@
+     zval zlist;
+     array_init(&zlist);
+     if (EXPECTED(SwooleTG.timer)) {
+-        for (auto &kv : SwooleTG.timer->get_map()) {
+-            TimerNode *tnode = kv.second;
+-            if (tnode->type == TimerNode::TYPE_PHP) {
++        for (auto id : SwooleTG.timer->get_ids()) {
++            auto *tnode = SwooleTG.timer->get(id);
++            if (tnode && tnode->type == TimerNode::TYPE_PHP) {
+                 add_next_index_long(&zlist, tnode->id);
+             }
+         }

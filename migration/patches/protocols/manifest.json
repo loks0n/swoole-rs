@@ -1,0 +1,17 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-rust-packet-protocols.patch",
+      "sha256": "44384ed297eec8c7c76d1dd3f33f1396bf0ba52f60a56c0e3656c71264c08cb5",
+      "upstream_paths": [
+        "src/protocol/mqtt.cc",
+        "src/protocol/redis.cc",
+        "src/protocol/socks5.cc",
+        "src/protocol/message_bus.cc",
+        "include/swoole_message_bus.h",
+        "ext-src/swoole_redis_server.cc"
+      ]
+    }
+  ]
+}

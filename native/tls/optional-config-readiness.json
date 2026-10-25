@@ -1,0 +1,105 @@
+{
+  "assignee": "@loks0n",
+  "kind": "Source readiness; no capability execution or build claims",
+  "upstream_pin": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "current_production_delivery": "15abd72b4305126885a97342069ea04b0926671a",
+  "files_sha256": {
+    "src/protocol/ssl.cc": "3dafd55c0408f65064b4cbeb347c098a992fa1a8ab08a2e3b694107ed58aacf0",
+    "src/protocol/dtls.cc": "9bcc11f66263c5d2be80b624946ceedb49e0a995e75cdbd42fd489349caa9b01",
+    "tests/modules/tls/differential.py": "9c2fb73159e71f970bbd41110d7597b97fb3463fc3cf573f8ac1bacf23e39931",
+    "tests/modules/tls/peers.cc": "3262aa72136f087b6072f88cf05d43b06a8ba64e9445a179fba78c579557cbd3",
+    "crates/tls/src/lib.rs": "ce60b4799624f0082dd8c50d47e9d5160dba7bda400a91b271302b1b18fac1ff",
+    "migration/patches/tls/0001-rust-protocol-policy.patch": "3cea2c2e13a9f5004d7de4c6c8beaf4d5c2453ab204a0749ae0197bd2a959d59"
+  },
+  "rows": [
+    {
+      "configuration": "BoringSSL",
+      "status": "NOT_RUN",
+      "native_boundary": [
+        "ssl.cc382-384 SSL_CTX_set_grease_enabled",
+        "ssl.cc343-350 no cookie callback registration",
+        "dtls.cc145-153 repeated native ctrl registration",
+        "dtls.cc200-202 SSL_is_dtls early return"
+      ],
+      "actual_gate_blockers": [
+        "peers --callback-binding explicitly reports supported:false; current runner intentionally rejects it, so no optional PASS",
+        "BoringSSL listen has no swr_v1_tls_listen call: unconditional all-export call attestation cannot qualify that actual compiled branch",
+        "Fixture certificate/EC/DH APIs and raw output require an actual matching SDK before compatibility can be asserted"
+      ],
+      "next_acceptance": "Existing BoringSSL configured native and selected controls, exact SDK hashes and macro inventory; preserve unsupported binding phase distinctly, do not remove default-platform checks or synthesize listen calls"
+    },
+    {
+      "configuration": "OpenSSL with DTLS disabled",
+      "status": "NOT_RUN",
+      "native_boundary": [
+        "ssl.cc39-42,193-197,343-350,614-691 guarded DTLS callbacks",
+        "dtls.cc20-222 entire translation-unit implementation guarded SW_SUPPORT_DTLS"
+      ],
+      "actual_gate_blockers": [
+        "Current differential applied-source and executable call proofs require read/control/listen regardless of actual DTLS capability",
+        "DTLS peer absence cannot be counted as passed callbacks or the selected native correction"
+      ],
+      "next_acceptance": "Actual upstream-supported configuration and complete macro provenance; TLS-only real callers must pass with separate DTLS NOT_RUN statuses, not synthetic -U flags against a DTLS-enabled DSO"
+    },
+    {
+      "configuration": "OpenSSL1.1.x / LibreSSL legacy DH branch",
+      "status": "NOT_RUN",
+      "native_boundary": [
+        "ssl.cc536-575 set_dhparam: OPENSSL_VERSION_MAJOR>=3 EVP ownership vs legacy DH parse/install/free",
+        "ssl.cc474-534 set_ecdh_curve compile-selected list/legacy API"
+      ],
+      "actual_gate_blockers": [
+        "Only actual OpenSSL3.0.22/3.6.5 compiled branches are currently qualified",
+        "Modern branch failure semantics do not establish legacy ignored SSL_CTX_set_tmp_dh return, DH_free timing or legacy curve-key allocation/failure semantics"
+      ],
+      "next_acceptance": "Real supported legacy SDK/native control with same configured headers; original and selected exact warning/return/error/ownership traces, bounded allocator failures where SDK supports hooks. Never fake OPENSSL_VERSION_MAJOR"
+    },
+    {
+      "configuration": "OpenSSL OPENSSL_NO_ECDH / no curve-list API",
+      "status": "NOT_RUN",
+      "native_boundary": [
+        "ssl.cc474-534 no-ECDH true return, list API and legacy EC_KEY ownership branches"
+      ],
+      "actual_gate_blockers": [
+        "Existing scalar mode coverage is not an actual SDK capability build",
+        "Current ECDHE peers are compile-conditional and their absence must remain explicit; DH-only or RSA peers cannot imply ECDHE parity"
+      ],
+      "next_acceptance": "Actual matching SDK feature build, original defined methods and compiled mode0/mode2 evidence; no ad-hoc -DOPENSSL_NO_ECDH against incompatible installed SDK"
+    },
+    {
+      "configuration": "TLS1.3 unavailable / ALPN absent",
+      "status": "NOT_RUN",
+      "native_boundary": [
+        "ssl.cc152-172 compile-conditional ALPN callback",
+        "ssl.cc274-285 optional protocol disable options",
+        "ssl.cc375-377 ALPN installation guard"
+      ],
+      "actual_gate_blockers": [
+        "Current peer suite unconditionally requests TLS1.3 and its threaded variant",
+        "Negotiation failure on an SDK lacking that protocol is an unsupported capability outcome, not native/Rust behavior divergence or a passing test"
+      ],
+      "next_acceptance": "Actual protocol/ALPN capability observations from matched configured control and selected builds, preserve original unsupported outcomes and run supported TLS1.2 assertions unchanged"
+    },
+    {
+      "configuration": "OpenSSL disabled / pre1.1",
+      "status": "UNSUPPORTED_FOR_THIS_GATE",
+      "native_boundary": [
+        "ssl.cc26-28 rejects pre1.1",
+        "TLS-enabled native translation units are prerequisites for current canonical gate"
+      ],
+      "actual_gate_blockers": [
+        "An absent crypto subsystem has no real M21 callback caller to validate",
+        "No-op crate or forced header macros would fabricate migrated coverage"
+      ],
+      "next_acceptance": "Record disabled module as unavailable; no TLS runtime PASS or new placeholder API"
+    }
+  ],
+  "resource_blocker": {
+    "available_kib": 1029376,
+    "minimum_bytes": 4294967296,
+    "commands_compiling_or_testing": [],
+    "ram_grant": "Released; no remaining grant"
+  },
+  "shared_contract_changes_required": false,
+  "acceptance_rule": "Do not weaken existing default strict assertions/call proofs. Optional capability partitions require an actual same-config native control first and explicit unsupported/NOT_RUN results per absent branch. No new ABI or ownership is proposed."
+}

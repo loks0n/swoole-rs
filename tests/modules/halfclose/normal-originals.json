@@ -1,0 +1,79 @@
+{
+  "repository": "https://github.com/swoole/swoole-src",
+  "tag": "v6.2.2",
+  "commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "tests": [
+    {
+      "path": "tests/swoole_server/close_queued.phpt",
+      "sha256": "2ba163e52034be813d73a7d082bbcf5857c2f4f0bf2d62b0b96668d229a74feb",
+      "module": "halfclose-normal",
+      "requires": [
+        "upstream_test_bootstrap",
+        "processes",
+        "php_sockets",
+        "tcp",
+        "coroutines",
+        "coroutine_tcp_client"
+      ]
+    },
+    {
+      "path": "tests/swoole_http_server/pipeline.phpt",
+      "sha256": "8af283f517c843ac93ceccca01f46a03206ffb6e82ba1670d3da3d18ffbbfd6d",
+      "module": "halfclose-normal",
+      "requires": [
+        "upstream_test_bootstrap",
+        "processes",
+        "php_sockets",
+        "http",
+        "coroutines",
+        "coroutine_http_client",
+        "sync_tcp_client"
+      ]
+    },
+    {
+      "path": "tests/swoole_http_server/response_create.phpt",
+      "sha256": "247f588738be8bdf46231d2cf3cec57741e01a3f925522dee2f5f755df85fc04",
+      "module": "halfclose-normal",
+      "requires": [
+        "upstream_test_bootstrap",
+        "processes",
+        "php_sockets",
+        "http",
+        "coroutines",
+        "coroutine_http_client"
+      ]
+    },
+    {
+      "path": "tests/swoole_http_server/chunk_with_end_data.phpt",
+      "sha256": "aee8972d255812ad06e43d162e954e88f20704c2c5b529a84989a4870dac7d69",
+      "module": "halfclose-normal",
+      "requires": [
+        "upstream_test_bootstrap",
+        "processes",
+        "php_sockets",
+        "http",
+        "coroutines",
+        "coroutine_http_client"
+      ]
+    },
+    {
+      "path": "tests/swoole_http_server/trailer.phpt",
+      "sha256": "25259817daa1bf890e678d76770001a664c77948bd1840077cd8ed5f161da7fa",
+      "module": "halfclose-normal",
+      "requires": [
+        "upstream_test_bootstrap",
+        "processes",
+        "php_sockets",
+        "http",
+        "coroutines",
+        "coroutine_http_client"
+      ]
+    }
+  ],
+  "support_files": [
+    {
+      "path": "examples/test.jpg",
+      "sha256": "898fab0e6f1af2a539f18e716295f767d5d72778abcd0766839cf6227fbb5793"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+[package]
+name = "swoole-rs-timer"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "swoole_rs_timer"
+crate-type = ["rlib", "staticlib"]

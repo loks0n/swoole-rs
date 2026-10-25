@@ -1,0 +1,9 @@
+[package]
+name = "swoole-rs-ports"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[lib]
+name = "swoole_rs_ports"
+crate-type = ["rlib"]

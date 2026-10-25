@@ -1,0 +1,648 @@
+diff --git a/src/server/port.cc b/src/server/port.cc
+--- a/src/server/port.cc
++++ b/src/server/port.cc
+@@ -17,3 +17,6 @@
+ #include "swoole_server.h"
++#include "swoole_rs_ports.h"
++#include <type_traits>
+ #include "swoole_http.h"
++#include "swoole_rs_http_request_view.h"
+ #include "swoole_http2.h"
+@@ -25,3 +28,4 @@
+
+-using swoole::http_server::Request;
++using swoole::http_server::SelectedRequest;
++using swoole::http_server::SelectedRequestView;
+ using swoole::network::Address;
+@@ -30,13 +34,22 @@
+ namespace swoole {
++static uint32_t port_protocol_flags(const ListenPort &p) {
++    return (p.open_eof_check ? SWR_PORTS_EOF : 0) | (p.open_length_check ? SWR_PORTS_LENGTH : 0) |
++           (p.open_http_protocol ? SWR_PORTS_HTTP : 0) | (p.open_http2_protocol ? SWR_PORTS_HTTP2 : 0) |
++           (p.open_websocket_protocol ? SWR_PORTS_WEBSOCKET : 0) | (p.open_mqtt_protocol ? SWR_PORTS_MQTT : 0) |
++           (p.open_redis_protocol ? SWR_PORTS_REDIS : 0);
++}
+
+ ListenPort::ListenPort(Server *server) {
+-    object_id = 0;
+-    protocol.package_length_type = 'N';
+-    protocol.package_length_size = 4;
+-    protocol.package_body_offset = 4;
+-    protocol.package_max_length = SW_INPUT_BUFFER_SIZE;
+-
+-    protocol.package_eof_len = sizeof(SW_DATA_EOF) - 1;
++    static_assert(std::is_same<decltype(object_id), uint16_t>::value &&
++                  std::is_same<decltype(protocol.package_max_length), uint32_t>::value, "ports constructor fields");
++    static_assert(sizeof(SW_DATA_EOF) - 1 <= sizeof(protocol.package_eof) &&
++                  sizeof(protocol.package_eof) <= UINT8_MAX, "ports constructor EOF");
++    auto defaults = swr_v1_ports_defaults(SW_INPUT_BUFFER_SIZE, sizeof(SW_DATA_EOF) - 1);
++    object_id = defaults.object_id;
++    protocol.package_length_type = static_cast<char>(defaults.length_type);
++    protocol.package_length_size = defaults.length_size;
++    protocol.package_body_offset = defaults.body_offset;
++    protocol.package_max_length = defaults.max_length;
++    protocol.package_eof_len = defaults.eof_length;
+     memcpy(protocol.package_eof, SW_DATA_EOF, protocol.package_eof_len);
+-
+     protocol.private_data_2 = server;
+@@ -179,65 +192,74 @@
+ int ListenPort::listen() {
+-    // listen stream socket
+-    if (!listening && socket->listen(backlog) < 0) {
+-        swoole_sys_warning("listen(%s:%d, %d) failed", host.c_str(), port, backlog);
+-        return SW_ERR;
+-    }
+-    listening = true;
+-
++    constexpr uint32_t capabilities = 0
+ #ifdef TCP_DEFER_ACCEPT
+-    if (tcp_defer_accept) {
+-        if (socket->set_option(IPPROTO_TCP, TCP_DEFER_ACCEPT, tcp_defer_accept) != 0) {
+-            swoole_sys_warning("setsockopt(TCP_DEFER_ACCEPT) failed");
+-        }
+-    }
+-#endif
+-
++        | 1
++#endif
+ #ifdef SO_ACCEPTFILTER
+-    if (tcp_defer_accept) {
+-        struct accept_filter_arg a;
+-        memset(&a, 0, sizeof(a));
+-        strcpy(a.af_name, "httpready");
+-        if (socket->set_option(SOL_SOCKET, SO_ACCEPTFILTER, &a, sizeof(a)) != 0) {
+-            swoole_sys_warning("setsockopt(SO_ACCEPTFILTER) failed");
+-        }
+-    }
+-#endif
+-
++        | 2
++#endif
+ #ifdef TCP_FASTOPEN
+-    if (tcp_fastopen) {
+-        if (socket->set_option(IPPROTO_TCP, TCP_FASTOPEN, tcp_fastopen) != 0) {
+-            swoole_sys_warning("setsockopt(TCP_FASTOPEN) failed");
+-        }
+-    }
+-#endif
+-
++        | 4
++#endif
+ #ifdef SO_KEEPALIVE
+-    if (open_tcp_keepalive == 1) {
+-        if (socket->set_option(SOL_SOCKET, SO_KEEPALIVE, 1) != 0) {
+-            swoole_sys_warning("setsockopt(SO_KEEPALIVE) failed");
+-        }
++        | 8
++#endif
+ #ifdef TCP_KEEPIDLE
+-        if (socket->set_option(IPPROTO_TCP, TCP_KEEPIDLE, tcp_keepidle) < 0) {
+-            swoole_sys_warning("setsockopt(TCP_KEEPIDLE) failed");
+-        }
+-        if (socket->set_option(IPPROTO_TCP, TCP_KEEPINTVL, tcp_keepinterval) < 0) {
+-            swoole_sys_warning("setsockopt(TCP_KEEPINTVL) failed");
+-        }
+-        if (socket->set_option(IPPROTO_TCP, TCP_KEEPCNT, tcp_keepcount) < 0) {
+-            swoole_sys_warning("setsockopt(TCP_KEEPCNT) failed");
+-        }
++        | 16
+ #endif
+ #ifdef TCP_USER_TIMEOUT
+-        if (tcp_user_timeout > 0 && socket->set_option(IPPROTO_TCP, TCP_USER_TIMEOUT, tcp_user_timeout) != 0) {
+-            swoole_sys_warning("setsockopt(TCP_USER_TIMEOUT) failed");
+-        }
+-#endif
+-    }
+-#endif
+-
+-    if (buffer_high_watermark == 0) {
+-        buffer_high_watermark = socket_buffer_size * 0.8;
+-    }
+-
+-    return SW_OK;
++        | 32
++#endif
++        ;
++    SwrPortsListenState state{};
++    int result = 0;
++    while (true) {
++        SwrPortsListenInput input{capabilities, listening, open_tcp_keepalive, buffer_high_watermark,
++            tcp_defer_accept, tcp_fastopen, tcp_keepidle, tcp_keepinterval, tcp_keepcount, tcp_user_timeout, result};
++        auto action = swr_v1_ports_listen_step(&state, &input);
++#define PORTS_OPTION(KIND, LEVEL, OPTION, CMP) \
++        case KIND: \
++            if (socket->set_option(LEVEL, OPTION, action.value) CMP 0) { \
++                swoole_sys_warning("setsockopt(" #OPTION ") failed"); \
++            } \
++            break
++        switch (action.kind) {
++        case 0: return action.status;
++        case 1:
++            result = socket->listen(backlog);
++            if (result < 0) { swoole_sys_warning("listen(%s:%d, %d) failed", host.c_str(), port, backlog); }
++            break;
++        case 2: listening = true; break;
++#ifdef TCP_DEFER_ACCEPT
++        PORTS_OPTION(3, IPPROTO_TCP, TCP_DEFER_ACCEPT, !=);
++#endif
++#ifdef SO_ACCEPTFILTER
++        case 4: {
++            struct accept_filter_arg a;
++            memset(&a, 0, sizeof(a));
++            strcpy(a.af_name, "httpready");
++            if (socket->set_option(SOL_SOCKET, SO_ACCEPTFILTER, &a, sizeof(a)) != 0) {
++                swoole_sys_warning("setsockopt(SO_ACCEPTFILTER) failed");
++            }
++            break;
++        }
++#endif
++#ifdef TCP_FASTOPEN
++        PORTS_OPTION(5, IPPROTO_TCP, TCP_FASTOPEN, !=);
++#endif
++#ifdef SO_KEEPALIVE
++        PORTS_OPTION(6, SOL_SOCKET, SO_KEEPALIVE, !=);
++#ifdef TCP_KEEPIDLE
++        PORTS_OPTION(7, IPPROTO_TCP, TCP_KEEPIDLE, <);
++        PORTS_OPTION(8, IPPROTO_TCP, TCP_KEEPINTVL, <);
++        PORTS_OPTION(9, IPPROTO_TCP, TCP_KEEPCNT, <);
++#endif
++#ifdef TCP_USER_TIMEOUT
++        PORTS_OPTION(10, IPPROTO_TCP, TCP_USER_TIMEOUT, !=);
++#endif
++#endif
++        case 11: buffer_high_watermark = socket_buffer_size * 0.8; break;
++        default: return SW_ERR;
++        }
++#undef PORTS_OPTION
++    }
+ }
+@@ -245,44 +267,28 @@
+ void ListenPort::init_protocol() {
+-    if (is_dgram() && !is_dtls()) {
+-        return;
+-    }
+-
+-    if (open_eof_check) {
+-        if (protocol.package_eof_len > SW_DATA_EOF_MAXLEN) {
+-            protocol.package_eof_len = SW_DATA_EOF_MAXLEN;
+-        }
+-        protocol.onPackage = Server::dispatch_task;
+-        onRead = readable_callback_eof;
+-    } else if (open_length_check) {
+-        if (protocol.package_length_type != '\0') {
+-            protocol.get_package_length = Protocol::default_length_func;
+-        }
+-        protocol.onPackage = Server::dispatch_task;
+-        onRead = readable_callback_length;
+-    } else if (open_http_protocol) {
+-        if (open_http2_protocol && open_websocket_protocol) {
+-            protocol.get_package_length = http_server::get_package_length;
+-            protocol.get_package_length_size = http_server::get_package_length_size;
+-            protocol.onPackage = http_server::dispatch_frame;
+-        } else if (open_http2_protocol) {
+-            protocol.package_length_size = SW_HTTP2_FRAME_HEADER_SIZE;
+-            protocol.get_package_length = http2::get_frame_length;
+-            protocol.onPackage = Server::dispatch_task;
+-        } else if (open_websocket_protocol) {
+-            protocol.package_length_size = SW_WEBSOCKET_FRAME_HEADER_SIZE;
+-            protocol.get_package_length = websocket::get_package_length;
+-            protocol.onPackage = websocket::dispatch_frame;
+-        }
+-        protocol.package_length_offset = 0;
+-        protocol.package_body_offset = 0;
+-        onRead = readable_callback_http;
+-    } else if (open_mqtt_protocol) {
+-        mqtt::set_protocol(&protocol);
+-        protocol.onPackage = Server::dispatch_task;
+-        onRead = readable_callback_length;
+-    } else if (open_redis_protocol) {
+-        protocol.onPackage = Server::dispatch_task;
+-        onRead = readable_callback_redis;
+-    } else {
+-        onRead = readable_callback_raw;
++    const bool datagram = is_dgram();
++    const uint32_t flags = port_protocol_flags(*this) | (datagram ? SWR_PORTS_DGRAM : 0) |
++                           (datagram && is_dtls() ? SWR_PORTS_DTLS : 0);
++    const auto plan = swr_v1_ports_protocol_plan({flags, (uint8_t) protocol.package_length_type,
++        protocol.package_eof_len, SW_DATA_EOF_MAXLEN, SW_HTTP2_FRAME_HEADER_SIZE,
++        SW_WEBSOCKET_FRAME_HEADER_SIZE, SW_MQTT_MAX_LENGTH_SIZE});
++    using Reader = int (*)(Reactor *, ListenPort *, Event *);
++    static constexpr Reader readers[] = {nullptr, readable_callback_eof, readable_callback_length,
++        readable_callback_http, readable_callback_redis, readable_callback_raw};
++    using Package = int (*)(const Protocol *, Socket *, const RecvData *);
++    static constexpr Package packages[] = {nullptr, Server::dispatch_task,
++        http_server::dispatch_frame, websocket::dispatch_frame};
++    static constexpr Protocol::LengthFunc lengths[] = {nullptr, Protocol::default_length_func,
++        http_server::get_package_length, http2::get_frame_length, websocket::get_package_length, mqtt::get_package_length};
++    for (uint32_t i = 0; i < plan.count; i++) {
++        const auto action = plan.actions[i];
++        switch (action.kind) {
++        case SWR_PORTS_SET_EOF_LEN: protocol.package_eof_len = action.value; break;
++        case SWR_PORTS_SET_READ: onRead = readers[action.value]; break;
++        case SWR_PORTS_SET_PACKAGE: protocol.onPackage = packages[action.value]; break;
++        case SWR_PORTS_SET_LENGTH_FN: protocol.get_package_length = lengths[action.value]; break;
++        case SWR_PORTS_SET_LENGTH_SIZE_FN: protocol.get_package_length_size = http_server::get_package_length_size; break;
++        case SWR_PORTS_SET_LENGTH_SIZE: protocol.package_length_size = action.value; break;
++        case SWR_PORTS_SET_LENGTH_OFFSET: protocol.package_length_offset = action.value; break;
++        case SWR_PORTS_SET_BODY_OFFSET: protocol.package_body_offset = action.value; break;
++        }
+     }
+@@ -291,5 +297,8 @@
+ void ListenPort::set_eof_protocol(const std::string &eof, bool find_from_right) {
+-    open_eof_check = true;
+-    protocol.split_by_eof = !find_from_right;
+-    protocol.package_eof_len = std::min(eof.length(), sizeof(protocol.package_eof));
++    static_assert(sizeof(protocol.package_eof) <= UINT8_MAX, "ports EOF length field");
++    auto settings = swr_v1_ports_framing_settings({SWR_PORTS_EOF_SETTINGS, find_from_right,
++        eof.length(), sizeof(protocol.package_eof), 0, 0, 0, 0});
++    open_eof_check = settings.enabled;
++    protocol.split_by_eof = settings.split;
++    protocol.package_eof_len = settings.length;
+     memcpy(protocol.package_eof, eof.c_str(), protocol.package_eof_len);
+@@ -298,7 +307,12 @@
+ void ListenPort::set_length_protocol(uint32_t length_offset, char length_type, uint32_t body_offset) {
+-    open_length_check = true;
+-    protocol.package_length_type = length_type;
+-    protocol.package_length_size = swoole_type_size(length_type);
+-    protocol.package_length_offset = length_offset;
+-    protocol.package_body_offset = body_offset;
++    static_assert(std::is_same<decltype(protocol.package_length_size), uint8_t>::value &&
++                  std::is_same<decltype(protocol.package_length_offset), uint16_t>::value &&
++                  std::is_same<decltype(protocol.package_body_offset), uint16_t>::value, "ports length fields");
++    auto settings = swr_v1_ports_framing_settings({SWR_PORTS_LENGTH_SETTINGS, 0, 0, 0,
++        static_cast<uint8_t>(length_type), swoole_type_size(length_type), length_offset, body_offset});
++    open_length_check = settings.enabled;
++    protocol.package_length_type = static_cast<char>(settings.length_type);
++    protocol.package_length_size = settings.length_size;
++    protocol.package_length_offset = settings.length_offset;
++    protocol.package_body_offset = settings.body_offset;
+ }
+@@ -306,4 +320,9 @@
+ void ListenPort::set_stream_protocol() {
+-    open_length_check = true;
+-    network::Stream::set_protocol(&protocol);
++    auto settings = swr_v1_ports_stream_settings();
++    open_length_check = settings.enabled;
++    protocol.get_package_length = Protocol::default_length_func;
++    protocol.package_length_type = static_cast<char>(settings.length_type);
++    protocol.package_length_size = settings.length_size;
++    protocol.package_body_offset = settings.body_offset;
++    protocol.package_length_offset = settings.length_offset;
+ }
+@@ -448,3 +467,3 @@
+
+-    Request *request = nullptr;
++    SelectedRequest *request = nullptr;
+     Protocol *protocol = &port->protocol;
+@@ -452,13 +471,14 @@
+     if (conn->object == nullptr) {
+-        request = new Request();
++        request = new SelectedRequest();
+         conn->object = request;
+     } else {
+-        request = static_cast<Request *>(conn->object);
+-    }
+-
+-    if (!request->buffer_) {
+-        request->buffer_ = serv->get_recv_buffer(_socket);
+-    }
+-
+-    String *buffer = request->buffer_;
++        request = static_cast<SelectedRequest *>(conn->object);
++    }
++
++    SelectedRequestView request_view(request);
++    if (!request_view.buffer()) {
++        request_view.set_buffer(serv->get_recv_buffer(_socket));
++    }
++
++    String *buffer = request_view.buffer();
+
+@@ -501,4 +521,4 @@
+ _parse:
+-    if (request->method == 0 && request->get_protocol() < 0) {
+-        if (!request->excepted && buffer->length < SW_HTTP_HEADER_MAX_SIZE) {
++    if (request_view.method() == 0 && request_view.get_protocol() < 0) {
++        if (!request_view.excepted() && buffer->length < SW_HTTP_HEADER_MAX_SIZE) {
+             return SW_OK;
+@@ -512,3 +532,3 @@
+
+-    if (request->method > SW_HTTP_PRI) {
++    if (request_view.method() > SW_HTTP_PRI) {
+         swoole_error_log(SW_LOG_TRACE,
+@@ -518,3 +538,3 @@
+         goto _bad_request;
+-    } else if (request->method == SW_HTTP_PRI) {
++    } else if (request_view.method() == SW_HTTP_PRI) {
+         if (sw_unlikely(!port->open_http2_protocol)) {
+@@ -540,4 +560,4 @@
+     // http header is not the end
+-    if (request->header_length_ == 0) {
+-        if (request->get_header_length() < 0) {
++    if (request_view.header_length() == 0) {
++        if (request_view.get_header_length() < 0) {
+             if (buffer->size == buffer->length) {
+@@ -554,41 +574,40 @@
+     // parse http header and got http body length
+-    if (!request->header_parsed) {
+-        request->parse_header_info();
+-        request->max_length_ = protocol->package_max_length;
++    if (!request_view.header_parsed()) {
++        request_view.parse_header_info();
++        request_view.set_max_length(protocol->package_max_length);
+         swoole_trace_log(SW_TRACE_SERVER,
+                          "content-length=%" PRIu64 ", keep-alive=%u, chunked=%u",
+-                         request->content_length_,
+-                         request->keep_alive,
+-                         request->chunked);
+-        if (request->form_data_) {
++                         request_view.content_length(),
++                         request_view.keep_alive(),
++                         request_view.chunked());
++        if (request_view.has_form()) {
+             if (serv->upload_max_filesize > 0 &&
+-                request->header_length_ + request->content_length_ > request->max_length_) {
+-                request->init_multipart_parser(serv);
+-
+-                buffer = request->buffer_;
++                request_view.header_length() + request_view.content_length() > request_view.max_length()) {
++                request_view.init_multipart_parser(serv);
++
++                buffer = request_view.buffer();
+             } else {
+-                delete request->form_data_;
+-                request->form_data_ = nullptr;
+-            }
+-        }
+-    }
+-
+-    if (request->form_data_) {
+-        if (!request->multipart_header_parsed && memmem(buffer->str, buffer->length, SW_STRL("\r\n\r\n")) == nullptr) {
++                request_view.discard_form();
++            }
++        }
++    }
++
++    if (request_view.has_form()) {
++        if (!request_view.multipart_header_parsed() && memmem(buffer->str, buffer->length, SW_STRL("\r\n\r\n")) == nullptr) {
+             return SW_OK;
+         }
+-        if (!request->parse_multipart_data(buffer)) {
++        if (!request_view.parse_multipart_data(buffer)) {
+             goto _bad_request;
+         }
+-        if (request->too_large) {
++        if (request_view.too_large()) {
+             goto _too_large;
+         }
+-        if (request->unavailable) {
++        if (request_view.unavailable()) {
+             goto _unavailable;
+         }
+-        if (!request->tried_to_dispatch) {
++        if (!request_view.tried_to_dispatch()) {
+             return SW_OK;
+         }
+-        request->destroy_multipart_parser();
+-        buffer = request->buffer_;
++        request_view.destroy_multipart_parser();
++        buffer = request_view.buffer();
+     }
+@@ -596,18 +615,18 @@
+     // content length (equal to 0) or (field not found but not chunked)
+-    if (!request->tried_to_dispatch) {
++    if (!request_view.tried_to_dispatch()) {
+         // recv nobody_chunked eof
+-        if (request->nobody_chunked) {
+-            if (buffer->length < request->header_length_ + (sizeof(SW_HTTP_CHUNK_EOF) - 1)) {
++        if (request_view.nobody_chunked()) {
++            if (buffer->length < request_view.header_length() + (sizeof(SW_HTTP_CHUNK_EOF) - 1)) {
+                 goto _recv_data;
+             }
+-            request->header_length_ += (sizeof(SW_HTTP_CHUNK_EOF) - 1);
+-        }
+-        request->tried_to_dispatch = 1;
++            request_view.advance_header_length(sizeof(SW_HTTP_CHUNK_EOF) - 1);
++        }
++        request_view.mark_dispatched();
+         // (know content-length is equal to 0) or (no content-length field and no chunked)
+-        if (request->content_length_ == 0 && (request->known_length || !request->chunked)) {
+-            buffer->offset = request->header_length_;
++        if (request_view.content_length() == 0 && (request_view.known_length() || !request_view.chunked())) {
++            buffer->offset = request_view.header_length();
+             // send static file content directly in the reactor thread
+-            if (!serv->enable_static_handler || !serv->select_static_handler(request, conn)) {
++            if (!serv->enable_static_handler || !request_view.select_static_handler(serv, conn)) {
+                 // dynamic request, dispatch to worker
+-                dispatch_data.info.len = request->header_length_;
++                dispatch_data.info.len = request_view.header_length();
+                 dispatch_data.data = buffer->str;
+@@ -620,6 +639,6 @@
+             }
+-            if (buffer->length > request->header_length_) {
++            if (buffer->length > request_view.header_length()) {
+                 // http pipeline, multi requests, parse the next one
+-                buffer->reduce(request->header_length_);
+-                request->clean();
++                buffer->reduce(request_view.header_length());
++                request_view.clean();
+                 goto _parse;
+@@ -634,6 +653,6 @@
+     size_t request_length;
+-    if (request->chunked) {
++    if (request_view.chunked()) {
+         /* unknown length, should find chunked eof */
+-        if (request->get_chunked_body_length() < 0) {
+-            if (request->excepted) {
++        if (request_view.get_chunked_body_length() < 0) {
++            if (request_view.excepted()) {
+                 swoole_error_log(SW_LOG_TRACE,
+@@ -659,8 +678,8 @@
+         } else {
+-            request_length = request->header_length_ + request->content_length_;
++            request_length = request_view.header_length() + request_view.content_length();
+         }
+         swoole_trace_log(
+-            SW_TRACE_SERVER, "received chunked eof, real content-length=%" PRIu64, request->content_length_);
++            SW_TRACE_SERVER, "received chunked eof, real content-length=%" PRIu64, request_view.content_length());
+     } else {
+-        request_length = request->header_length_ + request->content_length_;
++        request_length = request_view.header_length() + request_view.content_length();
+         if (request_length > protocol->package_max_length) {
+@@ -671,4 +690,4 @@
+                              "package_max_length(%u)" CLIENT_INFO_FMT,
+-                             request->header_length_,
+-                             request->content_length_,
++                             request_view.header_length(),
++                             request_view.content_length(),
+                              protocol->package_max_length,
+@@ -684,3 +703,3 @@
+             // Expect: 100-continue
+-            if (request->has_expect_header()) {
++            if (request_view.has_expect_header()) {
+                 _socket->send(SW_STRL(SW_HTTP_100_CONTINUE_PACKET), 0);
+@@ -690,5 +709,5 @@
+                     "PostWait: request->content_length=%" PRIu64 ", buffer->length=%zu, request->header_length=%d\n",
+-                    request->content_length_,
++                    request_view.content_length(),
+                     buffer->length,
+-                    request->header_length_);
++                    request_view.header_length());
+             }
+@@ -793,26 +812,3 @@
+ const char *ListenPort::get_protocols() const {
+-    if (is_dgram()) {
+-        return "dgram";
+-    }
+-    if (open_eof_check) {
+-        return "eof";
+-    } else if (open_length_check) {
+-        return "length";
+-    } else if (open_http_protocol) {
+-        if (open_http2_protocol && open_websocket_protocol) {
+-            return "http|http2|websocket";
+-        } else if (open_http2_protocol) {
+-            return "http|http2";
+-        } else if (open_websocket_protocol) {
+-            return "http|websocket";
+-        } else {
+-            return "http";
+-        }
+-    } else if (open_mqtt_protocol) {
+-        return "mqtt";
+-    } else if (open_redis_protocol) {
+-        return "redis";
+-    } else {
+-        return "raw";
+-    }
++    return swr_v1_ports_protocol_name(port_protocol_flags(*this) | (is_dgram() ? SWR_PORTS_DGRAM : 0));
+ }
+@@ -820,11 +816,7 @@
+ size_t ListenPort::get_connection_num() const {
+-    if (gs->connection_nums) {
+-        size_t num = 0;
+-        for (uint32_t i = 0; i < sw_server()->worker_num; i++) {
+-            num += gs->connection_nums[i];
+-        }
+-        return num;
+-    } else {
+-        return gs->connection_num;
+-    }
++    static_assert(sizeof(size_t) == sizeof(uint64_t), "ports count ABI");
++    static_assert(std::is_same<sw_atomic_t, volatile uint32_t>::value, "ports native counter ABI");
++    auto *counters = gs->connection_nums;
++    return swr_v1_ports_connection_count(counters, counters ? sw_server()->worker_num : 0,
++                                       counters ? 0 : gs->connection_num);
+ }
+@@ -833,59 +825,52 @@
+     auto *server = static_cast<Server *>(protocol.private_data_2);
+-    if (socket) {
++    // Address has no construction/destruction effects; storage may precede the decisions.
++    static_assert(std::is_trivial<Address>::value, "ports Address lifetime boundary");
++    Address addr;
++    constexpr uint32_t capabilities = 0
+ #if defined(__linux__) && defined(HAVE_REUSEPORT)
+-        if (server->enable_reuse_port) {
+-            close_socket();
+-        } else
+-#endif
+-        {
+-            return SW_OK;
+-        }
+-    }
+-
+-    socket =
+-        make_socket(type, is_dgram() ? SW_FD_DGRAM_SERVER : SW_FD_STREAM_SERVER, SW_SOCK_CLOEXEC | SW_SOCK_NONBLOCK);
+-    if (socket == nullptr) {
+-        swoole_set_last_error(errno);
+-        return SW_ERR;
+-    }
+-
++        | 1
++#endif
+ #if defined(SW_SUPPORT_DTLS) && defined(HAVE_KQUEUE)
+-    if (is_dtls()) {
+-        socket->set_reuse_port();
+-    }
+-#endif
+-
++        | 2
++#endif
++        ;
++    SwrPortsSocketState state{};
++    int result = 0;
++    while (true) {
++        SwrPortsSocketInput input{capabilities, socket != nullptr, result};
++        auto action = swr_v1_ports_socket_step(&state, &input);
++        switch (action.kind) {
++        case 0: return action.status;
+ #if defined(__linux__) && defined(HAVE_REUSEPORT)
+-    if (server->enable_reuse_port) {
+-        if (socket->set_reuse_port() < 0) {
+-            goto __cleanup;
+-        }
+-    }
+-#endif
+-
+-    Address addr;
+-    if (!addr.assign(type, host, port, true)) {
+-        auto type_str = Address::type_str(type);
+-        swoole_warning("Invalid %s address '%s:%d'", type_str, host.c_str(), port);
+-        goto __cleanup;
+-    }
+-
+-    if (socket->set_reuse_addr() < 0) {
+-        swoole_sys_warning("setsockopt(%d, SO_REUSEADDR) failed", socket->get_fd());
+-    }
+-
+-    if (socket->bind(addr) < 0) {
+-        goto __cleanup;
+-    }
+-
+-    if (socket->get_name() < 0) {
+-    __cleanup:
+-        swoole_set_last_error(errno);
+-        socket->free();
+-        return SW_ERR;
+-    }
+-
+-    port = socket->get_port();
+-
+-    return SW_OK;
++        case 1: result = server->enable_reuse_port; break;
++#endif
++        case 2: close_socket(); break;
++        case 3:
++            socket = make_socket(type, is_dgram() ? SW_FD_DGRAM_SERVER : SW_FD_STREAM_SERVER,
++                                 SW_SOCK_CLOEXEC | SW_SOCK_NONBLOCK);
++            break;
++        case 4: swoole_set_last_error(errno); return SW_ERR;
++#if defined(SW_SUPPORT_DTLS) && defined(HAVE_KQUEUE)
++        case 5: result = is_dtls(); break;
++        case 6: socket->set_reuse_port(); break;
++#endif
++#if defined(__linux__) && defined(HAVE_REUSEPORT)
++        case 7: result = socket->set_reuse_port(); break;
++#endif
++        case 8: swoole_set_last_error(errno); socket->free(); return SW_ERR;
++        case 9: result = addr.assign(type, host, port, true); break;
++        case 10: {
++            auto type_str = Address::type_str(type);
++            swoole_warning("Invalid %s address '%s:%d'", type_str, host.c_str(), port);
++            break;
++        }
++        case 11:
++            if (socket->set_reuse_addr() < 0) { swoole_sys_warning("setsockopt(%d, SO_REUSEADDR) failed", socket->get_fd()); }
++            break;
++        case 12: result = socket->bind(addr); break;
++        case 13: result = socket->get_name(); break;
++        case 14: port = socket->get_port(); break;
++        default: return SW_ERR;
++        }
++    }
+ }
+@@ -901,3 +886,3 @@
+ void ListenPort::destroy_http_request(Connection *conn) {
+-    const auto request = static_cast<Request *>(conn->object);
++    const auto request = static_cast<SelectedRequest *>(conn->object);
+     if (!request) {

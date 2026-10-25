@@ -1,0 +1,34 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-misc.patch",
+      "sha256": "e6a70e1e6b39fdf18e1dd24008598d8fae29fd09052b1724d93452527806d773",
+      "upstream_paths": [
+        "src/core/misc.cc"
+      ]
+    },
+    {
+      "path": "0002-log.patch",
+      "sha256": "6431ba4e881cb060a2354fcdb469c238a05adb62bd207ffec13ca68ef7ee6a89",
+      "upstream_paths": [
+        "src/core/log.cc"
+      ]
+    },
+    {
+      "path": "0003-inline-bytes.patch",
+      "sha256": "eb18b3841a9b78fc674efc017585823b2a0fecfaaa1be007209c5e63b5e54dfa",
+      "upstream_paths": [
+        "include/swoole_util.h",
+        "include/swoole.h"
+      ]
+    },
+    {
+      "path": "0004-logger-state.patch",
+      "upstream_paths": [
+        "include/swoole_log.h"
+      ],
+      "sha256": "6174cdf10358c3e822c3a2c6a9518cef481149eaf93f09705abafb20b6393ab9"
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+diff --git a/include/swoole_coroutine_context.h b/include/swoole_coroutine_context.h
+--- a/include/swoole_coroutine_context.h
++++ b/include/swoole_coroutine_context.h
+@@ -18,6 +18,13 @@
+ #pragma once
+
+ #include "swoole.h"
++#ifdef SWOOLE_RS_COROUTINE
++#include "swoole_rs_coroutine.h"
++static_assert(sizeof(swr_v1_context_stack_cell) == sizeof(char *) && alignof(swr_v1_context_stack_cell) == alignof(char *) &&
++              sizeof(swr_v1_context_extent) == sizeof(uint32_t) && alignof(swr_v1_context_extent) == alignof(uint32_t) &&
++              sizeof(bool) == 1 && alignof(bool) == 1 && sizeof(swr_v1_context_completion) == 1 && alignof(swr_v1_context_completion) == 1,
++              "Context bookkeeping requires exact Native cell ABI");
++#endif
+
+ #ifdef SW_USE_THREAD_CONTEXT
+ #include <thread>
+@@ -65,15 +72,27 @@
+ #endif
+ #ifndef SW_USE_THREAD_CONTEXT
+     char *get_stack() const {
++#ifdef SWOOLE_RS_COROUTINE
++        return static_cast<char *>(swr_v1_context_stack_read(&stack_, &stack_size_).pointer);
++#else
+         return stack_;
++    #endif
+     }
+
+     size_t get_stack_size() const {
++#ifdef SWOOLE_RS_COROUTINE
++        return swr_v1_context_stack_read(&stack_, &stack_size_).size;
++#else
+         return stack_size_;
++    #endif
+     }
+ #endif
+     bool is_end() const {
++#ifdef SWOOLE_RS_COROUTINE
++        return swr_v1_context_completed(&end_);
++#else
+         return end_;
++    #endif
+     }
+
+   protected:
+@@ -85,14 +104,23 @@
+ #else
+     coroutine_context_t ctx_;
+     coroutine_context_t swap_ctx_;
++#ifdef SWOOLE_RS_COROUTINE
++    swr_v1_context_stack_cell stack_;
++    swr_v1_context_extent stack_size_;
++#else
+     char *stack_;
+     uint32_t stack_size_;
++#endif
+ #endif
+ #ifdef USE_VALGRIND
+     uint32_t valgrind_stack_id;
+ #endif
+     void *private_data_;
++#ifdef SWOOLE_RS_COROUTINE
++    swr_v1_context_completion end_;
++#else
+     bool end_;
++#endif
+
+     static void context_func(coroutine_transfer_t arg);
+ };
+diff --git a/src/coroutine/thread_context.cc b/src/coroutine/thread_context.cc
+--- a/src/coroutine/thread_context.cc
++++ b/src/coroutine/thread_context.cc
+@@ -62,7 +62,11 @@
+
+ Context::Context(size_t stack_size, CoroutineFunc fn, void *private_data)
+     : fn_(std::move(fn)), private_data_(private_data) {
++#ifdef SWOOLE_RS_COROUTINE
++    swr_v1_context_prepare(&end_, nullptr);
++#else
+     end_ = false;
++#endif
+     lock_.lock();
+     swap_lock_ = nullptr;
+     thread_ = std::thread(Context::context_func, this);
+@@ -96,7 +100,11 @@
+     SwooleTG.async_threads = g_async_threads;
+     _this->lock_.lock();
+     _this->fn_(_this->private_data_);
++#ifdef SWOOLE_RS_COROUTINE
++    swr_v1_context_finish(&_this->end_);
++#else
+     _this->end_ = true;
++#endif
+     current_lock = _this->swap_lock_;
+     _this->swap_lock_->unlock();
+ }

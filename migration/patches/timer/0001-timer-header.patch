@@ -1,0 +1,146 @@
+diff --git a/include/swoole_timer.h b/include/swoole_timer.h
+--- a/include/swoole_timer.h
++++ b/include/swoole_timer.h
+@@ -17,11 +17,18 @@
+
+ #pragma once
+
+-#include "swoole_heap.h"
++#include "swoole.h"
++
++#ifndef SWOOLE_RS_TIMER
++#error "Timer overlay requires --enable-swoole-rs-timer"
++#endif
++#include "swoole_rs_timer.h"
++#include "swoole_rs_timer_runtime.h"
+ #include "swoole_reactor.h"
+ #include "swoole_util.h"
+
+-#include <unordered_map>
++#include <stdexcept>
++#include <vector>
+
+ #define SW_TIMER_MIN_MS 1
+ #define SW_TIMER_MIN_SEC 0.001
+@@ -29,6 +36,7 @@
+ #define SW_TIMER_MAX_SEC ((double) LONG_MAX / 1000)
+
+ namespace swoole {
++static_assert(sizeof(long) == 8, "Timer ABI v1 requires a 64-bit native long");
+ typedef std::function<void(TimerNode *)> TimerDestructor;
+
+ struct TimerNode {
+@@ -43,7 +51,6 @@
+     uint64_t exec_count;
+     uint64_t round;
+     bool removed;
+-    HeapNode *heap_node;
+     TimerCallback callback;
+     void *data;
+     TimerDestructor destructor;
+@@ -52,11 +59,14 @@
+ class Timer {
+     /*--------------signal timer--------------*/
+     Reactor *reactor_ = nullptr;
+-    Heap heap;
+-    std::unordered_map<long, TimerNode *> map;
+-    uint64_t round;
+-    long _next_id;
+-    long _current_id;
++    swr_v1_timer *queue_ = nullptr;
++    const pid_t owner_pid_ = getpid();
++    bool abandoned_selection_ = false;
++    void (*pending_bailout_)() = nullptr;
++    static TimerNode *apply(const swr_v1_timer_view &view);
++    static void check(int32_t status) {
++        if (status != SWR_TIMER_OK) throw std::runtime_error("Rust timer queue operation failed");
++    }
+     /*---------------event timer--------------*/
+     int64_t base_time;
+     /**
+@@ -79,7 +89,7 @@
+     ~Timer();
+
+     int64_t get_relative_msec() const {
+-        return get_absolute_msec() - base_time;
++        return swr_v1_timer_relative_msec(get_absolute_msec(), base_time);
+     }
+
+     int64_t get_next_msec() const {
+@@ -95,24 +105,33 @@
+     }
+
+     TimerNode *add(long _msec, bool persistent, void *data, const TimerCallback &callback);
+-    bool remove(TimerNode *tnode);
++    bool remove(TimerNode *tnode) { return tnode && remove(tnode->id); }
+     void update(const TimerNode *tnode) const {
+-        heap.change_priority(tnode->exec_msec, tnode->heap_node);
++        if (!tnode) return;
++        swr_v1_timer_view view{};
++        auto status = swr_v1_timer_update(queue_, tnode->id, tnode->exec_msec, &view);
++        if (status == SWR_TIMER_OK) apply(view);
++        else if (swr_v1_timer_get(queue_, tnode->id, &view) == SWR_TIMER_OK) apply(view);
+     }
+     void delay(TimerNode *tnode, long delay_ms) const {
+-        long now_ms = get_relative_msec();
+-        tnode->exec_msec = (now_ms < 0 ? tnode->exec_msec : now_ms) + delay_ms;
+-        update(tnode);
++        if (!tnode) return;
++        const auto now = get_relative_msec();
++        int64_t deadline;
++        if (!swr_v1_timer_delay_deadline(now, tnode->exec_msec, delay_ms, &deadline)) return;
++        swr_v1_timer_view view{};
++        if (swr_v1_timer_update(queue_, tnode->id, deadline, &view) == SWR_TIMER_OK) apply(view);
+     }
+     void reinit(bool manually_trigger = false);
+     void select();
++    // Only after a caught Zend bailout whose native selection will never resume.
++    void abandon_selection(void (*bailout)() = nullptr) {
++        abandoned_selection_ = true;
++        pending_bailout_ = bailout;
++    }
+
+     TimerNode *get(long id) {
+-        const auto it = map.find(id);
+-        if (it == map.end()) {
+-            return nullptr;
+-        }
+-        return it->second;
++        swr_v1_timer_view view{};
++        return swr_v1_timer_get(queue_, id, &view) == SWR_TIMER_OK ? apply(view) : nullptr;
+     }
+
+     TimerNode *get(long id, const TimerNode::Type type) {
+@@ -121,19 +140,25 @@
+     }
+
+     size_t count() const {
+-        return map.size();
++        swr_v1_timer_stats stats{};
++        check(swr_v1_timer_stats_get(queue_, &stats));
++        return stats.count;
+     }
+
+     uint64_t get_round() const {
+-        return round;
++        swr_v1_timer_stats stats{};
++        check(swr_v1_timer_stats_get(queue_, &stats));
++        return stats.round;
+     }
+
+-    bool remove(long id) {
+-        return remove(get(id));
+-    }
++    bool remove(long id);
+
+-    const std::unordered_map<long, TimerNode *> &get_map() {
+-        return map;
++    std::vector<int64_t> get_ids() const {
++        std::vector<int64_t> ids(count());
++        size_t copied = 0;
++        check(swr_v1_timer_ids(queue_, ids.data(), ids.size(), &copied));
++        ids.resize(copied);
++        return ids;
+     }
+ };
+

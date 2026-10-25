@@ -1,0 +1,172 @@
+//! Allocation-free request formatting into disjoint native-owned storage.
+//! Byte/C-string behavior and snprintf's clamped length/terminator are explicit.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct ClientsFormatSpan {
+    pub data: *const u8,
+    pub length: usize,
+}
+#[repr(C)]
+pub struct ClientsFormatResult {
+    pub written: usize,
+    ///0 success;1 invalid span/output;2 printf count overflow (native errno).
+    pub error: u32,
+}
+struct Writer {
+    output: *mut u8,
+    capacity: usize,
+    count: usize,
+}
+impl Writer {
+    fn append(&mut self, bytes: &[u8]) -> Option<()> {
+        let count = self.count.checked_add(bytes.len())?;
+        let offset = self.count.min(self.capacity.saturating_sub(1));
+        let copied = bytes
+            .len()
+            .min(self.capacity.saturating_sub(1).saturating_sub(offset));
+        if copied != 0 {
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), self.output.add(offset), copied)
+            };
+        }
+        self.count = count;
+        Some(())
+    }
+    fn decimal(&mut self, mut number: usize) -> Option<()> {
+        let mut digits = [0_u8; usize::BITS as usize];
+        let mut offset = digits.len();
+        loop {
+            offset -= 1;
+            digits[offset] = b'0' + (number % 10) as u8;
+            number /= 10;
+            if number == 0 {
+                break;
+            }
+        }
+        self.append(&digits[offset..])
+    }
+    fn finish(self, error: u32) -> ClientsFormatResult {
+        let overflow = error == 2 || self.count > i32::MAX as usize;
+        let error = if overflow { 2 } else { error };
+        let written = if error != 0 {
+            if overflow && self.capacity == 0 {
+                usize::MAX
+            } else {
+                0
+            }
+        } else if self.capacity == 0 {
+            self.count
+        } else {
+            self.count.min(self.capacity - 1)
+        };
+        if self.capacity != 0 {
+            unsafe {
+                self.output
+                    .add(if error == 0 { written } else { 0 })
+                    .write(0)
+            };
+        }
+        ClientsFormatResult { written, error }
+    }
+}
+unsafe fn span<'a>(value: ClientsFormatSpan) -> Option<&'a [u8]> {
+    if value.length == 0 {
+        Some(&[])
+    } else if value.data.is_null() || value.length > isize::MAX as usize {
+        None
+    } else {
+        Some(unsafe { std::slice::from_raw_parts(value.data, value.length) })
+    }
+}
+fn c_string(bytes: &[u8]) -> &[u8] {
+    &bytes[..bytes
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(bytes.len())]
+}
+fn precision_string(bytes: &[u8]) -> &[u8] {
+    // Both supported native hosts use32-bit int precision. Preserve their
+    // explicit C++ size_t->int narrowing, including negative precision.
+    let precision = bytes.len() as i32;
+    c_string(if precision < 0 {
+        bytes
+    } else {
+        &bytes[..precision as usize]
+    })
+}
+/// # Safety
+/// Required input spans are initialized and disjoint from writable output storage;
+/// no span or native pointer is retained. Output may be uninitialized bytes and
+/// is written through raw pointers only. Native effects/errno run after return.
+/// kind0 length,1 proxy URI,2 multipart type,3 field,4 file,5 closing boundary.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_clients_http_format(
+    kind: u32,
+    first: ClientsFormatSpan,
+    second: ClientsFormatSpan,
+    third: ClientsFormatSpan,
+    fourth: ClientsFormatSpan,
+    number: usize,
+    output: *mut u8,
+    capacity: usize,
+) -> ClientsFormatResult {
+    if capacity > i32::MAX as usize || (capacity != 0 && output.is_null()) {
+        return ClientsFormatResult {
+            written: 0,
+            error: 1,
+        };
+    }
+    let mut writer = Writer {
+        output,
+        capacity,
+        count: 0,
+    };
+    let result = (|| -> Option<()> {
+        match kind {
+            0 => {
+                writer.append(b"Content-Length: ")?;
+                writer.decimal(number)?;
+                writer.append(b"\r\n\r\n")?;
+            }
+            1 => {
+                let host = unsafe { span(first) }?;
+                writer.append(b"http://")?;
+                writer.append(c_string(host))?;
+                // Native memchr scans the full binary host before printf %s.
+                if !host.contains(&b':') {
+                    writer.append(b":")?;
+                    writer.decimal(number)?;
+                }
+                writer.append(c_string(unsafe { span(second) }?))?;
+            }
+            2 => {
+                writer.append(b"Content-Type: multipart/form-data; boundary=")?;
+                writer.append(precision_string(unsafe { span(first) }?))?;
+                writer.append(b"\r\n")?;
+            }
+            3 | 4 => {
+                writer.append(b"--")?;
+                writer.append(precision_string(unsafe { span(first) }?))?;
+                writer.append(b"\r\nContent-Disposition: form-data; name=\"")?;
+                writer.append(precision_string(unsafe { span(second) }?))?;
+                if kind == 4 {
+                    writer.append(b"\"; filename=\"")?;
+                    writer.append(precision_string(unsafe { span(third) }?))?;
+                    writer.append(b"\"\r\nContent-Type: ")?;
+                    writer.append(precision_string(unsafe { span(fourth) }?))?;
+                } else {
+                    writer.append(b"\"")?;
+                }
+                writer.append(b"\r\n\r\n")?;
+            }
+            5 => {
+                writer.append(b"--")?;
+                writer.append(precision_string(unsafe { span(first) }?))?;
+                writer.append(b"--\r\n")?;
+            }
+            _ => return None,
+        }
+        Some(())
+    })();
+    writer.finish(if result.is_some() { 0 } else { 1 })
+}

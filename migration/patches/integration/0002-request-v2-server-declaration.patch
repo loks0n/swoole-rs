@@ -1,0 +1,84 @@
+diff --git a/include/swoole_server.h b/include/swoole_server.h
+--- a/include/swoole_server.h
++++ b/include/swoole_server.h
+@@ -44,11 +44,25 @@
+ #include <unordered_set>
+ #include <condition_variable>
+
++#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
++#ifndef SWOOLE_RS_HTTP
++#error "Rust rewrite-rule storage requires selected HTTP"
++#endif
++#include "swoole_rs_http_rewrite_store.h"
++#endif
++
++#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
++#include "swoole_rs_http_static_config.h"
++#endif
++
+ //------------------------------------Server-------------------------------------------
+ namespace swoole {
+
+ namespace http_server {
+ struct Request;
++#if defined(SWOOLE_RS_HTTP_REQUEST_V2)
++class RequestV2;
++#endif
+ struct RewriteRule;
+ class StaticHandler;
+ }  // namespace http_server
+@@ -1060,8 +1074,10 @@
+     Worker *workers = nullptr;
+     ServerGS *gs = nullptr;
+
++#if !defined(SWOOLE_RS_HTTP_STATIC_CONFIG) || !SWOOLE_RS_HTTP_STATIC_CONFIG
+     std::shared_ptr<std::unordered_set<std::string>> locations = nullptr;
+     std::shared_ptr<std::vector<std::string>> http_index_files = nullptr;
++#endif
+     std::shared_ptr<std::unordered_set<std::string>> http_compression_types = nullptr;
+
+     Barrier reactor_thread_barrier = {};
+@@ -1151,6 +1167,9 @@
+     void add_static_handler_location(const std::string &);
+     void add_static_handler_index_files(const std::string &);
+     bool select_static_handler(const http_server::Request *request, const Connection *conn);
++#if defined(SWOOLE_RS_HTTP_REQUEST_V2)
++    bool select_static_handler(const http_server::RequestV2 *request, const Connection *conn);
++#endif
+     bool apply_rewrite_rules(http_server::StaticHandler *handler);
+     void add_http_compression_type(const std::string &type);
+     void add_rewrite_rule(const std::string &pattern, const std::string &replacement);
+@@ -1224,9 +1243,14 @@
+         return get_worker(worker_id)->pid;
+     }
+
++#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
++    http_server::StaticConfig &static_files() { return static_config_; }
++    const http_server::StaticConfig &static_files() const { return static_config_; }
++#else
+     const std::string &get_document_root() {
+         return document_root;
+     }
++#endif
+
+     String *get_recv_buffer(network::Socket *_socket) const {
+         String *buffer = _socket->recv_buffer;
+@@ -1667,9 +1691,17 @@
+     /**
+      * http static file directory
+      */
++#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
++    http_server::StaticConfig static_config_;
++#else
+     std::string document_root;
+-
++#endif
++
++#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
++    http_server::RewriteRules rewrite_rules;
++#else
+     std::shared_ptr<std::vector<http_server::RewriteRule>> rewrite_rules;
++#endif
+     std::mutex lock_;
+     uint32_t max_connection = 0;
+     TimerNode *enable_accept_timer = nullptr;

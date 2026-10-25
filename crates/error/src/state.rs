@@ -1,0 +1,136 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Process-local ignored errors; native code owns the handle and exception boundary.
+use std::alloc::{Layout, alloc, dealloc};
+use std::collections::HashSet;
+
+pub struct IgnoredErrors(HashSet<i32>);
+
+/// Insert idempotently. Invalid output is -1; allocation failure is -2.
+/// A failed first insertion leaves the native handle null.
+/// # Safety
+/// `state` must be writable and contain null or this API's live handle. Access
+/// must be serialized; the original native set also forbids concurrent mutation.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_error_ignore(state: *mut *mut IgnoredErrors, code: i32) -> i32 {
+    let Some(slot) = (unsafe { state.as_mut() }) else {
+        return -1;
+    };
+    if slot.is_null() {
+        let mut values = HashSet::new();
+        if values.try_reserve(1).is_err() {
+            return -2;
+        }
+        values.insert(code);
+        let handle = unsafe { alloc(Layout::new::<IgnoredErrors>()) }.cast::<IgnoredErrors>();
+        if handle.is_null() {
+            return -2;
+        }
+        unsafe { handle.write(IgnoredErrors(values)) };
+        *slot = handle;
+    } else {
+        let values = &mut unsafe { &mut **slot }.0;
+        if !values.contains(&code) {
+            if values.try_reserve(1).is_err() {
+                return -2;
+            }
+            values.insert(code);
+        }
+    }
+    0
+}
+
+/// # Safety
+/// A nonnull handle must be live. Concurrent mutation is forbidden.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_error_is_ignored(state: *const IgnoredErrors, code: i32) -> i32 {
+    i32::from(unsafe { state.as_ref() }.is_some_and(|values| values.0.contains(&code)))
+}
+
+/// # Safety
+/// A nonnull handle must be uniquely owned and released exactly once.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_error_ignored_release(state: *mut IgnoredErrors) {
+    if !state.is_null() {
+        unsafe {
+            state.drop_in_place();
+            dealloc(state.cast(), Layout::new::<IgnoredErrors>());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::alloc::{GlobalAlloc, System};
+    use std::cell::Cell;
+    thread_local! { static FAIL: Cell<usize> = const { Cell::new(0) }; }
+    struct FailureAllocator;
+    unsafe impl GlobalAlloc for FailureAllocator {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            if FAIL
+                .try_with(|flag| {
+                    let left = flag.get();
+                    flag.set(left.saturating_sub(1));
+                    left == 1
+                })
+                .unwrap_or(false)
+            {
+                std::ptr::null_mut()
+            } else {
+                unsafe { System.alloc(layout) }
+            }
+        }
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            unsafe { System.dealloc(ptr, layout) }
+        }
+    }
+    #[global_allocator]
+    static ALLOCATOR: FailureAllocator = FailureAllocator;
+
+    #[test]
+    fn unknown_format_does_not_allocate() {
+        // This test never overlaps another unknown-message test; other tests use
+        // only ignored-state functions. The lookup's mutable buffer is serialized.
+        FAIL.with(|flag| flag.set(1));
+        let message = unsafe { crate::swr_v1_error_strerror(i32::MAX, None) };
+        let untouched = FAIL.with(|flag| flag.replace(0));
+        assert_eq!(untouched, 1);
+        let bytes = unsafe { std::ffi::CStr::from_ptr(message) }.to_bytes();
+        assert_eq!(
+            bytes,
+            if cfg!(target_vendor = "apple") {
+                b"Unknown error: 2147483647".as_slice()
+            } else {
+                b"Unknown error 2147483647".as_slice()
+            }
+        );
+    }
+
+    #[test]
+    fn allocation_failure_preserves_membership_and_publication() {
+        let mut state = std::ptr::null_mut();
+        unsafe {
+            assert_eq!(swr_v1_error_ignore(std::ptr::null_mut(), 1), -1);
+            assert_eq!(swr_v1_error_is_ignored(state, 1), 0);
+            FAIL.with(|flag| flag.set(1));
+            assert_eq!(swr_v1_error_ignore(&mut state, 1), -2);
+            assert!(state.is_null());
+            FAIL.with(|flag| flag.set(2)); // Fail handle allocation after bucket allocation.
+            assert_eq!(swr_v1_error_ignore(&mut state, 1), -2);
+            assert!(state.is_null());
+            assert_eq!(swr_v1_error_ignore(&mut state, 1), 0);
+            // Fill the actual allocation so the next distinct value must reserve.
+            let capacity = (*state).0.capacity();
+            for code in 2..=capacity as i32 {
+                assert_eq!(swr_v1_error_ignore(&mut state, code), 0);
+            }
+            FAIL.with(|flag| flag.set(1));
+            assert_eq!(swr_v1_error_ignore(&mut state, i32::MIN), -2);
+            assert_eq!(swr_v1_error_is_ignored(state, i32::MIN), 0);
+            assert_eq!(swr_v1_error_is_ignored(state, 1), 1);
+            assert_eq!(swr_v1_error_ignore(&mut state, 1), 0);
+            swr_v1_error_ignored_release(state);
+            swr_v1_error_ignored_release(std::ptr::null_mut());
+        }
+    }
+}

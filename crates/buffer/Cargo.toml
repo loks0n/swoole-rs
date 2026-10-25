@@ -1,0 +1,15 @@
+[package]
+name = "swoole-rs-buffer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+itoa = "1.0.18"
+memchr = "2.8.3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.191"
+
+[lib]
+name = "swoole_rs_buffer"
+crate-type = ["rlib"]

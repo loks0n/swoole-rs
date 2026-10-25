@@ -1,0 +1,112 @@
+diff --git a/include/swoole_static_handler.h b/include/swoole_static_handler.h
+--- a/include/swoole_static_handler.h
++++ b/include/swoole_static_handler.h
+@@ -19,9 +19,18 @@
+ #include "swoole_server.h"
+ #include "swoole_http.h"
+ #include "swoole_mime_type.h"
++#ifndef SWOOLE_RS_HTTP
++#error "HTTP inline overlay requires --enable-swoole-rs-http"
++#endif
++#include "swoole_rs_http.h"
++#include <stdexcept>
+
+ #include <string>
+ #include <set>
++
++#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE
++#include "swoole_rs_http_legacy_directory.h"
++#endif
+
+ namespace swoole {
+ namespace http_server {
+@@ -38,7 +47,11 @@
+     std::string request_url;
+     std::string original_url;
+     std::string dir_path;
++#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE
++    LegacyDirectory dir_files;
++#else
+     std::set<std::string> dir_files;
++#endif
+     std::string index_file;
+     typedef struct {
+         off_t offset;
+@@ -77,12 +90,7 @@
+     bool set_filename(const std::string &filename);
+
+     bool catch_error() {
+-        if (last) {
+-            status_code = SW_HTTP_NOT_FOUND;
+-            return true;
+-        } else {
+-            return false;
+-        }
++        return swr_v1_http_static_catch(last, &status_code) == 1;
+     }
+
+     bool has_index_file() const {
+@@ -118,20 +126,33 @@
+     }
+
+     const std::string &get_boundary() {
+-        if (boundary.empty()) {
+-            boundary = std::string(SW_HTTP_SERVER_BOUNDARY_PREKEY);
+-            swoole_random_string(boundary, SW_HTTP_SERVER_BOUNDARY_TOTAL_SIZE - sizeof(SW_HTTP_SERVER_BOUNDARY_PREKEY));
++        static_assert(sizeof(SW_HTTP_SERVER_BOUNDARY_PREKEY) == 15 && SW_HTTP_SERVER_BOUNDARY_TOTAL_SIZE == 39,
++                      "Pinned HTTP boundary policy changed");
++        size_t random_length = 0;
++        if (auto prefix = swr_v1_http_static_boundary(boundary.size(), &random_length)) {
++            boundary = std::string(reinterpret_cast<const char *>(prefix));
++            swoole_random_string(boundary, random_length);
+         }
+         return boundary;
+     }
+
+     const std::string &get_content_type() {
+-        if (tasks.size() > 1) {
+-            content_type = std::string("multipart/byteranges; boundary=") + get_boundary();
++        if (auto prefix = swr_v1_http_static_content_prefix(tasks.size())) {
++            // Keep the original two native argument/growth/exception boundaries.
++            auto combine = [](std::string &&value, const std::string &boundary) {
++                swr_v1_http_proxy_text input{reinterpret_cast<const uint8_t *>(boundary.data()), boundary.size()};
++                // Preserve native string max_size/append exception semantics.
++                if (boundary.size() > value.max_size() - value.size()) value.append(boundary);
++                value.resize(value.size() + boundary.size());
++                size_t length = 0;
++                if (swr_v1_http_static_content_type(&input, reinterpret_cast<uint8_t *>(&value[0]), value.size(), &length) < 0)
++                    throw std::length_error("HTTP content type buffer");
++                return std::move(value);
++            };
++            content_type = combine(std::string(reinterpret_cast<const char *>(prefix)), get_boundary());
+             return content_type;
+-        } else {
+-            return get_mimetype();
+         }
++        return get_mimetype();
+     }
+
+     const std::string &get_mimetype() const {
+@@ -169,15 +190,17 @@
+     }
+
+     bool is_absolute_path() {
+-        return swoole_strnpos(filename, l_filename, SW_STRL("..")) == -1;
++        return swr_v1_http_static_path_check(reinterpret_cast<const uint8_t *>(filename), l_filename, nullptr, 0, 0) == 1;
+     }
+
+     bool is_located_in_document_root() {
++#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
++        return serv->static_files().contains(filename,l_filename);
++#else
+         const std::string &document_root = serv->get_document_root();
+-        const size_t l_document_root = document_root.length();
+-
+-        return l_filename > l_document_root && filename[l_document_root] == '/' &&
+-               swoole_str_starts_with(filename, l_filename, document_root.c_str(), l_document_root);
++        return swr_v1_http_static_path_check(reinterpret_cast<const uint8_t *>(filename), l_filename,
++            reinterpret_cast<const uint8_t *>(document_root.data()), document_root.size(), 1) == 1;
++#endif
+     }
+
+     size_t get_content_length() const {

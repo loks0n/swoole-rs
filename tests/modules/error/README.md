@@ -1,0 +1,102 @@
+# Error handling
+
+Reference: Swoole v6.2.2, commit `8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e`.
+The opt-in error overlay (feature bit 32) replaces first-party message lookup,
+error classification, unknown-message formatting and ignored-error membership
+in `src/core/error.cc`.
+
+The `swr_v1_error_message` ABI in `docs/core-abi-v1.md` and
+`native/include/swoole_rs_error.h` is unchanged: 130 exact static C strings,
+null on misses, no allocation, callbacks or mutable state. Numeric gaps and
+upstream spelling are intentional. Module-local additive APIs and their
+lifetime rules are in `native/error/contract.md`.
+
+Rust behaviour:
+
+- Codes below 500 go to the native OS `strerror` callback; known codes return
+  immutable pointers; other codes are formatted without allocation.
+- Unknown messages use one mutable 32-byte buffer. Apple colon spelling, NUL,
+  trailing bytes and pointer reuse match native. Callers must serialize
+  unknown-buffer calls, as upstream requires; known lookups are thread-safe.
+- Ignored errors use a lazy process-local Rust HashSet behind an opaque native
+  handle: idempotent insert, fallible allocation, copied-on-fork state and
+  destruction match native. Concurrent mutation is excluded; initialized
+  read-only access may be concurrent. Native code throws `bad_alloc` after Rust
+  returns.
+
+Native code keeps the OS call, C++ exception construction/throw, the opaque
+handle holder/destructor and the shared `sw_error` storage. No Zend values, PHP
+callbacks or bailout enter Rust.
+
+## Correctness
+
+```sh
+cargo test -p swoole-rs-error
+cargo clippy -p swoole-rs-error --all-targets -- -D warnings
+python3 tests/modules/error/differential.py --source PINNED_REFERENCE --sanitize --output REPORT
+python3 tests/modules/error/differential.py --source PINNED_REFERENCE --archive PUBLISHED_ARCHIVE --sanitize --output REPORT
+python3 tests/modules/error/differential.py --source PINNED_REFERENCE --allocator-faults --sanitize --output REPORT
+python3 tests/modules/error/php.py --source PINNED_REFERENCE --engine upstream=CONTROL --engine hybrid=CANDIDATE --output REPORT
+```
+
+`differential.py` reads pinned Git objects, applies checksum-verified patches in
+a disposable tree and compiles the complete original and patched `error.cc`;
+only dependency declarations and external buffer storage are stubbed. It checks
+all 130 messages, 10414 numeric inputs, the original exception/state
+assertions, concurrent lookups and reads, 20000 state operations, duplicates,
+signed values, fork isolation and child destruction, plus full callback and
+32-byte unknown-buffer assertions. It also confirms the overlay refuses to
+compile without `SWOOLE_RS_ERROR`.
+
+`--allocator-faults` links the unchanged Rust module with a test global
+allocator against the native facade: bucket, handle and growth allocation
+failures must preserve membership and raise native `bad_alloc` after Rust
+returns; duplicates must not allocate and retries must succeed. It rejects
+`--archive` and benchmark preparation.
+
+`php.py` compares engines on 31221 `swoole_strerror` results, runs the original
+`swoole_strerror.phpt` and `swoole_error_log.phpt` through PHP's official runner,
+and drives 8200 ignored-error insertions, signed/narrowed integers, fork
+before/after initialization, child isolation and shutdown logging (`state.php`).
+It also runs the 43 integers in `php-narrowing-cases.json` through omitted,
+literal-zero, SYSTEM and SWOOLE selectors. It requires pcntl and 64-bit PHP, and
+requires both native-error and Rust-error feature identities so two native
+builds cannot satisfy parity. Compare bytes within one platform: OS messages
+differ across platforms.
+
+`--sanitize` instruments C++ only, not the Rust archive.
+
+## Benchmarks
+
+`python3 tests/modules/error/benchmark_runner_test.py` checks the runner's
+timeout cleanup and report shape with synthetic processes; it does not measure.
+
+Prepare (correctness checks, optimized consumers, state `--check` and
+`--check-latency` with clocks disabled; the destination must not exist):
+
+```sh
+python3 tests/modules/error/differential.py --source PINNED_REFERENCE --archive PUBLISHED_ARCHIVE --prepare-benchmark NEW_DIRECTORY --output REPORT
+```
+
+Measure, without concurrent workloads:
+
+```sh
+python3 tests/modules/error/benchmark.py --prepared PREPARED --output MESSAGE_REPORT
+python3 tests/modules/error/benchmark.py --prepared PREPARED --state --output STATE_REPORT
+python3 tests/modules/error/benchmark.py --prepared PREPARED --state --latency --output STATE_LATENCY_REPORT
+```
+
+The runner verifies the prepared binary hashes, runs seven alternating pairs
+and kills its private process group on timeout. Message workloads: all known
+codes, hot code, system errors and unknown errors. State workloads: mixed-sign
+hit/miss/duplicate at 8 and 4096 entries, fresh insertion at 4096 and 65536
+entries, and four-thread read-only hit/miss at 4096 entries; each sample forks
+from the same empty parent. `--latency` reports p50/p95/p99 of batch-mean
+nanoseconds per operation (about 128 batches), not per-call tail latency.
+
+## Known gaps
+
+- The last published throughput (ten-module build, before full Rust formatting
+  and state) was 0.82x upstream on macOS and 1.04x on Linux. The macOS
+  regression blocks default activation; current state/unknown timings have not
+  been measured.

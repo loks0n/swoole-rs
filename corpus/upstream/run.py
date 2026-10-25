@@ -1,0 +1,328 @@
+#!/usr/bin/env python3
+"""Run pinned original Swoole PHPT cases with PHP's official test runner."""
+import argparse
+from contextlib import contextmanager
+from datetime import datetime, timezone
+import hashlib
+import io
+import json
+import os
+import re
+from pathlib import Path
+import shutil
+import shlex
+import subprocess
+import sys
+import tarfile
+import tempfile
+import time
+import xml.etree.ElementTree as ET
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from tools.build_upstream import COMMIT, VERSION
+from tools.harness import ROOT, parse_engines, run_isolated, write_report
+
+# Only local upstream test helpers are autoloaded. Curated cases must not need
+# Composer packages or external services. Test files and assertions are untouched.
+AUTOLOAD = r'''<?php
+spl_autoload_register(static function (string $class): void {
+    $prefix = 'SwooleTest\\';
+    if (str_starts_with($class, $prefix)) {
+        $file = __DIR__ . '/../src/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+        if (is_file($file)) { require $file; }
+    }
+});
+'''
+
+
+# Audited pinned cases use only process-local state, with no listeners or shared files.
+# New cases stay isolated until explicitly reviewed here.
+PARALLEL_SAFE = frozenset(['tests/swoole_channel_coro/basic.phpt', 'tests/swoole_channel_coro/close.phpt', 'tests/swoole_channel_coro/pop_after_close.phpt', 'tests/swoole_channel_coro/chan_stats.phpt', 'tests/swoole_channel_coro/type.phpt', 'tests/swoole_channel_coro/push_close1.phpt', 'tests/swoole_table/int.phpt', 'tests/swoole_table/negative.phpt', 'tests/swoole_table/del.phpt', 'tests/swoole_table/set_after_del.phpt', 'tests/swoole_table/incr_after_del.phpt', 'tests/swoole_table/type_conv.phpt', 'tests/swoole_table/key_value.phpt', 'tests/swoole_table/foreach.phpt', 'tests/swoole_coroutine/empty.phpt', 'tests/swoole_coroutine/current.phpt', 'tests/swoole_coroutine/getPcid.phpt', 'tests/swoole_coroutine/defer/defer.phpt', 'tests/swoole_coroutine/callback.phpt', 'tests/swoole_coroutine/array_walk.phpt', 'tests/swoole_coroutine/eval.phpt', 'tests/swoole_atomic/atomic.phpt', 'tests/swoole_http_server/create_request.phpt', 'tests/swoole_websocket_server/pack.phpt'])
+
+
+@contextmanager
+def timed_phase(report, phase):
+    """Add wall time without changing correctness outcomes or execution policy."""
+    started = time.monotonic()
+    try:
+        yield
+    finally:
+        timings = report.setdefault('timings_seconds', {})
+        timings[phase] = round(timings.get(phase, 0) + time.monotonic() - started, 4)
+
+
+def batches(cases, isolate=False):
+    safe = [case for case in cases if case['path'] in PARALLEL_SAFE]
+    return ([safe] if safe and not isolate else []) + [
+        [case] for case in cases if isolate or case['path'] not in PARALLEL_SAFE]
+
+
+def prepare(source, destination, cases, support_files=()):
+    actual = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
+    if actual != COMMIT:
+        raise ValueError(f'Upstream source is {actual}; expected {COMMIT}')
+    for item in support_files:
+        path = Path(item['path'])
+        if not item['path'] or path.is_absolute() or '..' in path.parts or item['path'].startswith('-') or path == Path('.'):
+            raise ValueError(f'Unsafe support file: {item["path"]}')
+    paths = ['LICENSE', 'tools/bootstrap.php', 'tests/include', *[c['path'] for c in cases]]
+    archive = subprocess.check_output(['git', '--literal-pathspecs', '-C', str(source), 'archive', COMMIT, '--', *paths])
+    with tarfile.open(fileobj=io.BytesIO(archive)) as bundle:
+        for member in bundle:
+            if not member.isfile():
+                continue
+            relative = Path(member.name)
+            if relative.is_absolute() or '..' in relative.parts:
+                raise ValueError(f'Unsafe archive member: {relative}')
+            target = destination / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(bundle.extractfile(member).read())
+    # Some real fixtures are export-ignore: read exact pinned blobs instead of
+    # trusting git archive to include every explicitly requested support file.
+    for item in support_files:
+        data = subprocess.check_output(['git', '-C', str(source), 'cat-file', 'blob', f'{COMMIT}:{item["path"]}'])
+        target = destination / item['path']
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    # phpize copies PHP's official runner from the matching PHP installation.
+    # Swoole's custom runner can kill unrelated listeners after bind failures.
+    runner = source / 'run-tests.php'
+    if not runner.is_file():
+        raise ValueError('PHP PHPT runner missing; run tools/build_upstream.py (phpize) first')
+    shutil.copy2(runner, destination / 'run-tests.php')
+    for case in [*cases, *support_files]:
+        digest = hashlib.sha256((destination / case['path']).read_bytes()).hexdigest()
+        if digest != case['sha256']:
+            raise ValueError(f'Upstream test checksum mismatch: {case["path"]}')
+    # The full-suite bootstrap starts a daemon under HOME unrelated to these cases.
+    # Adapt only that support setup, never PHPT code, assertions, or expectations.
+    bootstrap = destination / 'tests/include/bootstrap.php'
+    original = bootstrap.read_text()
+    remote_setup = "// Run default remote object server\nswoole_library_set_option('default_remote_object_server_worker_num', 2);\nswoole_init_default_remote_object_server();\n"
+    if original.count(remote_setup) != 1:
+        raise ValueError('Upstream bootstrap remote setup changed; review adapter')
+    bootstrap.write_text(original.replace(remote_setup, '// Remote-object service excluded from this isolated selection.\n'))
+    vendor = destination / 'tests/include/lib/vendor'
+    vendor.mkdir(parents=True)
+    (vendor / 'autoload.php').write_text(AUTOLOAD)
+
+
+def run_cases(engine, cases, sandbox, artifacts, timeout, jobs, *, offline=True, runner_ini=(), match_child_php=False):
+    sandbox = sandbox.resolve()
+    artifacts.mkdir(parents=True, exist_ok=True)
+    status_file = artifacts / 'status.txt'
+    status_file.unlink(missing_ok=True)
+    junit = artifacts / 'junit.xml'
+    command = engine.command(sandbox / 'run-tests.php', '-q', '-n', '-p', shutil.which(engine.php) or engine.php,
+                             '--no-color', '--set-timeout', str(timeout),
+                             '--show-out', '--show-diff', '-W', status_file)
+    online_flag = False
+    if offline:
+        command.append('--offline')
+    else:
+        # PHP runner flags differ by installation; inspect the actual copied runner.
+        runner = sandbox / 'run-tests.php'
+        online_flag = bool(re.search(r"case\s+['\"]--online['\"]\s*:", runner.read_text()))
+        if online_flag:
+            command.append('--online')
+    if jobs > 1 and len(cases) > 1:
+        command += [f'-j{jobs}']
+    for extension in (*engine.php_extensions, str(engine.extension)):
+        command += ['-d', f'extension={extension}']
+    for setting in runner_ini:
+        command += ['-d', setting]
+    command += ['-d', 'zend.assertions=1', *[str(sandbox / case['path']) for case in cases]]
+    env = {**os.environ, 'PHPT': '1', 'NO_INTERACTION': '1', 'REPORT_EXIT_STATUS': '1',
+           'TEST_PHP_EXECUTABLE': shutil.which(engine.php) or engine.php,
+           'TEST_PHP_JUNIT': str(junit), 'HOME': str(sandbox / 'home'), 'TMPDIR': str(sandbox / 'tmp')}
+    if not offline:
+        env['SKIP_ONLINE_TESTS'] = '0'
+    child_selector = None
+    if match_child_php:
+        php = shutil.which(engine.php)
+        if not php:
+            raise ValueError('Cannot resolve child PHP executable: ' + engine.php)
+        argv = [php, *engine.command()[1:]]
+        for setting in runner_ini:
+            argv += ['-d', setting]
+        argv += ['-d', 'zend.assertions=1']
+        directory = Path(tempfile.mkdtemp(prefix='child-php-', dir=artifacts.resolve()))
+        wrapper = directory / 'php'
+        selector = ('import os, shlex, sys\n'
+                    f'php = {php!r}\nfallback = {argv[1:]!r}\n'
+                    'extra = os.environ.get("TEST_PHP_EXTRA_ARGS")\n'
+                    'options = shlex.split(extra) if extra is not None else fallback\n'
+                    'os.execv(php, [php, *options, *sys.argv[1:]])\n')
+        wrapper.write_text('#!/bin/sh\nexec ' + shlex.join([sys.executable, '-c', selector]) + ' "$@"\n')
+        wrapper.chmod(0o755)
+        command[0] = php  # The official runner itself must not recurse through the selector.
+        env['PATH'] = str(directory) + os.pathsep + env.get('PATH', '')
+        child_selector = {'path': str(wrapper), 'sha256': hashlib.sha256(wrapper.read_bytes()).hexdigest(),
+                          'fallback_exec_argv': argv, 'argument_policy': 'Use official TEST_PHP_EXTRA_ARGS when present, parsed as argv without shell evaluation; otherwise engine defaults', 'scope': 'Explicit bare php children only; absolute PHP paths are unchanged'}
+    started = time.monotonic()
+    try:
+        result = run_isolated(command, cwd=sandbox, env=env,
+                              timeout=((len(cases) + jobs - 1) // jobs) * (timeout + 5) + 15)
+        output = result.stdout + result.stderr
+        exit_code = result.returncode
+    except subprocess.TimeoutExpired as error:
+        output = error.stdout or ''
+        if isinstance(output, bytes):
+            output = output.decode(errors='replace')
+        output += '\nOfficial runner exceeded its isolated group deadline'
+        exit_code = 124
+    runner_seconds = round(time.monotonic() - started, 4)
+    receipts_started = time.monotonic()
+    (artifacts / 'runner.log').write_text(output)
+    expected = {str(sandbox / case['path']): case['path'] for case in cases}
+    statuses = {}
+    invalid = False
+    for line in status_file.read_text().splitlines() if status_file.exists() else []:
+        fields = line.split(maxsplit=1)
+        if len(fields) != 2 or fields[1] not in expected or fields[1] in statuses:
+            invalid = True
+        else:
+            statuses[fields[1]] = fields[0]
+    times = {}
+    if junit.exists():
+        try:
+            times = {node.attrib['name'].split(' (', 1)[0]: float(node.attrib['time'])
+                     for node in ET.parse(junit).iter('testcase')}
+        except (ET.ParseError, KeyError, ValueError):
+            pass
+    rows = {}
+    for case in cases:
+        path = case['path']
+        upstream_status = statuses.get(str(sandbox / path), 'MISSING')
+        status = {'PASSED': 'passed', 'SKIPPED': 'skipped'}.get(upstream_status, 'failed')
+        # A normal batch failure may coexist with genuine passes. An unexplained
+        # runner error, duplicate or foreign ledger result can never bless a pass.
+        if invalid or exit_code and all(value == 'PASSED' for value in statuses.values()):
+            status = 'failed'
+        artifact = artifacts / Path(path).with_suffix('')
+        artifact.mkdir(parents=True, exist_ok=True)
+        for suffix in ['out', 'exp', 'diff', 'log', 'php', 'sh']:
+            generated = (sandbox / path).with_suffix('.' + suffix)
+            if generated.is_file():
+                shutil.copy2(generated, artifact / generated.name)
+        row = {'status': status, 'upstream_status': upstream_status, 'exit_code': exit_code,
+               'artifacts': str(artifact), 'runner_log': str(artifacts / 'runner.log'),
+               'seconds': round(time.monotonic() - started, 4) if len(cases) == 1 else times.get(path),
+               'timing_basis': 'isolated_wall_clock' if len(cases) == 1 else 'official_runner_test_execution',
+               'official_runner_test_seconds': times.get(path),
+               'isolated_runner_seconds': runner_seconds if len(cases) == 1 else None}
+        if status != 'passed':
+            diff = artifact / Path(path).with_suffix('.diff').name
+            row['detail'] = ('Invalid/duplicate result ledger\n' if invalid else '') + (diff.read_text() if diff.exists() else output)[-6000:]
+        rows[path] = row
+    return rows, {'child_php_selector': child_selector, 'runner_ini': list(runner_ini), 'offline': offline, 'online_flag_supported': online_flag if not offline else None, 'cases': [case['path'] for case in cases], 'jobs': jobs if len(cases) > 1 else 1,
+                  'seconds': round(time.monotonic() - started, 4), 'exit_code': exit_code,
+                  'timings_seconds': {'runner': runner_seconds,
+                                      'receipts_and_artifacts': round(time.monotonic() - receipts_started, 4)}}
+
+
+def save_report(path, report):
+    """Publish checkpoints atomically so concurrent readers never see half a JSON."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name + '.', delete=False) as handle:
+        temporary = Path(handle.name)
+    try:
+        write_report(temporary, report)
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def record_result(report, engine, case, result):
+    row = {'engine': engine.name, 'test': case['path'], 'module': case['module'], 'sha256': case['sha256'], **result}
+    report['results'].append(row)
+    print(f'{engine.name:10} {case["path"]:65} {row["status"]}', flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--engine', action='append', required=True, help='NAME=/path/to/extension; repeat to compare')
+    parser.add_argument('--php', default='php')
+    parser.add_argument('--php-extension', action='append', default=[])
+    parser.add_argument('--manifest', type=Path, default=Path(__file__).with_name('manifest.json'),
+                        help='Pinned original-test selection; assertions and capability checks remain unchanged')
+    parser.add_argument('--source', type=Path, default=ROOT / 'target/upstream/src')
+    parser.add_argument('--module', action='append', help='Only select this migration subsystem; repeat as needed')
+    parser.add_argument('--case', action='append', help='Exact registered PHPT path; repeatable')
+    parser.add_argument('--jobs', type=int, default=1, help='Official runner workers for explicitly audited independent cases')
+    parser.add_argument('--isolate-cases', action='store_true', help='Original one-runner/process-group-per-case mode')
+    parser.add_argument('--require-all', action='store_true', help='Also fail on unsupported or upstream-skipped cases')
+    parser.add_argument('--match-child-php', action='store_true', help='Explicitly match bare php child commands to this engine; absolute PHP paths are unchanged')
+    parser.add_argument('--timeout', type=int, default=15)
+    parser.add_argument('--output', type=Path, default=ROOT / 'target/reports/upstream-phpt.json')
+    args = parser.parse_args()
+    if args.timeout < 1 or args.jobs < 1:
+        parser.error('--timeout and --jobs must be positive')
+    manifest_bytes = args.manifest.read_bytes()
+    manifest = json.loads(manifest_bytes)
+    support_files = manifest.get('support_files', [])
+    unknown = set(args.module or []) - {case['module'] for case in manifest['tests']}
+    if unknown:
+        parser.error(f'Unknown modules: {", ".join(sorted(unknown))}')
+    cases = [case for case in manifest['tests'] if not args.module or case['module'] in args.module]
+    unknown_cases = set(args.case or []) - {case['path'] for case in cases}
+    if unknown_cases:
+        parser.error(f'Unknown or unselected PHPT paths: {sorted(unknown_cases)}')
+    cases = [case for case in cases if not args.case or case['path'] in args.case]
+    if not cases:
+        parser.error('No tests selected')
+    if manifest['commit'] != COMMIT:
+        parser.error('PHPT manifest and reference build pins differ')
+    if not args.source.is_dir():
+        parser.error('Pinned upstream source missing; run python3 tools/build_upstream.py first')
+    engines = parse_engines(args.engine, args.php, args.php_extension)
+    report = {'schema_version': 1, 'created_utc': datetime.now(timezone.utc).isoformat(), 'upstream': {'version': VERSION, 'commit': COMMIT, 'manifest': str(args.manifest.resolve()), 'manifest_sha256': hashlib.sha256(manifest_bytes).hexdigest(), 'support_files': support_files}, 'engines': [], 'results': [], 'batches': [], 'engine_timings': [], 'timings_seconds': {}, 'execution_status': 'running'}
+    try:
+        save_report(args.output, report)
+        with tempfile.TemporaryDirectory(prefix='swoole-phpt-') as temporary:
+            sandbox = Path(temporary)
+            with timed_phase(report, 'prepare'):
+                prepare(args.source, sandbox, cases, support_files=support_files)
+                (sandbox / 'home').mkdir()
+                (sandbox / 'tmp').mkdir()
+                report['upstream']['support_tree'] = subprocess.check_output(['git', '-C', str(args.source), 'rev-parse', f'{COMMIT}:tests/include'], text=True).strip()
+                report['upstream']['support_adapter'] = 'Remove unrelated remote-object daemon setup; local SwooleTest PSR-4 autoload only'
+                report['upstream']['effective_bootstrap_sha256'] = hashlib.sha256((sandbox / 'tests/include/bootstrap.php').read_bytes()).hexdigest()
+                report['upstream']['runner_origin'] = 'PHP official runner supplied by phpize; not Swoole custom tests/run-tests'
+                report['upstream']['runner_sha256'] = hashlib.sha256((sandbox / 'run-tests.php').read_bytes()).hexdigest()
+            for engine in engines:
+                engine_timing = {'engine': engine.name, 'timings_seconds': {}}
+                report['engine_timings'].append(engine_timing)
+                with timed_phase(engine_timing, 'metadata'):
+                    metadata = engine.metadata()
+                report['engines'].append(metadata)
+                with timed_phase(engine_timing, 'capability_selection'):
+                    runnable = []
+                    for case in cases:
+                        missing = sorted(set(case['requires']) - set(metadata['capabilities']))
+                        if missing:
+                            record_result(report, engine, case, {'status': 'unsupported',
+                                          'detail': f'missing capabilities: {", ".join(missing)}', 'seconds': 0})
+                        else:
+                            runnable.append(case)
+                save_report(args.output, report)
+                for group in batches(runnable, args.isolate_cases):
+                    artifact = args.output.resolve().parent / (args.output.stem + '-artifacts') / engine.name / f'batch-{len(report["batches"]):03}'
+                    with timed_phase(engine_timing, 'cases'):
+                        results, timing = run_cases(engine, group, sandbox, artifact, args.timeout, args.jobs,
+                                                    **({'match_child_php': True} if args.match_child_php else {}))
+                    report['batches'].append({'engine': engine.name, **timing})
+                    for case in group:
+                        record_result(report, engine, case, results[case['path']])
+                    save_report(args.output, report)
+        report['execution_status'] = 'complete'
+    finally:
+        if report['execution_status'] == 'running':
+            report['execution_status'] = 'interrupted'
+        save_report(args.output, report)
+    return int(any(row['status'] == 'failed' or args.require_all and row['status'] != 'passed' for row in report['results']))
+
+
+if __name__ == '__main__':
+    sys.exit(main())

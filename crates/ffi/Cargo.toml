@@ -1,0 +1,77 @@
+[package]
+name = "swoole-rs-ffi"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "swoole_rs_ffi"
+crate-type = ["staticlib"]
+
+[features]
+default = []
+websocket = ["dep:swoole-rs-websocket"]
+buffer = ["dep:swoole-rs-buffer"]
+timer = ["dep:swoole-rs-timer"]
+base64 = ["dep:swoole-rs-base64"]
+crc32 = ["dep:swoole-rs-crc32"]
+error = ["dep:swoole-rs-error"]
+
+protocols = ["dep:swoole-rs-protocols"]
+
+memory = ["dep:swoole-rs-memory"]
+
+http = ["dep:swoole-rs-http"]
+utilities = ["dep:swoole-rs-utilities"]
+locks = ["dep:swoole-rs-locks"]
+wrappers = ["dep:swoole-rs-wrappers"]
+framing = ["dep:swoole-rs-framing"]
+
+reactor = ["dep:swoole-rs-reactor"]
+
+corebase = ["dep:swoole-rs-corebase"]
+
+coroutine = ["dep:swoole-rs-coroutine"]
+
+hooks = ["dep:swoole-rs-hooks"]
+
+ossupport = ["dep:swoole-rs-ossupport"]
+tls = ["dep:swoole-rs-tls"]
+process = ["dep:swoole-rs-process"]
+clients = ["dep:swoole-rs-clients"]
+httpbindings = ["dep:swoole-rs-httpbindings"]
+http2 = ["dep:swoole-rs-http2"]
+ports = ["dep:swoole-rs-ports"]
+phphelpers = ["dep:swoole-rs-phphelpers"]
+phpcollections = ["dep:swoole-rs-phpcollections"]
+phpevents = ["dep:swoole-rs-phpevents"]
+phpcoroutines = ["dep:swoole-rs-phpcoroutines"]
+
+[dependencies]
+swoole-rs-websocket = { path = "../websocket", optional = true }
+swoole-rs-buffer = { path = "../buffer", optional = true }
+swoole-rs-timer = { path = "../timer", optional = true }
+swoole-rs-base64 = { path = "../base64", optional = true }
+swoole-rs-crc32 = { path = "../crc32", optional = true }
+swoole-rs-error = { path = "../error", optional = true }
+swoole-rs-protocols = { path = "../protocols", optional = true }
+swoole-rs-memory = { path = "../memory", optional = true }
+swoole-rs-http = { path = "../http", optional = true }
+swoole-rs-utilities = { path = "../utilities", optional = true }
+swoole-rs-locks = { path = "../locks", optional = true }
+swoole-rs-wrappers = { path = "../wrappers", optional = true }
+swoole-rs-framing = { path = "../framing", optional = true }
+swoole-rs-reactor = { path = "../reactor", optional = true }
+swoole-rs-corebase = { path = "../corebase", optional = true }
+swoole-rs-coroutine = { path = "../coroutine", optional = true }
+swoole-rs-hooks = { path = "../hooks", optional = true }
+swoole-rs-ossupport = { path = "../ossupport", optional = true }
+swoole-rs-tls = { path = "../tls", optional = true }
+swoole-rs-process = { path = "../process", optional = true }
+swoole-rs-clients = { path = "../clients", optional = true }
+swoole-rs-httpbindings = { path = "../httpbindings", optional = true }
+swoole-rs-http2 = { path = "../http2", optional = true }
+swoole-rs-ports = { path = "../ports", optional = true }
+swoole-rs-phphelpers = { path = "../phphelpers", optional = true }
+swoole-rs-phpcollections = { path = "../phpcollections", optional = true }
+swoole-rs-phpevents = { path = "../phpevents", optional = true }
+swoole-rs-phpcoroutines = { path = "../phpcoroutines", optional = true }

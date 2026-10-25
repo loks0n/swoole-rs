@@ -1,0 +1,58 @@
+{
+  "upstream_commit": "8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e",
+  "patches": [
+    {
+      "path": "0001-readiness-policy.patch",
+      "sha256": "1cb9678ad8f7e115b69707dce6c85b989b7bcdcc9db673d9288dad144b21be28",
+      "upstream_paths": [
+        "include/swoole_reactor.h",
+        "src/reactor/poll.cc",
+        "src/reactor/epoll.cc",
+        "src/reactor/kqueue.cc"
+      ]
+    },
+    {
+      "path": "0002-write-policy.patch",
+      "sha256": "f99348ba59b849d052c97556edf9a13d51d3d248b7608e85d952d6d2d17779f5",
+      "upstream_paths": [
+        "src/reactor/base.cc"
+      ]
+    },
+    {
+      "path": "0003-stream-framing.patch",
+      "sha256": "f2e31009f41a6eaf778ecc7fd0058ad80530d75fe146da6cd973bd95379f72d8",
+      "upstream_paths": [
+        "src/network/stream.cc"
+      ]
+    },
+    {
+      "path": "0005-iov-owned.patch",
+      "sha256": "f8cca9ae885689f03947bbab0ad31bab4744f67cb86aa5f615349f66dd1463b9",
+      "upstream_paths": [
+        "include/swoole_socket.h"
+      ]
+    },
+    {
+      "path": "0004-socket-output.patch",
+      "sha256": "fd482ad919e8043756edca0a6efe6ff48d7d385b5c2467f6297e30d392f154df",
+      "upstream_paths": [
+        "src/network/socket.cc"
+      ]
+    },
+    {
+      "path": "0006-socket-registry-admin.patch",
+      "sha256": "248d7e4bfc07d964db93d264c3d610b19b9269a34f9a41fe95076c93ec98864b",
+      "upstream_paths": [
+        "ext-src/swoole_admin_server.cc"
+      ]
+    },
+    {
+      "path": "0007-server-buffer-typed.patch",
+      "sha256": "95be56bcf5f42a13e520c85b0e0b11350ad578a3dc219626c1877ace2eb91bf4",
+      "upstream_paths": [
+        "src/server/base.cc",
+        "src/server/reactor_thread.cc"
+      ]
+    }
+  ]
+}

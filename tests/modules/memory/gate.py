@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""Pinned native versus Rust-backed collection facades, real runtime dependencies."""
+import argparse
+from collections import Counter
+from datetime import datetime, timezone
+import hashlib
+import io
+import json
+import os
+import re
+from pathlib import Path
+import shlex
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from tools.harness import ROOT, run_isolated, write_report
+from tools.build_hybrid import apply_patch_verified
+
+PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+SOURCES = ['src/core/heap.cc', 'src/core/channel.cc', 'src/memory/fixed_pool.cc', 'src/memory/global_memory.cc', 'src/memory/ring_buffer.cc', 'src/memory/shared_memory.cc', 'src/memory/table.cc']
+
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def apply_overlays(tree, entries):
+    return [apply_patch_verified(tree, ROOT / 'migration/patches/memory' / entry['path'],
+                                 entry['upstream_paths'], entry['sha256']) for entry in entries]
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--source', type=Path, default=ROOT / 'target/upstream/src')
+    parser.add_argument('--extension', type=Path, required=True)
+    parser.add_argument('--php', default='php')
+    parser.add_argument('--php-extension', action='append', default=[])
+    parser.add_argument('--sanitize', action='store_true')
+    parser.add_argument('--archive', type=Path, help='Reuse exact prebuilt archive; source correspondence/Rust unit tests are caller responsibility')
+    parser.add_argument('--output', default=str(ROOT / 'target/reports/memory-gate.json'))
+    parser.add_argument('--prepare-benchmark', type=Path, help='Save optimized unsanitized binaries and hash-checked timing recipe after correctness passes; does not measure')
+    args = parser.parse_args()
+    if args.prepare_benchmark and args.sanitize:
+        parser.error('Benchmark preparation requires an unsanitized optimized build')
+    prepared = {}
+    report = {'created_utc': datetime.now(timezone.utc).isoformat(), 'passed': False, 'upstream_commit': PIN,
+              'scope': 'Original native algorithms versus actual Rust-backed fixed/global/ring pools, heap, channel, mapping and table facades; native runtime allocation/locking/pipe dependencies supplied by pinned Swoole PHP extension. New assertions, not original GoogleTests. C++ sanitizers instrument only the Rust-backed native probe/facades, not Rust or PHP.',
+              'commands': [], 'results': []}
+    try:
+        if sys.platform != 'darwin' and not sys.platform.startswith('linux'):
+            raise ValueError('Supported native hosts: macOS and Linux')
+        linux = sys.platform.startswith('linux')
+        extension = args.extension.resolve(strict=True)
+        if subprocess.check_output(['git', '-C', str(args.source), 'rev-parse', 'HEAD'], text=True).strip() != PIN:
+            raise ValueError('Reference pin mismatch')
+        report['extension'] = str(extension)
+        owned = [*sorted((ROOT / 'crates/memory').rglob('*.rs')),
+                 *sorted(Path(__file__).parent.glob('*.rs')), *sorted((ROOT / 'native/memory').glob('*.h')),
+                 Path(__file__), Path(__file__).with_name('probe.cc'), Path(__file__).with_name('benchmark.cc')]
+        source_hashes = {str(path.relative_to(ROOT)): sha(path) for path in owned}
+        def run(command, timeout=90, env=None):
+            result = run_isolated(command, cwd=ROOT, timeout=timeout, env=env)
+            report['commands'].append({'argv': command, 'exit_code': result.returncode,
+                                       'stdout': result.stdout, 'stderr': result.stderr})
+            if result.returncode:
+                raise RuntimeError(f'command failed ({result.returncode}): {result.stdout}{result.stderr}')
+            return result
+        with tempfile.TemporaryDirectory(prefix='swr-memory-gate-') as temporary:
+            directory = Path(temporary)
+            if args.archive is None:
+                # Real crate, private detached manifest until integrator registers workspace.
+                manifest = directory / 'Cargo.toml'
+                manifest.write_text('[package]\nname="swoole-rs-memory"\nversion="0.1.0"\nedition="2024"\n[workspace]\n[lib]\nname="swoole_rs_memory"\ncrate-type=["rlib","staticlib"]\npath=' + json.dumps(str(ROOT / 'crates/memory/src/lib.rs')) + '\n')
+                target = ROOT / 'target/memory-cargo'
+                cargo = ['cargo', '--manifest-path', str(manifest), '--target-dir', str(target)]
+                run(['cargo', 'test', *cargo[1:]])
+                run(['cargo', 'build', '--release', *cargo[1:]])
+                archive = target / 'release/libswoole_rs_memory.a'
+                report['rust_tests'] = 'run from current source in this gate'
+                report['archive_source_identity'] = 'built from current recorded source'
+            else:
+                archive = args.archive.resolve(strict=True)
+                report['rust_tests'] = 'not run: prebuilt archive selected'
+                report['archive_source_identity'] = 'caller must verify prebuilt archive/source correspondence'
+            report['archive'] = str(archive)
+            overlay = json.loads((ROOT / 'migration/patches/memory/manifest.json').read_text())
+            report['patch_manifest'] = overlay
+            if overlay['upstream_commit'] != PIN:
+                raise ValueError('Overlay pin mismatch')
+            raw = subprocess.check_output(['git', '-C', str(args.source), 'archive', PIN, 'include', *SOURCES])
+            for variant in ['upstream', 'rust']:
+                tree = directory / variant
+                tree.mkdir()
+                with tarfile.open(fileobj=io.BytesIO(raw)) as bundle:
+                    for member in bundle:
+                        if member.isfile():
+                            path = tree / member.name
+                            path.parent.mkdir(parents=True, exist_ok=True)
+                            path.write_bytes(bundle.extractfile(member).read())
+                if variant == 'rust':
+                    report['patch_applications'] = apply_overlays(tree, overlay['patches'])
+                    for header in sorted((ROOT / 'native/memory').glob('*.h')):
+                        shutil.copy2(header, tree / 'include')
+                    # Preserve every original assertion expression/count. Rust status
+                    # checks add validation; they cannot substitute for native witnesses.
+                    assertions = {}
+                    for source in sorted({*SOURCES, *[path for patch in overlay['patches'] for path in patch['upstream_paths']]}):
+                        def expressions(path):
+                            return Counter(re.sub(r'\s+', '', value) for value in re.findall(r'\bassert\s*\((.*?)\);', path.read_text(), re.S))
+                        original = expressions(directory / 'upstream' / source)
+                        selected = expressions(tree / source)
+                        missing = original - selected
+                        if missing:
+                            raise ValueError(f'Original assertions removed from {source}: {dict(missing)}')
+                        assertions[source] = sum(original.values())
+                    report['native_assertions_preserved'] = assertions
+                compiler = shlex.split(os.environ.get('CXX', 'c++'))
+                if variant == 'rust':
+                    guard = tree / 'guard.cc'
+                    guard.write_text('#include "swoole_heap.h"\n')
+                    rejected = run_isolated(compiler + ['-std=c++17', '-I' + str(tree / 'include'), '-fsyntax-only', str(guard)], cwd=ROOT, timeout=15)
+                    report['feature_guard'] = {'exit_code': rejected.returncode, 'stderr': rejected.stderr}
+                    if rejected.returncode == 0 or 'Memory overlay requires --enable-swoole-rs-memory' not in rejected.stderr:
+                        raise ValueError('Selected overlay did not reject disabled memory feature')
+                    configured = tree / 'configured-memory'
+                    configured.mkdir()
+                    (configured / 'config.h').write_text('#define SWOOLE_RS_MEMORY 1\n')
+                    command = compiler + ['-std=c++17', '-DHAVE_CONFIG_H', '-I' + str(configured),
+                        '-I' + str(ROOT / 'native/memory'), '-I' + str(tree / 'include'), '-fsyntax-only', str(guard)]
+                    accepted = run_isolated(command, cwd=ROOT, timeout=15)
+                    report['configured_feature_guard'] = {'command': command, 'exit_code': accepted.returncode, 'stderr': accepted.stderr}
+                    if accepted.returncode:
+                        raise ValueError('Heap header failed when memory feature is supplied only by config.h')
+                binary = tree / ('probe.so' if linux else 'probe.dylib')
+                command = compiler + ['-std=c++17', '-O2', '-g', '-fvisibility=hidden', '-I' + str(tree / 'include')]
+                command += shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
+                command += ['-shared', '-fPIC', '-Wl,-Bsymbolic'] if linux else ['-dynamiclib', '-undefined', 'dynamic_lookup']
+                command += [*[str(tree / source) for source in SOURCES], str(Path(__file__).with_name('probe.cc')), str(Path(__file__).with_name('benchmark.cc'))]
+                environment = dict(os.environ)
+                if variant == 'rust':
+                    command += ['-DSWOOLE_RS_MEMORY=1', str(archive)]
+                    if linux:
+                        command += ['-ldl', '-lpthread', '-lrt', '-lutil', '-lm']
+                    if args.sanitize:
+                        command += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer']
+                        environment['ASAN_OPTIONS'] = 'detect_leaks=0:halt_on_error=1:abort_on_error=0:exitcode=86'
+                        environment['UBSAN_OPTIONS'] = 'halt_on_error=1:print_stacktrace=1:exitcode=87'
+                        if not linux:
+                            runtime = subprocess.check_output(compiler + ['--print-file-name=libclang_rt.asan_osx_dynamic.dylib'], text=True).strip()
+                            environment['DYLD_INSERT_LIBRARIES'] = runtime
+                run(command + ['-o', str(binary)])
+                php_extensions = args.php_extension or (['ffi'] if linux else [])
+                command = [args.php, '-n', *[arg for module in php_extensions for arg in ['-d', 'extension=' + module]],
+                           '-d', 'extension=' + str(extension), '-d', 'ffi.enable=1', '-r',
+                           '$f=FFI::cdef("int swr_memory_probe(void);", $argv[1]); exit($f->swr_memory_probe());', str(binary)]
+                result = run(command, timeout=30, env=environment)
+                observations = [json.loads(line) for line in result.stdout.splitlines() if line.startswith('{')]
+                if len(observations) != 1 or not observations[0].get('passed'):
+                    raise ValueError('Missing unique native observations')
+                preflight = command.copy()
+                preflight[preflight.index('-r') + 1] = '$f=FFI::cdef("int swr_memory_construction_check(void);", $argv[1]); exit($f->swr_memory_construction_check());'
+                checked = run(preflight, timeout=15, env=environment)
+                values = [json.loads(line) for line in checked.stdout.splitlines() if line.startswith('{')]
+                if len(values) != 1 or values[0] != {'passed': True, 'owned_constructions': 5,
+                        'borrowed_constructions': 5, 'checksum': 900, 'timed': False}:
+                    raise ValueError('Missing exact untimed constructor observations')
+                report.setdefault('constructor_preflight', {})[variant] = values[0]
+                column_check = command.copy()
+                column_check[column_check.index('-r') + 1] = '$f=FFI::cdef("int swr_memory_columns_check(void);", $argv[1]); exit($f->swr_memory_columns_check());'
+                checked_columns = run(column_check, timeout=15, env=environment)
+                column_values = [json.loads(line) for line in checked_columns.stdout.splitlines() if line.startswith('{')]
+                if len(column_values) != 1 or column_values[0] != {'passed': True, 'schemas': 3, 'columns_per_schema': 17,
+                        'cursor_columns': 65, 'cursor_passes': 5, 'checksum': 11184, 'name_schemas': 2, 'name_passes': 2, 'name_checksum': 12300970927948216643, 'timed': False}:
+                    raise ValueError('Missing exact untimed column lifecycle/traversal observations')
+                report.setdefault('column_preflight', {})[variant] = column_values[0]
+                report['results'].append({'variant': variant, 'observations': observations[0]})
+                if args.prepare_benchmark:
+                    destination = args.prepare_benchmark.resolve()
+                    destination.mkdir(parents=True, exist_ok=True)
+                    stored = destination / (variant + binary.suffix)
+                    shutil.copy2(binary, stored)
+                    timing_command = command.copy()
+                    timing_command[-1] = str(stored)
+                    timing_command[timing_command.index('-r') + 1] = '$f=FFI::cdef("int swr_memory_benchmark(unsigned int);", $argv[1]); exit($f->swr_memory_benchmark((int)$argv[2]));'
+                    prepared[variant] = {'command': timing_command, 'binary': str(stored), 'sha256': sha(stored)}
+                if variant == 'rust':
+                    # The old realloc copies its mapping header size as payload,
+                    # so shrinking can overrun. Keep this explicitly Rust-only.
+                    additional = []
+                    for function in ['swr_memory_mapping_probe', 'swr_memory_odd_table_probe']:
+                        targeted = command.copy()
+                        targeted[targeted.index('-r') + 1] = '$f=FFI::cdef("int ' + function + '(void);", $argv[1]); exit($f->' + function + '());'
+                        regression = run(targeted, timeout=15, env=environment)
+                        values = [json.loads(line) for line in regression.stdout.splitlines() if line.startswith('{')]
+                        if len(values) != 1 or not values[0].get('passed'):
+                            raise ValueError('Missing bounded safety observation: ' + function)
+                        additional.extend(values)
+                    report['additional_rust_checks'] = additional
+                    report['uncompared_behavior'] = ('Shrinking realloc copies min(old/new payload), not the upstream header-inclusive overrun; '
+                        'native odd-row objects use aligned physical storage with unchanged legacy logical byte accounting. '
+                        'Both are Rust-only safety witnesses; unsafe original baseline outcomes are not called passing.')
+
+            report['passed'] = report['results'][0]['observations'] == report['results'][1]['observations']
+            if report['passed'] and args.prepare_benchmark:
+                # Freeze the exact build inputs so later source edits need not
+                # wait for a timing lease. Reject changes during preparation.
+                frozen_hashes = dict(source_hashes)
+                frozen_hashes['migration/patches/memory/manifest.json'] = sha(ROOT / 'migration/patches/memory/manifest.json')
+                for patch in overlay['patches']:
+                    frozen_hashes['migration/patches/memory/' + patch['path']] = patch['sha256']
+                snapshot = args.prepare_benchmark.resolve() / 'source'
+                for relative, digest in frozen_hashes.items():
+                    stored = snapshot / relative
+                    stored.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(ROOT / relative, stored)
+                    if sha(stored) != digest:
+                        raise ValueError(f'Source changed during preparation: {relative}')
+                report['source_snapshot'] = str(snapshot)
+                write_report(args.prepare_benchmark / 'manifest.json', {'source_snapshot': str(snapshot), 'frozen_sha256': frozen_hashes, 'upstream_commit': PIN, 'extension': str(extension), 'extension_sha256': sha(extension), 'variants': prepared, 'correctness': report['results'], 'timing_cases': ['fixed_ns', 'heap_ns', 'channel_ns', 'ring_ns', 'global_ns', 'table_ns', 'table_clear8_ns', 'table_clear33_ns', 'fixed_construct_owned_ns', 'fixed_construct_borrowed_ns', 'table_schema17_ns', 'table_columns65_ns', 'table_names65_ns', 'table_long_names65_ns'], 'scope': 'Optimized native facades, C++ -O2 and release Rust, no sanitizers. Timing requires exclusive integrator lease; PHP startup excluded. Existing pool operations exclude setup; explicit fixed_construct cases include arena construction/destruction and owned native allocation/free. Column schema17 includes factory/unique declarations/one traversal/drain for min(loops,256) rounds; columns65 excludes setup/teardown. Names65 workloads include actual cursor plus Native borrowed names vs selected scratch copy/resize and whole-byte consumer hashing; short and80byte embedded-NUL prefixes, scratch lifetime per row, setup/teardown excluded. Typed TableV2 selected versus legacy Native Table. No PHP/original-suite parity or full-workload performance claim.'})
+            if not report['passed']:
+                report['error'] = 'Native and Rust traces differ'
+    except Exception as error:
+        report['passed'] = False
+        report['error'] = f'{type(error).__name__}: {error}'
+    write_report(args.output, report)
+    print(json.dumps({'passed': report['passed'], 'results': report['results'], 'error': report.get('error')}))
+    return int(not report['passed'])
+
+
+if __name__ == '__main__':
+    sys.exit(main())

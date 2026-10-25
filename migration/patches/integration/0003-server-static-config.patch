@@ -1,0 +1,60 @@
+diff --git a/src/server/master.cc b/src/server/master.cc
+--- a/src/server/master.cc
++++ b/src/server/master.cc
+@@ -327,6 +327,24 @@
+     }
+ }
+
++#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
++bool Server::set_document_root(const std::string &path) {
++    int32_t action = static_files().root_begin(path.length(), PATH_MAX);
++    if (action == SWR_HTTP_CONFIG_ROOT_WARN_LENGTH) {
++        swoole_error_log(
++            SW_LOG_WARNING, SW_ERROR_NAME_TOO_LONG, "The length of document_root must be less than %d", PATH_MAX);
++        return false;
++    }
++    char _realpath[PATH_MAX];
++    const char *canonical = realpath(path.c_str(), _realpath);
++    action = static_files().root_finish(canonical);
++    if (action == SWR_HTTP_CONFIG_ROOT_WARN_DIRECTORY) {
++        swoole_error_log(SW_LOG_WARNING, SW_ERROR_DIR_NOT_EXIST, "document_root[%s] does not exist", path.c_str());
++        return false;
++    }
++    return true;
++}
++#else
+ bool Server::set_document_root(const std::string &path) {
+     if (path.length() > PATH_MAX) {
+         swoole_error_log(
+@@ -343,6 +361,7 @@
+     document_root = std::string(_realpath);
+     return true;
+ }
++#endif
+
+ void Server::add_http_compression_type(const std::string &type) {
+     if (http_compression_types == nullptr) {
+@@ -847,9 +866,15 @@
+         port->gs = &port_gs_list[index++];
+     }
+
++#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
++    if (enable_static_handler) {
++        static_files().initialize();
++    }
++#else
+     if (enable_static_handler and locations == nullptr) {
+         locations = std::make_shared<std::unordered_set<std::string>>();
+     }
++#endif
+
+     if (http_compression_types && !http_compression_types->empty()) {
+         http_compression = true;
+@@ -1547,3 +1572,7 @@
+     if (_send->info.type == SW_SERVER_EVENT_CLOSE) {
++#if defined(SWOOLE_RS_BUFFER_TYPED) && SWOOLE_RS_BUFFER_TYPED
++        _socket->out_buffer->typed_close();
++#else
+         _socket->out_buffer->alloc(BufferChunk::TYPE_CLOSE, 0);
++#endif
+         conn->close_queued = 1;
