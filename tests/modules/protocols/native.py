@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
 from tools.harness import run_compiler
 
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 TARGETS = ['src/protocol/mqtt.cc', 'src/protocol/redis.cc', 'src/protocol/socks5.cc', 'src/protocol/message_bus.cc', 'include/swoole_message_bus.h', 'ext-src/swoole_redis_server.cc']
 
 

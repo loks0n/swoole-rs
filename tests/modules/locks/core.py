@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
 
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 ASSERTIONS = ['core-tests/src/lock/lock.cpp']
 SELECTED = ['core-tests/src/main.cpp', *ASSERTIONS]
 

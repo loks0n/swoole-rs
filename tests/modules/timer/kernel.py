@@ -12,6 +12,7 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
+from tools.build_upstream import COMMIT
 
 
 def main():
@@ -26,7 +27,7 @@ def main():
         parser.error('--rust-asan requires --sanitize --no-build and an instrumented archive')
     report = {'created_utc': datetime.now(timezone.utc).isoformat(), 'passed': False,
               'scope': 'Actual pure Rust queue C ABI with native tokens and injected time; no PHP timer or wakeup integration. ASan/UBSan instruments C/C++ caller only, not Rust archive.',
-              'upstream_commit': '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e',
+              'upstream_commit': COMMIT,
               'caller_sanitized': args.sanitize, 'rust_asan_declared': args.rust_asan,
               'archive_source_identity': 'current source snapshot; archive/source correspondence not independently verified' if args.no_build or args.archive.resolve() != (ROOT / 'target/release/libswoole_rs_timer.a').resolve() else 'default archive built from recorded workspace source in this run',
               'not_exercised': ['ID exhaustion at INT64_MAX', 'round exhaustion at UINT64_MAX',

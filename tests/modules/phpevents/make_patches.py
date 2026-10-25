@@ -2,7 +2,8 @@
 from pathlib import Path
 import difflib,hashlib,json,subprocess,sys
 ROOT=Path(__file__).resolve().parents[3]
-PIN='8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+sys.path.insert(0, str(ROOT))
+from tools.build_upstream import COMMIT as PIN
 source=Path(sys.argv[1]);destination='ext-src/swoole_event.cc'
 original=subprocess.check_output(['git','-C',str(source),'show',PIN+':'+destination],text=True)
 selected=original.replace('#include "swoole_signal.h"','#include "swoole_signal.h"\n#ifdef SWOOLE_RS_PHPEVENTS\n#include "swoole_rs_phpevents.h"\n#include <new>\nstatic_assert(SW_EVENT_READ == 512 && SW_EVENT_WRITE == 1024 && SUCCESS == 0 && SW_OK == 0, "PHP Event scalar ABI");\nstatic uint32_t phpevents_fd_kind(zval *value) {\n    switch (Z_TYPE_P(value)) {\n    case IS_RESOURCE: return SWR_EVENT_RESOURCE;\n    case IS_LONG: return SWR_EVENT_LONG;\n    case IS_OBJECT: return SWR_EVENT_OBJECT;\n    default: return SWR_EVENT_OTHER;\n    }\n}\n#endif',1)

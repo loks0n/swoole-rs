@@ -10,7 +10,10 @@ import json
 from pathlib import Path
 import subprocess
 
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+import sys
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+from tools.build_upstream import COMMIT as PIN
 SUPPORT_ROOTS = ['tests/include', 'examples',
          'docs/swoole-logo.svg', 'core-tests/fuzz/cases', 'README.md']
 EXTERNAL = {'bug_2444.phpt': 'external_mysql_service',

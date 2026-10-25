@@ -20,7 +20,7 @@ from tools.harness import ROOT, run_isolated, write_report
 from staging import apply_module_patch
 from tools.harness import run_compiler
 
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 
 
 def sha(path):

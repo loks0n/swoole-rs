@@ -14,7 +14,7 @@ from tools.build_upstream import require_build_space
 from tools.harness import parse_engines, run_isolated, write_report
 from tools.hybrid_identity import attest
 
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 PUBLIC_HEADER_SHA256 = 'ca26ee5b99862115c6cd069568624ea1af89310fa5909e4419bd0d0895e32e7f'
 
 

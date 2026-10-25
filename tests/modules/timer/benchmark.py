@@ -13,6 +13,7 @@ from statistics import median
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from tools.build_upstream import COMMIT
 from tools.harness import ROOT, parse_engines, run_isolated, write_report
 
 
@@ -30,7 +31,7 @@ def main():
         parser.error('matching upstream control required')
     fixture = Path(__file__).with_suffix('.php')
     php_binary = Path(shutil.which(args.php) or args.php).resolve(strict=True)
-    report = {'upstream_commit': '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e', 'created_utc': datetime.now(timezone.utc).isoformat(), 'repeat': args.repeat,
+    report = {'upstream_commit': COMMIT, 'created_utc': datetime.now(timezone.utc).isoformat(), 'repeat': args.repeat,
               'scope': 'Sequential identical PHP timer workloads, optimized selected artifacts; no production capacity claim. Cancel has no callback latency; dispatch measures registration-to-entry, repeat registration-to-fifth-entry, including scheduler/queue setup. Percentiles are medians of per-trial percentiles, not pooled.',
               'engines': [engine.metadata() for engine in engines], 'builds': {}, 'native_builds': {},
               'host': platform.platform(), 'concurrency': 1,

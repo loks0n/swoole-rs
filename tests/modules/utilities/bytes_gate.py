@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 from tools.harness import run_isolated, write_report
 from overlay import apply_owned
-PIN = '8e8c49915ca5f9dcb9ee654f9e336a9c88dd375e'
+from tools.build_upstream import COMMIT as PIN
 SIGNATURES = {'include/swoole_util.h': ['static inline size_t ltrim(', 'static inline size_t rtrim(char *', 'static inline size_t rtrim(const char *', 'static inline ssize_t substr_len(', 'static inline bool starts_with(const char *', 'static inline bool starts_with(const std::string &', 'static inline bool ends_with(const char *'],
               'include/swoole.h': ['static inline unsigned int swoole_streq(', 'static inline unsigned int swoole_strcaseeq(', 'static inline unsigned int swoole_str_starts_with(', 'static inline unsigned int swoole_str_istarts_with(', 'static inline const char *swoole_strnstr(', 'static inline const char *swoole_strncasestr(', 'static inline ssize_t swoole_strnpos(', 'static inline ssize_t swoole_strrnpos(', 'static inline void swoole_strtolower(']}
 
