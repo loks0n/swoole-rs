@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: Swatinem/rust-cache@v2
+      # No rust-cache here: it restores all of target/, including half-built hybrid trees.
       - run: sudo apt-get update -q && sudo apt-get install -yq $DEPS
       - id: upstream
         uses: actions/cache@v4
