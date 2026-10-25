@@ -58,3 +58,37 @@ jobs:
             target/reports/
             target/upstream/build.log
             target/hybrid/*/build-manifest.json
+
+  # musl and PHP 8.5, as on php:8.5-alpine in Appwrite's base image: build the
+  # reference and the all-modules hybrid, then run the corpus and original PHPTs
+  # against both. Project 11 needs --fix-halfclose and is covered by the PR tier.
+  alpine:
+    runs-on: ubuntu-24.04
+    container: php:8.5-alpine
+    env:
+      PHP_EXTENSIONS: --php-extension sockets --php-extension pcntl
+    steps:
+      - run: apk add --no-cache git && git config --global --add safe.directory '*'
+      - uses: actions/checkout@v4
+      - run: .devcontainer/install-alpine.sh && echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - run: python3 tools/build_upstream.py --php-sockets
+      - run: cargo fetch --locked
+      - run: python3 tools/build_hybrid.py --php-sockets $(python3 -c "from tools.build_hybrid import MODULES; print(' '.join('--module ' + m for m in sorted(MODULES)))")
+      - run: python3 corpus/thirdparty/hyperf.py --prepare
+      - run: >
+          python3 corpus/run.py $PHP_EXTENSIONS --require-all
+          $(for p in 01-hello 02-router 03-notes 04-job-service 05-coroutines 06-websocket 07-tcp-framing 08-timers 09-shared-table 10-task-workers 12-hyperf-skeleton; do echo --project $p; done)
+          --engine upstream=target/upstream/src/modules/swoole.so
+          --engine hybrid=$(echo target/hybrid/rust-*-php-sockets)/modules/swoole.so
+          --output target/reports/alpine-corpus.json
+      - if: always()
+        run: >
+          python3 corpus/upstream/run.py $PHP_EXTENSIONS
+          --engine upstream=target/upstream/src/modules/swoole.so
+          --engine hybrid=$(echo target/hybrid/rust-*-php-sockets)/modules/swoole.so
+          --output target/reports/alpine-phpt.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: alpine-reports
+          path: target/reports/
