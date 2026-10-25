@@ -225,7 +225,7 @@ def run_cases(engine, cases, sandbox, artifacts, timeout, jobs, *, offline=True,
                'isolated_runner_seconds': runner_seconds if len(cases) == 1 else None}
         if status != 'passed':
             diff = artifact / Path(path).with_suffix('.diff').name
-            row['detail'] = ('Invalid/duplicate result ledger\n' if invalid else '') + (diff.read_text() if diff.exists() else output)[-6000:]
+            row['detail'] = ('Invalid/duplicate result ledger\n' if invalid else '') + (diff.read_text(errors='replace') if diff.exists() else output)[-6000:]
         rows[path] = row
     return rows, {'child_php_selector': child_selector, 'runner_ini': list(runner_ini), 'offline': offline, 'online_flag_supported': online_flag if not offline else None, 'cases': [case['path'] for case in cases], 'jobs': jobs if len(cases) > 1 else 1,
                   'seconds': round(time.monotonic() - started, 4), 'exit_code': exit_code,
@@ -265,7 +265,7 @@ def main():
     parser.add_argument('--jobs', type=int, default=1, help='Official runner workers for explicitly audited independent cases')
     parser.add_argument('--isolate-cases', action='store_true', help='Original one-runner/process-group-per-case mode')
     parser.add_argument('--require-all', action='store_true', help='Also fail on unsupported or upstream-skipped cases')
-    parser.add_argument('--external-network', action='store_true', help='Include cases marked network (DNS/routes) and run them online')
+    parser.add_argument('--external-network', action='store_true', help='Include cases marked network (DNS/routes) and run every case online')
     parser.add_argument('--match-child-php', action='store_true', help='Explicitly match bare php child commands to this engine; absolute PHP paths are unchanged')
     parser.add_argument('--timeout', type=int, default=15)
     parser.add_argument('--output', type=Path, default=ROOT / 'target/reports/upstream-phpt.json')
@@ -333,7 +333,7 @@ def main():
                     artifact = args.output.resolve().parent / (args.output.stem + '-artifacts') / engine.name / f'batch-{len(report["batches"]):03}'
                     with timed_phase(engine_timing, 'cases'):
                         results, timing = run_cases(engine, group, sandbox, artifact, args.timeout, args.jobs,
-                                                    offline=not any(case.get('network') for case in group),
+                                                    offline=not (args.external_network or any(case.get('network') for case in group)),
                                                     **({'match_child_php': True} if args.match_child_php else {}))
                     report['batches'].append({'engine': engine.name, **timing})
                     for case in group:

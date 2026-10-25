@@ -15,7 +15,7 @@ import sys
 CATEGORIES = [
     ('service', r'mysql|redis|pgsql|postgres|mongo|database|ftp|ssh|httpbin|docker|kafka|odbc|oracle'),
     ('network', r'online|offline|internet|network|dns|ipv6|proxy'),
-    ('zts', r'\bzts\b|thread'),
+    ('zts', r'\bn?zts\b|\bnts\b|thread'),
     ('stdext', r'stdext'),
     ('platform', r'darwin|macos|linux|windows|freebsd|arm|x86|io_uring|root'),
     ('extension', r'extension|not exist|not loaded|not support'),
