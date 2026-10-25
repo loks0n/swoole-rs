@@ -467,10 +467,14 @@ pub extern "C" fn swr_v1_hook_packet_length(length: i64, maximum: u32) -> i32 {
     }
 }
 
+/// Result of a length-protocol body read: the packet length once complete,
+/// otherwise -1 after a timeout or 0 (upstream 0f96dc478).
 #[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_packet_result(buffered: u64, expected: i64) -> i64 {
+pub extern "C" fn swr_v1_hook_packet_result(buffered: u64, expected: i64, timed_out: bool) -> i64 {
     if buffered == expected as u64 {
         expected
+    } else if timed_out {
+        -1
     } else {
         0
     }
@@ -643,6 +647,13 @@ pub extern "C" fn swr_v1_hook_liveness_error(alive: bool, error: i32, reset: i32
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn packet_result_reports_timeout_on_partial_body() {
+        assert_eq!(swr_v1_hook_packet_result(8, 8, false), 8);
+        assert_eq!(swr_v1_hook_packet_result(8, 8, true), 8);
+        assert_eq!(swr_v1_hook_packet_result(5, 8, false), 0);
+        assert_eq!(swr_v1_hook_packet_result(5, 8, true), -1);
+    }
     #[test]
     fn transfer_preserves_partial_error_and_wrap() {
         assert_eq!(swr_v1_hook_transfer_result(-1, 0), -1);
