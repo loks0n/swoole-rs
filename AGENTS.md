@@ -35,7 +35,8 @@ Interchangeable and disposable: no special environment, authentication or setup
 beyond a checkout, `gh` with `GH_TOKEN`, and the toolchain. Prefer cloud
 environments to one shared machine. Each executor loops:
 
-1. Claim the highest-priority, oldest unblocked `status:ready` issue (see
+1. Claim the highest-priority, oldest unblocked `status:ready` issue without
+   `needs:decision` (see
    Tickets).
 2. Branch from `main`, commit. The pre-commit hook runs quick checks (~5s warm);
    enable the hooks with `git config core.hooksPath .githooks`.
@@ -92,7 +93,12 @@ Use GitHub's own relationships, not comments or labels:
   POST repos/{owner}/{repo}/issues/<n>/dependencies/blocked_by -F issue_id=<id
   of the blocker>`). An issue is blocked while any blocker is open and is
   unblocked by GitHub the moment the last one closes. Claimable issues:
-  `gh issue list --search "is:open label:status:ready -is:blocked sort:created-asc"`.
+  `gh issue list --search "is:open label:status:ready -is:blocked -label:needs:decision sort:created-asc"`.
+- **Waiting on a decision:** add `needs:decision` and comment the question (a
+  policy change, an open design choice). Whoever decides, the goal agent or a
+  person, answers on the issue and removes the label.
+- **Waiting on a CI run or measurement:** make the issue that produces it the
+  blocker, or file one.
 - **Goals:** a `kind:goal` issue's children are its sub-issues (`gh api -X POST
   repos/{owner}/{repo}/issues/<goal>/sub_issues -F sub_issue_id=<id of the child>`).
 
