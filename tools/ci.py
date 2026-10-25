@@ -12,6 +12,7 @@ Needs only `gh` (authenticated) and Python.
 """
 import argparse
 from datetime import datetime
+from pathlib import Path
 import json
 import subprocess
 import sys
@@ -123,6 +124,19 @@ def branch(number):
     return gh('pr', 'view', str(number), '--json', 'headRefName', '-q', '.headRefName').strip()
 
 
+def hooks_warning():
+    """None when this checkout's own .githooks run; worktrees may point at another checkout's copy."""
+    git = lambda *args: subprocess.run(['git', *args], capture_output=True, text=True).stdout.strip()
+    top, hooks = Path(git('rev-parse', '--show-toplevel')), git('config', 'core.hooksPath')
+    fix = 'git config --worktree core.hooksPath .githooks' if git('rev-parse', '--git-dir') != git(
+        'rev-parse', '--git-common-dir') else 'git config core.hooksPath .githooks'
+    if not hooks:
+        return f'git hooks are off; enable them with: {fix}'
+    if (top / hooks).resolve() != (top / '.githooks').resolve():
+        return f'git hooks run from {hooks}, not this checkout; fix with: {fix}'
+    return None
+
+
 def report(result, as_json):
     if as_json:
         print(json.dumps(result, indent=1))
@@ -158,9 +172,9 @@ def main(argv=None):
     deadline = time.monotonic() + args.timeout
     try:
         if args.command == 'merge':
-            hooks = subprocess.run(['git', 'config', 'core.hooksPath'], capture_output=True, text=True).stdout.strip()
-            if hooks != '.githooks':
-                say('warning: git hooks are off; enable them with: git config core.hooksPath .githooks')
+            warning = hooks_warning()
+            if warning:
+                say('warning: ' + warning)
             result = merge(args.pr, args.workflow, deadline, args.poll)
         else:
             sha = resolve(args.commit)

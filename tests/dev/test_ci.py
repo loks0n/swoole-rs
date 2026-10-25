@@ -99,6 +99,28 @@ class Ci(unittest.TestCase):
         self.assertIn('api repos/{owner}/{repo}/commits/main -q .sha', self.gh_calls)
         self.assertIn('rust: success in 31s', stderr)
 
+    def test_hooks_warning_names_off_foreign_and_own_hooks(self):
+        sys.path.insert(0, str(ROOT / 'tools'))
+        import ci
+        with tempfile.TemporaryDirectory() as temp:
+            env = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
+            git = lambda *args: subprocess.run(['git', '-C', temp, *args], check=True, env=env, capture_output=True)
+            git('init', '-q')
+            cwd, saved = os.getcwd(), dict(os.environ)
+            os.chdir(temp)
+            os.environ.clear()
+            os.environ.update(env)  # hooks export GIT_DIR, which would point ci.py at the real repo
+            try:
+                self.assertIn('hooks are off', ci.hooks_warning())
+                git('config', 'core.hooksPath', '/elsewhere/.githooks')
+                self.assertIn('not this checkout', ci.hooks_warning())
+                git('config', 'core.hooksPath', '.githooks')
+                self.assertIsNone(ci.hooks_warning())
+            finally:
+                os.chdir(cwd)
+                os.environ.clear()
+                os.environ.update(saved)
+
     def test_status_without_a_run_is_none(self):
         code, result, _ = self.ci('status', '--commit', 'abc1234', runs={})
         self.assertEqual((code, result['state']), (2, 'none'))
