@@ -12,7 +12,7 @@ sys.path.insert(0,str(ROOT))
 from tools.build_hybrid import apply_patch_verified
 from tools.build_upstream import require_build_space
 from tools.harness import run_isolated
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True);p.add_argument('--report',type=Path,required=True);p.add_argument('--sanitize',action='store_true');a=p.parse_args()
 if a.report.exists():raise ValueError('Choose a unique immutable receipt')
 manifest=ROOT/'migration/patches/reactor/manifest.json';entries=json.loads(manifest.read_text())['patches'];dest='src/network/socket.cc';header='include/swoole_socket.h'
@@ -68,7 +68,7 @@ with tempfile.TemporaryDirectory(prefix='swr-iov-owned-') as temporary:
     if sys.platform.startswith('linux'):cmd+=['-ldl','-lm']
     for stage,command in [('compile',cmd),('execute',[str(binary)])]:
      require_build_space(t)
-     r=compile_cached(command,output=binary,scratch=t,timeout=60) if stage=='compile' else vars(run_isolated(command,cwd=t,timeout=60))
+     r=run_compiler(command, timeout=60) if stage=='compile' else vars(run_isolated(command,cwd=t,timeout=60))
      report['commands'].append(dict(variant=name,standard=standard,stage=stage,command=command,exit=r['returncode'],stdout=r['stdout'],stderr=r['stderr']))
      if r['returncode'] or r['stderr']:raise RuntimeError(name+' '+standard+' '+stage+' failed/warned')
     report['results'].append(dict(variant=name,standard=standard,observations=json.loads(r['stdout'])))

@@ -14,7 +14,7 @@ class HybridIdentity(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         files = ['crates/example/src/lib.rs', 'native/example.h', 'migration/example.patch',
-                 'tools/build_hybrid.py', 'tools/build_upstream.py', 'tools/shared_cache.py']
+                 'tools/build_hybrid.py', 'tools/build_upstream.py']
         self.hashes = {}
         for name in files:
             p = self.root / name; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(name)
@@ -42,14 +42,6 @@ class HybridIdentity(unittest.TestCase):
 
     def test_coherent_receipt_and_source(self):
         self.assertEqual(self.verify()['verified_inputs'], 5)
-
-    def test_new_cache_helper_digest_is_attested_without_changing_legacy_receipts(self):
-        self.assertEqual(self.verify()['verified_inputs'], 5)
-        self.manifest['inputs']['cache_helper_sha256'] = self.hashes['tools/shared_cache.py']
-        self.assertEqual(self.verify()['verified_inputs'], 6)
-        self.manifest['inputs']['cache_helper_sha256'] = 'stale'
-        with self.assertRaisesRegex(ValueError, 'Frozen source'):
-            self.verify()
 
     def test_wrong_extension_and_archive_refuse_before_runtime(self):
         self.identity['sha256'] = 'other'

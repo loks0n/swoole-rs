@@ -13,7 +13,7 @@ import tempfile
 from ordered_gate import ROOT,PIN,block, apply_patch_verified
 from poll_snapshot import digest
 from tools.build_upstream import require_build_space
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 
 
 def main():
@@ -52,7 +52,7 @@ def main():
         if args.sanitize:command+=['-fsanitize=address,undefined','-fno-omit-frame-pointer']
         if sys.platform.startswith('linux'):command+=['-ldl','-lm']
         require_build_space(ROOT);require_build_space(tree)
-        compiled=compile_cached(command,output=binary,scratch=tree,timeout=60)
+        compiled=run_compiler(command, timeout=60)
         result=subprocess.CompletedProcess(command,compiled['returncode'],compiled['stdout'],compiled['stderr'])
         report=dict(workflow_profile=args.workflow,compile_cache={k:compiled[k] for k in ['cache_hit','cache_key','cache_reason']},pin=PIN,scope=__doc__,patches=patches,command=command,compile_returncode=result.returncode,compile_stdout=result.stdout,compile_stderr=result.stderr)
         if result.returncode==0:

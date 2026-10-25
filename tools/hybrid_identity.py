@@ -38,8 +38,6 @@ def attest(manifest_path, archive, identity, source_ref, expected_bit, *, root=R
     expected.update({item['path']: item['sha256'] for item in inputs['patches']})
     expected.update({'tools/build_hybrid.py': inputs['builder_sha256'],
                      'tools/build_upstream.py': inputs['php_builder_sha256']})
-    if 'cache_helper_sha256' in inputs:
-        expected['tools/shared_cache.py'] = inputs['cache_helper_sha256']
     source = subprocess.check_output(['git', 'rev-parse', '--verify', '--end-of-options',
                                       source_ref + '^{commit}'], cwd=root, text=True).strip()
     for relative, digest in expected.items():

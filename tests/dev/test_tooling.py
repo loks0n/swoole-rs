@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
-from tools import dev_cache, build_hybrid, dev
+from tools import build_hybrid, dev, harness
 from tools.harness import Engine
 
 spec = importlib.util.spec_from_file_location('phpt_runner', ROOT / 'corpus/upstream/run.py')
@@ -21,72 +21,13 @@ phpt = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(phpt)
 
 
-class NativeCache(unittest.TestCase):
-    def test_content_flags_and_binary_invalidation(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            with patch.object(dev_cache, 'ROOT', root):
-                def compile_at(name, value=1, flags=()):
-                    tree = root / name
-                    tree.mkdir(exist_ok=True)
-                    (tree / 'value.h').write_text(f'#define VALUE {value}\n')
-                    (tree / 'test.c').write_text('#include "value.h"\nint main(void) { return VALUE - 1; }\n')
-                    binary = tree / 'test'
-                    result = dev_cache.compile_cached(['cc', *flags, str(tree / 'test.c'), '-o', str(binary)],
-                                                      output=binary, scratch=tree)
-                    self.assertEqual(result['returncode'], 0, result)
-                    return result, binary
-                first, _ = compile_at('one')
-                second, binary = compile_at('two')
-                self.assertFalse(first['cache_hit'])
-                self.assertFalse(second['cache_hit'], second)  # Paths affect __FILE__ and debug metadata.
-                same_path, _ = compile_at('two')
-                self.assertTrue(same_path['cache_hit'], same_path)
-                self.assertEqual(subprocess.run([str(binary)]).returncode, 0)
-                changed, binary = compile_at('two', value=2)
-                self.assertFalse(changed['cache_hit'])
-                self.assertEqual(subprocess.run([str(binary)]).returncode, 1)
-                flags, _ = compile_at('two', value=2, flags=['-O2'])
-                self.assertFalse(flags['cache_hit'])
-                cached = root / 'target/cache/native' / flags['cache_key'] / 'binary'
-                cached.write_bytes(b'corrupted executable')
-                repaired, _ = compile_at('two', value=2, flags=['-O2'])
-                self.assertFalse(repaired['cache_hit'])
-
-    def test_failed_compile_is_not_cached(self):
-        with tempfile.TemporaryDirectory() as directory:
-            tree = Path(directory)
-            source, output = tree / 'bad.c', tree / 'bad'
-            source.write_text('int main(void) { return missing; }\n')
-            with patch.object(dev_cache, 'ROOT', tree):
-                result = dev_cache.compile_cached(['cc', str(source), '-o', str(output)], output=output, scratch=tree)
-            self.assertNotEqual(result['returncode'], 0)
-            self.assertFalse(result['cache_hit'])
-            self.assertFalse(list(tree.glob('target/cache/native/*/manifest.json')))
-
-    def test_linked_archive_change_invalidates_binary(self):
-        with tempfile.TemporaryDirectory() as directory:
-            tree = Path(directory)
-            library_source, obj, archive = tree / 'value.c', tree / 'value.o', tree / 'value.a'
-            source, output = tree / 'main.c', tree / 'main'
-            source.write_text('int value(void); int main(void) { return value() - 1; }\n')
-            with patch.object(dev_cache, 'ROOT', tree):
-                for value in [1, 2]:
-                    library_source.write_text(f'int value(void) {{ return {value}; }}\n')
-                    subprocess.run(['cc', '-c', str(library_source), '-o', str(obj)], check=True)
-                    subprocess.run(['ar', 'rcs', str(archive), str(obj)], check=True)
-                    result = dev_cache.compile_cached(['cc', str(source), str(archive), '-o', str(output)],
-                                                      output=output, scratch=tree)
-                    self.assertFalse(result['cache_hit'])
-                    self.assertEqual(result['returncode'], 0, result)
-                    self.assertEqual(subprocess.run([str(output)]).returncode, value - 1)
-
+class Exclusive(unittest.TestCase):
     def test_exclusive_writer(self):
         with tempfile.TemporaryDirectory() as directory:
             lock = Path(directory) / 'writer.lock'
-            with dev_cache.exclusive(lock):
+            with harness.exclusive(lock):
                 with self.assertRaisesRegex(RuntimeError, 'Another writer'):
-                    with dev_cache.exclusive(lock):
+                    with harness.exclusive(lock):
                         self.fail('Concurrent writer acquired lock')
 
 
@@ -134,39 +75,6 @@ class RustCache(unittest.TestCase):
                 after = {**before, 'rust_sources_sha256': second}
                 self.assertEqual(build_hybrid.configuration_key(before, True), build_hybrid.configuration_key(after, True))
                 self.assertNotEqual(build_hybrid.configuration_key(before), build_hybrid.configuration_key(after))
-
-    def test_modules_and_compile_time_environment_invalidate(self):
-        with tempfile.TemporaryDirectory() as directory:
-            tree = Path(directory)
-            source, output = tree / 'main.rs', tree / 'main'
-            source.write_text('mod value; fn main() { std::process::exit(value::VALUE + '
-                              'option_env!("SWOOLE_RS_CACHE_TEST_EXIT").unwrap_or("0").parse::<i32>().unwrap()); }\n')
-            def compile_at(value, environment):
-                (tree / 'value.rs').write_text(f'pub const VALUE: i32 = {value};\n')
-                with patch.object(dev_cache, 'ROOT', tree), patch.dict(os.environ, {'SWOOLE_RS_CACHE_TEST_EXIT': str(environment)}):
-                    result = dev_cache.compile_cached(['rustc', str(source), '-o', str(output)], output=output, scratch=tree)
-                self.assertEqual(result['returncode'], 0, result)
-                self.assertEqual(subprocess.run([str(output)]).returncode, value + environment)
-                return result
-            first = compile_at(0, 0)
-            self.assertFalse(first['cache_hit'])
-            self.assertTrue(compile_at(0, 0)['cache_hit'])
-            self.assertFalse(compile_at(1, 0)['cache_hit'])
-            self.assertFalse(compile_at(1, 1)['cache_hit'])
-
-    def test_static_archive_output_is_not_a_link_input(self):
-        with tempfile.TemporaryDirectory() as directory:
-            tree = Path(directory)
-            source, output = tree / 'lib.rs', tree / 'fixture.a'
-            source.write_text('pub fn value() -> i32 { 1 }\n')
-            command = ['rustc', '--crate-type=staticlib', str(source), '-o', str(output)]
-            with patch.object(dev_cache, 'ROOT', tree):
-                first = dev_cache.compile_cached(command, output=output, scratch=tree)
-                second = dev_cache.compile_cached(command, output=output, scratch=tree)
-            self.assertEqual(first['returncode'], 0, first)
-            self.assertFalse(first['cache_hit'])
-            self.assertTrue(second['cache_hit'])
-
 
 class Overlays(unittest.TestCase):
     def test_cached_export_rebuilds_unknown_or_old_producer_without_relabeling(self):
@@ -1260,7 +1168,6 @@ class FocusedPhases(unittest.TestCase):
                 root = Path(directory)
                 planned = [('ownership', ['check-ownership']), ('api', ['check-api']), ('originals', ['check-originals'])]
                 with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
-                     patch.object(dev, 'shared_environment', return_value={}), \
                      patch.object(dev.subprocess, 'run', side_effect=[SimpleNamespace(returncode=code) for code in codes]) as run, \
                      patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer', '--phase', 'api', '--phase', 'ownership', '--phase', 'api']):
                     self.assertEqual(dev.main(), exit_code)
@@ -1279,7 +1186,7 @@ class FocusedPhases(unittest.TestCase):
                 root = Path(directory)
                 planned = [(phase, ['failed-prerequisite']), ('api', ['stale-alias']), ('originals', ['old-engine'])]
                 with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
-                     patch.object(dev, 'shared_environment', return_value={}), patch.object(dev, 'require_build_space'), \
+                     patch.object(dev, 'require_build_space'), \
                      patch.object(dev.subprocess, 'run', return_value=SimpleNamespace(returncode=2)) as run, \
                      patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer']):
                     self.assertEqual(dev.main(), 1)
@@ -1310,7 +1217,6 @@ class FocusedPhases(unittest.TestCase):
                 output.write_text(json.dumps(dict(passed=False, error=error, **details)))
                 planned = [('module-sdk', ['fixture', '--report', str(output)]), ('originals', ['later'])]
                 with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
-                     patch.object(dev, 'shared_environment', return_value={}), \
                      patch.object(dev.subprocess, 'run', return_value=SimpleNamespace(returncode=1)) as run, \
                      patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer']):
                     self.assertEqual(dev.main(), 1)
@@ -1341,7 +1247,6 @@ class FocusedPhases(unittest.TestCase):
                     output.write_text(payload if isinstance(payload, str) else json.dumps(payload))
                 planned = [('ownership', ['fixture', flag, str(output)]), ('originals', ['later'])]
                 with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
-                     patch.object(dev, 'shared_environment', return_value={}), \
                      patch.object(dev.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), \
                      patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer', '--phase', 'ownership']):
                     self.assertEqual(dev.main(), int(failed))
@@ -1372,7 +1277,6 @@ class FocusedPhases(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=[('ownership', ['fixture'])]), \
-                 patch.object(dev, 'shared_environment', return_value={}), \
                  patch.object(dev.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), \
                  patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer', '--phase', 'ownership']):
                 self.assertEqual(dev.main(), 0)

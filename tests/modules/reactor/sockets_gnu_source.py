@@ -14,7 +14,7 @@ from gnu_source_body import render
 ROOT=Path(__file__).resolve().parents[3]
 sys.path.insert(0,str(ROOT))
 from tools.build_upstream import require_build_space
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 
 
 def traces():
@@ -42,7 +42,7 @@ def main():
     r=dict(passed=False,scope=__doc__,assigned_to='@loks0n',work=str(work.resolve()),commands=[],native_linux_qualified=False,image_provenance_attested=False,activation=False,allocation_effects_modeled=False)
     def run(command,*,input_text=None,output=None):
         require_build_space(work)
-        row=compile_cached(command,output=output,scratch=work) if output else None
+        row=run_compiler(command) if output else None
         if row is None:
             result=subprocess.run(list(map(str,command)),input=input_text,text=True,capture_output=True,timeout=60)
             row=dict(returncode=result.returncode,stdout=result.stdout,stderr=result.stderr)

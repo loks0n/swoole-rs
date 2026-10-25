@@ -18,7 +18,7 @@ from baseline import PIN
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
 from staging import apply_module_patch
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 
 
 def sha(path):
@@ -35,7 +35,6 @@ def main():
     parser.add_argument('--sanitize', action='store_true')
     parser.add_argument('--rust-asan', action='store_true', help='Supplied archive was separately compiled with Rust address sanitizer')
     parser.add_argument('--output', default=str(ROOT / 'target/reports/buffer-hybrid.json'))
-    parser.add_argument('--no-cache', action='store_true', help='Recompile native binary; execution always runs')
     args = parser.parse_args()
     local = Path(__file__).resolve().parent
     manifest = None
@@ -93,7 +92,7 @@ def main():
             command.append('-fsanitize=address,undefined')
         command += ['-o', str(binary)]
         report['compile_command'] = command
-        compiled = compile_cached(command, output=binary, scratch=tree, timeout=45, cache=not args.no_cache)
+        compiled = run_compiler(command, timeout=45)
         report['compile'] = compiled
         if compiled['returncode']:
             write_report(args.output, report)

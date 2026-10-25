@@ -15,7 +15,7 @@ from ordered_gate import ROOT,PIN,block
 from poll_snapshot import digest
 sys.path.insert(0,str(ROOT))
 from tools.harness import run_isolated
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 from tools.build_upstream import require_build_space
 from tools.build_hybrid import apply_patch_verified
 p=argparse.ArgumentParser(description=__doc__)
@@ -61,7 +61,7 @@ with tempfile.TemporaryDirectory(prefix='swr-callbacks-') as temporary:
             if sys.platform.startswith('linux'):command+=['-ldl','-lm']
             for stage,cmd in [('compile',command),('execute',[str(binary)])]:
                 require_build_space(tree)
-                result=compile_cached(cmd,output=binary,scratch=tree,timeout=60) if stage=='compile' else vars(run_isolated(cmd,cwd=tree,timeout=60))
+                result=run_compiler(cmd, timeout=60) if stage=='compile' else vars(run_isolated(cmd,cwd=tree,timeout=60))
                 report['commands'].append(dict(variant=variant,stage=stage,command=cmd,exit=result['returncode'],stdout=result['stdout'],stderr=result['stderr'],cache={k:result[k] for k in ['cache_hit','cache_key','cache_reason'] if k in result}))
                 if result['returncode'] or result['stderr']:raise RuntimeError(variant+' '+stage+' failed or warned')
             report['results'].append(dict(variant=variant,observations=json.loads(result['stdout'])))

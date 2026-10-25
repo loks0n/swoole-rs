@@ -8,7 +8,7 @@ import tempfile
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from tools.dev_cache import compile_cached
+from tools.harness import run_compiler
 from tools.harness import run_isolated
 
 
@@ -21,7 +21,6 @@ def main():
     parser.add_argument(
         "--sanitize", action="store_true", help="instrument the C++ caller with ASan/UBSan"
     )
-    parser.add_argument('--no-cache', action='store_true')
     args = parser.parse_args()
     archive = args.archive.resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="swr-websocket-abi-") as directory:
@@ -38,9 +37,8 @@ def main():
         command += ["-lc", "-lm"]
         if os.uname().sysname == "Linux":
             command += ["-ldl", "-lpthread", "-lrt", "-lutil"]
-        result = compile_cached(command + ["-o", str(binary)], output=binary,
-                                scratch=Path(directory), cache=not args.no_cache)
-        print(f"Compile: {result['seconds']:.3f}s, cache={result['cache_hit']}: {result['cache_reason']}")
+        result = run_compiler(command + ["-o", str(binary)])
+        print(f"Compile: {result['seconds']:.3f}s")
         if result['returncode']:
             raise RuntimeError(result['stderr'])
         result = run_isolated([str(binary)], timeout=15)
