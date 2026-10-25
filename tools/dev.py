@@ -262,7 +262,8 @@ def plan(args, reports):
                    '--sanitize', *wrapper_includes, *report(name))
     if 'wrappers' in modules and integrate:
         script('wrappers-originals', 'tests/modules/wrappers/upstream.py', '--source', ROOT / 'target/upstream/src',
-               *php_for('posix', 'mbstring'), *engines, *report('wrappers-originals'))
+               *php_for('posix', 'mbstring'), *engines,
+               *(['--external-network'] if getattr(args, 'external_network', False) else []), *report('wrappers-originals'))
     if 'reactor' in modules:
         if getattr(args, 'reactor_sockets_owned', False):
             script('reactor-socket-iterators', 'tests/modules/reactor/socket_iterators.py',
@@ -964,6 +965,8 @@ def main():
     selection.add_argument('--all-modules', action='store_true', help='Select every concrete registered Rust module')
     parser.add_argument('--stdext', action='store_true', help='Build and compare genuine enabled experimental stdext profiles')
     parser.add_argument('--php-sockets', action='store_true', help='Build matching Native/Rust PHP sockets-integration profiles')
+    parser.add_argument('--external-network', action='store_true',
+                        help='Also run original PHPTs that need internet access; without it they stay unmeasured')
     parser.add_argument('--buffer-typed', action='store_true',
                         help='Experimental sole Rust Buffer cursor; requires Buffer/Reactor, default off')
     parser.add_argument('--string-direct-fields', action='store_true',

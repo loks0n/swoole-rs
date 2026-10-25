@@ -32,3 +32,11 @@ class PhaseReports(unittest.TestCase):
             '--phase','buffer-string-compatibility','--plan'],cwd=ROOT,capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertEqual([r['phase'] for r in json.loads(result.stdout)],['buffer-string-compatibility'])
+
+
+class ExternalNetwork(unittest.TestCase):
+    def test_flag_reaches_wrappers_originals(self):
+        result=subprocess.run([sys.executable,'tools/dev.py','integrate','--module','wrappers','--external-network',
+            '--phase','wrappers-originals','--plan'],cwd=ROOT,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertIn('--external-network',json.loads(result.stdout)[0]['command'])
