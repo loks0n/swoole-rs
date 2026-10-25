@@ -1,0 +1,5 @@
+#!/bin/sh
+# Reminder only: merging a PR starts the merge tier, which is the full validation.
+echo "After tools/ci.py merge lands this branch, watch the merge tier (every gate, application and PHPT) with:
+  python3 tools/ci.py wait --commit <merge sha>
+ci.py merge prints the exact command." >&2

@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "swoole-rs": {
-      "command": "python3",
-      "args": ["tools/mcp.py"]
-    }
-  }
-}

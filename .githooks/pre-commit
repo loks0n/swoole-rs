@@ -5,3 +5,5 @@ cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -q -- -D warnings
 python3 tools/check_migration.py > /dev/null
 tests/dev/run.sh
+echo "pre-commit passed. After pushing and opening the PR, wait for its CI and merge with:
+  python3 tools/ci.py merge <pr>" >&2
