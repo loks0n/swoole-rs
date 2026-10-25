@@ -18,14 +18,13 @@ def sha(path):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--module', choices=['base64', 'crc32', 'error'], required=True)
+    parser.add_argument('--module', choices=['crc32', 'error'], required=True)
     parser.add_argument('--build-manifest', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--sanitize', action='store_true')
-    parser.add_argument('--encode-positive-only', action='store_true', help='Base64 sequential defined encodes only; decoder and full gate remain unrun')
     parser.add_argument('--positive-only', action='store_true', help='CRC32 sequential defined bytes and original CRC assertion only')
     args = parser.parse_args()
-    if args.encode_positive_only and args.module != 'base64' or args.positive_only and args.module != 'crc32':
+    if args.positive_only and args.module != 'crc32':
         parser.error('Positive profile does not match selected module')
     manifest = json.loads(args.build_manifest.read_text())
     if args.module not in manifest['inputs']['modules'] or not manifest['migrated_feature_bits'] & MODULES[args.module][1]:
@@ -42,7 +41,6 @@ def main():
     return subprocess.run([sys.executable, str(ROOT / 'tests/modules' / args.module / runner),
                            '--source', str(ROOT / 'target/upstream/src'), '--archive', str(archive),
                            '--output', str(args.output), *(['--sanitize'] if args.sanitize else []),
-                           *(['--encode-positive-only'] if args.encode_positive_only else []),
                            *(['--positive-only'] if args.positive_only else [])], cwd=ROOT).returncode
 
 

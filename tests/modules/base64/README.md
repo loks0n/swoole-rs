@@ -41,64 +41,24 @@ No production code calls the low-level `swoole::base64_decode`; only its origina
 core test does. The `swoole_stdext.cc` aliases, the embedded PHP library and the
 client handshake's `php_base64_encode` use PHP's own base64, not this code.
 
-## Differential check (`check.py`)
+## Differential tests
 
 ```sh
-mkdir -p target/reports/base64
-rustc --edition 2024 --test crates/base64/src/lib.rs -o target/base64-tests
-./target/base64-tests
-python3 tests/modules/base64/check.py --source /path/to/pinned/upstream --output target/reports/base64/differential.json
-python3 tests/modules/base64/check.py --source /path/to/pinned/upstream --sanitize --output target/reports/base64/differential-asan.json
+cargo test -p swoole-rs-base64
 ```
 
-Options:
+`crates/base64/tests/upstream.rs` compares the Rust exports with the pinned
+upstream C++, which `crates/oracle` compiles from unmodified copies under its
+`upstream/` directory. Return counts and every output byte must match, with three
+sentinels, 17-byte red zones and unaligned input: all one- and two-byte inputs,
+all strings through length five over eleven byte classes, every byte in every
+position through two quartets, and proptest cases for binary encode, base64-like
+decode and truncated valid encodings. The two unmodified original core-test
+assertions (`core-tests/src/protocol/base64.cpp`) run against the native adapter that
+the base64 patch installs, with a deterministic random-byte fixture.
 
-- `--archive PATH` links a published hybrid `libswoole_rs_ffi.a` instead of
-  compiling the crate privately (`tools/core_check.py` does this from a build
-  manifest).
-- `--sanitize` builds the C++ oracle, adapter and harness with ASan/UBSan;
-  adding `--rust-sanitize` also instruments the private Rust build (Rust's
-  precompiled std stays uninstrumented). Passed on Linux with GCC's ASan runtime;
-  untested on macOS.
-- `--encode-positive-only` / `--decode-positive-only` run only defined,
-  sequential encode or canonical decode cases (no malformed, fault, thread, fork
-  or benchmark execution) and report `full_gate_passed: false`.
-- `--prepare-positive-benchmark` (with a positive profile, unsanitized) runs the
-  untimed check-only preflight of the 14 canonical workloads and keeps the
-  executable with `.a` and `.sources.tar.gz` siblings.
-
-The runner reads original source, header and core test from pinned Git objects,
-applies the checksum-declared overlay in scratch, and requires the result to equal
-`native/base64/base64.cc` byte for byte. It builds the original C++ into a
-separate `oracle` namespace and links the patched adapter with an optimized Rust
-static library, then checks both Rust symbols in the final executable. Negative
-compile gates prove the overlay rejects builds without `SWOOLE_RS_BASE64`, both
-by explicit define and by a `config.h` that omits the feature.
-
-The two unmodified original core-test assertions run against the Rust adapter
-with a deterministic replacement for the random-byte fixture. Differential
-checks compare return counts and every output byte with three sentinels, 17-byte
-red zones and unaligned buffers: all one- and two-byte inputs, all strings
-through length five over eleven symbols, every byte in every position through
-eight-character groups, and 4,096 larger binary/valid/incomplete cases. It also
-runs 1,600 concurrent encode/decode calls and a fork child.
-
-## Benchmarks
-
-The validated executable is kept beside the report as `<report>.bin`. Run it with
-`--check-benchmark` for the untimed preflight (19 workloads, comparing outputs)
-or `--benchmark` to measure seven alternating-order trials of upstream/Rust
-encode/decode at 1, 2, 3, 20, 64, 1,024 and 65,536 bytes plus invalid and
-incomplete decode workloads. Positive-only executables use
-`--positive-benchmark` / `--encode-positive-benchmark`. Never benchmark the
-sanitizer build, and run measurements without concurrent workloads.
-
-`test_positive_preparation.py` compiles the benchmark workload selection with
-inert codecs and checks it never reads the clock in check-only mode:
-
-```sh
-python3 -m unittest tests/modules/base64/test_positive_preparation.py
-```
+Rust's own bounds checks replace the previous ASan/UBSan build. The Rust codec has
+no mutable state, so the earlier concurrency and fork runs are not carried over.
 
 ## PHP consumers
 
