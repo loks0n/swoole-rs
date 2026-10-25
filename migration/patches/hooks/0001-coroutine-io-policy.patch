@@ -922,7 +922,7 @@ index 63ca2f2f9..f0514c6b2 100644
 +            break;
          }
 diff --git a/src/coroutine/socket.cc b/src/coroutine/socket.cc
-index 5a16f4cca..892aea7a5 100644
+index 5a16f4cca..e66476d0c 100644
 --- a/src/coroutine/socket.cc
 +++ b/src/coroutine/socket.cc
 @@ -20,2 +20,7 @@
@@ -1196,17 +1196,14 @@ index 5a16f4cca..892aea7a5 100644
 -    } else if (packet_len > protocol.package_max_length) {
 +    } else if (length_action == 2) {
          read_buffer->clear();
-@@ -1405,5 +1420,3 @@ _get_length:
+@@ -1405,5 +1420,4 @@ _get_length:
          read_buffer->length += retval;
 -        if (read_buffer->length != (size_t) packet_len) {
 -            retval = errCode == ETIMEDOUT ? -1 : 0;
 -        } else {
-+        if (swr_v1_hook_packet_result(read_buffer->length, packet_len) == packet_len) {
++        retval = swr_v1_hook_packet_result(read_buffer->length, packet_len, errCode == ETIMEDOUT);
++        if (retval == packet_len) {
              read_buffer->offset = packet_len;
-@@ -1411,2 +1424,3 @@ _get_length:
-         }
-+        retval = errCode == ETIMEDOUT ? -1 : 0;
-     }
 @@ -1427,7 +1441,3 @@ ssize_t Socket::recv_packet_with_eof_protocol() {
          buf = read_buffer->str + read_buffer->length;
 -        l_buf = read_buffer->size - read_buffer->length;
