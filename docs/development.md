@@ -92,61 +92,19 @@ or foreign results fail; XFAIL and "passed on retry" warnings count as failures.
 Results are saved atomically after each batch with `execution_status` of
 `running`, `complete` or `interrupted`.
 
-## Linux toolchain
+## Linux environment
+
+`.devcontainer/` is the same OS and packages as the CI runners (`ubuntu-24.04`,
+PHP 8.3); `.devcontainer/install.sh` is shared with the merge tier, so the two
+cannot drift. Open the folder in any devcontainer host (VS Code, Codespaces,
+cloud agent environments), or run it by hand:
 
 ```sh
-python3 tools/linux_dev.py -- php --version
-python3 tools/linux_dev.py -- python3 tools/build_upstream.py
-python3 tools/linux_dev.py -- python3 tools/dev.py candidate --module buffer \
-  --php-extension pdo --php-extension pdo_sqlite \
-  --php-extension curl --php-extension sockets --php-extension tokenizer
+docker build -t swoole-rs-dev .devcontainer
+docker run --rm -it -v "$PWD:/work" -w /work swoole-rs-dev bash
 ```
-
-The first call builds `tools/Dockerfile.dev` (Rust, PHP dev packages, CMake,
-GoogleTest, nghttp2, libpq, curl, mbstring); `--rebuild-image` refreshes it.
-The checkout is mounted read-only and synced into `target/linux-dev/`, which
-keeps Linux objects, builds and Cargo downloads between runs. One writer at a
-time; containers are removed after each run.
-
-## Inspecting loops
-
-```sh
-python3 tools/dev_report.py                    # latest local loop
-python3 tools/dev_report.py --lane integrate   # latest integration run
-python3 tools/dev_report.py --linux            # latest Linux workspace loop
-python3 tools/dev_report.py PATH/loop.json --limit 10 --json
-python3 tools/dev_report.py AFTER/loop.json --compare BEFORE/loop.json
-```
-
-Read-only. Shows slowest phases, cache hit/miss reasons, failed-phase case
-statuses or log tails (last 16 KiB), and per-engine counts. `/work` paths from
-Linux runs map to the local workspace. JSON inputs over 32 MiB are reported as
-unavailable. Exit status: 0 recorded pass, 1 recorded failure, 2 incomplete,
-interrupted, malformed or contradictory (a "passed" loop with a failed phase).
-
-`--compare` requires both loops to be terminal unless `--allow-partial` (which
-exits 2). It groups phase exits into new failures, recoveries and unchanged
-failures, and reports `new_failures` / `resolved_failures` per case only when
-both sides have matching case inventories and an unchanged upstream control
-binary. Other differences appear as `unqualified_status_changes`.
 
 Tooling tests: `tests/dev/run.sh` (parallel; prints only failing files), or `python3 -m unittest discover -b -s tests/dev` (`-b` hides output from passing tests).
-
-## Environment preflight
-
-```sh
-python3 tools/dev_environment.py \
-  --source-root /abs/checkout --native-root /abs/native --output-root /abs/reports --json
-```
-
-Writes only to stdout. Reports Python version and SSL backend with TLS 1.2/1.3
-context support (no sockets opened), versions of `--cc`, `--cxx`, `--rustc`,
-`--cargo`, `--php`, `--php-config`, `--make`, `--openssl` (Cargo offline, rustup
-auto-install off), and free space and mount type for each root. Blocks when a
-filesystem has less than 4 GiB free, when PHP runtime and php-config versions
-differ, or when a required TLS version is unavailable (`--require-tls 1.2`
-narrows this). Exit 0 ready, 1 known blocker, 2 a probe unavailable. Probes time
-out after 5 s (`--timeout`).
 
 ## Native core-tests
 

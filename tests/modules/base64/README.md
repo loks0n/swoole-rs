@@ -82,8 +82,8 @@ against a loopback HTTPBin-compatible fixture selected through the test's own
 - `x86_probe.rs` includes the production source unchanged in a freestanding
   `no_std` x86_64 Linux ELF and exits nonzero on any failed check. Build with
   `--target x86_64-unknown-linux-gnu`, panic abort, static relocation and link
-  args `-nostdlib -static -no-pie`, then run through
-  `tools/linux_dev.py -- /repo/target/NAME` (Linux binfmt).
+  args `-nostdlib -static -no-pie`, then run it in the
+  devcontainer (see `docs/development.md`).
 - `combined_canonical.c` runs 2,224 sequential canonical cases through the C11
   headers against a Cargo release archive built with only `base64,crc32`.
 
