@@ -15,3 +15,9 @@ Keep module tests under tests/modules/<module>/.
 
 Benchmarks use optimized builds and run without concurrent build or test load.
 See corpus/README.md, corpus/upstream/README.md and benchmarks/README.md.
+
+Work tickets from GitHub issues labelled `status:ready`: comment `claim <id>`, re-read
+the comments (the earliest claim wins), then move the label to `status:claimed`.
+Open a PR with `Closes #n`, then call `pr_merge_when_green` from the repository MCP
+server (`.mcp.json`) for that PR, one call per PR, so each merges as soon as it
+passes. File follow-ups as `status:ready` issues.
