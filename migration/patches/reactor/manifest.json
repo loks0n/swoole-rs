@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-readiness-policy.patch",
-      "sha256": "9b829a39c533dea2fa524db3c9559d55dee88052d09a97d22e58ba2a646679ed",
+      "sha256": "25f36f11c6ad5639d553c7a7509390c3cf84c76d66d51638e114e3ed58cc4115",
       "upstream_paths": [
         "include/swoole_reactor.h",
         "src/reactor/epoll.cc",
@@ -13,7 +13,7 @@
     },
     {
       "path": "0002-write-policy.patch",
-      "sha256": "a8bf7dda6cd6ceb53533a7aaac176ad1107243601a067e2661ccf25d4e791bb3",
+      "sha256": "5b10c386145ff3c8b7a59164cd8f6c3796908b13d11f8a815cf7b75cd5cf46cc",
       "upstream_paths": [
         "src/reactor/base.cc"
       ]
@@ -27,23 +27,16 @@
     },
     {
       "path": "0005-iov-owned.patch",
-      "sha256": "4075f2bf360b3fb29b8895756e85e9cfb31f65184014e8b5d9b68f695c8f593e",
+      "sha256": "ac740b9e4380322264202e619eed9c6168f4ff7414941a73f0c4fc778c3221f3",
       "upstream_paths": [
         "include/swoole_socket.h"
       ]
     },
     {
       "path": "0004-socket-output.patch",
-      "sha256": "7f22922c28616bec17d25b052537819f76cb78c354c722aece5f69181ff7d302",
+      "sha256": "71d2d1c761eabc5e598eb0941a48d4c3755b10967a71aa333930375462b3270f",
       "upstream_paths": [
         "src/network/socket.cc"
-      ]
-    },
-    {
-      "path": "0006-socket-registry-admin.patch",
-      "sha256": "f8c0c7a87f76ba7c751dfdac2346f00e51a6c4c08e800c45056ee69ad196a57a",
-      "upstream_paths": [
-        "ext-src/swoole_admin_server.cc"
       ]
     },
     {

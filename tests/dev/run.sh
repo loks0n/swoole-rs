@@ -36,7 +36,6 @@ for test in \
     tests/modules/reactor/test_gnu_source_body.py \
     tests/modules/reactor/test_output_workflow_identity.py \
     tests/modules/reactor/test_owned_iov_identity.py \
-    tests/modules/reactor/test_owned_sockets_identity.py \
     tests/modules/reactor/test_rust_asan.py \
     tests/modules/tls/test_gate.py \
     tests/modules/tls/test_php.py \

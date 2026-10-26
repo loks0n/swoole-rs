@@ -75,11 +75,11 @@ Try-exit observes `wait_exit` once before `if_exit` and does not re-read it. The
 event-count predicate receives a checked scalar. Trim/time and signal callbacks
 stay Native.
 
-## Deferred queue ownership (`SWOOLE_RS_REACTOR_DEFER_OWNED`)
+## Deferred queue ownership
 
-Undefined/0 keeps the Native `CallbackManager`. Value 1 (requires
-`SWOOLE_RS_REACTOR`) makes `defer_tasks` a `ReactorDeferredQueue` pointer and
-the embedded `destroy_callbacks` a typed queue. The facade holds one opaque Rust
+`defer_tasks` is a `ReactorDeferredQueue` pointer and the embedded
+`destroy_callbacks` a typed queue; the public `CallbackManager` class is
+unchanged but no longer used by the Reactor. The facade holds one opaque Rust
 owner; Rust owns FIFO order and Native Task identities, with no Native list.
 
 - Native allocates/copies the `std::function`/data pair. Rust admission is
@@ -90,13 +90,13 @@ owner; Rust owns FIFO order and Native Task identities, with no Native list.
   invokes and drops the scoped copy. The next queue observation follows these
   effects. No extra per-invocation heap allocation.
 - `add_destroy_callback` and the Reactor destructor's execute call use the same
-  FIFO under ON, with unchanged statement text.
+  FIFO, with unchanged statement text.
 - Empty-owner release never drops or invokes a payload in Rust.
 
-Layout on the captured SDK: selected default/OFF Reactor 1024 B, owned 1008 B
-(Native 1064 B, due to the private callback-layout change). `destroy_callbacks`
-stays at offset 840 but shrinks 24→8 B; later public offsets shift by 16 B. The
-owned Reactor is not copy-constructible, copy-assignable or movable.
+Before the registry fold, the captured SDK measured the Reactor at 1008 B with
+the owned queue (Native 1064 B). `destroy_callbacks` stays at offset 840 but
+shrinks 24→8 B; later public offsets shift by 16 B. The Reactor is not
+copy-constructible, copy-assignable or movable.
 
 ## Shared owner allocation
 

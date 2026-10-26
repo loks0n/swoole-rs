@@ -14,7 +14,6 @@ from tools.harness import ROOT,Engine,parse_engines,run_isolated,write_report
 from tools.hybrid_identity import attest,sha
 from tools.build_upstream import require_build_space
 import owned_iov_identity as owned_iov
-import owned_sockets_identity as owned_sockets
 import output_workflow_identity as output_workflow
 import buffer_typed_identity as typed_buffer
 
@@ -35,9 +34,8 @@ p.add_argument('--php',default='php')
 p.add_argument('--php-config',default='php-config')
 p.add_argument('--php-extension',action='append',default=[])
 p.add_argument('--output',type=Path,required=True)
-p.add_argument('--require-owned-defer',action='store_true',help='Require explicit selected deferred queue ownership and an OFF Native control; builtins profile only')
-p.add_argument('--require-owned-iov',action='store_true',help='Require explicit selected Rust-owned IOVector capability and an OFF Native control; blocking profile only')
-p.add_argument('--require-owned-sockets',action='store_true',help='Require selected registry ownership and an OFF Native control; unchanged readiness profile only')
+p.add_argument('--require-owned-defer',action='store_true',help='Require the selected Rust deferred queue imports/origins and a Native control; builtins profile only')
+p.add_argument('--require-owned-iov',action='store_true',help='Require the selected Rust-owned IOVector imports/origins and a Native control; blocking profile only')
 p.add_argument('--require-output-workflow',action='store_true',help='Require exact complete output workflow/caller source and selected origin; unchanged socket-output profile only')
 p.add_argument('--require-typed-buffer',action='store_true',help='Require literal typed Buffer request/SDK/source for every profile; Buffer execution credit only in existing socket-output profile')
 p.add_argument('--require-batch',action='store_true',help='Refuse older production sources before compiling/running the consumer')
@@ -74,26 +72,10 @@ try:
         compiled=subprocess.check_output(['git','-C',str(ROOT),'show',a.source_ref+':'+output_workflow.SOURCE])
         patch=subprocess.check_output(['git','-C',str(ROOT),'show',a.source_ref+':'+output_workflow.PATCH])
         output_workflow.prepared(inputs,compiled,patch)
-    if a.require_owned_sockets:
-        if any((a.callbacks,a.handlers,a.builtins,a.socket_output,a.blocking,a.ordinary_io,a.datagram)):
-            raise ValueError('--require-owned-sockets requires the unchanged default readiness profile')
-        report['owned_sockets_requests']={
-            'selected':owned_sockets.requested(json.loads(a.build_manifest.read_text())['inputs'],True),
-            'native':owned_sockets.requested(json.loads((a.native_export.parent/'build-manifest.json').read_text())['inputs'],False)}
-        compiled=subprocess.check_output(['git','-C',str(ROOT),'show',a.source_ref+':'+owned_sockets.SOURCE],text=True)
-        if 'fn '+owned_sockets.POLICY+'(' not in compiled:
-            raise ValueError('Selected registry source predates explicit order policy')
-    report['require_owned_sockets']=a.require_owned_sockets
     if a.require_owned_iov:
         if not a.blocking:raise ValueError('--require-owned-iov requires --blocking')
-        report['owned_iov_requests']={
-            'selected':owned_iov.requested(json.loads(a.build_manifest.read_text())['inputs'],True),
-            'native':owned_iov.requested(json.loads((a.native_export.parent/'build-manifest.json').read_text())['inputs'],False)}
     if a.require_owned_defer:
         if not a.builtins:raise ValueError('--require-owned-defer requires --builtins')
-        report['owned_defer_requests']={
-            'selected':owned_iov.requested(json.loads(a.build_manifest.read_text())['inputs'],True,key='reactor_defer_owned_requested',source='crates/reactor/src/deferred.rs'),
-            'native':owned_iov.requested(json.loads((a.native_export.parent/'build-manifest.json').read_text())['inputs'],False,key='reactor_defer_owned_requested',source='crates/reactor/src/deferred.rs')}
     report['require_owned_defer']=a.require_owned_defer
     report['require_owned_iov']=a.require_owned_iov
     bindings={}
@@ -142,15 +124,6 @@ try:
         if json.loads(manifest.read_text())['extension_sha256']!=row['sha256']:raise ValueError('Actual extension/manifest mismatch')
         if row['php']!=subprocess.check_output([a.php_config,'--version'],text=True).strip():raise ValueError('PHP compile SDK mismatch')
         mirror=work/(engine.name+'-headers');row['headers']=shared.headers(a.source,export,manifest,mirror)
-        if a.require_owned_iov:
-            config=mirror/'include/config.h'
-            row['owned_iov_sdk']={'path':str(config),'enabled':owned_iov.configured(config.read_text(),selected)}
-        if a.require_owned_defer:
-            config=mirror/'include/config.h'
-            row['owned_defer_sdk']={'path':str(config),'enabled':owned_iov.configured(config.read_text(),selected,macro='SWOOLE_RS_REACTOR_DEFER_OWNED')}
-        if a.require_owned_sockets:
-            config=mirror/'include/config.h'
-            row['owned_sockets_sdk']={'path':str(config),'enabled':owned_iov.configured(config.read_text(),selected,macro=owned_sockets.MACRO)}
         if a.require_typed_buffer:
             config=mirror/'include/config.h'
             row['typed_buffer_sdk']={'path':str(config),'enabled':typed_buffer.configured(config.read_text(),selected)}
@@ -164,7 +137,6 @@ try:
         if '_ZN6swoole7ReactorC1EiNS0_4TypeE' not in undefined:raise ValueError('Addon does not call genuine production constructor')
         result=json.loads(run(engine.command('-d','extension='+str(addon),fixture)))
         if result['checks']!=(72 if a.datagram else 180 if a.ordinary_io else 61 if a.blocking else 78 if a.socket_output else 31 if a.builtins else 2194 if a.handlers else 22 if a.callbacks else 210 if sys.platform=='darwin' else 240) or result['method_image']!=str(engine.extension):raise ValueError('Actual production consumer/origin differs')
-        if a.require_owned_sockets:owned_sockets.consumer(result,undefined,str(engine.extension),selected)
         if a.datagram:
             origins=['receive_image','sync_image','address_image']
             literal_scope=addon_source.read_text().split('PHP_FUNCTION(swr_reactor_datagram_supported)')[1].split('static const zend_function_entry')[0]
@@ -198,7 +170,7 @@ try:
             defer_symbol='_ZN6swoole7Reactor5deferERKNSt3__18functionIFvPvEEES3_' if sys.platform=='darwin' else '_ZN6swoole7Reactor5deferERKSt8functionIFvPvEES2_'
             imports={line.split()[-1].lstrip('_') for line in undefined.splitlines() if line.split()}
             if defer_symbol.lstrip('_') not in imports or result.get('defer_method_image')!=str(engine.extension):raise ValueError('Actual production defer method import/origin differs')
-            if result.get('defer_owned_compiled')!=int(selected):raise ValueError('Compiled deferred field capability differs from SDK')
+            if result.get('defer_owned_compiled')!=int(selected):raise ValueError('Compiled deferred queue differs from the engine')
             if selected and any(result.get(key)!=str(engine.extension) for key in ['defer_push_image','defer_step_image','defer_clear_image']):raise ValueError('Actual selected Rust deferred queue origins differ')
         if a.builtins and (result['begin_image']!=str(engine.extension) or result['end_image']!=str(engine.extension)):raise ValueError('Actual production builtin method origins differ')
         if selected and a.builtins and result['builtins_image']!=str(engine.extension):raise ValueError('Actual Rust builtin origin differs')

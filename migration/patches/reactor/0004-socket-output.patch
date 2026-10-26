@@ -1,5 +1,5 @@
 diff --git a/src/network/socket.cc b/src/network/socket.cc
-index ed3945714..eeef82ed0 100644
+index ed3945714..07dc7e150 100644
 --- a/src/network/socket.cc
 +++ b/src/network/socket.cc
 @@ -21,2 +21,7 @@
@@ -10,60 +10,34 @@ index ed3945714..eeef82ed0 100644
 +#include "swoole_rs_reactor.h"
 +#include <limits>
  
-@@ -35,2 +40,10 @@ uint32_t Socket::default_buffer_size = SW_SOCKET_BUFFER_SIZE;
+@@ -35,8 +40,8 @@ uint32_t Socket::default_buffer_size = SW_SOCKET_BUFFER_SIZE;
  IOVector::IOVector(const iovec *_iov, int _iovcnt) {
-+#if defined(SWOOLE_RS_REACTOR_IOV_OWNED) && SWOOLE_RS_REACTOR_IOV_OWNED
+-    iov = new iovec[_iovcnt + _iovcnt];
+-    iov_iterator = iov + _iovcnt;
 +    auto allocation = swr_v1_reactor_iov_owned_new(_iov, _iovcnt);
 +    if (allocation.status == -1) throw std::bad_array_new_length();
 +    if (allocation.status != 0) throw std::bad_alloc();
 +    iov = allocation.original;
 +    iov_iterator = allocation.iterator;
-+    count = remain_count = _iovcnt;
-+#else
-     iov = new iovec[_iovcnt + _iovcnt];
-@@ -41,2 +54,3 @@ IOVector::IOVector(const iovec *_iov, int _iovcnt) {
-     memcpy(iov_iterator, _iov, sizeof(*_iov) * _iovcnt);
-+#endif
+     count = remain_count = _iovcnt;
+-
+-    memcpy(iov, _iov, sizeof(*_iov) * _iovcnt);
+-    memcpy(iov_iterator, _iov, sizeof(*_iov) * _iovcnt);
  }
-@@ -44,3 +58,7 @@ IOVector::IOVector(const iovec *_iov, int _iovcnt) {
+@@ -44,3 +49,3 @@ IOVector::IOVector(const iovec *_iov, int _iovcnt) {
  IOVector::~IOVector() {
-+#if defined(SWOOLE_RS_REACTOR_IOV_OWNED) && SWOOLE_RS_REACTOR_IOV_OWNED
+-    delete[] iov;
 +    swr_v1_reactor_iov_owned_free(iov);
-+#else
-     delete[] iov;
-+#endif
  }
-@@ -48,39 +66,27 @@ IOVector::~IOVector() {
+@@ -48,39 +53,9 @@ IOVector::~IOVector() {
  void IOVector::update_iterator(ssize_t _n) {
 -    size_t total_bytes = 0;
 -    size_t _offset_bytes = 0;
 -    int _index = 0;
 -
 -    if (_n <= 0 || remain_count == 0) {
-+#if defined(SWOOLE_RS_REACTOR_IOV_OWNED) && SWOOLE_RS_REACTOR_IOV_OWNED
-+    auto reply = swr_v1_reactor_iov_owned_progress(iov_iterator, _n, remain_count, index, offset_bytes);
-+    if (reply.action == 0) return;
-+    if (reply.action < 0) std::abort();
-+    remain_count = reply.remain_count;
-+    index = reply.index;
-+    offset_bytes = reply.offset_bytes;
-+    if (reply.action == 1) iov_iterator += reply.advance;
-+#else
-+    auto reply = swr_v1_reactor_iov_progress(iov_iterator, _n, remain_count, index, offset_bytes);
-+    switch (reply.action) {
-+    case 0: return;
-+    case 1:
-+    case 2:
-+        remain_count = reply.remain_count;
-+        index = reply.index;
-+        offset_bytes = reply.offset_bytes;
-+        if (reply.action == 2) return;
-+        iov_iterator += reply.advance;
-+        iov_iterator->iov_base = static_cast<char *>(iov_iterator->iov_base) + reply.consumed;
-+        iov_iterator->iov_len = iov_iterator->iov_len - reply.consumed;
-         return;
-+    default: std::abort();
-     }
+-        return;
+-    }
 -
 -    SW_LOOP_N(remain_count) {
 -        total_bytes += iov_iterator[i].iov_len;
@@ -94,9 +68,15 @@ index ed3945714..eeef82ed0 100644
 -
 -    // represents the length of _n greater than total_bytes
 -    abort();
-+#endif
++    auto reply = swr_v1_reactor_iov_owned_progress(iov_iterator, _n, remain_count, index, offset_bytes);
++    if (reply.action == 0) return;
++    if (reply.action < 0) std::abort();
++    remain_count = reply.remain_count;
++    index = reply.index;
++    offset_bytes = reply.offset_bytes;
++    if (reply.action == 1) iov_iterator += reply.advance;
  }
-@@ -89,31 +95,24 @@ static bool check_sendfile_parameters(const File *file, off_t begin, size_t leng
+@@ -89,31 +64,24 @@ static bool check_sendfile_parameters(const File *file, off_t begin, size_t leng
      auto filename = file->get_path().c_str();
 -    if (!file->ready()) {
 -        swoole_sys_warning("open('%s') failed", filename);
@@ -148,14 +128,14 @@ index ed3945714..eeef82ed0 100644
 -
 -    return true;
  }
-@@ -121,4 +120,4 @@ static bool check_sendfile_parameters(const File *file, off_t begin, size_t leng
+@@ -121,4 +89,4 @@ static bool check_sendfile_parameters(const File *file, off_t begin, size_t leng
  static size_t get_sendfile_chunk_size(off_t begin, off_t end) {
 -    size_t real_length = end - begin;
 -    return real_length > SW_SENDFILE_CHUNK_SIZE ? SW_SENDFILE_CHUNK_SIZE : real_length;
 +    static_assert(std::numeric_limits<off_t>::is_signed && sizeof(off_t) <= sizeof(int64_t), "off_t scalar domain");
 +    return swr_v1_reactor_output_chunk(begin, end, SW_SENDFILE_CHUNK_SIZE);
  }
-@@ -126,6 +125,14 @@ static size_t get_sendfile_chunk_size(off_t begin, off_t end) {
+@@ -126,6 +94,14 @@ static size_t get_sendfile_chunk_size(off_t begin, off_t end) {
  int Socket::what_event_want(int default_event) const {
 -    if (ssl && (ssl_want_write || ssl_want_read)) {
 -        return ssl_want_write ? SW_EVENT_WRITE : SW_EVENT_READ;
@@ -173,7 +153,7 @@ index ed3945714..eeef82ed0 100644
      }
 -    return default_event;
  }
-@@ -144,53 +151,52 @@ int Socket::what_event_want(int default_event) const {
+@@ -144,53 +120,52 @@ int Socket::what_event_want(int default_event) const {
  bool Socket::wait_for(const std::function<ReturnCode()> &fn, int event, int timeout_msec) {
 -    double began_at = 0;
 -    if (timeout_msec > 0) {
@@ -273,7 +253,7 @@ index ed3945714..eeef82ed0 100644
 -
 -    return false;
  }
-@@ -200,27 +206,25 @@ int Socket::sendfile_sync(const char *filename, off_t offset, size_t length) {
+@@ -200,27 +175,25 @@ int Socket::sendfile_sync(const char *filename, off_t offset, size_t length) {
      File file(filename, O_RDONLY);
 -
 -    if (!check_sendfile_parameters(&file, offset, length, &end)) {
@@ -323,7 +303,7 @@ index ed3945714..eeef82ed0 100644
 -
 -    return rv ? SW_OK : SW_ERR;
  }
-@@ -229,14 +233,8 @@ ssize_t Socket::writev_sync(const struct iovec *iov, size_t iovcnt) {
+@@ -229,14 +202,8 @@ ssize_t Socket::writev_sync(const struct iovec *iov, size_t iovcnt) {
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -344,7 +324,7 @@ index ed3945714..eeef82ed0 100644
 +    }, SW_EVENT_WRITE, sec2msec(write_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -244,15 +242,17 @@ ssize_t Socket::writev_sync(const struct iovec *iov, size_t iovcnt) {
+@@ -244,15 +211,17 @@ ssize_t Socket::writev_sync(const struct iovec *iov, size_t iovcnt) {
  swReturnCode Socket::connect_async(const Address &sa) {
 -    set_nonblock();
 -    while (true) {
@@ -373,7 +353,7 @@ index ed3945714..eeef82ed0 100644
      }
 -    return SW_READY;
  }
-@@ -260,24 +260,27 @@ swReturnCode Socket::connect_async(const Address &sa) {
+@@ -260,24 +229,27 @@ swReturnCode Socket::connect_async(const Address &sa) {
  int Socket::connect_sync(const Address &sa) {
 -    auto rc = connect_async(sa);
 -    if (rc != SW_WAIT) {
@@ -421,7 +401,7 @@ index ed3945714..eeef82ed0 100644
 -    set_block();
 -    return SW_OK;
  }
-@@ -289,4 +292,13 @@ void Socket::clean() const {
+@@ -289,4 +261,13 @@ void Socket::clean() const {
      char buf[2048];
 -    while (::recv(fd, buf, sizeof(buf), MSG_DONTWAIT) > 0) {
 -    };
@@ -437,7 +417,7 @@ index ed3945714..eeef82ed0 100644
 +        }
 +    }
  }
-@@ -300,30 +312,20 @@ int Socket::wait_event(int timeout_ms, int _events) const {
+@@ -300,30 +281,20 @@ int Socket::wait_event(int timeout_ms, int _events) const {
      event.events = translate_events_to_poll(_events);
 -
 -    if (timeout_ms < 0) {
@@ -484,7 +464,7 @@ index ed3945714..eeef82ed0 100644
 -
 -    return SW_OK;
  }
-@@ -332,14 +334,8 @@ ssize_t Socket::send_sync(const void *_data, size_t _len, int flags) {
+@@ -332,14 +303,8 @@ ssize_t Socket::send_sync(const void *_data, size_t _len, int flags) {
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -505,7 +485,7 @@ index ed3945714..eeef82ed0 100644
 +    }, SW_EVENT_WRITE, sec2msec(write_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -348,23 +344,8 @@ ssize_t Socket::recv_sync(void *_data, size_t _len, int flags) {
+@@ -348,23 +313,8 @@ ssize_t Socket::recv_sync(void *_data, size_t _len, int flags) {
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -535,7 +515,7 @@ index ed3945714..eeef82ed0 100644
 +    }, SW_EVENT_READ, sec2msec(read_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -400,14 +381,8 @@ ssize_t Socket::sendto_sync(const Address &sa, const void *_buf, size_t _n, int
+@@ -400,14 +350,8 @@ ssize_t Socket::sendto_sync(const Address &sa, const void *_buf, size_t _n, int
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -556,7 +536,7 @@ index ed3945714..eeef82ed0 100644
 +    }, SW_EVENT_WRITE, sec2msec(write_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -415,11 +390,18 @@ ssize_t Socket::sendto_sync(const Address &sa, const void *_buf, size_t _n, int
+@@ -415,11 +359,18 @@ ssize_t Socket::sendto_sync(const Address &sa, const void *_buf, size_t _n, int
  ssize_t Socket::recvfrom(char *buf, size_t len, int flags, sockaddr *addr, socklen_t *addr_len) const {
 -    ssize_t n = 0;
 -    SW_LOOP_N(SW_SOCKET_RETRY_COUNT) {
@@ -582,7 +562,7 @@ index ed3945714..eeef82ed0 100644
      }
 -    return n;
  }
-@@ -432,14 +414,8 @@ ssize_t Socket::recvfrom_sync(char *buf, size_t len, int flags, sockaddr *addr,
+@@ -432,14 +383,8 @@ ssize_t Socket::recvfrom_sync(char *buf, size_t len, int flags, sockaddr *addr,
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -603,7 +583,7 @@ index ed3945714..eeef82ed0 100644
 +    }, SW_EVENT_READ, sec2msec(read_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -498,11 +474,20 @@ int Socket::set_tcp_nopush(int nopush) {
+@@ -498,11 +443,20 @@ int Socket::set_tcp_nopush(int nopush) {
  #ifdef TCP_CORK
 -    if (set_option(IPPROTO_TCP, TCP_CORK, nopush) == SW_ERR) {
 -        return -1;
@@ -631,7 +611,7 @@ index ed3945714..eeef82ed0 100644
 +        }
 +    }
  }
-@@ -534,3 +519,14 @@ int Socket::listen(int backlog) {
+@@ -534,3 +488,14 @@ int Socket::listen(int backlog) {
  bool Socket::set_buffer_size(uint32_t _buffer_size) const {
 -    return set_send_buffer_size(_buffer_size) && set_recv_buffer_size(_buffer_size);
 +    uint32_t phase = 0;
@@ -647,7 +627,7 @@ index ed3945714..eeef82ed0 100644
 +        }
 +    }
  }
-@@ -538,3 +534,13 @@ bool Socket::set_buffer_size(uint32_t _buffer_size) const {
+@@ -538,3 +503,13 @@ bool Socket::set_buffer_size(uint32_t _buffer_size) const {
  bool Socket::set_recv_buffer_size(uint32_t _buffer_size) const {
 -    return set_option(SOL_SOCKET, SO_RCVBUF, _buffer_size) == 0;
 +    uint32_t phase = 0;
@@ -662,7 +642,7 @@ index ed3945714..eeef82ed0 100644
 +        }
 +    }
  }
-@@ -542,3 +548,13 @@ bool Socket::set_recv_buffer_size(uint32_t _buffer_size) const {
+@@ -542,3 +517,13 @@ bool Socket::set_recv_buffer_size(uint32_t _buffer_size) const {
  bool Socket::set_send_buffer_size(uint32_t _buffer_size) const {
 -    return set_option(SOL_SOCKET, SO_SNDBUF, _buffer_size) == 0;
 +    uint32_t phase = 0;
@@ -677,7 +657,7 @@ index ed3945714..eeef82ed0 100644
 +        }
 +    }
  }
-@@ -547,5 +563,16 @@ bool Socket::check_liveness() {
+@@ -547,5 +532,16 @@ bool Socket::check_liveness() {
      char buf;
 -    errno = 0;
 -    ssize_t retval = peek(&buf, sizeof(buf), MSG_DONTWAIT);
@@ -697,7 +677,7 @@ index ed3945714..eeef82ed0 100644
 +        }
 +    }
  }
-@@ -553,7 +580,18 @@ bool Socket::check_liveness() {
+@@ -553,7 +549,18 @@ bool Socket::check_liveness() {
  bool Socket::set_tcp_nodelay(int nodelay) {
 -    if (set_option(IPPROTO_TCP, TCP_NODELAY, nodelay) == SW_ERR) {
 -        return false;
@@ -721,7 +701,7 @@ index ed3945714..eeef82ed0 100644
 +        default: std::abort();
 +        }
      }
-@@ -562,16 +600,23 @@ bool Socket::set_tcp_nodelay(int nodelay) {
+@@ -562,16 +569,23 @@ bool Socket::set_tcp_nodelay(int nodelay) {
  bool Socket::cork() {
 -    if (tcp_nopush) {
 -        return false;
@@ -756,7 +736,7 @@ index ed3945714..eeef82ed0 100644
      }
 -    return true;
  }
-@@ -579,17 +624,24 @@ bool Socket::cork() {
+@@ -579,17 +593,24 @@ bool Socket::cork() {
  bool Socket::uncork() {
 -    if (!tcp_nopush) {
 -        return false;
@@ -793,7 +773,7 @@ index ed3945714..eeef82ed0 100644
      }
 -    return true;
  }
-@@ -605,10 +657,18 @@ static bool _set_timeout(int fd, int type, double timeout) {
+@@ -605,10 +626,18 @@ static bool _set_timeout(int fd, int type, double timeout) {
      timeval timeo;
 -    timeo.tv_sec = (int) timeout;
 -    timeo.tv_usec = (int) ((timeout - timeo.tv_sec) * 1000 * 1000);
@@ -820,7 +800,7 @@ index ed3945714..eeef82ed0 100644
 +        default: std::abort();
 +        }
      }
-@@ -617,57 +677,28 @@ static bool _set_timeout(int fd, int type, double timeout) {
+@@ -617,57 +646,28 @@ static bool _set_timeout(int fd, int type, double timeout) {
  static bool _fcntl_set_option(int sock, int nonblock, int cloexec) {
 -    int opts, ret;
 -
@@ -901,7 +881,7 @@ index ed3945714..eeef82ed0 100644
 -
 -    return true;
  }
-@@ -675,8 +706,13 @@ static bool _fcntl_set_option(int sock, int nonblock, int cloexec) {
+@@ -675,8 +675,13 @@ static bool _fcntl_set_option(int sock, int nonblock, int cloexec) {
  bool Socket::set_fd_option(int _nonblock, int _cloexec) {
 -    if (_fcntl_set_option(fd, _nonblock, _cloexec)) {
 -        nonblock = _nonblock;
@@ -921,7 +901,7 @@ index ed3945714..eeef82ed0 100644
 +        default: std::abort();
 +        }
      }
-@@ -685,16 +721,20 @@ bool Socket::set_fd_option(int _nonblock, int _cloexec) {
+@@ -685,16 +690,20 @@ bool Socket::set_fd_option(int _nonblock, int _cloexec) {
  void Socket::set_timeout(double timeout, int type) {
 -    if (timeout == 0) {
 -        return;
@@ -956,7 +936,7 @@ index ed3945714..eeef82ed0 100644
 +        default: std::abort();
 +        }
      }
-@@ -704,13 +744,14 @@ double Socket::get_timeout(TimeoutType type) const {
+@@ -704,13 +713,14 @@ double Socket::get_timeout(TimeoutType type) const {
      SW_ASSERT_1BYTE(type);
 -    if (type == SW_TIMEOUT_DNS) {
 -        return dns_timeout;
@@ -982,7 +962,7 @@ index ed3945714..eeef82ed0 100644
 +    case 6: assert(0); return -1;
 +    default: std::abort();
      }
-@@ -719,3 +760,15 @@ double Socket::get_timeout(TimeoutType type) const {
+@@ -719,3 +729,15 @@ double Socket::get_timeout(TimeoutType type) const {
  bool Socket::has_timedout() const {
 -    return errno == EAGAIN || errno == ETIMEDOUT || swoole_get_last_error() == SW_ERROR_SOCKET_POLL_TIMEOUT;
 +    static_assert(SW_ERROR_SOCKET_POLL_TIMEOUT == 6002, "Pinned poll timeout error");
@@ -999,7 +979,7 @@ index ed3945714..eeef82ed0 100644
 +        }
 +    }
  }
-@@ -727,7 +780,13 @@ bool Socket::has_kernel_nobufs() {
+@@ -727,7 +749,13 @@ bool Socket::has_kernel_nobufs() {
  bool Socket::set_kernel_read_timeout(double timeout) {
 -    if (_set_timeout(fd, SO_SNDTIMEO, timeout)) {
 -        write_timeout = timeout;
@@ -1018,7 +998,7 @@ index ed3945714..eeef82ed0 100644
 +        default: std::abort();
 +        }
      }
-@@ -736,7 +795,13 @@ bool Socket::set_kernel_read_timeout(double timeout) {
+@@ -736,7 +764,13 @@ bool Socket::set_kernel_read_timeout(double timeout) {
  bool Socket::set_kernel_write_timeout(double timeout) {
 -    if (_set_timeout(fd, SO_RCVTIMEO, timeout)) {
 -        read_timeout = timeout;
@@ -1037,7 +1017,7 @@ index ed3945714..eeef82ed0 100644
 +        default: std::abort();
 +        }
      }
-@@ -745,14 +810,21 @@ bool Socket::set_kernel_write_timeout(double timeout) {
+@@ -745,14 +779,21 @@ bool Socket::set_kernel_write_timeout(double timeout) {
  int Socket::handle_sendfile() {
 +    static_assert(SW_WAIT == 2 && SW_CLOSE == 3 && SW_ERROR == 4, "Native write classifications");
      Buffer *buffer = out_buffer;
@@ -1068,7 +1048,7 @@ index ed3945714..eeef82ed0 100644
 +        case 2: task->corked = static_cast<int>(reply.value); break;
 +        case 3: {
      size_t sendn = get_sendfile_chunk_size(task->begin, task->end);
-@@ -761,34 +833,20 @@ int Socket::handle_sendfile() {
+@@ -761,34 +802,20 @@ int Socket::handle_sendfile() {
      swoole_trace("rv=%ld|begin=%ld|sendn=%lu|end=%lu", rv, (long) task->begin, sendn, task->end);
 -
 -    if (rv <= 0) {
@@ -1091,6 +1071,14 @@ index ed3945714..eeef82ed0 100644
 -    } else {
 -        if (send_timer) {
 -            last_sent_time = time<std::chrono::milliseconds>(true);
+-        }
+-    }
+-
+-    // sendfile completed
+-    if (task->begin == task->end) {
+-        if (task->corked == 1) {
+-            uncork();
+-            task->corked = 0;
 +        case 4: observed = catch_write_error(errno); break;
 +        case 5: swoole_sys_warning("sendfile(%s, %ld, %zu) failed", task->get_filename(), (long) task->begin, requested); break;
 +        case 6: close_wait = 1; return SW_ERR;
@@ -1104,20 +1092,12 @@ index ed3945714..eeef82ed0 100644
 +        case 21: observed = send_timer != nullptr; break;
 +        default: std::abort();
          }
-     }
--
--    // sendfile completed
--    if (task->begin == task->end) {
--        if (task->corked == 1) {
--            uncork();
--            task->corked = 0;
--        }
 -        buffer->pop();
--    }
+     }
 -
 -    return SW_OK;
  }
-@@ -799,42 +857,61 @@ int Socket::handle_sendfile() {
+@@ -799,42 +826,61 @@ int Socket::handle_sendfile() {
  int Socket::handle_send() {
 +    static_assert(SW_WAIT == 2 && SW_CLOSE == 3 && SW_ERROR == 4, "Native write classifications");
      Buffer *buffer = out_buffer;
@@ -1212,7 +1192,7 @@ index ed3945714..eeef82ed0 100644
 +
 +#if !defined(SWOOLE_RS_BUFFER_TYPED) || !SWOOLE_RS_BUFFER_TYPED
  static void Socket_sendfile_destructor(BufferChunk *chunk) {
-@@ -843,8 +920,18 @@ static void Socket_sendfile_destructor(BufferChunk *chunk) {
+@@ -843,8 +889,18 @@ static void Socket_sendfile_destructor(BufferChunk *chunk) {
  }
 +#endif
  
@@ -1235,7 +1215,7 @@ index ed3945714..eeef82ed0 100644
 +        default: std::abort();
 +        }
      }
-@@ -853,17 +940,29 @@ ssize_t Socket::sendfile(const File &fp, off_t *offset, size_t length) {
+@@ -853,17 +909,29 @@ ssize_t Socket::sendfile(const File &fp, off_t *offset, size_t length) {
  int Socket::sendfile_async(const char *filename, off_t offset, size_t length) {
 -    std::unique_ptr<SendfileRequest> task(new SendfileRequest(filename, offset));
 -
@@ -1279,7 +1259,7 @@ index ed3945714..eeef82ed0 100644
 -
 -    return SW_OK;
  }
-@@ -871,41 +970,28 @@ int Socket::sendfile_async(const char *filename, off_t offset, size_t length) {
+@@ -871,41 +939,28 @@ int Socket::sendfile_async(const char *filename, off_t offset, size_t length) {
  ssize_t Socket::recv(void *_buf, size_t _n, int _flags) {
 -    ssize_t total_bytes = 0;
 -
@@ -1345,7 +1325,7 @@ index ed3945714..eeef82ed0 100644
 -
 -    return total_bytes;
  }
-@@ -913,22 +999,22 @@ ssize_t Socket::recv(void *_buf, size_t _n, int _flags) {
+@@ -913,22 +968,22 @@ ssize_t Socket::recv(void *_buf, size_t _n, int _flags) {
  ssize_t Socket::send(const void *_buf, size_t _n, int _flags) {
 -    ssize_t retval;
 -
@@ -1386,7 +1366,7 @@ index ed3945714..eeef82ed0 100644
 -
 -    return retval;
  }
-@@ -936,6 +1022,15 @@ ssize_t Socket::send(const void *_buf, size_t _n, int _flags) {
+@@ -936,6 +991,15 @@ ssize_t Socket::send(const void *_buf, size_t _n, int _flags) {
  ssize_t Socket::send_async(const void *_buf, size_t _n) {
 -    if (!swoole_event_is_available()) {
 -        return send_sync(_buf, _n, 0);
@@ -1406,7 +1386,7 @@ index ed3945714..eeef82ed0 100644
 +        default: std::abort();
 +        }
      }
-@@ -945,14 +1040,8 @@ ssize_t Socket::read_sync(void *_buf, size_t _len) {
+@@ -945,14 +1009,8 @@ ssize_t Socket::read_sync(void *_buf, size_t _len) {
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -1427,7 +1407,7 @@ index ed3945714..eeef82ed0 100644
 +    }, SW_EVENT_READ, sec2msec(read_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -961,14 +1050,8 @@ ssize_t Socket::write_sync(const void *_buf, size_t _len) {
+@@ -961,14 +1019,8 @@ ssize_t Socket::write_sync(const void *_buf, size_t _len) {
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -1448,7 +1428,7 @@ index ed3945714..eeef82ed0 100644
 +    }, SW_EVENT_WRITE, sec2msec(write_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -976,14 +1059,20 @@ ssize_t Socket::write_sync(const void *_buf, size_t _len) {
+@@ -976,14 +1028,20 @@ ssize_t Socket::write_sync(const void *_buf, size_t _len) {
  ssize_t Socket::readv(IOVector *io_vector) {
 -    ssize_t retval;
 -
@@ -1480,7 +1460,7 @@ index ed3945714..eeef82ed0 100644
 -    return retval;
 +    }
  }
-@@ -991,14 +1080,20 @@ ssize_t Socket::readv(IOVector *io_vector) {
+@@ -991,14 +1049,20 @@ ssize_t Socket::readv(IOVector *io_vector) {
  ssize_t Socket::writev(IOVector *io_vector) {
 -    ssize_t retval;
 -
@@ -1512,7 +1492,7 @@ index ed3945714..eeef82ed0 100644
 -    return retval;
 +    }
  }
-@@ -1006,15 +1101,19 @@ ssize_t Socket::writev(IOVector *io_vector) {
+@@ -1006,15 +1070,19 @@ ssize_t Socket::writev(IOVector *io_vector) {
  ssize_t Socket::peek(void *_buf, size_t _n, int _flags) const {
 -    ssize_t retval;
 -    _flags |= MSG_PEEK;
@@ -1544,7 +1524,7 @@ index ed3945714..eeef82ed0 100644
 -    return retval;
 +    }
  }
-@@ -1022,33 +1121,10 @@ ssize_t Socket::peek(void *_buf, size_t _n, int _flags) const {
+@@ -1022,33 +1090,10 @@ ssize_t Socket::peek(void *_buf, size_t _n, int _flags) const {
  int Socket::catch_error(const int err) {
 -    switch (err) {
 -    case EFAULT:

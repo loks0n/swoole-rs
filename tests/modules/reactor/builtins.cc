@@ -8,7 +8,9 @@
 #include <utility>
 #include <vector>
 #include "swoole_rs_reactor.h"
+#ifdef SWOOLE_RS_REACTOR
 #include "swoole_rs_reactor_defer.h"
+#endif
 #include "builtins.inc"
 using namespace swoole;
 int main(){
@@ -34,7 +36,6 @@ int main(){
     for(size_t events:{size_t(0),size_t(1),std::numeric_limits<size_t>::max()}){
         Reactor r;check(default_exit(&r,events)==(events==0));++cases;
     }
-#ifdef SWR_TEST_DEFER_OWNED
     {
         Reactor r;r.timeout_msec=73;check(r.get_timeout_msec()==73);check(!r.defer_tasks);
         r.defer([&](void*){check(r.get_timeout_msec()==73);check(!r.defer_tasks);});
@@ -42,6 +43,5 @@ int main(){
         defer_end(&r);check(r.get_timeout_msec()==73);check(!r.defer_tasks);
         r.timeout_msec=-1;check(r.get_timeout_msec()==-1);++cases;
     }
-#endif
     std::cout<<"{\"cases\":"<<cases<<",\"checks\":"<<checks<<",\"ordinary_deferred_scheduling\":true,\"destruction_observers_or_fault_probes\":false}\n";
 }

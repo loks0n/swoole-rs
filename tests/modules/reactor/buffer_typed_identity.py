@@ -1,7 +1,6 @@
 """Literal source/SDK identity for existing consumers under typed Buffer custody."""
 import hashlib
 import re
-import owned_iov_identity as common
 MACRO='SWOOLE_RS_BUFFER_TYPED'
 SOURCES=('crates/buffer/src/lib.rs','crates/buffer/src/typed.rs')
 PATCHES=('migration/patches/buffer/0001-buffer-header.patch','migration/patches/buffer/0002-buffer-body.patch','migration/patches/reactor/0004-socket-output.patch')
@@ -18,7 +17,16 @@ def requested(inputs,selected):
         raise ValueError(SOURCES[1]+': implementation missing from attested source closure')
     return value
 
-def configured(text,selected):return common.configured(text,selected,macro=MACRO)
+def configured(text,selected):
+    # Accept only a literal configured 0/1; duplicate/indirect values fail closed.
+    values=re.findall(r'^\s*#\s*define\s+'+re.escape(MACRO)+r'\b([^\n]*)',text,re.M)
+    undefs=re.findall(r'^\s*#\s*undef\s+'+re.escape(MACRO)+r'\b',text,re.M)
+    if len(values)>1 or (values and (undefs or values[0].strip() not in ('0','1'))):
+        raise ValueError(MACRO+': ambiguous SDK configuration')
+    enabled=bool(values and values[0].strip()=='1')
+    if enabled is not selected:
+        raise ValueError(MACRO+': selected SDK must be ON and Native SDK OFF')
+    return enabled
 
 def prepared(inputs,files):
     for name in SOURCES:

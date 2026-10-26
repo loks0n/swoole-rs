@@ -12,7 +12,7 @@ Most gates take the pinned upstream source and a Rust FFI archive:
 
 `NAME` is one of `registration`, `write_positive` (`--workflow` for the write
 workflow), `write_arguments`, `output`, `wait`, `callbacks`, `callback_queues`,
-`initialize`, `handlers`, `builtins` (`--defer-owned`), `backend_storage`,
+`initialize`, `handlers`, `builtins`, `backend_storage`,
 `flush`, `poll_snapshot`, `ordered_gate`, `filters_gate`, `write_gate`,
 `stream_gate` and `iov_owned`. Each extracts the original and patched function
 bodies from upstream after applying `migration/patches/reactor/` (patch
@@ -24,10 +24,7 @@ one of `--blocking`, `--iov-progress`, `--ordinary-io`, `--socket-policy`,
 Gates that need no upstream source:
 
 - `batch.py --archive A --report R [--sanitize]`: kernel-array decode and POD layout.
-- `socket_iterators.py --archive A --report R [--sanitize]`: registry iterators.
-- `sockets.py --source S --archive A --report R [--sanitize] [--order-model --standard c++14]`: socket registry source order.
-- `sockets_policy.py --report R`: compile/refusal contract of the socket-registry configuration macros.
-- `compile_gate.py --source S --report R [--sockets-owned]`: original and patched backend translation units compile as C++14.
+- `compile_gate.py --source S --report R`: original and patched backend translation units compile as C++14.
 - `buffer_typed_compile.py --source S --master-patch P --report R`: typed Buffer compositions compile.
 - `declarations.py --archive A --report R`: every `swr_v1_reactor_*`/`swr_v1_stream_*` declaration in the header is defined in the archive.
 - `callback_internal.py --report R`: compares current and control Rust callback metadata operations.
@@ -49,10 +46,10 @@ both engines:
 
 Profiles: default (readiness over AF_UNIX socketpairs), `--callbacks`,
 `--handlers`, `--builtins`, `--socket-output`, `--blocking`, `--ordinary-io`,
-`--datagram`. Opt-in ownership checks: `--require-owned-iov` (with
-`--blocking`), `--require-owned-defer` (with `--builtins`),
-`--require-owned-sockets` (default profile), `--require-output-workflow` (with
-`--socket-output`) and `--require-typed-buffer`. Each refuses a selected build
+`--datagram`. Extra identity checks: `--require-owned-iov` (with
+`--blocking`) and `--require-owned-defer` (with `--builtins`) check the Rust-owned storage
+imports and origins against the Native control; `--require-output-workflow`
+(with `--socket-output`) and `--require-typed-buffer` refuse a selected build
 whose source predates the required Rust code.
 
 Known failure: the original broad production profile failed on Native kqueue (a

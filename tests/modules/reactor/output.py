@@ -22,7 +22,7 @@ manifest=ROOT/'migration/patches/reactor/manifest.json';entry=[e for e in json.l
 if len(entry)!=1:raise ValueError('Expected sole M05 Socket overlay')
 entry=entry[0];patch=manifest.parent/entry['path'];dest='src/network/socket.cc'
 fixture_name='connect' if a.connect else 'datagram' if a.datagram else 'forwarding' if a.forwarding else 'socket_options' if a.socket_options else 'fd_options' if a.fd_options else 'socket_policy' if a.socket_policy else 'ordinary_io' if a.ordinary_io else 'iov_progress' if a.iov_progress else 'blocking' if a.blocking else 'output'
-report=dict(scope=('Whole connect async/sync source orchestration; inert positive effects only, no network/error/interruption/lifetime execution' if a.connect else 'Whole datagram syscall/retry/wait source sequencing; positive modeled effects only, Native address/storage unchanged' if a.datagram else 'Whole file/event forwarding positive source effects; clean syntax/pure Rust only, Native clean unexecuted' if a.forwarding else 'Whole ordinary buffer/timeval/timeout configuration source policy; positive modeled effects only' if a.socket_options else 'Whole ordinary fcntl sequencing/bit/publication source policy, positive effects only' if a.fd_options else 'Whole poll/cork/tcp option source policy with normal positive effects; classifier error0 only, no Native failure/interruption effects' if a.socket_policy else 'Whole ordinary send/recv/peek/vector/read/write source-control policy, positive effects only; no loaded production/error/fault/lifetime qualification' if a.ordinary_io else 'Genuine IOVector complete progression; existing Native storage/public class; no kernel/loaded production or error/fault/lifetime qualification' if a.iov_progress else 'Whole blocking Socket orchestration, positive Native effects only; no fault/EINTR/lifetime or loaded production qualification' if a.blocking else __doc__),pin=PIN,patch_application=[],syntax=[],commands=[],results=[],passed=False)
+report=dict(scope=('Whole connect async/sync source orchestration; inert positive effects only, no network/error/interruption/lifetime execution' if a.connect else 'Whole datagram syscall/retry/wait source sequencing; positive modeled effects only, Native address/storage unchanged' if a.datagram else 'Whole file/event forwarding positive source effects; clean syntax/pure Rust only, Native clean unexecuted' if a.forwarding else 'Whole ordinary buffer/timeval/timeout configuration source policy; positive modeled effects only' if a.socket_options else 'Whole ordinary fcntl sequencing/bit/publication source policy, positive effects only' if a.fd_options else 'Whole poll/cork/tcp option source policy with normal positive effects; classifier error0 only, no Native failure/interruption effects' if a.socket_policy else 'Whole ordinary send/recv/peek/vector/read/write source-control policy, positive effects only; no loaded production/error/fault/lifetime qualification' if a.ordinary_io else 'Genuine IOVector complete progression; Native vs Rust-owned descriptor storage, unchanged public class; no kernel/loaded production or error/fault/lifetime qualification' if a.iov_progress else 'Whole blocking Socket orchestration, positive Native effects only; no fault/EINTR/lifetime or loaded production qualification' if a.blocking else __doc__),pin=PIN,patch_application=[],syntax=[],commands=[],results=[],passed=False)
 with tempfile.TemporaryDirectory(prefix='swr-output-') as tmp:
  t=Path(tmp)
  try:
@@ -70,14 +70,6 @@ with tempfile.TemporaryDirectory(prefix='swr-output-') as tmp:
     header=subprocess.check_output(['git','-C',str(a.source),'show',PIN+':include/swoole_socket.h'],text=True)
     declaration=block(header,header.index('struct IOVector {'))[0]+';'
     extracted=declaration+'\n'+'\n'.join(block(body,body.index(sig))[0] for sig in ['IOVector::IOVector(','IOVector::~IOVector(','void IOVector::update_iterator('])
-    for sig in ['IOVector::IOVector(','IOVector::~IOVector(']:
-     actual=block(body,body.index(sig))[0]
-     capability='#if defined(SWOOLE_RS_REACTOR_IOV_OWNED) && SWOOLE_RS_REACTOR_IOV_OWNED'
-     if selected and capability in actual:
-      # This existing profile is default-OFF. Verify its literal Native branch
-      # rather than exempting the opt-in owner; iov_owned.py qualifies that path.
-      actual=actual[:actual.index('{')+1]+actual.split('\n#else',1)[1].rsplit('#endif',1)[0]+'}'
-     if actual!=block(original,original.index(sig))[0]:raise ValueError('Protected default Native vector allocation/destruction changed')
    if a.ordinary_io:
     timer=subprocess.check_output(['git','-C',str(a.source),'show',PIN+':include/swoole_timer.h'],text=True)
     conversion=block(timer,timer.index('static inline long sec2msec(const double'))[0]

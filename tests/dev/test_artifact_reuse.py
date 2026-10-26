@@ -7,23 +7,19 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 from tools import dev
-from tools.build_hybrid import REACTOR_OWNED_CAPABILITIES
 
 
 class ArtifactReuse(unittest.TestCase):
-    def fixture(self, root, owned=None):
-        args = SimpleNamespace(artifacts_from=root/'reports', lane='integrate', module=['reactor'] if owned else ['memory'],
-                               all_modules=False, stdext=False, fix_halfclose=False, **(owned or {}))
+    def fixture(self, root):
+        args = SimpleNamespace(artifacts_from=root/'reports', lane='integrate', module=['memory'],
+                               all_modules=False, stdext=False, fix_halfclose=False)
         for label, variant in [('selected', dev.build_variant(args)), ('native', 'upstream')]:
             folder = args.artifacts_from/(label+'-export')
             alias = root/'target/hybrid'/variant
             folder.mkdir(parents=True)
             (alias/'modules').mkdir(parents=True)
             manifest = dict(build_mode='immutable', configure=[],
-                            inputs=dict(modules=args.module if label=='selected' else [], fix_halfclose=False,
-                                        **{'reactor_' + name + '_owned_requested':
-                                           label == 'selected' and getattr(args, 'reactor_' + name + '_owned', False)
-                                           for name in REACTOR_OWNED_CAPABILITIES}))
+                            inputs=dict(modules=args.module if label=='selected' else [], fix_halfclose=False))
             values = {'swoole.so':label.encode(), 'build-manifest.json':json.dumps(manifest).encode()}
             for name, value in values.items():
                 (folder/name).write_bytes(value)
@@ -70,18 +66,6 @@ class ArtifactReuse(unittest.TestCase):
                         else:
                             with self.assertRaisesRegex(ValueError, 'producer source differs'):
                                 dev.verify_artifact_report(args)
-
-    def test_each_owned_storage_request_is_bound_to_the_selected_manifest(self):
-        for capability in REACTOR_OWNED_CAPABILITIES:
-            with self.subTest(capability=capability), TemporaryDirectory() as temporary:
-                root = Path(temporary)
-                attribute = 'reactor_' + capability + '_owned'
-                args = self.fixture(root, {attribute: True})
-                with patch.object(dev, 'ROOT', root), patch.object(dev.subprocess, 'check_output', return_value='frozen'):
-                    self.assertEqual(set(dev.verify_artifact_report(args)), {'native', 'selected'})
-                    setattr(args, attribute, False)
-                    with self.assertRaisesRegex(ValueError, 'configuration differs'):
-                        dev.verify_artifact_report(args)
 
     def test_loaded_minimal_profiles_capture_both_producers(self):
         for modules, phase in [(['coroutine'], 'coroutine-production-stack'),

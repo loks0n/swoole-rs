@@ -6,6 +6,7 @@
 #include <iostream>
 #include <new>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 #include "swoole_rs_reactor.h"
 constexpr int SW_EVENT_READ = 1 << 9, SW_EVENT_WRITE = 1 << 10, SW_EVENT_ERROR = 1 << 11;
@@ -15,6 +16,8 @@ struct Reactor {
     mutable unsigned copies = 0;
     int max_event_num = 0;
     const std::unordered_map<int, Socket *> &get_sockets() const { ++copies; return sockets; }
+    // Selected body reads a registry snapshot; model it as a copy in Native map order.
+    std::vector<std::pair<int, Socket *>> socket_registry_snapshot() const { ++copies; return {sockets.begin(), sockets.end()}; }
 };
 struct ReactorImpl { Reactor *reactor_; explicit ReactorImpl(Reactor *r): reactor_(r) {} };
 int16_t translate_events_to_poll_original(int);

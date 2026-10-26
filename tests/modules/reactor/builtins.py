@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Exact deferred/begin/idle/exit bodies; default preserves real CallbackManager.
+"""Exact deferred/begin/idle/exit bodies: Native vs Rust-owned deferred queue.
 
---defer-owned separately compares Native/default/explicit-OFF/owned Rust queues
-with the unchanged original assertions and a positive null/timeout case.
-Native payload effects and original legacy CallbackManager remain Native;
-selected owned mode has no Native list. No destructor observer, allocator hook,
-recursive execution, failure/lifetime/shutdown or production/performance proof.
+Compares the unchanged original assertions plus a positive null/timeout case
+across C++14/17/20. Native payload effects and the original legacy
+CallbackManager remain Native; the selected queue has no Native list. No
+destructor observer, allocator hook, recursive execution,
+failure/lifetime/shutdown or production/performance proof.
 """
 import argparse
 import json
@@ -20,7 +20,6 @@ from tools.build_upstream import require_build_space
 from tools.harness import run_isolated
 from tools.harness import run_compiler
 p=argparse.ArgumentParser(description=__doc__)
-p.add_argument('--defer-owned',action='store_true',help='Separate Native/default/explicit-OFF/owned deferred-queue source controls, CPP14/17/20')
 p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True);p.add_argument('--report',type=Path,required=True);p.add_argument('--sanitize',action='store_true');a=p.parse_args()
 if a.report.exists():raise ValueError('Choose a unique receipt path')
 report=dict(scope=__doc__,pin=PIN,patch_application=[],commands=[],results=[],passed=False)
@@ -35,8 +34,7 @@ with tempfile.TemporaryDirectory(prefix='swr-builtins-') as tmp:
     header=original['include/swoole_reactor.h'];manager=block(header,header.index('class CallbackManager'))[0]+';';task=block(header,header.index('struct DeferCallback'))[0]+';'
     report['pinned_callback_alias']=alias
     try:
-        variants=['original','selected','selected-off','selected-owned'] if a.defer_owned else ['original','selected']
-        for variant in variants:
+        for variant in ['original','selected']:
             base=original['src/reactor/base.cc'] if variant=='original' else (t/'src/reactor/base.cc').read_text()
             cls='namespace swoole {\n'+alias+'\n'+task+'\n'+manager+'''
             class Reactor {public:CallbackManager *defer_tasks=nullptr;DeferCallback idle_task{},future_task{};bool running=true,wait_exit=false,accepted=true,mutate_wait=false;unsigned queries=0;
@@ -52,28 +50,22 @@ with tempfile.TemporaryDirectory(prefix='swr-builtins-') as tmp:
                 ('set_exit_condition(EXIT_CONDITION_DEFAULT','static bool default_exit(Reactor *reactor,size_t &event_num)'),
             ]:
                 start=base.index(sig);fragment,_=block(base,start);cls+=definition+fragment[fragment.index('{'):]+'\n'
-            if a.defer_owned:
-                selected_header=(t/'include/swoole_reactor.h').read_text()
-                selected_manager=block(selected_header,selected_header.index('class CallbackManager'))[0]+';'
-                if selected_manager!=manager:raise ValueError('Protected original CallbackManager changed')
-                source_header=header if variant=='original' else selected_header
-                field='CallbackManager *defer_tasks=nullptr;'
-                if variant!='original':
-                    start=source_header.index('#if defined(SWOOLE_RS_REACTOR_DEFER_OWNED)')
-                    field=source_header[start:source_header.index('#endif',start)+len('#endif')]
-                cls=cls.replace('CallbackManager *defer_tasks=nullptr;', '\n'+field+'\nint timeout_msec=17;'+block(source_header,source_header.index('int get_timeout_msec('))[0]+'\n')
-                report['protected_manager_unchanged']=True
-                native_predicate='} else if (reactor_->defer_tasks) {'
-                selected_predicate='milliseconds <= 0 && reactor_->defer_tasks != nullptr'
-                if native_predicate not in original['src/reactor/kqueue.cc'] or selected_predicate not in (t/'src/reactor/kqueue.cc').read_text():raise ValueError('Actual kqueue observation source is not bound')
-                report['kqueue_observation_source']={'native':native_predicate,'selected':selected_predicate,'runtime_qualified':False}
+            selected_header=(t/'include/swoole_reactor.h').read_text()
+            selected_manager=block(selected_header,selected_header.index('class CallbackManager'))[0]+';'
+            if selected_manager!=manager:raise ValueError('Protected original CallbackManager changed')
+            source_header=header if variant=='original' else selected_header
+            field=('CallbackManager' if variant=='original' else 'ReactorDeferredQueue')+' *defer_tasks = nullptr;'
+            if field not in source_header:raise ValueError('Deferred queue field is not bound')
+            cls=cls.replace('CallbackManager *defer_tasks=nullptr;', '\n'+field+'\nint timeout_msec=17;'+block(source_header,source_header.index('int get_timeout_msec('))[0]+'\n')
+            report['protected_manager_unchanged']=True
+            native_predicate='} else if (reactor_->defer_tasks) {'
+            selected_predicate='milliseconds <= 0 && reactor_->defer_tasks != nullptr'
+            if native_predicate not in original['src/reactor/kqueue.cc'] or selected_predicate not in (t/'src/reactor/kqueue.cc').read_text():raise ValueError('Actual kqueue observation source is not bound')
+            report['kqueue_observation_source']={'native':native_predicate,'selected':selected_predicate,'runtime_qualified':False}
             (t/'builtins.inc').write_text(cls+'}\n')
-            for standard in (['c++14','c++17','c++20'] if a.defer_owned else ['c++14']):
+            for standard in ['c++14','c++17','c++20']:
                 binary=t/(variant+'-'+standard);cmd=['c++','-std='+standard,'-O1','-g','-I'+str(t),'-I'+str(ROOT/'native/reactor'),ROOT/'tests/modules/reactor/builtins.cc',a.archive.resolve(),'-lpthread','-o',binary]
-                if a.defer_owned:
-                    cmd+=['-DSWR_TEST_DEFER_OWNED=1']
-                    if variant!='original':cmd+=['-DSWOOLE_RS_REACTOR=1']
-                    if variant in ['selected-off','selected-owned']:cmd+=['-DSWOOLE_RS_REACTOR_DEFER_OWNED='+('1' if variant=='selected-owned' else '0')]
+                if variant!='original':cmd+=['-DSWOOLE_RS_REACTOR=1']
                 if a.sanitize:cmd+=['-fsanitize=address,undefined','-fno-omit-frame-pointer']
                 if sys.platform.startswith('linux'):cmd+=['-ldl','-lm']
                 for stage,command in [('compile',cmd),('execute',[binary])]:
