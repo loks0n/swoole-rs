@@ -868,6 +868,50 @@ def phase_dependencies(commands, reports):
     return dependencies
 
 
+PHASE_WEIGHTS = ROOT / 'tools/phase_weights.json'  # seconds per phase from a merge-tier run
+DEFAULT_WEIGHT = 2
+
+
+def shard(commands, reports, index, count):
+    """Every barrier (and what barriers read), plus the index-th of count groups of the other
+    phases, balanced by weight. A phase always shares a shard with phases whose report it reads."""
+    weights = json.loads(PHASE_WEIGHTS.read_text())
+    owners = {str(reports / (name + suffix)): name for name, _ in commands for suffix in ('.json', '.xml')}
+    reads = {name: {owners[str(arg)] for arg in command if str(arg) in owners} - {name} for name, command in commands}
+    everywhere = set(BARRIER_PHASES)
+    for name in [n for n, _ in commands if n in BARRIER_PHASES]:
+        stack = list(reads[name])
+        while stack:
+            other = stack.pop()
+            if other not in everywhere:
+                everywhere.add(other)
+                stack += reads[other]
+    group = {name: name for name, _ in commands}
+    def root(name):
+        while group[name] != name:
+            name = group[name]
+        return name
+    for name, needs in reads.items():
+        for other in needs - everywhere:
+            group[root(other)] = root(name)
+    sizes = {}
+    for name, _ in commands:
+        if name not in everywhere:
+            sizes[root(name)] = sizes.get(root(name), 0) + weights.get(name, DEFAULT_WEIGHT)
+    load, slot = [0] * count, {}
+    for unit in sorted(sizes, key=lambda unit: (-sizes[unit], unit)):
+        slot[unit] = load.index(min(load))
+        load[slot[unit]] += sizes[unit]
+    return [(name, command) for name, command in commands if name in everywhere or slot[root(name)] == index - 1]
+
+
+def shard_spec(value):
+    index, _, count = value.partition('/')
+    if not (index.isdigit() and count.isdigit() and 1 <= int(index) <= int(count)):
+        raise argparse.ArgumentTypeError('expected I/N with 1 <= I <= N')
+    return int(index), int(count)
+
+
 def schedule(commands, dependencies):
     """Plan order, except that serial phases nothing reads from move to the end of their
     barrier segment, so they don't drain the pipeline in the middle of parallel work."""
@@ -918,6 +962,8 @@ def main():
     parser.add_argument('--benchmark', action='store_true', help='Run isolated benchmarks after all correctness phases pass')
     parser.add_argument('--compare', action='store_true', help='Also rerun upstream controls in the candidate lane (integration always does)')
     parser.add_argument('--phase', action='append', help='Run named canonical phases only; omitted gates remain explicitly not run and cannot qualify full integration')
+    parser.add_argument('--shard', type=shard_spec, metavar='I/N',
+                        help='Run slice I of N of the integrate plan; every slice builds and runs the barriers')
     parser.add_argument('--artifacts-from', type=Path, help='Reuse verified exports from an existing same-source report for explicit correctness phases; never reuse test outcomes')
     parser.add_argument('--frozen-source', help='Require this literal 40-hex HEAD and a clean checkout before and after each integration phase')
     parser.add_argument('--plan', action='store_true', help='Print commands without executing or writing reports')
@@ -940,6 +986,8 @@ def main():
     if args.phase and (args.lane == 'edit' or args.benchmark):
         parser.error('--phase requires candidate/integrate and cannot qualify a benchmark run')
     artifact_identity = None
+    if args.shard and (args.lane != 'integrate' or args.phase):
+        parser.error('--shard splits the full integrate plan; it cannot be combined with --phase')
     if args.artifacts_from:
         if args.lane != 'integrate' or not args.phase or set(args.phase) & {'build', 'reference-build', 'stdext-reference-build', 'buffer-legacy-build'}:
             parser.error('--artifacts-from requires explicit integration phases without builds')
@@ -963,6 +1011,8 @@ def main():
                     parser.error('--phase ' + name + ' requires report-producing phases in the same run: '
                                  + ', '.join(sorted(missing)))
     commands = [(name, command) for name, command in planned if not args.phase or name in args.phase]
+    if args.shard:
+        commands = shard(commands, reports, *args.shard)
     if args.plan:
         print(json.dumps([{'phase': name, 'command': command} for name, command in commands], indent=2))
         return 0

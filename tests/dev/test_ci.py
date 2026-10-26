@@ -32,9 +32,12 @@ elif args[:2] == ['run', 'download']:
     rows = data.get('phases', {}).get(args[2])
     if rows is None:
         sys.exit(1)
-    loop = Path(args[args.index('-D') + 1]) / 'target/reports/dev/x/loop.json'
-    loop.parent.mkdir(parents=True)
-    loop.write_text(json.dumps({'phases': [{'phase': name, 'failed': not passed} for name, passed in rows]}))
+    # A run's phases are one list, or one list per full-gates shard (artifacts phases-1, phases-2, ...).
+    shards = rows if rows and isinstance(rows[0][0], list) else [rows]
+    for index, shard in enumerate(shards, 1):
+        loop = Path(args[args.index('-D') + 1]) / f'phases-{index}/target/reports/dev/x/loop.json'
+        loop.parent.mkdir(parents=True)
+        loop.write_text(json.dumps({'phases': [{'phase': name, 'failed': not passed} for name, passed in shard]}))
 elif args[:2] == ['run', 'list']:
     sha = args[args.index('--commit') + 1]
     queue = data['runs'].get(sha, [])
@@ -96,6 +99,15 @@ class Ci(unittest.TestCase):
         self.assertEqual((result['previous_run'], result['new_failures'], result['fixed']),
                          ('u4', ['http-native', 'ports-added'], ['timer-model']))
         self.assertEqual(result['logs'], {'rust': ['2026-10-25T21:00:01Z error: boom']})
+
+    def test_shard_artifacts_are_merged(self):
+        history = [{'databaseId': 7, 'conclusion': 'failure', 'url': 'u7'}, {'databaseId': 4, 'conclusion': 'failure', 'url': 'u4'}]
+        phases = {'7': [[['build', True], ['timer-model', False]], [['build', False], ['http-native', True]]],
+                  '4': [[['build', True], ['timer-model', True]], [['build', True], ['http-native', True]]]}
+        code, result, _ = self.ci('status', runs={'c' * 40: ['failure']}, history=history, phases=phases)
+        # build passed in one shard and failed in the other, so it failed.
+        self.assertEqual(result['failed_phases'], ['build', 'timer-model'])
+        self.assertEqual(result['new_failures'], ['build', 'timer-model'])
 
     def test_runs_without_phases_keep_the_log_tail(self):
         code, result, _ = self.ci('status', runs={'c' * 40: ['failure']})
