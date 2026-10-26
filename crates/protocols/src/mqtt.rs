@@ -18,6 +18,7 @@ pub fn mqtt_frame_length(bytes: &[u8]) -> i64 {
 /// Input covers `length` readable bytes; null is allowed at zero length.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_mqtt_frame_length(data: *const u8, length: usize) -> i64 {
+    // SAFETY: `data` lends `length` initialized bytes (null only when empty) for this call.
     unsafe { crate::input(data, length) }.map_or(-1, mqtt_frame_length)
 }
 
