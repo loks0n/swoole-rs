@@ -276,7 +276,12 @@ unsafe fn next(
             (Operation::Init, 13) => {
                 // Native success first writes max(default, limit), then
                 // overwrites it without intervening effects. Keep only min.
-                state.index = ((observed >> 1) as u32).min(argument);
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "upstream's (uint32_t) rlim_cur, taken before SW_MIN"
+                )]
+                let limit = (observed >> 1) as u32;
+                state.index = limit.min(argument);
                 (15, Action::PublishRlimit)
             }
             (Operation::Init, 15) => (16, Action::TaskTemplate),

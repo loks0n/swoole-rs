@@ -66,11 +66,14 @@ pub unsafe extern "C" fn swr_v1_corebase_random_next(
             }
             2 if flags & 2 != 0 => {
                 // Preserve native unsigned addition and range-width rules.
-                let width = max.wrapping_sub(min).wrapping_add(1) as u32;
+                let width = max.wrapping_sub(min).wrapping_add(1).cast_unsigned();
                 if width == 0 {
                     return INVALID;
                 }
-                state.value = (min as u32).wrapping_add(random % width) as i32;
+                state.value = min
+                    .cast_unsigned()
+                    .wrapping_add(random % width)
+                    .cast_signed();
                 state.phase = 4;
                 RETURN
             }
@@ -185,10 +188,10 @@ mod tests {
             } else {
                 assert_eq!(initial, 6);
                 for index in 0..len {
-                    let action = step(&mut s, 1, 0, len, (index % 62) as u32, 0, 0);
+                    let action = step(&mut s, 1, 0, len, u32::try_from(index % 62).unwrap(), 0, 0);
                     transitions += 1;
                     assert_eq!(s.index, index);
-                    out[1 + s.index] = s.value as u8;
+                    out[1 + s.index] = u8::try_from(s.value).unwrap();
                     if index + 1 == len {
                         assert_eq!(action, 10); // final store then NUL, no extra draw
                         out[2 + s.index] = 0;
@@ -240,7 +243,7 @@ mod tests {
             if index == 3 {
                 break;
             } // simulated native append exception: no reentry
-            out.push(char::from(s.value as u8));
+            out.push(char::from(u8::try_from(s.value).unwrap()));
         }
         assert_eq!(out, "prefix:AbZ");
         assert_eq!(s.phase, 2);
@@ -260,10 +263,10 @@ mod tests {
             } else {
                 assert_eq!(initial, 6);
                 for index in 0..len {
-                    let action = step(&mut s, 2, 0, len, (index % 62) as u32, 0, 0);
+                    let action = step(&mut s, 2, 0, len, u32::try_from(index % 62).unwrap(), 0, 0);
                     transitions += 1;
                     assert_eq!(s.index, index);
-                    text.push(char::from(s.value as u8));
+                    text.push(char::from(u8::try_from(s.value).unwrap()));
                     assert_eq!(action, if index + 1 == len { 11 } else { 7 });
                 }
             }
