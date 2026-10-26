@@ -1,0 +1,33 @@
+name: ClusterFuzzLite PR
+on:
+  pull_request:
+    paths: ['crates/**', 'fuzz/**', '.clusterfuzzlite/**', 'Cargo.lock']
+permissions: read-all
+concurrency:
+  group: cflite-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  # Fuzzes the targets a PR's change reaches for five minutes, starting from the
+  # corpus the nightly batch run keeps. A crash fails the job and is uploaded.
+  fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+        with:
+          language: rust
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          sanitizer: address
+      - id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 300
+          mode: code-change
+          sanitizer: address
+          minimize-crashes: true
+      - if: failure() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cflite-crashes
+          path: ./out/artifacts
