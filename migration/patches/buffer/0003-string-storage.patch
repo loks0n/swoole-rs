@@ -1,5 +1,5 @@
 diff --git a/include/swoole_string.h b/include/swoole_string.h
-index ea22f03..43a1b50 100644
+index ea22f03..719ccd9 100644
 --- a/include/swoole_string.h
 +++ b/include/swoole_string.h
 @@ -20,2 +20,4 @@
@@ -81,13 +81,7 @@ index ea22f03..43a1b50 100644
 +        return equals(data.c_str(), data.length());
 +}
  
-@@ -149,9 +146,9 @@ class String {
- 
-     void clear() {
-         length = 0;
-         offset = 0;
-     }
- 
+@@ -155,3 +152,3 @@ class String {
      void extend() {
 -        extend(size * 2);
 +        extend(grown_capacity(0));
@@ -127,6 +121,14 @@ index ea22f03..43a1b50 100644
 -            size_t align_size = SW_MEM_ALIGNED_SIZE(size * 2);
 -            while (align_size < new_size) {
 -                align_size *= 2;
+-            }
+-            new_size = align_size;
+-        }
+-
+-        size_t n;
+-        if (flags & FORMAT_APPEND) {
+-            if (_size > size - length) {
+-                reserve(new_size);
 +        const size_t formatted = sw_snprintf(nullptr, 0, format, args...);
 +        uint32_t phase = 0;
 +        size_t rendered = 0;
@@ -141,15 +143,6 @@ index ea22f03..43a1b50 100644
 +            case SWR_STRING_FORMAT_COMMIT: length = step.length; return step.result;
 +            default: abort();
              }
--            new_size = align_size;
-+            phase = step.next;
-         }
--
--        size_t n;
--        if (flags & FORMAT_APPEND) {
--            if (_size > size - length) {
--                reserve(new_size);
--            }
 -            n = sw_snprintf(str + length, size - length, format, args...);
 -            length += n;
 -        } else {
@@ -158,7 +151,8 @@ index ea22f03..43a1b50 100644
 -            }
 -            n = sw_snprintf(str, size, format, args...);
 -            length = n;
--        }
++            phase = step.next;
+         }
 -
 -        return n;
 -    }
@@ -169,7 +163,7 @@ index ea22f03..43a1b50 100644
 +
  inline String *make_string(size_t size, const Allocator *allocator = nullptr) {
 diff --git a/src/core/string.cc b/src/core/string.cc
-index f478fde..7b94792 100644
+index f478fde..f4beee0 100644
 --- a/src/core/string.cc
 +++ b/src/core/string.cc
 @@ -20,33 +20,90 @@
@@ -230,6 +224,12 @@ index f478fde..7b94792 100644
 +    if (status == 0) publish_state(s, state);
 +    return status;
 +}
++
++swr_v1_string_edit string_edit(uint32_t operation, const char *data = nullptr, size_t length = 0,
++                               int64_t offset = 0, size_t count = 0) {
++    return {operation, reinterpret_cast<const uint8_t *>(data), length, count, offset,
++            SW_DEFAULT_ALIGNMENT, static_cast<size_t>(swoole_pagesize())};
++}
  
 -    _size = SW_MEM_ALIGNED_SIZE(_size);
 -    length = 0;
@@ -237,15 +237,10 @@ index f478fde..7b94792 100644
 -    offset = 0;
 -    str = (char *) _allocator->malloc(_size);
 -    allocator = _allocator;
-+swr_v1_string_edit string_edit(uint32_t operation, const char *data = nullptr, size_t length = 0,
-+                               int64_t offset = 0, size_t count = 0) {
-+    return {operation, reinterpret_cast<const uint8_t *>(data), length, count, offset,
-+            SW_DEFAULT_ALIGNMENT, static_cast<size_t>(swoole_pagesize())};
-+}
  
 -    if (str == nullptr) {
 -        throw std::bad_alloc();
-+
+-    }
 +static_assert(std::is_standard_layout<String>::value && sizeof(String) == sizeof(swr_v1_string_object) &&
 +              offsetof(String, offset) == offsetof(swr_v1_string_object, offset) &&
 +              offsetof(String, str) == offsetof(swr_v1_string_object, data) &&
@@ -261,9 +256,8 @@ index f478fde..7b94792 100644
 +        reinterpret_cast<const swr_v1_string_object *>(source), &edit,
 +        reinterpret_cast<const swr_v1_string_allocator *>(initial), &result));
 +    return reinterpret_cast<char *>(result);
--    }
- }
 +}
+ }
  
 -void String::move(String &&src) {
 -    str = src.str;
@@ -417,21 +411,25 @@ index f478fde..7b94792 100644
 -    length += s_len;
 +    compat_string(*this, string_edit(SWR_STRING_APPEND_I32, nullptr, 0, value));
  }
-@@ -185,9 +175,6 @@ void String::append(int value) {
+@@ -185,9 +175,11 @@ void String::append(int value) {
  void String::append(const char *append_str, size_t _length) {
 -    size_t new_size = length + _length;
 -    if (new_size > size) {
 -        reserve(new_size);
--    }
++    // Appends that fit are upstream's inline copy (#366); growth is the whole Rust edit.
++    if (_length <= size - length) {
++        if (_length != 0) {
++            memcpy(str + length, append_str, _length);
++        }
++        length += _length;
++        return;
+     }
 -
 -    memcpy(str + length, append_str, _length);
 -    length += _length;
-+    if (swr_v1_string_append(reinterpret_cast<swr_v1_string_object *>(this),
-+                             reinterpret_cast<const uint8_t *>(append_str), _length) != 0) {
-+        compat_string(*this, string_edit(SWR_STRING_APPEND, append_str, _length));
-+    }
++    compat_string(*this, string_edit(SWR_STRING_APPEND, append_str, _length));
  }
-@@ -195,28 +182,35 @@ void String::append(const char *append_str, size_t _length) {
+@@ -195,28 +187,35 @@ void String::append(const char *append_str, size_t _length) {
  bool String::append_random_bytes(size_t _length, bool base64) {
 -    size_t new_size = length + _length;
 -    size_t base_encode_size;
@@ -492,43 +490,43 @@ index f478fde..7b94792 100644
 -
 -    return true;
  }
-@@ -224,25 +218,16 @@ bool String::append_random_bytes(size_t _length, bool base64) {
+@@ -224,15 +223,4 @@ bool String::append_random_bytes(size_t _length, bool base64) {
  void String::reserve(size_t new_size) {
 -    if (size == 0) {
 -        alloc(new_size, nullptr);
 -        return;
 -    }
-+    const auto source = state_of(*this);
-+    allocate_string(*this, SWR_STRING_ALLOCATION_RESERVE, &source, new_size, nullptr);
-+}
- 
+-
 -    new_size = SW_MEM_ALIGNED_SIZE(new_size);
 -    auto new_str = static_cast<char *>(allocator->realloc(str, new_size));
 -    if (new_str == nullptr) {
 -        throw std::bad_alloc();
 -    }
-+char *String::release() {
-+    auto plan = transition(*this, SWR_STRING_TAKE);
-+    publish_state(*this, plan.state);
-+    return reinterpret_cast<char *>(plan.owner.data);
-+}
- 
+-
 -    str = new_str;
 -    size = new_size;
-+void String::set_null_terminated() {
-+    compat_string(*this, string_edit(SWR_STRING_TERMINATE, nullptr, 0, 0, str && !allocator ? 1 : 0));
++    const auto source = state_of(*this);
++    allocate_string(*this, SWR_STRING_ALLOCATION_RESERVE, &source, new_size, nullptr);
  }
- 
--char *String::release() {
+@@ -240,23 +228,15 @@ void String::reserve(size_t new_size) {
+ char *String::release() {
 -    char *tmp = str;
 -    str = nullptr;
 -    size = 0;
 -    length = 0;
 -    offset = 0;
 -    return tmp;
--}
++    auto plan = transition(*this, SWR_STRING_TAKE);
++    publish_state(*this, plan.state);
++    return reinterpret_cast<char *>(plan.owner.data);
+ }
  
-@@ -250,13 +235,3 @@ void String::repeat(const char *data, size_t len, size_t n) {
++void String::set_null_terminated() {
++    compat_string(*this, string_edit(SWR_STRING_TERMINATE, nullptr, 0, 0, str && !allocator ? 1 : 0));
++}
++
++
+ void String::repeat(const char *data, size_t len, size_t n) {
      assert(n > 0);
 -    if (len == 1) {
 -        if ((size < length + n)) {
@@ -543,7 +541,7 @@ index f478fde..7b94792 100644
 -    }
 +    compat_string(*this, string_edit(SWR_STRING_REPEAT, data, len, 0, n));
  }
-@@ -272,49 +247,71 @@ ssize_t String::split(const char *delimiter, size_t delimiter_length, const Stri
+@@ -272,49 +252,71 @@ ssize_t String::split(const char *delimiter, size_t delimiter_length, const Stri
      static int count;
 -    count++;
 +    ++count;
