@@ -9,3 +9,6 @@ itoa = "1.0.18"
 [lib]
 name = "swoole_rs_corebase"
 crate-type = ["rlib"]
+
+[lints]
+workspace = true

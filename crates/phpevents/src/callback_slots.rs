@@ -23,7 +23,6 @@ unsafe fn write(cell: *mut SwrPhpEventCallback, identity: usize) {
 /// Seed accepts uninitialized cells; all other modes require initialized cells.
 /// No Native effect runs in this function. FREE callers return after each
 /// Native destruction; no slot is cleared and writable is read only on reentry.
-#[allow(clippy::too_many_arguments)] // Frozen local C ABI keeps independent cell addresses explicit.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_callbacks(
     phase: *mut u32,
@@ -71,7 +70,6 @@ pub unsafe extern "C" fn swr_v1_phpevents_callbacks(
 /// Same cell obligations as callbacks; phase starts0. Constructor identities
 /// are exact Native outputs. Native deferral/backend effects finish before the
 /// next call; no borrow is retained. Observation is the Native backend status.
-#[allow(clippy::too_many_arguments)] // Frozen local C ABI keeps independent cell addresses explicit.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_update_owned(
     phase: *mut u32,

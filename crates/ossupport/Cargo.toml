@@ -6,3 +6,6 @@ license = "Apache-2.0"
 [lib]
 name = "swoole_rs_ossupport"
 crate-type = ["rlib"]
+
+[lints]
+workspace = true

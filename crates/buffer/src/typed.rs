@@ -206,13 +206,6 @@ mod tests {
         assert_eq!(mem::offset_of!(Front, token), 24);
         assert_eq!(mem::offset_of!(Front, generation), 32);
         assert_eq!(mem::size_of::<Detached>(), 16);
-        eprintln!(
-            "typed-layout owner={} entry={} front={} detached={}",
-            mem::size_of::<Buffer>(),
-            mem::size_of::<Entry>(),
-            mem::size_of::<Front>(),
-            mem::size_of::<Detached>()
-        );
         unsafe {
             let mut queue = ptr::null_mut();
             assert_eq!(swr_v1_buffer_typed_create(3, &mut queue), OK);

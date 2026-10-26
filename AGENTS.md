@@ -13,6 +13,11 @@ Run original PHPT tests with PHP's official runner through corpus/upstream/run.p
 not upstream's tests/start.sh: its cleanup can kill unrelated processes.
 Keep module tests under tests/modules/<module>/.
 
+Rust lint levels live only in the root `Cargo.toml` (`[workspace.lints]`) and
+`clippy.toml`. Never lower one in a PR that also changes code; lowering one needs
+`needs:decision`. Suppress with `#[expect(lint, reason = "...")]`, never `#[allow]`,
+and give a reason a reviewer can judge. Deny a lint once its count reaches zero.
+
 Benchmarks use optimized builds and run without concurrent build or test load.
 See corpus/README.md, corpus/upstream/README.md and benchmarks/README.md.
 

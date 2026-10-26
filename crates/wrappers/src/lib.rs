@@ -1,5 +1,8 @@
 //! Wrapper-local request state. Native parsers, callbacks, containers and IO stay native.
-#![allow(clippy::missing_safety_doc)]
+#![expect(
+    clippy::missing_safety_doc,
+    reason = "every export is covered by the module-local C contract"
+)]
 use std::alloc::{Layout, alloc, dealloc};
 use std::{ptr, slice};
 

@@ -115,7 +115,10 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_metadata(
             if !cells.parent.is_null() {
                 // c_long width is a Native ABI property (32/64 bits), not the
                 // Rust target pointer width. Captured SDK checks the cell layout.
-                #[allow(clippy::unnecessary_cast)]
+                #[expect(
+                    clippy::unnecessary_cast,
+                    reason = "c_long is i64 on the supported 64-bit targets"
+                )]
                 {
                     plan.value = unsafe { (*cells.parent).value } as i64;
                 }

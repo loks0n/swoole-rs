@@ -8,3 +8,6 @@ libc = "=0.2.191"
 
 [lib]
 crate-type = ["rlib", "staticlib"]
+
+[lints]
+workspace = true
