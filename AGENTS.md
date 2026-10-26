@@ -47,14 +47,17 @@ environments to one shared machine. Each executor loops:
    enable the hooks with `git config core.hooksPath .githooks`.
 3. Push and open a PR whose body says `Closes #n`. The PR tier runs unit and
    integration CI (target: under 3 minutes).
-4. Run `python3 tools/ci.py merge <pr>` (in the background; it can take a few
-   minutes). It waits for the PR tier on the current head, follows the head if
-   you push, and squash-merges when it passes. On failure it prints the failing
-   jobs and their log tails: fix, push and run it again. If the PR conflicts,
-   merge `origin/main`, push and run it again.
+4. Run `gh pr merge --auto --squash <pr>`. GitHub squash-merges it once the
+   required checks (`rust`, `tooling`, `hybrid`) pass on its head; `main`'s
+   ruleset refuses anything else, including direct pushes. Watch the PR tier with
+   `python3 tools/ci.py wait --workflow pr.yml --commit <branch>` (in the
+   background); on failure it prints the failing jobs and their log tails: fix and
+   push, and auto-merge follows the new head. If the PR conflicts, merge
+   `origin/main` and push.
 5. The merge tier runs on `main`: everything above plus every gate, application
-   and original PHPT for all modules. Watch it with the command `ci.py merge`
-   prints, `python3 tools/ci.py wait --commit <merge sha>`. If that run was
+   and original PHPT for all modules. Watch it with `python3 tools/ci.py wait
+   --commit <merge sha>` (`gh pr view <pr> --json mergeCommit -q
+   .mergeCommit.oid`). If that run was
    cancelled (exit 3), a later run covers your commit; nothing to do. If it
    failed, handle its **new failures** as described under *Red main* (CI), and
    move on.
@@ -132,8 +135,8 @@ compare-and-swap):
 
 ## CI CLI
 
-`tools/ci.py` (`merge`, `wait`, `status`; see `--help`) is the only way agents
-watch CI. It needs a checkout, `gh` and Python, so it works in every session.
+`tools/ci.py` (`wait`, `status`; see `--help`) is the only way agents watch
+CI; GitHub's auto-merge does the merging. It needs a checkout, `gh` and Python, so it works in every session.
 The pre-commit and pre-push hooks remind you of the next command. Agents
 improve it: add a subcommand when an agent would otherwise improvise (polling,
 ad-hoc scripts, `gh run watch`).
@@ -141,7 +144,9 @@ ad-hoc scripts, `gh run watch`).
 ## CI
 
 Three tiers: the pre-commit hook (~5s warm), the PR tier (`pr.yml`, under 3 minutes
-warm) and the merge tier (`merge.yml`, on `main`). Keep them cached and audit
+warm) and the merge tier (`merge.yml`, on `main`). `main`'s ruleset requires a
+pull request and the PR tier's `rust`, `tooling` and `hybrid` checks, so renaming
+those jobs means updating the ruleset in the same PR. Keep them cached and audit
 them regularly for waste and duplicate steps; slow or flaky CI is a ticket.
 
 The merge tier runs one at a time, latest wins: while a run is in progress, each

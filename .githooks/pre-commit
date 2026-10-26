@@ -5,5 +5,6 @@ cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -q -- -D warnings
 python3 tools/check_migration.py > /dev/null
 tests/dev/run.sh
-echo "pre-commit passed. After pushing and opening the PR, wait for its CI and merge with:
-  python3 tools/ci.py merge <pr>" >&2
+echo "pre-commit passed. After pushing and opening the PR, let GitHub merge it once rust, tooling and hybrid pass:
+  gh pr merge --auto --squash <pr>
+and watch its PR tier with: python3 tools/ci.py wait --workflow pr.yml --commit <branch>" >&2

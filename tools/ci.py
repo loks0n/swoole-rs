@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Watch this repository's CI and merge pull requests when it passes.
+"""Watch this repository's CI. GitHub merges pull requests itself (`gh pr merge --auto --squash`).
 
-  ci.py merge PR             wait for the PR tier on the PR's head, then squash-merge
   ci.py wait [--commit SHA]  wait for a workflow run (default: the merge tier on main); a run
                              replaced by a newer push to main follows the newer run
   ci.py status [--commit SHA]  the same, without waiting
+
+For a pull request: `ci.py wait --workflow pr.yml --commit BRANCH`.
 
 For the merge tier, failed phases come from its `phases` artifact, with new and fixed ones
 against the previous completed run on main; other failures show each failed job's log tail.
 
 Progress goes to stderr and the result to stdout (--json for machine output).
-Exit codes: 0 passed or merged, 1 failed, 2 no run, still running or timed out, 3 cancelled,
-4 the pull request conflicts with main or could not be merged.
+Exit codes: 0 passed, 1 failed, 2 no run, still running or timed out, 3 cancelled.
 Needs only `gh` (authenticated) and Python.
 """
 import argparse
@@ -39,10 +39,6 @@ def say(message):
 
 def resolve(commit):
     return gh('api', 'repos/{owner}/{repo}/commits/' + (commit or 'main'), '-q', '.sha').strip()
-
-
-def pr_head(number):
-    return gh('pr', 'view', str(number), '--json', 'headRefOid', '-q', '.headRefOid').strip()
 
 
 def seconds(job):
@@ -144,63 +140,11 @@ def phase_changes(result):
     return result
 
 
-def merge(number, workflow, deadline, poll):
-    while True:
-        head = pr_head(number)
-        say(f'PR #{number}: waiting for {workflow} on {head[:7]}')
-        result = wait(workflow, head, deadline, poll)
-        if result['state'] == 'cancelled' and pr_head(number) != head:
-            say(f'PR #{number}: run on {head[:7]} was superseded by a push; following the new head')
-            continue
-        if result['state'] != 'passed':
-            return {**failure_logs(result), 'merged': False}
-        # Merge only the commit that passed: --match-head-commit refuses if the branch moved.
-        # GitHub refuses a clean PR when another merge lands at the same moment; that's worth a retry.
-        for attempt in range(4):
-            if attempt:
-                time.sleep(poll * attempt)
-            merged = subprocess.run(['gh', 'pr', 'merge', str(number), '--squash', '--match-head-commit', head],
-                                    capture_output=True, text=True)
-            if 'Base branch was modified' not in merged.stderr or pr_head(number) != head:
-                break
-        if merged.returncode == 0:
-            sha = gh('pr', 'view', str(number), '--json', 'mergeCommit', '-q', '.mergeCommit.oid').strip()
-            # Remote only: `gh pr merge --delete-branch` fails in a worktree that has the branch checked out.
-            subprocess.run(['gh', 'api', '-X', 'DELETE', f'repos/{{owner}}/{{repo}}/git/refs/heads/{branch(number)}'],
-                           capture_output=True)
-            return {**result, 'merged': True, 'merge_commit': sha,
-                    'next': f'python3 tools/ci.py wait --commit {sha}'}
-        if pr_head(number) == head:
-            conflict = gh('pr', 'view', str(number), '--json', 'mergeable', '-q', '.mergeable').strip() == 'CONFLICTING'
-            return {**result, 'merged': False, 'conflict': conflict,
-                    'error': 'conflicts with main: merge origin/main, push, and run ci.py merge again'
-                    if conflict else merged.stderr.strip()}
-
-
-def branch(number):
-    return gh('pr', 'view', str(number), '--json', 'headRefName', '-q', '.headRefName').strip()
-
-
-def hooks_warning():
-    """None when this checkout's own .githooks run; worktrees may point at another checkout's copy."""
-    git = lambda *args: subprocess.run(['git', *args], capture_output=True, text=True).stdout.strip()
-    top, hooks = Path(git('rev-parse', '--show-toplevel')), git('config', 'core.hooksPath')
-    fix = 'git config --worktree core.hooksPath .githooks' if git('rev-parse', '--git-dir') != git(
-        'rev-parse', '--git-common-dir') else 'git config core.hooksPath .githooks'
-    if not hooks:
-        return f'git hooks are off; enable them with: {fix}'
-    if (top / hooks).resolve() != (top / '.githooks').resolve():
-        return f'git hooks run from {hooks}, not this checkout; fix with: {fix}'
-    return None
-
-
 def report(result, as_json):
     if as_json:
         print(json.dumps(result, indent=1))
         return
     line = f"{result['workflow']} {result['commit'][:7]}: {result['state']}"
-    if 'merged' in result:
-        line += ', merged as ' + result['merge_commit'][:7] if result['merged'] else ', not merged'
     print(line + (' (timed out)' if result.get('timed_out') else '') + (f"  {result['url']}" if 'url' in result else ''))
     for job in result.get('jobs', []):
         print(f"  {job['name']}: {job['state']}" + (f" in {job['seconds']}s" if job['seconds'] is not None else ''))
@@ -211,45 +155,30 @@ def report(result, as_json):
               f"fixed: {', '.join(result['fixed']) or 'none'}")
     for job, lines in result.get('logs', {}).items():
         print(f'--- {job} (last {len(lines)} lines)', *lines, sep='\n')
-    if result.get('error'):
-        print(result['error'])
-    if result.get('merged'):
-        print(f"Now watch the merge tier (every gate, application and PHPT): {result['next']}")
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
-    for name in ['status', 'wait', 'merge']:
+    for name in ['status', 'wait']:
         command = commands.add_parser(name)
-        if name == 'merge':
-            command.add_argument('pr', type=int)
-        else:
-            command.add_argument('--commit', help='sha or branch (default: main)')
-        command.add_argument('--workflow', default='pr.yml' if name == 'merge' else 'merge.yml')
+        command.add_argument('--commit', help='sha or branch (default: main)')
+        command.add_argument('--workflow', default='merge.yml')
         command.add_argument('--timeout', type=int, default=3600, help='seconds (default 3600)')
         command.add_argument('--poll', type=float, default=15, help=argparse.SUPPRESS)
         command.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
     deadline = time.monotonic() + args.timeout
     try:
-        if args.command == 'merge':
-            warning = hooks_warning()
-            if warning:
-                say('warning: ' + warning)
-            result = merge(args.pr, args.workflow, deadline, args.poll)
-        else:
-            sha = resolve(args.commit)
-            result = status(args.workflow, sha) if args.command == 'status' else wait(args.workflow, sha, deadline, args.poll)
-            if result['state'] in ('passed', 'failed'):
-                result = failure_logs(phase_changes(result))
-            if 'failed_phases' in result:
-                result.get('logs', {}).pop(PHASES_JOB, None)
+        sha = resolve(args.commit)
+        result = status(args.workflow, sha) if args.command == 'status' else wait(args.workflow, sha, deadline, args.poll)
+        if result['state'] in ('passed', 'failed'):
+            result = failure_logs(phase_changes(result))
+        if 'failed_phases' in result:
+            result.get('logs', {}).pop(PHASES_JOB, None)
     except subprocess.CalledProcessError as failure:
         sys.exit(f"gh {' '.join(failure.cmd[1:])}: {failure.stderr.strip()}")
     report(result, args.json)
-    if args.command == 'merge':
-        return 0 if result['merged'] else 4 if 'error' in result else EXIT[result['state']]
     return 2 if result.get('timed_out') else EXIT[result['state']]
 
 
