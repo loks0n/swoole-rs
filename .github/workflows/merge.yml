@@ -11,8 +11,15 @@ env:
 concurrency:
   group: merge-${{ github.ref }}
 jobs:
+  # dev.py's phases are CPU-bound (about 77 CPU-minutes), so they run as two slices on two
+  # runners. Each slice builds the all-modules hybrid and runs the builds; the rest is split
+  # by tools/phase_weights.json (dev.py --shard).
   full-gates:
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - uses: actions/checkout@v4
       # Saved from main under a key the PR tier's hybrid and gates jobs restore.
@@ -45,10 +52,10 @@ jobs:
       - run: python3 corpus/thirdparty/hyperf.py --prepare
       - run: python3 tests/modules/buffer/baseline.py --sanitize
       # Unit, native, ABI, model and PHP gates, every application and original PHPT, upstream as control.
-      - run: python3 tools/dev.py integrate --all-modules --php-extension pdo --php-extension pdo_sqlite --php-extension curl --php-extension sockets --php-extension tokenizer --external-network --php-sockets
+      - run: python3 tools/dev.py integrate --all-modules --php-extension pdo --php-extension pdo_sqlite --php-extension curl --php-extension sockets --php-extension tokenizer --external-network --php-sockets --shard ${{ matrix.shard }}/2
       - if: always()
         run: python3 tools/merge_summary.py >> "$GITHUB_STEP_SUMMARY"
-      - if: always()
+      - if: always() && matrix.shard == 1
         uses: actions/cache/save@v4
         with:
           path: .ccache
@@ -57,12 +64,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: phases
+          name: phases-${{ matrix.shard }}
           path: target/reports/dev/*/loop.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: validation-reports
+          name: validation-reports-${{ matrix.shard }}
           path: |
             target/reports/
             target/upstream/build.log
@@ -149,7 +156,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        index: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        index: [1, 2, 3, 4, 5, 6]
         engine: [upstream, hybrid]
     # The services upstream's PHPTs expect, as in its scripts/docker-compose.yml, under
     # the host names its tests/include/config.php uses on CI (httpbin at http://httpbin:80).
@@ -191,7 +198,7 @@ jobs:
         with:
           name: phpt-engines
           path: target/phpt
-      - run: python3 corpus/upstream/inventory.py --shard ${{ matrix.index }}/12 --output target/phpt/manifest.json
+      - run: python3 corpus/upstream/inventory.py --shard ${{ matrix.index }}/6 --output target/phpt/manifest.json
       # php -n loads nothing; load every extension the distribution enables, in its order.
       - id: extensions
         run: echo "args=$(sed -n 's/^extension=\(.*\)/--php-extension \1/p' /etc/php/*/cli/conf.d/*.ini | sed 's/\.so$//' | tr '\n' ' ')" >> "$GITHUB_OUTPUT"

@@ -25,7 +25,8 @@ import time
 
 EXIT = {'passed': 0, 'failed': 1, 'none': 2, 'running': 2, 'cancelled': 3}
 LOG_LINES = 40
-# The merge-tier job whose dev.py phases the `phases` artifact lists, replacing its log tail.
+# The merge-tier jobs (full-gates, or its shards "full-gates (N)") whose dev.py phases the
+# `phases*` artifacts list, replacing their log tails.
 PHASES_JOB = 'full-gates'
 
 
@@ -112,14 +113,21 @@ def failure_logs(result):
 
 
 def phases(run):
-    """{phase: passed} from a run's `phases` artifact (the merge tier's loop.json), or None without one."""
+    """{phase: passed} from a run's `phases*` artifacts (each shard's loop.json), or None without any.
+    A phase every shard runs (the builds) passes only if it passed everywhere."""
     with tempfile.TemporaryDirectory() as directory:
         try:
-            gh('run', 'download', str(run), '-n', 'phases', '-D', directory)
+            gh('run', 'download', str(run), '-p', 'phases*', '-D', directory)
         except subprocess.CalledProcessError:
             return None
-        loop = next(Path(directory).rglob('loop.json'), None)
-        return {row['phase']: not row['failed'] for row in json.loads(loop.read_text())['phases']} if loop else None
+        loops = sorted(Path(directory).rglob('loop.json'))
+        if not loops:
+            return None
+        passed = {}
+        for loop in loops:
+            for row in json.loads(loop.read_text())['phases']:
+                passed[row['phase']] = passed.get(row['phase'], True) and not row['failed']
+        return passed
 
 
 def phase_changes(result):
@@ -175,7 +183,8 @@ def main(argv=None):
         if result['state'] in ('passed', 'failed'):
             result = failure_logs(phase_changes(result))
         if 'failed_phases' in result:
-            result.get('logs', {}).pop(PHASES_JOB, None)
+            for job in [job for job in result.get('logs', {}) if job.split(' (')[0] == PHASES_JOB]:
+                result['logs'].pop(job)
     except subprocess.CalledProcessError as failure:
         sys.exit(f"gh {' '.join(failure.cmd[1:])}: {failure.stderr.strip()}")
     report(result, args.json)

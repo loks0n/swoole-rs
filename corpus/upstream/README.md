@@ -140,10 +140,10 @@ enabled native/selected worlds before running the official original runner.
 
 The merge tier (`phpt-*` jobs in `.github/workflows/merge.yml`) runs every pinned
 PHPT against the upstream reference and the all-modules hybrid, both built with
-PHP sockets support, in 12 shards per engine:
+PHP sockets support, in 6 shards per engine:
 
 ```sh
-python3 corpus/upstream/inventory.py --shard 3/12 --output manifest.json
+python3 corpus/upstream/inventory.py --shard 3/6 --output manifest.json
 python3 corpus/upstream/run.py --manifest manifest.json --engine hybrid=/absolute/swoole.so --output hybrid-3.json
 python3 corpus/upstream/gate.py upstream-*.json hybrid-*.json --output phpt.json
 ```
