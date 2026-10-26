@@ -76,19 +76,11 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_control(
                 _ => 0,
             },
             2 => match current {
-                0 if timeout == 0.0 || observation == 0 => 4,
+                // Upstream 8a70cbf70: no coroutine or a non-positive timeout returns
+                // false; the native timer takes fractional seconds.
+                0 if timeout <= 0.0 || observation == 0 => 4,
                 0 => 18,
-                1 => {
-                    // Preserve Native `(long) timeout * 1000`: truncate BEFORE
-                    // multiplication, including subsecond nonzero -> zero ms.
-                    // Native nonfinite/out-of-long-range/overflow cases have no
-                    // defined C++ result and remain outside the parity domain.
-                    #[allow(clippy::unnecessary_cast)]
-                    {
-                        plan.value = (timeout as std::ffi::c_long).wrapping_mul(1000) as i64;
-                    }
-                    19
-                }
+                1 => 19,
                 2 => 16,
                 _ => 0,
             },
@@ -245,13 +237,13 @@ mod tests {
         }
     }
     #[test]
-    fn timeout_truncation_admission_and_callback_fact_only() {
+    fn timeout_admission_and_callback_fact_only() {
         for (timeout, present, expected) in [
             (0.0, 1, 4),
             (-0.0, 1, 4),
             (1.0, 0, 4),
             (0.5, 1, 18),
-            (-1.5, 1, 18),
+            (-1.5, 1, 4),
         ] {
             let mut stage = 0;
             assert_eq!(
@@ -259,20 +251,14 @@ mod tests {
                 expected
             );
         }
-        for (timeout, milliseconds) in [
-            (0.5, 0),
-            (-0.5, 0),
-            (1.9, 1000),
-            (-1.9, -1000),
-            (120.0, 120000),
-        ] {
+        for timeout in [0.5, 1.9, 120.0] {
             let mut stage = 0;
             assert_eq!(
                 unsafe { swr_v1_phpcoroutines_control(&mut stage, 2, 1, timeout) }.action,
                 18
             );
             let plan = unsafe { swr_v1_phpcoroutines_control(&mut stage, 2, 0, timeout) };
-            assert_eq!((plan.action, plan.value), (19, milliseconds));
+            assert_eq!(plan.action, 19);
             assert_eq!(
                 unsafe { swr_v1_phpcoroutines_control(&mut stage, 2, 0, timeout) }.action,
                 16
