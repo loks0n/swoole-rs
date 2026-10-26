@@ -62,10 +62,9 @@ as equal. Unavailable locales are reported as unsupported.
 These compile the real pinned and patched headers/translation units (no
 `--archive`) and fail on layout, trait or syntax changes:
 
-- `directory_compat.py [--standard c++14 --standard c++17]`: legacy
-  StaticHandler data declarations, layout and copy/reference traits; V2
-  composition. The default also tests C++20, which fails on the pinned
-  process-pool volatile increment under `-Werror`.
+- `directory_compat.py`: legacy StaticHandler data declarations, layout and
+  copy/reference traits; V2 composition, under C++14 and C++17. C++20 fails on
+  the pinned process-pool volatile increment under `-Werror`.
 - `request_v2_compat.py [--upstream-unused-parameter-policy]`: C++14/17 syntax
   for legacy, HTTP-only, PORTS-only and paired RequestV2 modes.
 

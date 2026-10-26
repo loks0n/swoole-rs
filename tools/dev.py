@@ -234,10 +234,8 @@ def plan(args, reports):
                '--positive-only', *report('http-multipart-headers-positive'))
         script('http-request-lifecycle', 'tests/modules/http/request_lifecycle_gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('http-request-lifecycle'))
-        for phase, standards in [('http-directory-compatibility', []),
-                                 ('http-directory-compatibility-cxx14-17', ['--standard', 'c++14', '--standard', 'c++17'])]:
-            script(phase, 'tests/modules/http/directory_compat.py', '--source', ROOT / 'target/upstream/src',
-                   *standards, *report(phase))
+        script('http-directory-compatibility', 'tests/modules/http/directory_compat.py', '--source', ROOT / 'target/upstream/src',
+               *report('http-directory-compatibility'))
     if 'locks' in modules:
         script('locks-native', 'tests/modules/locks/gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report('locks-native'))
