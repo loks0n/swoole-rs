@@ -305,7 +305,10 @@ unsafe fn apply_plan(
         APPEND | WRITE => {
             if edit.length != 0 {
                 let at = if edit.operation == WRITE {
-                    edit.offset as usize
+                    let Ok(at) = usize::try_from(edit.offset) else {
+                        return INVALID;
+                    };
+                    at
                 } else {
                     state.length
                 };
@@ -315,7 +318,12 @@ unsafe fn apply_plan(
         }
         APPEND_I32 => {
             let mut buffer = itoa::Buffer::new();
-            let text = buffer.format(edit.offset as i32);
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "APPEND_I32 carries a C int in offset"
+            )]
+            let value = edit.offset as i32;
+            let text = buffer.format(value);
             // SAFETY: as above; `text` is a local buffer, disjoint from `data`.
             unsafe {
                 ptr::copy_nonoverlapping(text.as_ptr(), data.wrapping_add(state.length), text.len())
@@ -360,19 +368,19 @@ unsafe fn apply_plan(
         }
         REDUCE => {
             if edit.offset != 0 && plan.length != 0 {
+                let Ok(from) = usize::try_from(edit.offset) else {
+                    return INVALID;
+                };
                 // SAFETY: as above.
-                unsafe { ptr::copy(data.wrapping_add(edit.offset as usize), data, plan.length) };
+                unsafe { ptr::copy(data.wrapping_add(from), data, plan.length) };
             }
         }
         POP if plan.length != 0 => {
-            // SAFETY: as above; POP copies from the old storage into the fresh allocation.
-            unsafe {
-                ptr::copy_nonoverlapping(
-                    state.data.wrapping_add(state.offset as usize),
-                    data,
-                    plan.length,
-                )
+            let Ok(from) = usize::try_from(state.offset) else {
+                return INVALID;
             };
+            // SAFETY: as above; POP copies from the old storage into the fresh allocation.
+            unsafe { ptr::copy_nonoverlapping(state.data.wrapping_add(from), data, plan.length) };
         }
         _ => {}
     }
@@ -675,7 +683,7 @@ mod number_tests {
                 seed ^= seed << 13;
                 seed ^= seed >> 17;
                 seed ^= seed << 5;
-                seed as i32
+                seed.cast_signed()
             }))
         {
             let expected = value.to_string();
