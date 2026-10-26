@@ -34,7 +34,7 @@ def main():
                 row=dict(engine=engine.name,mode=mode,exit=result.returncode,stdout=result.stdout,stderr=result.stderr,extension_sha256_after=sha(identity['extension']))
                 report['results'].append(row);write_report(a.output,report)
                 profile='.'.join(identity['php'].split('.')[:2])
-                expected_exit=({'8.2':43,'8.5':0}[profile] if mode=='bailout' else 0)
+                expected_exit=({'8.2':43,'8.3':43,'8.5':0}[profile] if mode=='bailout' else 0)
                 if result.returncode!=expected_exit or result.stderr:raise ValueError('Actual async Client fixture failed; raw outputs preserved')
                 if row['extension_sha256_after']!=identity['sha256']:raise ValueError('Extension identity changed')
                 lines=result.stdout.splitlines()

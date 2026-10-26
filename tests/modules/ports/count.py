@@ -52,7 +52,7 @@ def main(signatures=None,witness=None,scope=None,support=None,source_path="src/s
             flags=['-I'+str(private/Path(flag[2:]).relative_to(origin)) if flag.startswith('-I') and Path(flag[2:]).is_relative_to(origin) else flag for flag in flags]
             configuration['relocation']={'original_build_root':str(origin),'private_build_root':str(private)}
         configuration['effective_argv']=flags;report['extra_includes']={str(x.resolve()):'explicit private declaration include'for x in a.include};report['configured_compiler_flags']=configuration
-        base=['c++','-std=c++14','-O1','-UNDEBUG','-DHAVE_CONFIG_H','-I'+str(core),'-I'+str(core/'include'),'-I'+str(core/'thirdparty/llhttp'),'-I'+str(core/'thirdparty'),'-I'+str(core/'ext-src'),'-I'+str(ROOT/'native/ports'),*['-I'+str(x.resolve())for x in a.include],*flags]
+        base=['c++','-std=c++14','-O1','-UNDEBUG','-DHAVE_CONFIG_H','-I'+str(core),'-I'+str(core/'include'),'-I'+str(core/'thirdparty/llhttp'),'-I'+str(core/'thirdparty'),'-I'+str(core/'ext-src'),'-I'+str(ROOT/'native/ports'),'-I'+str(ROOT/'native/http'),*['-I'+str(x.resolve())for x in a.include],*flags]
         if a.openssl_root:base+=['-I'+str(a.openssl_root.resolve()/'include')]
         includes=shlex.split(subprocess.check_output([a.php_config,'--includes'],text=True))
         for engine in ['original','selected']:
