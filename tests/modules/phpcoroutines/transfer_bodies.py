@@ -5,7 +5,5 @@ SIGNATURES = [f'{prefix}void PHPCoroutine::{name}(PHPContext *ctx) {{'
                                    ('inline ', 'save_og'), ('inline ', 'restore_og'),
                                    ('', 'save_bg'), ('', 'restore_bg'),
                                    ('', 'save_context'), ('', 'restore_context')]]
-NOTIFICATION_SIGNATURES = ['void PHPCoroutine::on_yield(void *arg) {',
-                           'void PHPCoroutine::on_resume(void *arg) {']
 
 

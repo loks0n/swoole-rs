@@ -28,10 +28,8 @@ mod scheduler_callback;
 mod scheduler_control;
 mod scheduler_phase;
 mod scheduler_slot;
-mod stack_bounds;
 mod stats;
 mod system;
-mod transfer;
 mod yield_registry;
 
 use std::collections::VecDeque;
