@@ -39,15 +39,28 @@ pub extern "C" fn swr_v1_os_pool_config(
         idle: if idle == 0.0 { 1.0 } else { idle },
     }
 }
+/// Threads to create (upstream d513884e0): queued tasks beyond the idle workers,
+/// or one once the oldest task waited past the threshold, capped at free slots.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_os_pool_expand(
-    waiting: usize,
+    idle: usize,
+    queued: usize,
     threads: usize,
     workers: usize,
     threshold: f64,
     age: f64,
 ) -> usize {
-    usize::from(waiting == 0 && threads < workers && threshold > 0.0 && age > threshold)
+    if threads >= workers || queued == 0 {
+        return 0;
+    }
+    let wanted = if queued > idle {
+        queued - idle
+    } else if threshold > 0.0 && age > threshold {
+        1
+    } else {
+        0
+    };
+    wanted.min(workers - threads)
 }
 /// 0 invoke native handler, 1 missing handler, 2 canceled. Missing wins.
 #[unsafe(no_mangle)]
@@ -199,16 +212,15 @@ mod tests {
                 idle: 0.5
             }
         );
-        assert_eq!(swr_v1_os_pool_expand(0, 1, 8, 0.1, 0.1), 0);
-        assert_eq!(swr_v1_os_pool_expand(0, 1, 8, 0.1, 0.2), 1);
-        assert_eq!(swr_v1_os_pool_expand(1, 1, 8, 0.1, 0.2), 0);
+        assert_eq!(swr_v1_os_pool_expand(2, 2, 1, 8, 0.1, 0.1), 0);
+        assert_eq!(swr_v1_os_pool_expand(2, 2, 1, 8, 0.1, 0.2), 1);
+        assert_eq!(swr_v1_os_pool_expand(0, 5, 1, 8, 0.1, 0.0), 5);
+        assert_eq!(swr_v1_os_pool_expand(0, 50, 1, 8, 0.1, 0.0), 7);
+        assert_eq!(swr_v1_os_pool_expand(0, 5, 8, 8, 0.1, 0.2), 0);
+        assert_eq!(swr_v1_os_pool_expand(0, 0, 1, 8, 0.1, 0.2), 0);
         assert_eq!(
-            swr_v1_os_pool_expand(0, usize::MAX - 1, usize::MAX, 0.1, 0.2),
+            swr_v1_os_pool_expand(0, usize::MAX, usize::MAX - 1, usize::MAX, 0.1, 0.2),
             1
-        );
-        assert_eq!(
-            swr_v1_os_pool_expand(0, usize::MAX, usize::MAX, 0.1, 0.2),
-            0
         );
         assert_eq!(swr_v1_os_event_action(false, true), 1);
         assert_eq!(swr_v1_os_worker_action(true, false, true, true, 0), 2);

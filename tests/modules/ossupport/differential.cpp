@@ -19,9 +19,14 @@ int main() {
         assert(p.core==expected_core && p.workers==expected_workers);
         assert(p.wait==(wait==0?0.001:wait) && p.idle==(idle==0?1.:idle));++checks;
     }
-    for(auto waiting:values) for(auto threads:values) for(auto workers:values) for(auto threshold:times) for(auto age:times) {
-        const size_t expected=waiting==0&&threads<workers&&threshold>0&&age>threshold?1:0;
-        assert(swr_v1_os_pool_expand(waiting,threads,workers,threshold,age)==expected);++checks;
+    // Upstream v6.2.4 ThreadPool::schedule (d513884e0).
+    for(auto idle:values) for(auto queued:values) for(auto threads:values) for(auto workers:values) for(auto threshold:times) for(auto age:times) {
+        size_t expected=0;
+        if(threads<workers&&queued!=0){
+            const bool insufficient=queued>idle, waited=threshold>0&&age>threshold;
+            if(insufficient||waited) expected=std::min(insufficient?queued-idle:size_t(1),workers-threads);
+        }
+        assert(swr_v1_os_pool_expand(idle,queued,threads,workers,threshold,age)==expected);++checks;
     }
     for(int perms=-1024;perms<2048;++perms){assert(swr_v1_os_permissions(perms)==((perms<=0||perms>=01000)?0666:perms));++checks;}
     for(int flags=-128;flags<128;++flags) for(int nowait: {1,8,2048}) for(bool block:{false,true}) {
