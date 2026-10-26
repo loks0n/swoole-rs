@@ -120,8 +120,10 @@ jobs:
           path: target/phpt/
 
   # Graduation criterion 3 (docs/migration.md#graduation): instructions per request on the
-  # all-modules hybrid at most 5% above upstream. plaintext covers the bridge, echo-64k buffer.
+  # all-modules hybrid at most 5% above upstream. plaintext covers the bridge, echo-1k buffer.
   # Counts barely vary between runs of the same binaries (#31), so no noise margin is needed.
+  # echo-1k, not echo-64k: a 64 KiB body arrives split differently on each runner, and
+  # upstream's per-byte Expect scan of whatever is buffered then decides the ratio (#338).
   callgrind:
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -144,7 +146,7 @@ jobs:
       - run: cargo fetch --locked
       - run: python3 tools/build_hybrid.py $(python3 -c 'from tools.build_hybrid import SELECTABLE; print(*(f"--module {m}" for m in SELECTABLE))') | tee hybrid.log
       - run: >
-          python3 benchmarks/callgrind.py --requests 1000 --workload plaintext --workload echo-64k --max-ratio 1.05
+          python3 benchmarks/callgrind.py --requests 1000 --workload plaintext --workload echo-1k --max-ratio 1.05
           --engine hybrid=$(sed -n 's/^\(Built\|Cached\) rust: //p' hybrid.log)
           --engine upstream=target/upstream/src/modules/swoole.so
           --output callgrind.json | tee -a "$GITHUB_STEP_SUMMARY"
