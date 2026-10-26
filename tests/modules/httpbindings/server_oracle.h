@@ -101,6 +101,7 @@ HANDLER_DECL(candidate_server)
 #define SW_ACCEPT_RETRY_TIME 1
 #define E_WARNING 2
 #define ZEND_THIS nullptr
+#define RETURN_FALSE do{oracle->event("return-false");return;}while(0)
 struct AcceptSocket{int errCode=0;const char*errMsg="fake-error";AcceptSocket*accept();};
 struct AcceptServer{bool running=true;};
 inline AcceptSocket*AcceptSocket::accept(){oracle->event("accept");oracle->accept_server->running=false;errCode=oracle->accept_error;return oracle->accept_connection?this:nullptr;}

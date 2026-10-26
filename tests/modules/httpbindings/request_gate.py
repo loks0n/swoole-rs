@@ -49,7 +49,7 @@ def main():
         (tree/'helpers.h').write_text(helpers)
         for namespace,texts in [('upstream_request',original),('candidate_request',{n:(tree/n).read_text() for n in names[:2]})]:
             request=texts[names[0]];response=texts[names[1]]
-            parts=[definition(request,sig) for sig in ['bool swoole_http_token_list_contains_value(','static inline char *http_trim_double_quote(','static int http_request_on_url(','static int http_request_on_header_value(']]
+            parts=[definition(request,sig) for sig in ['int swoole_http_token_list_contains_value(','static inline char *http_trim_double_quote(','static int http_request_on_url(','static int http_request_on_header_value(']]
             parts.append(definition(response,'static inline void http_response_header_key_format('))
             exports='''int call_header(llhttp_t*p,const char*s,size_t n){return http_request_on_header_value(p,s,n);}
 int call_url(llhttp_t*p,const char*s,size_t n){return http_request_on_url(p,s,n);}
