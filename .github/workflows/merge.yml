@@ -10,6 +10,12 @@ env:
 # next run always covers main's head. Never cancel-in-progress, or no run finishes.
 concurrency:
   group: merge-${{ github.ref }}
+# Explicit bash runs steps with -eo pipefail; the default (`bash -e`) lets a pipe
+# like `gate.py | tee` report success when gate.py fails.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   # dev.py's phases are CPU-bound (about 77 CPU-minutes), so they run as two slices on two
   # runners. Each slice builds the all-modules hybrid and runs the builds; the rest is split
