@@ -188,12 +188,12 @@ index e7bfd9aa9..6bd53f4e5 100644
 -    return slice->data;
 +    return result;
  }
-@@ -171,27 +99,9 @@ void *FixedPool::alloc(uint32_t size) {
+@@ -171,27 +99,10 @@ void *FixedPool::alloc(uint32_t size) {
  void FixedPool::free(void *ptr) {
--    auto *slice = reinterpret_cast<FixedPoolSlice *>(static_cast<char *>(ptr) - sizeof(FixedPoolSlice));
--
+     auto *slice = reinterpret_cast<FixedPoolSlice *>(static_cast<char *>(ptr) - sizeof(FixedPoolSlice));
+ 
      assert(ptr > impl->memory && static_cast<char *>(ptr) < static_cast<char *>(impl->memory) + impl->size);
--    assert(slice->lock == 1);
+     assert(slice->lock == 1);
 -
 -    impl->slice_use--;
 -    slice->lock = 0;
@@ -215,14 +215,12 @@ index e7bfd9aa9..6bd53f4e5 100644
 -    slice->next = impl->head;
 -    impl->head->prev = slice;
 -    impl->head = slice;
-+    FixedPoolSlice header;
-+    memcpy(&header, static_cast<char *>(ptr) - sizeof(FixedPoolSlice), sizeof(header));
-+    assert(header.lock == 1);
++    (void) slice;
 +    const int status = swr_v1_memory_fixed_free(impl, ptr);
 +    assert(status == 0);
 +    (void) status;
  }
-@@ -199,10 +109,5 @@ void FixedPool::free(void *ptr) {
+@@ -199,10 +110,5 @@ void FixedPool::free(void *ptr) {
  FixedPool::~FixedPool() {
 -    if (!impl->allocated) {
 -        return;
@@ -236,7 +234,7 @@ index e7bfd9aa9..6bd53f4e5 100644
 +    if (action == 4) ::sw_shm_free(impl);
 +    else if (action == 3) ::sw_free(impl);
  }
-@@ -210,22 +115,13 @@ FixedPool::~FixedPool() {
+@@ -210,22 +116,13 @@ FixedPool::~FixedPool() {
  void FixedPool::debug(int max_lines) const {
 -    int line = 0;
 -    FixedPoolSlice *slice = impl->head;
