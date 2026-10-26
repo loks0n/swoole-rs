@@ -111,19 +111,13 @@ pub unsafe extern "C" fn swr_v2_http_context_page_emit(
     capacity: usize,
     output: *mut HttpContextPageBuffer,
 ) -> i32 {
-    unsafe {
-        crate::index_page::emit_page(
-            input,
-            None,
-            buffer,
-            length,
-            capacity,
-            output,
-            |data, size, written| {
-                swr_v2_http_context_page(owner, entry, input, data, size, written)
-            },
-        )
-    }
+    let render = |data, size, written| {
+        // SAFETY: `owner` and `input` follow the export's contract; emit_page passes a
+        // writable span.
+        unsafe { swr_v2_http_context_page(owner, entry, input, data, size, written) }
+    };
+    // SAFETY: forwards the caller's input, buffer and output under emit_page's contract.
+    unsafe { crate::index_page::emit_page(input, None, buffer, length, capacity, output, render) }
 }
 
 /// Events: begin0, opened1, open-failed2, entry3, end4, closed5.

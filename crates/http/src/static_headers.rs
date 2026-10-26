@@ -20,6 +20,7 @@ pub struct HttpStaticHeaders {
     pub range_kind: u32,
 }
 unsafe fn text<'a>(value: HttpProxyText) -> Result<&'a [u8], i32> {
+    // SAFETY: callers pass a header text span naming `length` initialized bytes.
     let input = unsafe { bytes(value.data, value.length) }?;
     Ok(&input[..input.iter().position(|&b| b == 0).unwrap_or(input.len())])
 }
@@ -47,16 +48,21 @@ pub unsafe extern "C" fn swr_v1_http_static_headers(
     if header.variant > 3 || header.range_kind > 2 {
         return INVALID;
     }
-    let values = unsafe {
-        [
-            text(header.status),
-            text(header.date),
-            text(header.modified),
-            text(header.content_type),
-            text(header.software),
-            text(header.page),
-        ]
-    };
+    // Every header span is initialized (see the contract).
+    let values = [
+        // SAFETY: as above.
+        unsafe { text(header.status) },
+        // SAFETY: as above.
+        unsafe { text(header.date) },
+        // SAFETY: as above.
+        unsafe { text(header.modified) },
+        // SAFETY: as above.
+        unsafe { text(header.content_type) },
+        // SAFETY: as above.
+        unsafe { text(header.software) },
+        // SAFETY: as above.
+        unsafe { text(header.page) },
+    ];
     let [status, date, modified, content_type, software, page] = match values {
         [Ok(a), Ok(b), Ok(c), Ok(d), Ok(e), Ok(f)] => [a, b, c, d, e, f],
         values => return values.into_iter().find_map(Result::err).unwrap_or(INVALID),
@@ -73,6 +79,7 @@ pub unsafe extern "C" fn swr_v1_http_static_headers(
     let buffer = if capacity == 0 {
         &mut []
     } else {
+        // SAFETY: non-null when `capacity != 0` (checked above), writable, disjoint from inputs.
         unsafe { slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), capacity - 1) }
     };
     let mut sink = Prefix {
@@ -152,7 +159,8 @@ pub unsafe extern "C" fn swr_v1_http_static_headers(
         sink.length.min(capacity - 1)
     };
     if capacity != 0 {
-        unsafe { output.add(length).write(0) };
+        // SAFETY: `length <= capacity - 1`, inside the writable output.
+        unsafe { output.wrapping_add(length).write(0) };
     }
     // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(length) };

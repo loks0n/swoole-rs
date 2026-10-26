@@ -46,6 +46,7 @@ fn finishing(owner: &mut HttpStaticContext) {
 }
 fn full_task(owner: &mut HttpStaticContext) -> i32 {
     let mut ignored = 0;
+    // SAFETY: a null format is allowed; `ignored` is a writable local.
     let result = unsafe {
         owner
             .tasks
@@ -228,6 +229,7 @@ pub unsafe extern "C" fn swr_v2_http_context_range_resume(
                 part: 0,
                 separator: u32::from(owner.tasks.count() != 0),
             };
+            // SAFETY: `format` is a local with spans into this owner; the output is an owner field.
             let result = unsafe {
                 owner.tasks.prepare(
                     i64::try_from(owner.range.part.offset).unwrap_or(i64::MAX),
@@ -245,6 +247,7 @@ pub unsafe extern "C" fn swr_v2_http_context_range_resume(
             if observed.boundary_ready == 0 {
                 return INVALID;
             }
+            // SAFETY: `owner` is this live, exclusive context.
             let result = unsafe { swr_v2_http_context_format(owner, 1) };
             if result < 0 {
                 return result;

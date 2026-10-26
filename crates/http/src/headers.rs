@@ -174,39 +174,48 @@ unsafe fn get(data: *const u8, at: usize, capacity: usize) -> Result<u8, i32> {
     if at >= capacity {
         return Err(INVALID);
     }
-    Ok(unsafe { data.add(at).read() })
+    // SAFETY: `at < capacity`; callers read only bytes up to the initialized NUL.
+    Ok(unsafe { data.wrapping_add(at).read() })
 }
 unsafe fn cookie(
     data: *mut u8,
     capacity: usize,
     cursor: &mut usize,
 ) -> Result<Option<HttpCookie>, i32> {
+    // Every `get` below reads an index that `get` itself bounds by `capacity`, scanning no
+    // further than the initialized NUL reachable from the cursor; each write lands on an
+    // index `get` has just read.
     loop {
+        // SAFETY: as above.
         while unsafe { get(data, *cursor, capacity)? } == b';' {
             *cursor += 1;
         }
+        // SAFETY: as above.
         if unsafe { get(data, *cursor, capacity)? } == 0 {
             return Ok(None);
         }
         let mut key = *cursor;
         let mut end = key;
+        // SAFETY: as above.
         while !matches!(unsafe { get(data, end, capacity)? }, b';' | 0) {
             end += 1;
         }
         *cursor = end;
+        // SAFETY: as above.
         if unsafe { get(data, end, capacity)? } == b';' {
-            unsafe {
-                data.add(end).write(0);
-            }
+            // SAFETY: as above; `end` was just read as a delimiter.
+            unsafe { data.wrapping_add(end).write(0) };
             *cursor += 1;
         }
         let mut equal = None;
         for at in key..end {
+            // SAFETY: as above.
             if unsafe { get(data, at, capacity)? } == b'=' {
                 equal = Some(at);
                 break;
             }
         }
+        // SAFETY: as above.
         while key < end && space(unsafe { get(data, key, capacity)? }) {
             key += 1;
         }
@@ -214,9 +223,8 @@ unsafe fn cookie(
             continue;
         }
         let (key_length, value_offset, value_length) = if let Some(equal) = equal {
-            unsafe {
-                data.add(equal).write(0);
-            }
+            // SAFETY: as above; `equal` was read as '='.
+            unsafe { data.wrapping_add(equal).write(0) };
             (equal - key, equal + 1, end - equal - 1)
         } else {
             (end - key, 0, 0)
@@ -254,7 +262,11 @@ pub unsafe extern "C" fn swr_v1_http_cookie_next(
     if data.is_null() || capacity > isize::MAX as usize {
         return INVALID;
     }
-    match unsafe { cookie(data, capacity, &mut *cursor) } {
+    // SAFETY: `cursor` is non-null (checked above), aligned and disjoint from `data`.
+    let cursor = unsafe { &mut *cursor };
+    // SAFETY: `data` is non-null, writable through `capacity <= isize::MAX` and initialized
+    // through a NUL reachable from the cursor.
+    match unsafe { cookie(data, capacity, cursor) } {
         Ok(Some(value)) => {
             // SAFETY: `output` is non-null (checked above), aligned and writable.
             unsafe {

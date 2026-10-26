@@ -88,6 +88,8 @@ impl HttpStaticContext {
     }
     fn path_step(&mut self, root: &[u8], facts: u32) -> i32 {
         let url = self.rewritten.as_ref().unwrap_or(&self.original);
+        // SAFETY: all spans are this owner's live buffers, disjoint from each other and from
+        // `self.path`; `filename` is writable through its length.
         let result = unsafe {
             swr_v1_http_static_path(
                 url.as_ptr(),
@@ -240,6 +242,7 @@ pub unsafe extern "C" fn swr_v2_http_context_new(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_context_drop(owner: *mut HttpStaticContext) {
     if !owner.is_null() {
+        // SAFETY: a unique, live context from `context_new`, destroyed once.
         unsafe { drop(Box::from_raw(owner)) };
     }
 }
@@ -272,6 +275,7 @@ pub unsafe extern "C" fn swr_v2_http_context_text(
         if output.is_null() {
             return INVALID;
         }
+        // SAFETY: non-null, `text.len() <= capacity <= isize::MAX` writable bytes, disjoint from the owner.
         unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), output, text.len()) };
     }
     // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
@@ -358,6 +362,7 @@ pub unsafe extern "C" fn swr_v2_http_context_observe(
     let mut result = owner.facts;
     result.last = owner.path.last;
     result.directory_count = owner.directory.len();
+    // SAFETY: `owner.tasks` is a live field of this context.
     result.task_count = unsafe { swr_v2_http_tasks_count(&owner.tasks) };
     // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(result) };
@@ -432,8 +437,10 @@ pub unsafe extern "C" fn swr_v2_http_context_format(
     };
     let render = |output, capacity, written| {
         if kind == 0 {
+            // SAFETY: `boundary` is a local; output follows the caller's render contract.
             unsafe { swr_v1_http_static_content_type(&boundary, output, capacity, written) }
         } else {
+            // SAFETY: `range` is a local; output follows the caller's render contract.
             unsafe { swr_v1_http_range_format(&range, output, capacity, written) }
         }
     };
@@ -511,9 +518,11 @@ pub unsafe extern "C" fn swr_v2_http_context_rewrite_literal(
     ) else {
         return INVALID;
     };
-    let (pattern, replacement) = match (unsafe { bytes(pattern.data, pattern.length) }, unsafe {
-        bytes(replacement.data, replacement.length)
-    }) {
+    // SAFETY: the pattern span names `length` initialized bytes.
+    let pattern = unsafe { bytes(pattern.data, pattern.length) };
+    // SAFETY: the replacement span names `length` initialized bytes.
+    let replacement = unsafe { bytes(replacement.data, replacement.length) };
+    let (pattern, replacement) = match (pattern, replacement) {
         (Ok(pattern), Ok(replacement)) => (pattern, replacement),
         (Err(error), _) | (_, Err(error)) => return error,
     };
@@ -578,10 +587,13 @@ pub unsafe extern "C" fn swr_v2_http_context_path(
         }
         1 => {
             let url = owner.rewritten.as_ref().unwrap_or(&owner.original);
+            // SAFETY: `url` is the owner's live text; `input` lends `length` initialized bytes.
             unsafe {
                 swr_v1_http_static_location(url.as_ptr(), url.len(), input, length, &mut owner.path)
             }
         }
+        // SAFETY: the owner's filename buffer is writable through its length, initialized at
+        // `filename_length`, and disjoint from `index`.
         2 => unsafe {
             swr_v1_http_static_index_path(
                 owner.filename.as_mut_ptr(),
@@ -591,6 +603,7 @@ pub unsafe extern "C" fn swr_v2_http_context_path(
                 owner.index.len(),
             )
         },
+        // SAFETY: `owner.facts.status` is a live, exclusive field.
         3 => unsafe { swr_v1_http_static_catch(owner.path.last, &mut owner.facts.status) },
         4 => owner.ensure_directory_slash(),
         5 => {
@@ -680,6 +693,7 @@ pub unsafe extern "C" fn swr_v2_http_context_page(
         },
         part: page.part,
     };
+    // SAFETY: `input` is a local copy of the caller's spans; output follows the contract.
     unsafe {
         swr_v2_http_directory_page(&owner.directory, index, &input, output, capacity, written)
     }
@@ -702,11 +716,15 @@ pub unsafe extern "C" fn swr_v2_http_context_task(
         return INVALID;
     };
     match operation {
+        // SAFETY: `owner.tasks` is a live, exclusive field of this context.
         0 => unsafe { swr_v2_http_tasks_begin(&mut owner.tasks) },
+        // SAFETY: as above; `format` and `written` follow tasks_prepare's contract.
         1 => unsafe {
             swr_v2_http_tasks_prepare(&mut owner.tasks, offset, length, format, written)
         },
+        // SAFETY: as above.
         2 => unsafe { swr_v2_http_tasks_push(&mut owner.tasks) },
+        // SAFETY: as above.
         3 => unsafe { swr_v2_http_tasks_clear(&mut owner.tasks) },
         _ => INVALID,
     }
@@ -724,6 +742,7 @@ pub unsafe extern "C" fn swr_v2_http_context_tasks(
     let Some(owner) = (unsafe { owner.as_ref() }) else {
         return INVALID;
     };
+    // SAFETY: `owner.tasks` is live; output follows task_snapshot's contract.
     unsafe { swr_v2_http_tasks_snapshot(&owner.tasks, output, capacity, written) }
 }
 
