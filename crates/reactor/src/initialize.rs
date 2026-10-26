@@ -63,6 +63,7 @@ pub unsafe extern "C" fn swr_v1_reactor_init_next(
     main: u32,
     trim_compiled: u32,
 ) -> i32 {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return -1;
     };

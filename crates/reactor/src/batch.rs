@@ -25,8 +25,11 @@ unsafe fn record<T>(
     output: *mut BatchRecord,
     decode: fn(&T) -> BatchRecord,
 ) -> i32 {
-    let (Some(cursor), Some(output)) = ((unsafe { cursor.as_mut() }), (unsafe { output.as_mut() }))
-    else {
+    // SAFETY: `cursor` is null or live, aligned and exclusively lent for this call.
+    let cursor = unsafe { cursor.as_mut() };
+    // SAFETY: `output` is null or live, aligned and exclusively lent for this call.
+    let output = unsafe { output.as_mut() };
+    let (Some(cursor), Some(output)) = (cursor, output) else {
         return -1;
     };
     if entries.is_null() || advance > 1 {
@@ -36,13 +39,15 @@ unsafe fn record<T>(
         if cursor.current >= count {
             return -1;
         }
-        *output = decode(unsafe { &*entries.add(cursor.current) });
+        // SAFETY: `current < count`; `entries` is non-null with `count` initialized records.
+        *output = decode(unsafe { &*entries.wrapping_add(cursor.current) });
         return 1;
     }
     while cursor.next < count {
         cursor.current = cursor.next;
         cursor.next += 1;
-        let next = decode(unsafe { &*entries.add(cursor.current) });
+        // SAFETY: `current < count`; `entries` is non-null with `count` initialized records.
+        let next = decode(unsafe { &*entries.wrapping_add(cursor.current) });
         if next.kind != 0 {
             *output = next;
             return 1;
@@ -69,6 +74,7 @@ macro_rules! decoder {
             output: *mut BatchRecord,
         ) -> i32 {
             let decode: fn(&$native) -> BatchRecord = $decode;
+            // SAFETY: forwards the caller's entries, cursor and output contract.
             unsafe { record(entries, count, cursor, advance, output, decode) }
         }
     };
@@ -87,6 +93,8 @@ decoder!(swr_v1_reactor_poll_record, libc::pollfd, |entry| {
 #[cfg(target_os = "linux")]
 decoder!(swr_v1_reactor_epoll_record, libc::epoll_event, |entry| {
     BatchRecord {
+        // SAFETY: `entry` is a live reference; `read_unaligned` handles the packed epoll field,
+        // and `u64` holds the native token in its first `usize` bytes.
         token: unsafe { std::ptr::read_unaligned(std::ptr::addr_of!(entry.u64).cast::<usize>()) },
         mask: u32::from(entry.events & libc::EPOLLIN as u32 != 0)
             | (u32::from(entry.events & libc::EPOLLOUT as u32 != 0) << 1)

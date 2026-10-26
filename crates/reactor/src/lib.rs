@@ -6,6 +6,13 @@
     clippy::cast_sign_loss,
     reason = "#157: casts not yet checked"
 )]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 #[cfg(unix)]
 mod batch;
 #[cfg(unix)]
@@ -91,6 +98,7 @@ pub unsafe extern "C" fn swr_v1_reactor_ready(
     if state.is_null() || backend > 1 || mask & !7 != 0 {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); aligned, initialized and exclusively accessed.
     let state = unsafe { &mut *state };
     if state.phase > 4 {
         return INVALID;
@@ -213,6 +221,7 @@ pub unsafe extern "C" fn swr_v1_reactor_interest(
         }
         _ => unreachable!(),
     };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe { output.write(result) };
     0
 }
@@ -232,6 +241,7 @@ pub unsafe extern "C" fn swr_v1_reactor_filter(
     if state.is_null() || operation > 2 {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); aligned, initialized and exclusively accessed.
     let state = unsafe { &mut *state };
     if state.phase > 2 {
         return INVALID;
@@ -277,6 +287,7 @@ pub unsafe extern "C" fn swr_v1_reactor_write(
     if state.is_null() || flags & !15 != 0 {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); aligned, initialized and exclusively accessed.
     let state = unsafe { &mut *state };
     if state.phase > 7 {
         return INVALID;
@@ -359,6 +370,7 @@ pub unsafe extern "C" fn swr_v1_stream_prepare(destination: *mut u8, total_lengt
         return INVALID;
     }
     let bytes = (total_length.wrapping_sub(4) as u32).to_be_bytes();
+    // SAFETY: non-null (checked above) and covers four writable bytes; `[u8; 4]` has alignment 1.
     unsafe { destination.cast::<[u8; 4]>().write(bytes) };
     0
 }
@@ -371,6 +383,7 @@ pub unsafe extern "C" fn swr_v1_stream_length(header: *const u8, capacity: usize
     if header.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above) and covers four readable bytes; `[u8; 4]` has alignment 1.
     let length = u32::from_be_bytes(unsafe { header.cast::<[u8; 4]>().read() }) as i32;
     if length <= 0 || length > capacity as i32 {
         INVALID

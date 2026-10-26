@@ -28,10 +28,12 @@ fn new_events<T>(count: usize) -> *mut BackendEvents<T> {
 }
 
 unsafe fn free_events<T>(owner: *mut BackendEvents<T>) {
+    // SAFETY: the caller passes null or a live, exclusive owner from `new_events`.
     unsafe { release(owner) };
 }
 
 unsafe fn event_data<T>(owner: *mut BackendEvents<T>) -> *mut T {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return ptr::null_mut();
     };
@@ -51,6 +53,7 @@ mod epoll {
     /// Owner is null or live/exclusive; no Native wait or array use is active.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn swr_v1_reactor_epoll_free(owner: *mut EpollEvents) {
+        // SAFETY: forwards the caller's null-or-live, exclusive owner.
         unsafe { free_events(owner) }
     }
     /// # Safety
@@ -60,6 +63,7 @@ mod epoll {
     pub unsafe extern "C" fn swr_v1_reactor_epoll_data(
         owner: *mut EpollEvents,
     ) -> *mut libc::epoll_event {
+        // SAFETY: forwards the caller's live, exclusive owner.
         unsafe { event_data(owner) }
     }
     #[unsafe(no_mangle)]
@@ -100,6 +104,7 @@ mod kqueue {
     /// Owner is null or live/exclusive; no Native wait or array use is active.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn swr_v1_reactor_kqueue_free(owner: *mut KqueueEvents) {
+        // SAFETY: forwards the caller's null-or-live, exclusive owner.
         unsafe { free_events(owner) }
     }
     /// # Safety
@@ -109,6 +114,7 @@ mod kqueue {
     pub unsafe extern "C" fn swr_v1_reactor_kqueue_data(
         owner: *mut KqueueEvents,
     ) -> *mut libc::kevent {
+        // SAFETY: forwards the caller's live, exclusive owner.
         unsafe { event_data(owner) }
     }
     #[unsafe(no_mangle)]

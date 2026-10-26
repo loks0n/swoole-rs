@@ -102,6 +102,7 @@ pub unsafe extern "C" fn swr_v1_reactor_output_workflow(
         action: -1,
         value: 0,
     };
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return invalid();
     };
@@ -172,6 +173,7 @@ pub unsafe extern "C" fn swr_v1_reactor_output_parameters_workflow(
         action: -1,
         value: 0,
     };
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return invalid();
     };

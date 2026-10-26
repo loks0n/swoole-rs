@@ -35,7 +35,11 @@ pub unsafe extern "C" fn swr_v1_reactor_write_workflow(
     length: usize,
     facts: *mut WriteFacts,
 ) -> i32 {
-    let (Some(state), Some(facts)) = (unsafe { state.as_mut() }, unsafe { facts.as_mut() }) else {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
+    let state = unsafe { state.as_mut() };
+    // SAFETY: `facts` is null or live, aligned and exclusively lent for this call.
+    let facts = unsafe { facts.as_mut() };
+    let (Some(state), Some(facts)) = (state, facts) else {
         return -1;
     };
     loop {
@@ -117,6 +121,7 @@ pub unsafe extern "C" fn swr_v1_reactor_write_workflow(
             }
             12 => {
                 state.phase = 5;
+                // SAFETY: `state.policy` is a live, exclusive field of the caller's state.
                 return unsafe {
                     swr_v1_reactor_write(
                         &mut state.policy,

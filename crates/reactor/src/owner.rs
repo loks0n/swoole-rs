@@ -7,12 +7,15 @@ pub(crate) fn try_owner<T>(initialize: impl FnOnce() -> T) -> Option<Box<T>> {
     if size_of::<T>() == 0 {
         return Some(Box::new(initialize()));
     }
+    // SAFETY: `T` is not zero-sized (handled above); null is handled below.
     let pointer = unsafe { alloc(Layout::new::<T>()).cast::<MaybeUninit<T>>() };
     if pointer.is_null() {
         return None;
     }
+    // SAFETY: a non-null global allocation with `T`'s layout; `MaybeUninit` needs no init.
     let mut owner = unsafe { Box::from_raw(pointer) };
     owner.write(initialize());
+    // SAFETY: initialized by the `write` just above.
     Some(unsafe { owner.assume_init() })
 }
 
@@ -21,6 +24,7 @@ pub(crate) fn try_owner<T>(initialize: impl FnOnce() -> T) -> Option<Box<T>> {
 /// Native consumers. T owns only Rust metadata; no Native payload is dropped.
 pub(crate) unsafe fn release<T>(owner: *mut T) {
     if !owner.is_null() {
+        // SAFETY: a live, exclusively owned `Box` allocation, released once.
         drop(unsafe { Box::from_raw(owner) });
     }
 }
@@ -34,6 +38,7 @@ pub(crate) unsafe fn publish<T>(
     initialize: impl FnOnce() -> T,
     operation: impl FnOnce(&mut T) -> Result<(i32, bool), i32>,
 ) -> Result<i32, i32> {
+    // SAFETY: the slot holds null or a live, exclusive `T` from this allocator.
     if let Some(owner) = unsafe { (*slot).as_mut() } {
         return operation(owner).map(|(result, _)| result);
     }

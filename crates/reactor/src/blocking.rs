@@ -51,6 +51,7 @@ pub unsafe extern "C" fn swr_v1_reactor_blocking_wait(
     observed: i32,
     now: f64,
 ) -> i32 {
+    // SAFETY: the caller passes a unique, live, aligned state for this synchronous call.
     let state = unsafe { &mut *state };
     match state.phase {
         0 if state.timeout_msec > 0 => next_wait(state, 1, 1),
@@ -202,6 +203,7 @@ pub unsafe extern "C" fn swr_v1_reactor_blocking_file(
     end: i64,
     cork_min: i64,
 ) -> ReactorOutputAction {
+    // SAFETY: the caller passes a unique, live, aligned state for this synchronous call.
     let state = unsafe { &mut *state };
     let finish = |flags| output(6, 0, if flags & 2 != 0 { 0 } else { -1 });
     let reply = match state.phase {

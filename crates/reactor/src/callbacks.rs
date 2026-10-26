@@ -67,6 +67,7 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_lookup(
     key: i32,
     token: *mut usize,
 ) -> i32 {
+    // SAFETY: `token` is null or live, aligned and exclusively lent for this call.
     let Some(token) = (unsafe { token.as_mut() }) else {
         return -1;
     };
@@ -74,6 +75,7 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_lookup(
         return -1;
     }
     *token = 0;
+    // SAFETY: `owner` is null or live and aligned for this call.
     let Some(owner) = (unsafe { owner.as_ref() }) else {
         return 0;
     };
@@ -100,14 +102,18 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_insert(
     token: usize,
     actual: *mut usize,
 ) -> i32 {
-    let (Some(slot), Some(actual)) = ((unsafe { slot.as_mut() }), (unsafe { actual.as_mut() }))
-    else {
+    // SAFETY: `slot` is null or live, aligned and exclusively lent for this call.
+    let slot = unsafe { slot.as_mut() };
+    // SAFETY: `actual` is null or live, aligned and exclusively lent for this call.
+    let actual = unsafe { actual.as_mut() };
+    let (Some(slot), Some(actual)) = (slot, actual) else {
         return -1;
     };
     if kind > 1 || token == 0 {
         return -1;
     }
     *actual = 0;
+    // SAFETY: `slot` is the caller's live, exclusive opaque owner slot.
     unsafe { insert_metadata(slot, kind, key, token, actual) }
 }
 
@@ -120,6 +126,7 @@ unsafe fn insert_metadata(
     token: usize,
     actual: &mut usize,
 ) -> i32 {
+    // SAFETY: the caller passes its live, exclusive slot, holding null or this owner type.
     unsafe {
         publish(
             slot,
@@ -147,6 +154,7 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_erase(
     key: i32,
     token: *mut usize,
 ) -> i32 {
+    // SAFETY: `token` is null or live, aligned and exclusively lent for this call.
     let Some(token) = (unsafe { token.as_mut() }) else {
         return -1;
     };
@@ -154,6 +162,7 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_erase(
         return -1;
     }
     *token = 0;
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return 0;
     };
@@ -182,13 +191,17 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_next(
     previous: u32,
     token: *mut usize,
 ) -> i32 {
-    let (Some(cursor), Some(token)) = ((unsafe { cursor.as_mut() }), (unsafe { token.as_mut() }))
-    else {
+    // SAFETY: `cursor` is null or live, aligned and exclusively lent for this call.
+    let cursor = unsafe { cursor.as_mut() };
+    // SAFETY: `token` is null or live, aligned and exclusively lent for this call.
+    let token = unsafe { token.as_mut() };
+    let (Some(cursor), Some(token)) = (cursor, token) else {
         return -1;
     };
     if kind > 1 || previous > 1 || cursor.phase > 3 {
         return -1;
     }
+    // SAFETY: `owner` is null or live and aligned for this call.
     next_metadata(unsafe { owner.as_ref() }, kind, cursor, previous, token)
 }
 
@@ -242,11 +255,15 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_drain(
     kind: *mut u32,
     token: *mut usize,
 ) -> i32 {
-    let (Some(kind), Some(token)) = ((unsafe { kind.as_mut() }), (unsafe { token.as_mut() }))
-    else {
+    // SAFETY: `kind` is null or live, aligned and exclusively lent for this call.
+    let kind = unsafe { kind.as_mut() };
+    // SAFETY: `token` is null or live, aligned and exclusively lent for this call.
+    let token = unsafe { token.as_mut() };
+    let (Some(kind), Some(token)) = (kind, token) else {
         return -1;
     };
     *token = 0;
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return 0;
     };
@@ -258,12 +275,14 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_drain(
 /// Owner is null or live/exclusive, detached from Native callback/array use.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_reactor_callbacks_free(owner: *mut ReactorCallbacks) -> i32 {
+    // SAFETY: `owner` is null or live and aligned for this call.
     let Some(value) = (unsafe { owner.as_ref() }) else {
         return 0;
     };
     if !value.is_empty() {
         return -1;
     }
+    // SAFETY: a live, empty, exclusively owned store, released once.
     unsafe { release_metadata(owner) };
     0
 }
@@ -283,8 +302,11 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_ensure(
     candidate: usize,
     token: *mut usize,
 ) -> i32 {
-    let (Some(slot), Some(token)) = ((unsafe { slot.as_mut() }), (unsafe { token.as_mut() }))
-    else {
+    // SAFETY: `slot` is null or live, aligned and exclusively lent for this call.
+    let slot = unsafe { slot.as_mut() };
+    // SAFETY: `token` is null or live, aligned and exclusively lent for this call.
+    let token = unsafe { token.as_mut() };
+    let (Some(slot), Some(token)) = (slot, token) else {
         return -1;
     };
     if kind > 1 {
@@ -292,6 +314,7 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_ensure(
     }
     *token = 0;
     if candidate == 0 {
+        // SAFETY: the slot holds null or this module's live owner, exclusively accessed.
         match unsafe { (*slot).as_ref() }.and_then(|owner| owner.lookup(kind, key)) {
             Some(found) => {
                 *token = found;
@@ -300,6 +323,7 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_ensure(
             None => 2,
         }
     } else {
+        // SAFETY: `slot` is the caller's live, exclusive opaque owner slot.
         match unsafe { insert_metadata(slot, kind, key, candidate, token) } {
             1 => 3,
             other => other,
@@ -325,6 +349,7 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_copy_next(
     state: *mut ReactorCallbackCopy,
     token: *mut usize,
 ) -> i32 {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return -1;
     };
@@ -336,10 +361,12 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_copy_next(
             return -1;
         }
         match next_metadata(
+            // SAFETY: `source` is null or live and aligned for this call.
             unsafe { source.as_ref() },
             state.kind,
             &mut state.cursor,
             1,
+            // SAFETY: `token` is non-null (checked above), aligned and exclusive.
             unsafe { &mut *token },
         ) {
             0 => {
@@ -350,6 +377,7 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_copy_next(
             _ => return -1,
         }
     }
+    // SAFETY: `token` is non-null (checked above), aligned and exclusive.
     unsafe { *token = 0 };
     0
 }
@@ -364,18 +392,22 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_clear_next(
     slot: *mut *mut ReactorCallbacks,
     token: *mut usize,
 ) -> i32 {
+    // SAFETY: `slot` is null or live, aligned and exclusively lent for this call.
     let Some(slot) = (unsafe { slot.as_mut() }) else {
         return -1;
     };
+    // SAFETY: `token` is null or live, aligned and exclusively lent for this call.
     let Some(token) = (unsafe { token.as_mut() }) else {
         return -1;
     };
     *token = 0;
     let mut kind = 0;
+    // SAFETY: the slot holds null or this module's live owner, exclusively accessed.
     let action = unsafe { (*slot).as_mut() }.map_or(0, |owner| owner.drain(&mut kind, token));
     match action {
         1 => kind as i32 + 1,
         0 => {
+            // SAFETY: the drained, live owner is released once; the slot is cleared next.
             unsafe { release_metadata(*slot) };
             *slot = ptr::null_mut();
             0

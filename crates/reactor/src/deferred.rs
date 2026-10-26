@@ -16,12 +16,14 @@ pub unsafe extern "C" fn swr_v1_reactor_deferred_push(
     slot: *mut *mut ReactorDeferred,
     token: usize,
 ) -> i32 {
+    // SAFETY: `slot` is null or live, aligned and exclusively lent for this call.
     let Some(slot) = (unsafe { slot.as_mut() }) else {
         return -1;
     };
     if token == 0 {
         return -1;
     }
+    // SAFETY: the caller passes its live, exclusive slot, holding null or this owner type.
     unsafe {
         publish(
             slot,
@@ -51,13 +53,17 @@ pub unsafe extern "C" fn swr_v1_reactor_deferred_step(
     phase: *mut u32,
     token: *mut usize,
 ) -> i32 {
-    let (Some(phase), Some(token)) = ((unsafe { phase.as_mut() }), (unsafe { token.as_mut() }))
-    else {
+    // SAFETY: `phase` is null or live, aligned and exclusively lent for this call.
+    let phase = unsafe { phase.as_mut() };
+    // SAFETY: `token` is null or live, aligned and exclusively lent for this call.
+    let token = unsafe { token.as_mut() };
+    let (Some(phase), Some(token)) = (phase, token) else {
         return -1;
     };
     *token = 0;
     match *phase {
         0 => {
+            // SAFETY: `owner` is null or live and aligned for this call.
             let Some(owner) = (unsafe { owner.as_ref() }) else {
                 return 0;
             };
@@ -70,6 +76,7 @@ pub unsafe extern "C" fn swr_v1_reactor_deferred_step(
             }
         }
         1 => {
+            // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
             let Some(owner) = (unsafe { owner.as_mut() }) else {
                 return -1;
             };
@@ -94,11 +101,15 @@ pub unsafe extern "C" fn swr_v1_reactor_deferred_clear(
     slot: *mut *mut ReactorDeferred,
     token: *mut usize,
 ) -> i32 {
-    let (Some(slot), Some(token)) = ((unsafe { slot.as_mut() }), (unsafe { token.as_mut() }))
-    else {
+    // SAFETY: `slot` is null or live, aligned and exclusively lent for this call.
+    let slot = unsafe { slot.as_mut() };
+    // SAFETY: `token` is null or live, aligned and exclusively lent for this call.
+    let token = unsafe { token.as_mut() };
+    let (Some(slot), Some(token)) = (slot, token) else {
         return -1;
     };
     *token = 0;
+    // SAFETY: the slot holds null or this module's live owner, exclusively accessed.
     let Some(owner) = (unsafe { (*slot).as_mut() }) else {
         return 0;
     };
@@ -106,6 +117,7 @@ pub unsafe extern "C" fn swr_v1_reactor_deferred_clear(
         *token = front;
         return 1;
     }
+    // SAFETY: the emptied, live owner is released once; the slot is cleared next.
     unsafe { release(*slot) };
     *slot = ptr::null_mut();
     0

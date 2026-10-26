@@ -43,6 +43,7 @@ pub extern "C" fn swr_v1_reactor_poll_new(limit: usize) -> *mut PollSnapshot {
 /// by native poll. Native must never delete/free the borrowed entries pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_reactor_poll_free(owner: *mut PollSnapshot) {
+    // SAFETY: null or a live, exclusive owner from new, no longer used by native poll.
     unsafe { release(owner) };
 }
 
@@ -51,6 +52,7 @@ pub unsafe extern "C" fn swr_v1_reactor_poll_free(owner: *mut PollSnapshot) {
 /// or tokens to native sockets are retained; fd values are snapshot facts only.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_reactor_poll_reset(owner: *mut PollSnapshot) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return -1;
     };
@@ -67,6 +69,7 @@ pub unsafe extern "C" fn swr_v1_reactor_poll_push(
     fd: i32,
     events: i32,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return -1;
     };
@@ -87,6 +90,7 @@ pub unsafe extern "C" fn swr_v1_reactor_poll_push(
 /// Address stays stable until free, even across reset/rebuild and nested waits.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_reactor_poll_data(owner: *mut PollSnapshot) -> *mut libc::pollfd {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return ptr::null_mut();
     };
