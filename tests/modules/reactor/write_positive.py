@@ -54,7 +54,7 @@ def main():
         require_build_space(ROOT);require_build_space(tree)
         compiled=run_compiler(command, timeout=60)
         result=subprocess.CompletedProcess(command,compiled['returncode'],compiled['stdout'],compiled['stderr'])
-        report=dict(workflow_profile=args.workflow,compile_cache={k:compiled[k] for k in ['cache_hit','cache_key','cache_reason']},pin=PIN,scope=__doc__,patches=patches,command=command,compile_returncode=result.returncode,compile_stdout=result.stdout,compile_stderr=result.stderr)
+        report=dict(workflow_profile=args.workflow,pin=PIN,scope=__doc__,patches=patches,command=command,compile_returncode=result.returncode,compile_stdout=result.stdout,compile_stderr=result.stderr)
         if result.returncode==0:
             require_build_space(ROOT);require_build_space(tree)
             result=subprocess.run([str(binary)],capture_output=True,text=True);report.update(returncode=result.returncode,stdout=result.stdout,stderr=result.stderr)
