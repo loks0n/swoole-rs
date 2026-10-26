@@ -1070,7 +1070,7 @@ class FocusedPhases(unittest.TestCase):
             with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
                  patch.object(dev.subprocess, 'run', side_effect=lambda *a, **k: SimpleNamespace(returncode=next(results))), \
                  patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': str(summary)}), \
-                 patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer']), \
+                 patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer', '--jobs', '1']), \
                  patch('sys.stdout', new_callable=__import__('io').StringIO) as stdout:
                 self.assertEqual(dev.main(), 1)
             for text in [stdout.getvalue(), summary.read_text()]:
@@ -1097,7 +1097,7 @@ class FocusedPhases(unittest.TestCase):
                 planned = [('module-sdk', ['fixture', '--report', str(output)]), ('originals', ['later'])]
                 with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
                      patch.object(dev.subprocess, 'run', return_value=SimpleNamespace(returncode=1)) as run, \
-                     patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer']):
+                     patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer', '--jobs', '1']):
                     self.assertEqual(dev.main(), 1)
                 report = json.loads(next(root.glob('target/reports/dev/*/loop.json')).read_text())
                 self.assertEqual(run.call_count, expected_calls)

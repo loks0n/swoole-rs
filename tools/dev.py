@@ -10,6 +10,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 
@@ -844,6 +845,47 @@ def retain_build_manifest(build, reports):
     return identity
 
 
+# Phases that build artifacts later phases consume, or that later phases need to have
+# passed. Each runs alone, after everything before it and before everything after it.
+BARRIER_PHASES = {'ownership', 'build', 'reference-build', 'stdext-reference-build', 'buffer-legacy-build'}
+
+
+def serial_phase(name):
+    """Phases that can't share the machine: fixed ports (the PHPT runners), timing, benchmarks."""
+    return (name == 'phpt' or name.endswith('-originals') or 'benchmark' in name or 'timing' in name)
+
+
+def phase_dependencies(commands, reports):
+    """A phase depends on every earlier barrier and on any earlier phase whose report it reads."""
+    owners = {str(reports / (name + suffix)): name for name, _ in commands for suffix in ('.json', '.xml')}
+    dependencies, barriers = {}, set()
+    for name, command in commands:
+        produced = {owners[str(arg)] for arg in command if str(arg) in owners} - {name}
+        earlier = set(dependencies)
+        dependencies[name] = (earlier if name in BARRIER_PHASES else barriers) | (produced & earlier)
+        if name in BARRIER_PHASES:
+            barriers.add(name)
+    return dependencies
+
+
+def schedule(commands, dependencies):
+    """Plan order, except that serial phases nothing reads from move to the end of their
+    barrier segment, so they don't drain the pipeline in the middle of parallel work."""
+    needed = set().union(set(), *(d for n, d in dependencies.items() if n not in BARRIER_PHASES))
+    ordered, deferred = [], []
+    for phase in commands:
+        name = phase[0]
+        if name in BARRIER_PHASES:
+            ordered += deferred
+            deferred = []
+            ordered.append(phase)
+        elif serial_phase(name) and name not in needed:
+            deferred.append(phase)
+        else:
+            ordered.append(phase)
+    return ordered + deferred
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('lane', choices=['edit', 'candidate', 'integrate'])
@@ -858,7 +900,8 @@ def main():
     parser.add_argument('--fix-halfclose', action='store_true', help='Select the separate native queued-close drain repair')
     parser.add_argument('--test', help='Rust test-name filter (edit lane only)')
     parser.add_argument('--case', action='append', help='Exact registered PHPT path (candidate lane only)')
-    parser.add_argument('--jobs', type=int, default=4)
+    parser.add_argument('--jobs', type=int, default=os.cpu_count() or 4,
+                        help='Phases run at once, and parallelism passed to builds (default: CPU count)')
     parser.add_argument('--php', default='php')
     parser.add_argument('--match-child-php', action='store_true',
                         help='Bind bare php children in direct official-runner phases to their selected parent; default off')
@@ -941,75 +984,127 @@ def main():
         return None
 
     started = time.monotonic()
+    order = {name: index for index, (name, _) in enumerate(commands)}
+    dependencies = phase_dependencies(commands, reports)
+    lock = threading.Condition()
+    running, finished = set(), set()
+
+    def run_phase(name, command):
+        print(f'[{name}] {shlex.join(command)}', flush=True)
+        phase_started = time.monotonic()
+        with (reports / (name + '.log')).open('w') as log:
+            result = subprocess.run(command, cwd=ROOT, env=environment, stdout=log, stderr=subprocess.STDOUT)
+        row = {'phase': name, 'command': command, 'seconds': round(time.monotonic() - phase_started, 4),
+               'returncode': result.returncode, 'failed': result.returncode != 0, 'log': str(reports / (name + '.log'))}
+        outcome_flag = next((flag for flag in ('--output', '--report') if flag in command), None)
+        if outcome_flag:
+            path = Path(command[command.index(outcome_flag) + 1])
+            if not path.is_absolute():
+                path = ROOT / path
+            try:
+                outcome, row['outcome_sha256'] = read_json(path, with_digest=True)
+                if 'passed' in outcome:
+                    row['outcome_passed'] = outcome['passed']
+                    if not isinstance(outcome['passed'], bool):
+                        raise ValueError('Gate passed field must be boolean')
+                    row['failed'] |= not outcome['passed']
+                if 'compile' in outcome:
+                    row['compile'] = outcome['compile']
+                error = outcome.get('error')
+                compiler_guard = error == 'Compiler refused by unchanged 4GiB guard' and any(
+                    isinstance(command, dict) and command.get('blocked') == 'unchanged 4GiB guard'
+                    and isinstance(command.get('free_bytes'), dict) and any(
+                        type(free) is int and 0 <= free < 4 * 1024**3
+                        for free in command['free_bytes'].values())
+                    for command in (outcome.get('commands') if isinstance(outcome.get('commands'), list) else []))
+                disk_refused = isinstance(error, str) and (error.startswith('Build disk space low:')
+                    or error in {'Unchanged 4GiB guard', 'Unchanged4GiBguard'}
+                    and outcome.get('minimum_free_bytes') == 4 * 1024**3 and bool(outcome.get('blocked')))
+                if row['failed'] and (disk_refused or compiler_guard):
+                    row['infrastructure_error'] = error
+            except (OSError, ValueError) as error:
+                row.update(failed=True, outcome_error=str(error))
+        if name == 'build' and result.returncode == 0:
+            variant = build_variant(args)
+            row['build'] = json.loads((ROOT / 'target/hybrid' / variant / 'last-run.json').read_text())
+            try:
+                row['build']['retained_manifest'] = retain_build_manifest(row['build'], reports)
+            except (OSError, ValueError, KeyError) as error:
+                row.update(failed=True, outcome_error='Build provenance retention failed: ' + str(error))
+        print(f'  [{name}] {row["seconds"]:.3f}s; exit={result.returncode}; failed={row["failed"]}; {row["log"]}', flush=True)
+        return row
+
+    def record(row):
+        # Called with `lock` held. Rows stay in plan order whatever order phases finish in.
+        name = row['phase']
+        error = row.pop('infrastructure_error', None)
+        source = frozen_error()
+        if source:
+            row.update(failed=True, source_error=source)
+            error = error or source
+        if error:
+            report.update(infrastructure_error=error, blocked_phase=name)
+        report['phases'].append(row)
+        report['phases'].sort(key=lambda r: order[r['phase']])
+        write_report(reports / 'loop.json', report)
+        if row['failed'] and name in BARRIER_PHASES or report.get('infrastructure_error'):
+            report['blocked_phase'] = name
+            return True
+        return bool(row['failed'] and args.lane != 'integrate')
+
+    def worker(name, command):
+        row = run_phase(name, command)
+        with lock:
+            running.discard(name)
+            finished.add(name)
+            if record(row):
+                pending.clear()
+            lock.notify_all()
+
+    pending = schedule(commands, dependencies)
+    # A frozen source is checked between phases, so a change is attributed to exactly one.
+    concurrency = 1 if args.frozen_source else args.jobs
+    threads = []
     try:
-        for name, command in commands:
-            error = frozen_error()
-            if error:
-                report.update(infrastructure_error=error, blocked_phase=name)
-                break
-            if name.endswith('-unit') or name == 'build':
-                try:
-                    require_build_space(ROOT)
-                except (RuntimeError, ValueError) as error:
-                    report['infrastructure_error'] = str(error)
-                    report['blocked_phase'] = name
-                    break
-            if 'benchmark' in name and any(row['failed'] for row in report['phases']):
-                report['benchmarks_skipped'] = 'Correctness failed; preserve the failure before measuring'
-                break
-            print(f'[{name}] {shlex.join(command)}', flush=True)
-            phase_started = time.monotonic()
-            with (reports / (name + '.log')).open('w') as log:
-                result = subprocess.run(command, cwd=ROOT, env=environment, stdout=log, stderr=subprocess.STDOUT)
-            row = {'phase': name, 'command': command, 'seconds': round(time.monotonic() - phase_started, 4),
-                   'returncode': result.returncode, 'failed': result.returncode != 0, 'log': str(reports / (name + '.log'))}
-            outcome_flag = next((flag for flag in ('--output', '--report') if flag in command), None)
-            if outcome_flag:
-                path = Path(command[command.index(outcome_flag) + 1])
-                if not path.is_absolute():
-                    path = ROOT / path
-                try:
-                    outcome, row['outcome_sha256'] = read_json(path, with_digest=True)
-                    if 'passed' in outcome:
-                        row['outcome_passed'] = outcome['passed']
-                        if not isinstance(outcome['passed'], bool):
-                            raise ValueError('Gate passed field must be boolean')
-                        row['failed'] |= not outcome['passed']
-                    if 'compile' in outcome:
-                        row['compile'] = outcome['compile']
-                    error = outcome.get('error')
-                    compiler_guard = error == 'Compiler refused by unchanged 4GiB guard' and any(
-                        isinstance(command, dict) and command.get('blocked') == 'unchanged 4GiB guard'
-                        and isinstance(command.get('free_bytes'), dict) and any(
-                            type(free) is int and 0 <= free < 4 * 1024**3
-                            for free in command['free_bytes'].values())
-                        for command in (outcome.get('commands') if isinstance(outcome.get('commands'), list) else []))
-                    disk_refused = isinstance(error, str) and (error.startswith('Build disk space low:')
-                        or error in {'Unchanged 4GiB guard', 'Unchanged4GiBguard'}
-                        and outcome.get('minimum_free_bytes') == 4 * 1024**3 and bool(outcome.get('blocked')))
-                    if row['failed'] and (disk_refused or compiler_guard):
-                        report.update(infrastructure_error=error, blocked_phase=name)
-                except (OSError, ValueError) as error:
-                    row.update(failed=True, outcome_error=str(error))
-            if name == 'build' and result.returncode == 0:
-                variant = build_variant(args)
-                row['build'] = json.loads((ROOT / 'target/hybrid' / variant / 'last-run.json').read_text())
-                try:
-                    row['build']['retained_manifest'] = retain_build_manifest(row['build'], reports)
-                except (OSError, ValueError, KeyError) as error:
-                    row.update(failed=True, outcome_error='Build provenance retention failed: ' + str(error))
-            error = frozen_error()
-            if error:
-                row.update(failed=True, source_error=error)
-                report.update(infrastructure_error=error, blocked_phase=name)
-            report['phases'].append(row)
-            write_report(reports / 'loop.json', report)
-            print(f'  {row["seconds"]:.3f}s; exit={result.returncode}; failed={row["failed"]}; {row["log"]}', flush=True)
-            if report.get('infrastructure_error') or row['failed'] and name in {'ownership', 'build', 'reference-build', 'stdext-reference-build'}:
-                report['blocked_phase'] = name
-                break
-            if row['failed'] and args.lane != 'integrate':
-                break
+        with lock:
+            while pending or running:
+                ready = None
+                for name, command in pending:
+                    exclusive = name in BARRIER_PHASES or serial_phase(name)
+                    if dependencies[name] <= finished and not (running and exclusive) \
+                            and not any(other in BARRIER_PHASES or serial_phase(other) for other in running) \
+                            and len(running) < concurrency:
+                        ready = (name, command)
+                        break
+                    if exclusive:
+                        break  # Never let later phases overtake a barrier or serial phase.
+                if ready is None:
+                    lock.wait()
+                    continue
+                name, command = ready
+                pending.remove(ready)
+                error = frozen_error()
+                if error:
+                    report.update(infrastructure_error=error, blocked_phase=name)
+                    pending.clear()
+                    continue
+                if name.endswith('-unit') or name == 'build':
+                    try:
+                        require_build_space(ROOT)
+                    except (RuntimeError, ValueError) as error:
+                        report.update(infrastructure_error=str(error), blocked_phase=name)
+                        pending.clear()
+                        continue
+                if 'benchmark' in name and any(row['failed'] for row in report['phases']):
+                    report['benchmarks_skipped'] = 'Correctness failed; preserve the failure before measuring'
+                    pending.clear()
+                    continue
+                running.add(name)
+                thread = threading.Thread(target=worker, args=(name, command), daemon=True)
+                threads.append(thread)
+                thread.start()
+        for thread in threads:
+            thread.join()
         failed = report.get('infrastructure_error') or any(row['failed'] for row in report['phases'])
         report['status'] = ('partial_failed' if failed else 'partial_passed') if args.phase else ('failed' if failed else 'passed')
         report['full_plan_passed'] = not args.phase and not failed and len(report['phases']) == len(planned)
