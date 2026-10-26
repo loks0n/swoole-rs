@@ -146,7 +146,7 @@ def main():
         assertions = tree / 'original_assertions.cc'; assertions.write_text(original_assertions(tests))
         report['selected_original_tests'] = [] if args.url_positive_only else ORIGINAL_TESTS
         apply_http_patch(tree, patch, report)
-        native_command = ['c++', '-std=c++14', '-DSWOOLE_RS_HTTP', '-O1', '-g', '-I'+str(tree/'include'), '-I'+str(tree), '-I'+str(ROOT/'native/http'), '-fsanitize=address,undefined', '-fno-sanitize-recover=all', '-c', str(source), '-o', str(tree/'http.o')]
+        native_command = ['c++', '-std=c++14', '-O1', '-g', '-I'+str(tree/'include'), '-I'+str(tree), '-I'+str(ROOT/'native/http'), '-fsanitize=address,undefined', '-fno-sanitize-recover=all', '-c', str(source), '-o', str(tree/'http.o')]
         native_command += shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
         if not room_before_compile('whole_native_tu'): return 1
         native = run_isolated(native_command, timeout=60)
@@ -157,7 +157,7 @@ def main():
         for namespace, text in [('upstream', original), ('candidate', source.read_text())]:
             extracted = tree / (namespace + '.cc'); extracted.write_text(extract(text, namespace))
         binary = tree / 'gate'
-        command = ['c++', '-std=c++17', '-DSWOOLE_RS_HTTP', '-O1', '-g', '-I'+str(local), '-I'+str(tree/'include'), '-I'+str(tree), '-I'+str(ROOT/'native/http'), str(tree/'upstream.cc'), str(tree/'candidate.cc'), str(local/'gate.cc'), str(assertions), str(args.archive.resolve()), '-fsanitize=address,undefined', '-fno-sanitize-recover=all', '-lm', '-o', str(binary)]
+        command = ['c++', '-std=c++17', '-O1', '-g', '-I'+str(local), '-I'+str(tree/'include'), '-I'+str(tree), '-I'+str(ROOT/'native/http'), str(tree/'upstream.cc'), str(tree/'candidate.cc'), str(local/'gate.cc'), str(assertions), str(args.archive.resolve()), '-fsanitize=address,undefined', '-fno-sanitize-recover=all', '-lm', '-o', str(binary)]
         command += shlex.split(subprocess.check_output(['pkg-config', '--cflags', '--libs', 'openssl'], text=True))
         if sys.platform.startswith('linux'): command += ['-ldl', '-lpthread', '-lrt', '-lutil']
         report['compile_command'] = command

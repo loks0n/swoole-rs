@@ -52,7 +52,7 @@ def main():
         apply_http_patch(tree, patch, report)
         selected=path.read_text()
         apply_static_header(tree,report);prepare_index_buffer(tree,report)
-        flags=['-std=c++17','-DSWOOLE_RS_HTTP','-O1','-g','-I'+str(tree/'include'),'-I'+str(ROOT/'native/http'),'-I'+str(local),'-I'+str(tree),'-fsanitize=address,undefined','-fno-sanitize-recover=all']
+        flags=['-std=c++17','-O1','-g','-I'+str(tree/'include'),'-I'+str(ROOT/'native/http'),'-I'+str(local),'-I'+str(tree),'-fsanitize=address,undefined','-fno-sanitize-recover=all']
         flags+=shlex.split(subprocess.check_output(['pkg-config','--cflags','openssl'],text=True))
         if not checked(['c++',*['-std=c++14' if flag=='-std=c++17' else flag for flag in flags],'-c',str(path),'-o',str(tree/'static.o')],'whole_native_translation_unit'):return 1
         native_base=subprocess.check_output(['git','-C',str(args.source),'show',PIN+':src/core/base.cc'],text=True)

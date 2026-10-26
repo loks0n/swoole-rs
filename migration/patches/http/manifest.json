@@ -3,21 +3,21 @@
   "patches": [
     {
       "path": "0001-http-helpers.patch",
-      "sha256": "37cd400b37461fdd50090ff5e1dd41d795d176f0af05170943be44c2a29d9621",
+      "sha256": "9391f623ec49badd80c4f7ca749a8a1ca4c94189fc068e3e9c8fe975506dccea",
       "upstream_paths": [
         "src/protocol/http.cc"
       ]
     },
     {
       "path": "0002-static-ranges.patch",
-      "sha256": "7fc2bc7d6b6d17bdc0c75091f18e50ec1e5e7885415c82d84485c3816d4172d5",
+      "sha256": "2e5ad68616a841a6582293c4dbdff3a8ec668f4225c400491ec93b9a8da810a5",
       "upstream_paths": [
         "src/server/static_handler.cc"
       ]
     },
     {
       "path": "0003-static-inline.patch",
-      "sha256": "578b874d022a4af1ca6d86f38264f3c00c61fbb1f994a5fa5756fe17d38328e8",
+      "sha256": "2d81af7e9a2f0833ce56c39dc5c5a0f5492ab28ebcddc3057091fd9d63ea85b0",
       "upstream_paths": [
         "include/swoole_static_handler.h"
       ]

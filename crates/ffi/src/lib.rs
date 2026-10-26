@@ -16,7 +16,7 @@ pub extern "C" fn swr_v1_abi_version() -> u32 {
     1
 }
 
-/// Return enabled migrated kernels; graduated ones (base64, crc32, error, framing) are always set.
+/// Return enabled migrated kernels; graduated ones (base64, crc32, error, framing, http) are always set.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_feature_bits() -> u64 {
     u64::from(cfg!(feature = "websocket"))
@@ -27,7 +27,7 @@ pub extern "C" fn swr_v1_feature_bits() -> u64 {
         | (1 << 5)
         | (u64::from(cfg!(feature = "memory")) << 6)
         | (u64::from(cfg!(feature = "protocols")) << 7)
-        | (u64::from(cfg!(feature = "http")) << 8)
+        | (1 << 8)
         | (u64::from(cfg!(feature = "utilities")) << 9)
         | (u64::from(cfg!(feature = "locks")) << 10)
         | (u64::from(cfg!(feature = "wrappers")) << 11)
@@ -73,7 +73,6 @@ pub use swoole_rs_protocols::*;
 #[cfg(feature = "memory")]
 pub use swoole_rs_memory::*;
 
-#[cfg(feature = "http")]
 pub use swoole_rs_http::*;
 
 #[cfg(feature = "utilities")]

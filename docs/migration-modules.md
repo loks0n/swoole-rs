@@ -36,7 +36,7 @@ Feature values come from `MODULES` in `tools/build_hybrid.py`.
 | M01 | `buffer` | 2 | `src/core/buffer.cc`, `src/core/string.cc` and headers | Output buffer queue and `String` storage. [Contract](buffer-abi-v1.md). |
 | M02 | `websocket` | 1 | `src/protocol/websocket.cc` (+ header, `ext-src/swoole_websocket_server.cc`) | Frame length, header writing, masking. [Boundary](websocket-boundary.md). |
 | M03 | `timer` | 4 | `src/core/timer.cc`, `ext-src/swoole_timer.cc`, `src/wrapper/timer.cc`, `src/os/timer.cc` (+ header) | Timer queue. [Contract](timer-abi-v1.md), [subsystem](timer-subsystem.md). |
-| M04 | `http` | 256 | `src/protocol/http.cc`, `src/server/static_handler.cc` (+ header) | HTTP framing, header/cookie/URL/multipart helpers, method/status, ranges, static responses. Third-party parsers stay. [Contract](../native/http/contract.md). |
+| M04 | `http` | 256 | `src/protocol/http.cc`, `src/server/static_handler.cc` (+ header) | HTTP framing, header/cookie/URL/multipart helpers, method/status, ranges, static responses. Third-party parsers stay. Graduated: always on. [Contract](../native/http/contract.md). |
 | M05 | `reactor` | 16384 | `src/reactor/`, `src/network/{socket,stream}.cc`, `src/server/{base,reactor_thread}.cc`, `ext-src/swoole_admin_server.cc` (+ headers) | Readiness policy and socket output. [Boundary](reactor-abi-v1.md). |
 | M06 | `coroutine` | 32768 | `src/coroutine/{base,context,thread_context,channel}.cc` (+ headers) | Scheduler transitions, channel fairness/storage. [Boundary](coroutine-abi-v1.md). |
 | M07 | `hooks` | 65536 | `src/coroutine/{hook,socket,system,file,file_lock,iouring,uring_socket}.cc`, `ext-src/swoole_runtime.cc`, `include/swoole_coroutine_socket.h` | Coroutine I/O and runtime hooks. [Boundary](hooks-abi-v1.md). |
@@ -55,7 +55,7 @@ Feature values come from `MODULES` in `tools/build_hybrid.py`.
 | M20 | `ossupport` | 131072 | `src/os/{async_thread,base,file,msg_queue,sendfile,unix_socket}.cc` | OS helpers and async worker pool. [Boundary](os-support-abi-v1.md). |
 | M21 | `tls` | 262144 | `src/protocol/{ssl,dtls}.cc` | TLS/DTLS setup and BIO policy; OpenSSL unchanged. [Boundary](tls-dtls-abi-v1.md). |
 | M22 | `clients` | 1048576 | `src/network/{address,client,dns}.cc`, `ext-src/swoole_{client,client_async,client_coro,name_resolver,http_client_coro}.cc` | Address parsing, resolver, clients. [Boundary](clients-resolver-abi-v1.md). |
-| M23 | `httpbindings` | 2097152 | `ext-src/swoole_http_{cookie,request,response,server,server_coro}.cc` | PHP HTTP Request/Response/Cookie bindings. [Boundary](http-bindings-abi-v1.md). |
+| M23 | `httpbindings` | 2097152 | `ext-src/swoole_http_{cookie,request,response,server_coro}.cc` | PHP HTTP Request/Response/Cookie bindings. [Boundary](http-bindings-abi-v1.md). |
 | M24 | `http2` | 4194304 | `src/protocol/http2.cc`, `ext-src/swoole_http2_{server,client_coro}.cc` | HTTP/2 frame/settings/stream policy. [Boundary](http2-abi-v1.md). |
 | M25 | `ports` | 8388608 | `src/server/port.cc`, `ext-src/swoole_server_port.cc` | ListenPort options and PHP Port. [Boundary](ports-abi-v1.md). |
 | M26 | `phphelpers` | 16777216 | `ext-src/php_swoole_cxx.{cc,h}`, `ext-src/swoole_stdext.cc` | Common PHP helpers and stdext. [Boundary](phphelpers-abi-v1.md). |

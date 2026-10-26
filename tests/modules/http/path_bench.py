@@ -33,7 +33,7 @@ def main():
         header = tree/'include/swoole_static_handler.h'; original_header = header.read_text()
         for patch in patches:
             apply_http_patch(tree, patch, report)
-        flags = ['-std=c++14', '-DSWOOLE_RS_HTTP', '-O3', '-DNDEBUG', '-I'+str(tree/'include'), '-I'+str(ROOT/'native/http'), '-I'+str(local)]
+        flags = ['-std=c++14', '-O3', '-DNDEBUG', '-I'+str(tree/'include'), '-I'+str(ROOT/'native/http'), '-I'+str(local)]
         flags += shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
         native_command = ['c++', *['-std=c++14' if flag == '-std=c++14' else flag for flag in flags], '-c', str(source), '-o', str(tree/'static.o')]
         native = run_isolated(native_command, timeout=60)
