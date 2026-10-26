@@ -81,19 +81,18 @@ index ea22f03..43a1b50 100644
 +        return equals(data.c_str(), data.length());
 +}
  
-@@ -149,9 +146,6 @@ class String {
+@@ -149,9 +146,9 @@ class String {
  
--    void clear() {
--        length = 0;
--        offset = 0;
--    }
-+    void clear();
+     void clear() {
+         length = 0;
+         offset = 0;
+     }
  
      void extend() {
 -        extend(size * 2);
 +        extend(grown_capacity(0));
      }
-@@ -164,8 +158,4 @@ class String {
+@@ -164,8 +161,4 @@ class String {
      void extend_align(size_t _new_size) {
 -        size_t align_size = SW_MEM_ALIGNED_SIZE(size * 2);
 -        while (align_size < _new_size) {
@@ -104,7 +103,7 @@ index ea22f03..43a1b50 100644
 +        reserve(grown_capacity(_new_size));
 +}
  
-@@ -195,8 +185,3 @@ class String {
+@@ -195,8 +188,3 @@ class String {
  
 -    void set_null_terminated() {
 -        if (length == size) {
@@ -114,7 +113,7 @@ index ea22f03..43a1b50 100644
 -    }
 +    void set_null_terminated();
  
-@@ -212,35 +197,19 @@ class String {
+@@ -212,35 +200,19 @@ class String {
      size_t format_impl(int flags, const char *format, Args... args) {
 -        size_t _size = sw_snprintf(nullptr, 0, format, args...);
 -        if (_size == 0) {
@@ -165,7 +164,7 @@ index ea22f03..43a1b50 100644
 -    }
 +}
  
-@@ -261,2 +230,3 @@ class String {
+@@ -261,2 +233,3 @@ class String {
  
 +
  inline String *make_string(size_t size, const Allocator *allocator = nullptr) {
@@ -418,7 +417,7 @@ index f478fde..7b94792 100644
 -    length += s_len;
 +    compat_string(*this, string_edit(SWR_STRING_APPEND_I32, nullptr, 0, value));
  }
-@@ -185,9 +175,3 @@ void String::append(int value) {
+@@ -185,9 +175,6 @@ void String::append(int value) {
  void String::append(const char *append_str, size_t _length) {
 -    size_t new_size = length + _length;
 -    if (new_size > size) {
@@ -427,9 +426,12 @@ index f478fde..7b94792 100644
 -
 -    memcpy(str + length, append_str, _length);
 -    length += _length;
-+    compat_string(*this, string_edit(SWR_STRING_APPEND, append_str, _length));
++    if (swr_v1_string_append(reinterpret_cast<swr_v1_string_object *>(this),
++                             reinterpret_cast<const uint8_t *>(append_str), _length) != 0) {
++        compat_string(*this, string_edit(SWR_STRING_APPEND, append_str, _length));
++    }
  }
-@@ -195,28 +179,35 @@ void String::append(const char *append_str, size_t _length) {
+@@ -195,28 +182,35 @@ void String::append(const char *append_str, size_t _length) {
  bool String::append_random_bytes(size_t _length, bool base64) {
 -    size_t new_size = length + _length;
 -    size_t base_encode_size;
@@ -490,7 +492,7 @@ index f478fde..7b94792 100644
 -
 -    return true;
  }
-@@ -224,24 +215,18 @@ bool String::append_random_bytes(size_t _length, bool base64) {
+@@ -224,25 +218,16 @@ bool String::append_random_bytes(size_t _length, bool base64) {
  void String::reserve(size_t new_size) {
 -    if (size == 0) {
 -        alloc(new_size, nullptr);
@@ -524,9 +526,8 @@ index f478fde..7b94792 100644
 -    length = 0;
 -    offset = 0;
 -    return tmp;
-+void String::clear() {
-+    publish_state(*this, transition(*this, SWR_STRING_CLEAR).state);
- }
+-}
+ 
 @@ -250,13 +235,3 @@ void String::repeat(const char *data, size_t len, size_t n) {
      assert(n > 0);
 -    if (len == 1) {

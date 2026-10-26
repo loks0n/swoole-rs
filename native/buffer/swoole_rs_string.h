@@ -7,7 +7,7 @@ extern "C" {
 #endif
 typedef struct { uint8_t *data; size_t length, capacity; int64_t offset; } swr_v1_string_state;
 /* Metadata-only ownership transitions; no pointer dereference or allocator call. */
-enum { SWR_STRING_CLEAR, SWR_STRING_TAKE };
+enum { SWR_STRING_TAKE = 1 };
 typedef struct { swr_v1_string_state state, owner; } swr_v1_string_transition_result;
 int32_t swr_v1_string_transition(const swr_v1_string_state *, uint32_t, swr_v1_string_transition_result *);
 /* Initial plan does not inspect source; reserve receives an independent live snapshot. */
@@ -53,6 +53,8 @@ typedef struct {
 /* One whole public String operation; existing prepare/apply stays frozen. */
 int32_t swr_v1_string_edit_object(swr_v1_string_object *, const swr_v1_string_object *,
     const swr_v1_string_edit *, const swr_v1_string_allocator *, uint8_t **);
+/* 0: appended in place; else nothing changed and the caller uses edit_object. */
+int32_t swr_v1_string_append(swr_v1_string_object *, const uint8_t *, size_t);
 int32_t swr_v1_string_prepare(const swr_v1_string_state *, const swr_v1_string_edit *, swr_v1_string_plan *);
 int32_t swr_v1_string_apply(swr_v1_string_state *, const swr_v1_string_edit *, const swr_v1_string_plan *, uint8_t *, uint8_t **);
 int32_t swr_v1_string_edit_in_place(swr_v1_string_state *, const swr_v1_string_edit *, swr_v1_string_plan *, uint8_t **);

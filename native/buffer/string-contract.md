@@ -101,10 +101,9 @@ negative, and growing from zero capacity terminates instead of looping.
 
 ## Metadata transitions and ownership
 
-- `swr_v1_string_transition`: CLEAR (0) keeps the owner and capacity and resets
-  length/offset. TAKE (1) transfers the owner and metadata and resets the source to
-  null/zero. It never dereferences storage. Invalid input returns -1 and zeroes the
-  output. Move, release and clear use it. Release returns the pointer without
+- `swr_v1_string_transition`: TAKE (1) transfers the owner and metadata and resets
+  the source to null/zero. It never dereferences storage. Invalid input returns -1
+  and zeroes the output. Move and release use it. Release returns the pointer without
   freeing it.
 - `swr_v1_string_ownership_plan` (DISPOSE/COPY/MOVE): self-assignment has no
   effects. Otherwise an allocator-owned non-null pointer is freed natively
