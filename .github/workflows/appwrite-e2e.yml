@@ -1,0 +1,155 @@
+name: Appwrite e2e
+# Appwrite's e2e service suites on Appwrite images built from the two base images of
+# appwrite-base.yml (stock Swoole and the all-modules hybrid), at one Appwrite commit.
+# A test that passes on stock and fails on the hybrid fails the run; tests that fail
+# on stock are listed, not gated (tools/appwrite_e2e.py).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * 1'
+env:
+  # Builds on appwrite/base:2.2.7, which is appwrite-base.yml's DOCKER_BASE_COMMIT.
+  APPWRITE_COMMIT: b26974e732e8b53f03fe30577ed8c79150f6106e
+  APPWRITE_BASE: appwrite/base:2.2.7
+permissions:
+  contents: read
+  packages: write
+jobs:
+  base:
+    uses: ./.github/workflows/appwrite-base.yml
+
+  appwrite:
+    needs: base
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [hybrid, upstream]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: appwrite/appwrite
+          ref: ${{ env.APPWRITE_COMMIT }}
+          submodules: recursive
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: development
+          build-args: |
+            DEBUG=false
+            TESTING=true
+            VERSION=dev
+          build-contexts: ${{ env.APPWRITE_BASE }}=docker-image://ghcr.io/${{ github.repository }}/appwrite-base:${{ github.sha }}${{ matrix.variant == 'upstream' && '-upstream' || '' }}
+          push: true
+          tags: ghcr.io/${{ github.repository }}/appwrite-e2e:${{ github.sha }}-${{ matrix.variant }}
+          cache-from: type=gha,scope=appwrite-e2e-${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=appwrite-e2e-${{ matrix.variant }}
+
+  services:
+    runs-on: ubuntu-24.04
+    outputs:
+      services: ${{ steps.list.outputs.services }}
+    steps:
+      - id: list
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/appwrite/appwrite/${APPWRITE_COMMIT}/.github/ci/e2e.json" \
+            | jq -c '[.services[] | del(.paths)]' | sed 's/^/services=/' >> "$GITHUB_OUTPUT"
+
+  e2e:
+    name: e2e / ${{ matrix.service.name }} / ${{ matrix.variant }}
+    needs: [appwrite, services]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [hybrid, upstream]
+        service: ${{ fromJSON(needs.services.outputs.services) }}
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.override.yml
+      COMPOSE_PROFILES: postgresql${{ matrix.service.documentsdb && ',mongodb' || '' }}${{ matrix.service.embedding && ',embedding' || '' }}${{ matrix.service.name == 'VCSGitea' && ',gitea' || '' }}
+      _APP_DB_ADAPTER: postgresql
+      _APP_DB_HOST: postgresql
+      _APP_DB_PORT: 5432
+      _APP_EMBEDDING: ${{ matrix.service.embedding && 'enabled' || '' }}
+      _APP_STORAGE_LIMIT: 134217728
+      _APP_OPTIONS_ROUTER_PROTECTION: enabled
+      _APP_BROWSER_HOST: http://invalid-browser/v1
+      _APP_DOCUMENTSDB: enabled
+      _APP_VECTORSDB: enabled
+      _APP_MAINTENANCE_INACTIVE_INTERVAL: ${{ matrix.service.name == 'Projects' && '30' || '' }}
+      SERVICE: ${{ matrix.service.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: appwrite/appwrite
+          ref: ${{ env.APPWRITE_COMMIT }}
+          submodules: recursive
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Pull images
+        run: |
+          image=ghcr.io/${{ github.repository }}/appwrite-e2e:${{ github.sha }}-${{ matrix.variant }}
+          docker pull --quiet "$image" && docker tag "$image" appwrite-dev
+          docker compose pull --quiet --ignore-buildable
+      - name: Provision Gitea
+        if: matrix.service.name == 'VCSGitea'
+        run: |
+          docker compose up -d --wait gitea
+          docker compose exec -T gitea /setup.sh
+          creds=$(docker compose exec -T gitea cat /data/gitea/oauth.json)
+          echo "_APP_VCS_GITEA_CLIENT_ID=$(echo "$creds" | jq -r .client_id)" >> "$GITHUB_ENV"
+          echo "_APP_VCS_GITEA_CLIENT_SECRET=$(echo "$creds" | jq -r .client_secret)" >> "$GITHUB_ENV"
+      - run: docker compose up -d --quiet-pull --wait
+        timeout-minutes: 5
+      - name: Wait for Open Runtimes
+        timeout-minutes: 3
+        run: until docker logs exc1 2>&1 | grep -q "Executor is ready."; do sleep 1; done
+      - name: First organization creation
+        if: matrix.service.name == 'Teams'
+        timeout-minutes: 2
+        run: |
+          until [ "$(docker compose exec -T appwrite curl -s -o /dev/null -w '%{http_code}' -H 'X-Appwrite-Project: console' http://appwrite/v1/account)" = 401 ]; do sleep 1; done
+          docker compose exec -T -e _APP_E2E_FRESH_INSTANCE=enabled appwrite \
+            test tests/e2e/Services/Teams/TeamsConsoleClientTest.php --filter=testCreateOrganization
+      # Failing tests are compared afterwards, so this step only fails when no report exists.
+      - name: Run tests
+        timeout-minutes: 30
+        run: |
+          docker compose exec -T -e CI appwrite vendor/bin/paratest \
+            --processes "${{ matrix.service.processes || '$(nproc)' }}" \
+            ${{ matrix.service.functional && '--functional' || '' }} \
+            "/usr/src/code/tests/e2e/Services/$SERVICE" \
+            --exclude-group abuseEnabled --exclude-group screenshots --exclude-group antivirus \
+            --exclude-group queueRetry --exclude-group usageOutage \
+            --log-junit "tests/e2e/Services/$SERVICE/junit.xml" || true
+          test -s "tests/e2e/Services/$SERVICE/junit.xml"
+      - if: failure()
+        run: docker compose logs --timestamps --tail 2000
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-${{ matrix.variant }}-${{ matrix.service.name }}
+          path: tests/e2e/Services/${{ matrix.service.name }}/junit.xml
+          if-no-files-found: ignore
+
+  compare:
+    needs: e2e
+    if: always() && needs.e2e.result != 'cancelled'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: junit
+      - run: python3 tools/appwrite_e2e.py junit | tee -a "$GITHUB_STEP_SUMMARY"
