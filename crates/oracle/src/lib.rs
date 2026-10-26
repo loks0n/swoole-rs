@@ -73,3 +73,24 @@ pub mod http {
         pub fn cookies(data: *const u8, length: usize, output: *mut u8) -> usize;
     }
 }
+
+pub mod framing {
+    unsafe extern "C" {
+        /// Upstream `swoole_unpack`: reads the format's width from `data`.
+        #[link_name = "swr_oracle_framing_unpack"]
+        pub fn unpack(format: u8, data: *const u8) -> i64;
+        /// Upstream `Protocol::default_length_func` for this length type, field
+        /// size, field offset and body offset; `header_length` is what it leaves
+        /// in `PacketLength::header_len`.
+        #[link_name = "swr_oracle_framing_length"]
+        pub fn length(
+            format: u8,
+            size: u8,
+            offset: u16,
+            body_offset: u16,
+            data: *const u8,
+            length: u32,
+            header_length: *mut u32,
+        ) -> isize;
+    }
+}

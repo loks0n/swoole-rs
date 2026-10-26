@@ -86,11 +86,16 @@ name = "swoole-rs-base64"
 version = "0.1.0"
 
 [[package]]
+name = "swoole-rs-framing"
+version = "0.1.0"
+
+[[package]]
 name = "swoole-rs-fuzz"
 version = "0.0.0"
 dependencies = [
  "libfuzzer-sys",
  "swoole-rs-base64",
+ "swoole-rs-framing",
  "swoole-rs-http",
  "swoole-rs-oracle",
  "swoole-rs-websocket",

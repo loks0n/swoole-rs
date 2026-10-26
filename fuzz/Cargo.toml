@@ -11,6 +11,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 swoole-rs-base64 = { path = "../crates/base64" }
+swoole-rs-framing = { path = "../crates/framing" }
 swoole-rs-http = { path = "../crates/http" }
 swoole-rs-oracle = { path = "../crates/oracle" }
 swoole-rs-websocket = { path = "../crates/websocket" }
@@ -67,6 +68,20 @@ bench = false
 [[bin]]
 name = "http_url_encode"
 path = "fuzz_targets/http_url_encode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "framing_length"
+path = "fuzz_targets/framing_length.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "framing_unpack"
+path = "fuzz_targets/framing_unpack.rs"
 test = false
 doc = false
 bench = false

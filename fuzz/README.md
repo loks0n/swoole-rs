@@ -30,6 +30,15 @@ values in order) compare with upstream's `url_decode`, `url_encode` and
 `parse_cookie`. The shim gives each upstream `sw_malloc` one spare byte, because
 `url_encode` writes past its allocation (#145).
 
+
+For packet framing (`open_length_check`), `framing_unpack` compares
+`swr_v1_framing_unpack` with `swoole_unpack` for every length type, and
+`framing_length` compares `swr_v1_framing_default` with
+`Protocol::default_length_func` over a length type, field offset, body offset and
+any received bytes. A body length within the body offset of `INT64_MAX`
+overflows upstream's signed sum; there Rust's -1 only has to match an upstream
+error.
+
 libFuzzer writes new inputs to the first corpus directory, so keep `corpus/`
 (ignored) first and the committed `seeds/` second. A failure leaves its input in
 `artifacts/<target>/`; replay it with `cargo +nightly fuzz run <target> <file>`.
