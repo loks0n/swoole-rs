@@ -88,7 +88,7 @@ int32_t swr_v1_reactor_deferred_step(swr_v1_reactor_deferred *, uint32_t *, uint
 int32_t swr_v1_reactor_deferred_clear(swr_v1_reactor_deferred **, uintptr_t *);
 
 typedef struct swr_v1_reactor_callbacks swr_v1_reactor_callbacks;
-typedef struct { int32_t key; uint32_t phase; } swr_v1_reactor_callback_cursor;
+typedef struct { int32_t key; uint32_t phase; size_t index; } swr_v1_reactor_callback_cursor;
 int32_t swr_v1_reactor_callbacks_lookup(const swr_v1_reactor_callbacks *, uint32_t, int32_t, uintptr_t *);
 int32_t swr_v1_reactor_callbacks_insert(swr_v1_reactor_callbacks **, uint32_t, int32_t, uintptr_t, uintptr_t *);
 int32_t swr_v1_reactor_callbacks_erase(swr_v1_reactor_callbacks *, uint32_t, int32_t, uintptr_t *);
