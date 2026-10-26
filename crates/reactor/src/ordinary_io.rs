@@ -37,6 +37,10 @@ fn retry(kind: u32, result: isize, total: isize) -> ReactorOutputAction {
         after(kind, result, total)
     }
 }
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "native ssize_t results compared as size_t"
+)]
 fn ssl_receive(total: isize, length: usize) -> ReactorOutputAction {
     if (total as usize) < length {
         out(20, 2, 0)
@@ -54,6 +58,10 @@ fn ssl_receive(total: isize, length: usize) -> ReactorOutputAction {
 ///22 reset errno,23 liveness peek,24 datagram receive (value=attempt ordinal).
 /// Only requested facts are observed. No pointer/reference or Native owner enters.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "native ssize_t results compared as size_t"
+)]
 pub extern "C" fn swr_v1_reactor_ordinary_io(
     kind: u32,
     phase: u32,

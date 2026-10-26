@@ -12,6 +12,10 @@ pub struct ReadyWorkflow {
     callback: u32,
 }
 
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "native int/uint32_t callback and mask fields"
+)]
 fn resolve(state: &mut ReadyWorkflow, backend: u32, removed: u32, known: u32) -> i32 {
     // SAFETY: `state.ready` is a live, exclusive local field; the step takes it for this call only.
     let action = unsafe {
@@ -47,6 +51,11 @@ fn resolve(state: &mut ReadyWorkflow, backend: u32, removed: u32, known: u32) ->
 /// State is independently zero-initialized/live/exclusive. Native executes all
 /// observations/effects after return. No Native token/pointer/borrow is retained.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "native int/uint32_t callback and mask fields"
+)]
 pub unsafe extern "C" fn swr_v1_reactor_ready_workflow(
     state: *mut ReadyWorkflow,
     backend: u32,
@@ -99,6 +108,10 @@ pub unsafe extern "C" fn swr_v1_reactor_ready_workflow(
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests {
     use super::*;
     fn trace(backend: u32, facts: &[i32]) -> Vec<i32> {

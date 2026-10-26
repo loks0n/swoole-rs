@@ -1,11 +1,4 @@
 //! Readiness/interest and opt-in metadata ownership; Native retains effects and default registries.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_ptr_alignment,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
 #![cfg_attr(
     not(test),
     deny(
@@ -261,7 +254,7 @@ pub(crate) fn next_filter(phase: &mut u32, operation: u32, events: i32) -> i32 {
         if operation != 1 && !requested {
             continue;
         }
-        return (index + 1 + if operation == 2 || !requested { 2 } else { 0 }) as i32;
+        return (index + 1 + if operation == 2 || !requested { 2 } else { 0 }).cast_signed();
     }
     0
 }
@@ -274,6 +267,10 @@ pub(crate) fn next_filter(phase: &mut u32, operation: u32, events: i32) -> i32 {
 /// # Safety
 /// State is aligned/writable, starts at zero and is exclusively accessed.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "native uint32_t/int framing conversions, as documented above"
+)]
 pub unsafe extern "C" fn swr_v1_reactor_write(
     state: *mut ReadyState,
     length: usize,
@@ -317,7 +314,7 @@ pub unsafe extern "C" fn swr_v1_reactor_write(
             }
             2 => {
                 if sent > 0 {
-                    if sent == length as isize {
+                    if isize::try_from(length).is_ok_and(|length| sent == length) {
                         state.phase = 7;
                         return 6;
                     }
@@ -365,6 +362,10 @@ pub unsafe extern "C" fn swr_v1_reactor_write(
 /// # Safety
 /// Destination points to four writable bytes. No pointer is retained.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "native uint32_t/int framing conversions, as documented above"
+)]
 pub unsafe extern "C" fn swr_v1_stream_prepare(destination: *mut u8, total_length: usize) -> i32 {
     if destination.is_null() {
         return INVALID;
@@ -379,6 +380,11 @@ pub unsafe extern "C" fn swr_v1_stream_prepare(destination: *mut u8, total_lengt
 /// Header points to four readable bytes, including any native zero-filled tail
 /// after a short prefix read. No pointer is retained.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "native uint32_t/int framing conversions, as documented above"
+)]
 pub unsafe extern "C" fn swr_v1_stream_length(header: *const u8, capacity: usize) -> i32 {
     if header.is_null() {
         return INVALID;

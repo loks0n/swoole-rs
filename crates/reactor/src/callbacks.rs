@@ -344,6 +344,10 @@ pub struct ReactorCallbackCopy {
 /// Source/state/output follow callbacks_next, with zero initialized state.
 /// Source storage and payloads stay live; caller applies each copy after return.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "native int callback and action codes"
+)]
 pub unsafe extern "C" fn swr_v1_reactor_callbacks_copy_next(
     source: *const ReactorCallbacks,
     state: *mut ReactorCallbackCopy,
@@ -388,6 +392,10 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_copy_next(
 /// is deleted after return before another call. No custom destruction/reentry
 /// contract is introduced and no Rust reference survives that Native effect.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "native int callback and action codes"
+)]
 pub unsafe extern "C" fn swr_v1_reactor_callbacks_clear_next(
     slot: *mut *mut ReactorCallbacks,
     token: *mut usize,
@@ -427,6 +435,10 @@ pub extern "C" fn swr_v1_reactor_callbacks_copy_layout(field: u32) -> usize {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests {
     use super::*;
     #[test]

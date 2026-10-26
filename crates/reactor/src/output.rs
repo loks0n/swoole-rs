@@ -21,6 +21,11 @@ fn step(phase: u32, action: i32, value: i64) -> ReactorOutputAction {
 /// `requested` is the unchanged scalar returned with action1; offset is freshly
 /// observed only at phase3. Native SW_WAIT2/SW_CLOSE3/SW_ERROR4 are asserted there.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "native ssize_t/uint32_t output accounting"
+)]
 pub extern "C" fn swr_v1_reactor_output_data(
     phase: u32,
     requested: u32,
@@ -128,6 +133,11 @@ pub extern "C" fn swr_v1_reactor_output_request(
 /// signed off_t fits i64. Casting/min preserve the original size_t conversion;
 /// out-of-domain signed overflow is not claimed as Native parity.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "native ssize_t/uint32_t output accounting"
+)]
 pub extern "C" fn swr_v1_reactor_output_chunk(begin: i64, end: i64, limit: usize) -> usize {
     (end.wrapping_sub(begin) as usize).min(limit)
 }
@@ -146,6 +156,10 @@ pub extern "C" fn swr_v1_reactor_output_layout(field: u32) -> usize {
 /// End is reobserved only after its publication; signed overflow is outside the
 /// pinned defined domain, not inferred Native parity.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "native ssize_t/uint32_t output accounting"
+)]
 pub extern "C" fn swr_v1_reactor_output_parameters(
     phase: u32,
     observed: i32,
@@ -172,6 +186,10 @@ pub extern "C" fn swr_v1_reactor_output_parameters(
     }
 }
 #[cfg(test)]
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests {
     use super::*;
     #[test]

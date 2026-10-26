@@ -22,6 +22,10 @@ pub struct OutputWorkflow {
     previous_action: i32,
     validation: i32,
 }
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "native int/uint32_t state fields fed from the ABI's i64 operands"
+)]
 fn observation(state: &mut OutputWorkflow, action: u32) -> ReactorOutputAction {
     state.pending = action;
     ReactorOutputAction {
@@ -42,6 +46,11 @@ fn prepare(state: &mut OutputWorkflow, operation: u32) -> Option<ReactorOutputAc
     };
     Some(observation(state, action))
 }
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "native int/uint32_t state fields fed from the ABI's i64 operands"
+)]
 fn resolve(state: &mut OutputWorkflow, operation: u32, cork_min: i64) -> ReactorOutputAction {
     loop {
         let reply = match operation {
@@ -91,6 +100,11 @@ fn resolve(state: &mut OutputWorkflow, operation: u32, cork_min: i64) -> Reactor
 /// No Native pointer, object or callback is passed/stored. Native performs each
 /// returned observation/effect after return; all original input domains apply.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "native int/uint32_t state fields fed from the ABI's i64 operands"
+)]
 pub unsafe extern "C" fn swr_v1_reactor_output_workflow(
     state: *mut OutputWorkflow,
     operation: u32,
@@ -162,6 +176,10 @@ pub unsafe extern "C" fn swr_v1_reactor_output_workflow(
 /// Native filename/stat/end storage, syscalls, diagnostics and effects stay
 /// outside Rust. The original defined signed arithmetic domain is preserved.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "native int/uint32_t state fields fed from the ABI's i64 operands"
+)]
 pub unsafe extern "C" fn swr_v1_reactor_output_parameters_workflow(
     state: *mut OutputWorkflow,
     begin: i64,
@@ -209,6 +227,10 @@ pub unsafe extern "C" fn swr_v1_reactor_output_parameters_workflow(
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests {
     use super::*;
     fn trace(operation: u32, facts: &[i64]) -> Vec<(i32, i64)> {

@@ -30,6 +30,11 @@ pub struct WriteFacts {
 /// Both PODs are zero-initialized, aligned/live/exclusive and disjoint. Native
 /// retains no Rust borrow/frame over effects and stops on terminal write actions.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "native uint32_t admission and ssize_t comparison"
+)]
 pub unsafe extern "C" fn swr_v1_reactor_write_workflow(
     state: *mut WriteWorkflow,
     length: usize,
