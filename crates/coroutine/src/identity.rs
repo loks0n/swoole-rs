@@ -14,6 +14,7 @@ pub struct CoroutineIdentity {
 pub unsafe extern "C" fn swr_v1_coroutine_identity_read(
     cell: *const CoroutineIdentity,
 ) -> *mut c_void {
+    // SAFETY: per this function's `# Safety` contract, `cell` is live, aligned and initialized.
     unsafe { (*cell).token }
 }
 
@@ -25,6 +26,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_identity_publish(
     cell: *mut CoroutineIdentity,
     token: *mut c_void,
 ) {
+    // SAFETY: per this function's `# Safety` contract, `cell` is live, aligned and writable.
     unsafe { cell.write(CoroutineIdentity { token }) };
 }
 
@@ -43,15 +45,21 @@ pub unsafe extern "C" fn swr_v1_coroutine_identity_route(
     operation: u32,
 ) {
     match operation {
-        0 => unsafe {
-            let parent = (*current).token;
-            origin.write(CoroutineIdentity { token: parent });
-            current.write(CoroutineIdentity { token: own });
-        },
-        1 => unsafe {
-            let parent = (*origin).token;
-            current.write(CoroutineIdentity { token: parent });
-        },
+        // Both cells are distinct, live, initialized and exclusive (see the contract).
+        0 => {
+            // SAFETY: as above.
+            let parent = unsafe { (*current).token };
+            // SAFETY: as above.
+            unsafe { origin.write(CoroutineIdentity { token: parent }) };
+            // SAFETY: as above.
+            unsafe { current.write(CoroutineIdentity { token: own }) };
+        }
+        1 => {
+            // SAFETY: as above.
+            let parent = unsafe { (*origin).token };
+            // SAFETY: as above.
+            unsafe { current.write(CoroutineIdentity { token: parent }) };
+        }
         _ => {}
     }
 }

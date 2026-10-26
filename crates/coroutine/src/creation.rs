@@ -44,6 +44,7 @@ fn terminal(
 /// Initialized readable CID cell in a live Native object, without racing access.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_coroutine_cid_read(cid: *const CoroutineCid) -> c_long {
+    // SAFETY: per this function's `# Safety` contract, `cid` is live, aligned and initialized.
     unsafe { (*cid).value }
 }
 
@@ -69,6 +70,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_create_step(
     token: usize,
     observed_count: usize,
 ) -> CoroutineCreationAction {
+    // SAFETY: forwards the caller's cursor, scheduler, CID and owner-slot contract.
     unsafe {
         create_step(
             cursor,
@@ -96,6 +98,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_selected_create_step(
     observed_count: usize,
     policy: crate::registry::CoroutineRegistryPolicy,
 ) -> CoroutineCreationAction {
+    // SAFETY: forwards the caller's cursor, scheduler, CID and owner-slot contract.
     unsafe {
         create_step(
             cursor,
@@ -118,6 +121,7 @@ unsafe fn create_step(
     observed_count: usize,
     policy: Option<crate::registry::CoroutineRegistryPolicy>,
 ) -> CoroutineCreationAction {
+    // SAFETY: per this function's `# Safety` contract, `cursor` is live, aligned and exclusive.
     let cursor = unsafe { &mut *cursor };
     if cursor.phase == FINISHED {
         return CoroutineCreationAction {
@@ -128,10 +132,12 @@ unsafe fn create_step(
     if cursor.phase > FINISHED {
         return CoroutineCreationAction { action: -4, cid: 0 };
     }
+    // SAFETY: per this function's `# Safety` contract, `scheduler` is live, aligned and exclusive.
     let scheduler = unsafe { &mut *scheduler };
     match cursor.phase {
         0 => {
             let value = crate::scheduler::next_id(scheduler);
+            // SAFETY: per this function's `# Safety` contract, `cid` is live, aligned and writable.
             unsafe { cid.write(CoroutineCid { value }) };
             if registry.is_null() {
                 cursor.phase = 1;
@@ -140,13 +146,14 @@ unsafe fn create_step(
                     cid: value,
                 };
             }
-            let result = unsafe {
-                match policy {
-                    Some(policy) => {
-                        crate::registry::selected_insert(registry, value, token, policy)
-                    }
-                    None => crate::registry::insert(registry, value, token),
-                }
+            // A non-null slot holds null or the live, serialized Registry.
+            let result = match policy {
+                // SAFETY: as above.
+                Some(policy) => unsafe {
+                    crate::registry::selected_insert(registry, value, token, policy)
+                },
+                // SAFETY: as above.
+                None => unsafe { crate::registry::insert(registry, value, token) },
             };
             if result != 0 {
                 cursor.phase = FINISHED;
@@ -155,9 +162,16 @@ unsafe fn create_step(
                     cid: 0,
                 };
             }
-            let first_count = unsafe { crate::registry::count(*registry) };
+            // The insert succeeded, so the slot now holds the live, serialized Registry.
+            // SAFETY: as above.
+            let owner = unsafe { *registry };
+            // SAFETY: as above.
+            let first_count = unsafe { crate::registry::count(owner) };
             if first_count as u64 > scheduler.peak_num {
-                scheduler.peak_num = unsafe { crate::registry::count(*registry) } as u64;
+                // SAFETY: as above.
+                let owner = unsafe { *registry };
+                // SAFETY: as above.
+                scheduler.peak_num = unsafe { crate::registry::count(owner) } as u64;
             }
             terminal(cursor, scheduler)
         }
@@ -195,7 +209,10 @@ pub unsafe extern "C" fn swr_v1_coroutine_unregister(
     registry: *mut c_void,
     cid: *const CoroutineCid,
 ) -> usize {
-    unsafe { crate::registry::erase(registry, (*cid).value) }
+    // SAFETY: `cid` is an initialized, readable cell in the still-live native object.
+    let value = unsafe { (*cid).value };
+    // SAFETY: `registry` is null or a live, exclusive, serialized Registry.
+    unsafe { crate::registry::erase(registry, value) }
 }
 
 #[cfg(test)]

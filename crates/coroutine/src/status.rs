@@ -24,6 +24,7 @@ pub struct CoroutineStatusView {
 pub unsafe extern "C" fn swr_v1_coroutine_status_read(
     status: *const CoroutineStatus,
 ) -> CoroutineStatusView {
+    // SAFETY: per this function's `# Safety` contract, `status` is live, aligned and initialized.
     read(unsafe { &*status })
 }
 
@@ -52,6 +53,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_status_transition(
     facts: u32,
     stage: u32,
 ) -> Plan {
+    // SAFETY: per this function's `# Safety` contract, `status` is live, aligned and exclusive.
     transition(unsafe { &mut *status }, op, facts, stage)
 }
 

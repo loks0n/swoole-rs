@@ -14,13 +14,16 @@ fn offsets() -> impl Iterator<Item = usize> {
 /// Bytes outside the marker spans may be uninitialized. No pointer is retained.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_context_stack_mark(stack: *mut u8, size: usize) {
+    // SAFETY: forwards the caller's `size` writable, unshared stack bytes.
     unsafe { mark(stack, size) };
 }
 
 pub(crate) unsafe fn mark(stack: *mut u8, size: usize) {
     for offset in offsets().take_while(|&offset| offset <= size) {
         let index = size - offset + MAGIC.len();
-        unsafe { ptr::copy_nonoverlapping(MAGIC.as_ptr(), stack.add(index), MAGIC.len()) };
+        // SAFETY: `offset >= 64 KiB >= 2 * MAGIC.len()` and `offset <= size`, so the span
+        // `index..index + MAGIC.len()` lies inside the caller's `size` writable bytes.
+        unsafe { ptr::copy_nonoverlapping(MAGIC.as_ptr(), stack.wrapping_add(index), MAGIC.len()) };
     }
 }
 
@@ -30,6 +33,7 @@ pub(crate) unsafe fn mark(stack: *mut u8, size: usize) {
 /// native stack execution. No other stack bytes are read; no borrow is retained.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_context_stack_usage(stack: *const u8, size: usize) -> usize {
+    // SAFETY: forwards the caller's `size` stack bytes with initialized marker spans.
     unsafe { usage(stack, size) }
 }
 
@@ -37,7 +41,8 @@ pub(crate) unsafe fn usage(stack: *const u8, size: usize) -> usize {
     let mut usage = START;
     for offset in offsets().take_while(|&offset| offset < size) {
         let index = size - offset + MAGIC.len();
-        let marker = unsafe { std::slice::from_raw_parts(stack.add(index), MAGIC.len()) };
+        // SAFETY: as in `mark`, this marker span lies inside `size` and is initialized.
+        let marker = unsafe { std::slice::from_raw_parts(stack.wrapping_add(index), MAGIC.len()) };
         let matches = marker == MAGIC;
         if !matches {
             usage = offset * 2;

@@ -67,6 +67,7 @@ pub unsafe extern "C" fn swr_v1_channel_waiter(
         result.status = -4;
         return result;
     }
+    // SAFETY: per this function's `# Safety` contract, `if` is live, aligned and exclusive.
     let queue = unsafe { &mut *if producer { producers } else { consumers } };
     match operation {
         0 => {
@@ -102,11 +103,15 @@ pub unsafe extern "C" fn swr_v1_channel_view_read(
     producers: *const ChannelTokens,
     consumers: *const ChannelTokens,
 ) -> ChannelView {
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and initialized.
     let state = unsafe { &*state };
+    // SAFETY: per this function's `# Safety` contract, `data` is live, aligned and initialized.
     let length = unsafe { &*data }.0.len();
     ChannelView {
         length,
+        // SAFETY: per this function's `# Safety` contract, `producers` is live, aligned and initialized.
         producers: unsafe { &*producers }.0.len(),
+        // SAFETY: per this function's `# Safety` contract, `consumers` is live, aligned and initialized.
         consumers: unsafe { &*consumers }.0.len(),
         error: state.error,
         closed: state.closed,
@@ -121,6 +126,7 @@ pub unsafe extern "C" fn swr_v1_channel_view_read(
 /// Data is a live exclusive token owner; no borrow survives this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_channel_pop_data(data: *mut ChannelTokens) -> *mut c_void {
+    // SAFETY: per this function's `# Safety` contract, `data` is live, aligned and exclusive.
     unsafe { &mut *data }
         .0
         .pop_front()
@@ -147,15 +153,21 @@ pub unsafe extern "C" fn swr_v1_channel_owned_step(
     external: u32,
     input: *mut c_void,
 ) -> ChannelAction {
+    // SAFETY: per this function's `# Safety` contract, `cursor` is live, aligned and exclusive.
     let cursor = unsafe { &mut *cursor };
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     if cursor.pending != 0 {
         state.closed = 1;
         cursor.pending = 0;
     }
+    // SAFETY: per this function's `# Safety` contract, `data` is live, aligned and initialized.
     let empty = unsafe { &*data }.0.is_empty();
+    // SAFETY: per this function's `# Safety` contract, `data` is live, aligned and initialized.
     let full = unsafe { &*data }.0.len() == state.capacity;
+    // SAFETY: per this function's `# Safety` contract, `producers` is live, aligned and initialized.
     let waiting_producers = !unsafe { &*producers }.0.is_empty();
+    // SAFETY: per this function's `# Safety` contract, `consumers` is live, aligned and initialized.
     let waiting_consumers = !unsafe { &*consumers }.0.is_empty();
     let facts = (u32::from(state.closed != 0) * crate::CLOSED)
         | (u32::from(empty) * crate::EMPTY)
@@ -172,11 +184,13 @@ pub unsafe extern "C" fn swr_v1_channel_owned_step(
     match action {
         crate::PUBLISH_CLOSED => cursor.pending = 1,
         crate::TRANSFER if op == 0 => {
+            // SAFETY: per this function's `# Safety` contract, `data` is live, aligned and exclusive.
             if unsafe { &mut *data }.try_push(input).is_err() {
                 result.action = -5;
             }
         }
         crate::TRANSFER => {
+            // SAFETY: per this function's `# Safety` contract, `data` is live, aligned and exclusive.
             if let Some(token) = unsafe { &mut *data }.0.pop_front() {
                 result.token = token;
             } else {
@@ -184,6 +198,7 @@ pub unsafe extern "C" fn swr_v1_channel_owned_step(
             }
         }
         crate::WAKE_PRODUCER => {
+            // SAFETY: per this function's `# Safety` contract, `producers` is live, aligned and exclusive.
             if let Some(token) = unsafe { &mut *producers }.0.pop_front() {
                 result.token = token;
             } else {
@@ -191,6 +206,7 @@ pub unsafe extern "C" fn swr_v1_channel_owned_step(
             }
         }
         crate::WAKE_CONSUMER => {
+            // SAFETY: per this function's `# Safety` contract, `consumers` is live, aligned and exclusive.
             if let Some(token) = unsafe { &mut *consumers }.0.pop_front() {
                 result.token = token;
             } else {

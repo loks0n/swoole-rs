@@ -32,9 +32,11 @@ pub unsafe extern "C" fn swr_v1_coroutine_bailout_step(
     function_present: u8,
     origin_offset: usize,
 ) -> CoroutineBailoutAction {
+    // SAFETY: per this function's `# Safety` contract, `cursor` is live, aligned and exclusive.
     let cursor = unsafe { &mut *cursor };
     let action = match cursor.phase {
         0 => {
+            // SAFETY: per this function's `# Safety` contract, `current` is live, aligned and initialized.
             cursor.saved = unsafe { (*current).token };
             if cursor.saved.is_null() {
                 cursor.phase = 3;
@@ -53,11 +55,14 @@ pub unsafe extern "C" fn swr_v1_coroutine_bailout_step(
             loop {
                 // Explicit foreign-field contract: original object provenance,
                 // forward offset to ONE initialized repr(C) cell, raw read.
+                // SAFETY: `object` is a live chain member with an initialized identity cell at
+                // `origin_offset` (see the contract); the chain is serialized.
                 let origin = unsafe { origin_at(object, origin_offset) };
                 if origin.is_null() {
                     break;
                 }
                 // Original while-test and assignment observe the parent twice.
+                // SAFETY: as above.
                 object = unsafe { origin_at(object, origin_offset) };
             }
             cursor.saved = object;
@@ -74,10 +79,12 @@ pub unsafe extern "C" fn swr_v1_coroutine_bailout_step(
 
 // The only foreign address calculation: designated cell, never whole object.
 unsafe fn origin_at(object: *mut c_void, offset: usize) -> *mut c_void {
+    // SAFETY: the caller guarantees an initialized, aligned identity cell at `offset`
+    // inside `object`'s allocation; only that cell is read.
     unsafe {
         object
             .cast::<u8>()
-            .add(offset)
+            .wrapping_add(offset)
             .cast::<CoroutineIdentity>()
             .read()
             .token

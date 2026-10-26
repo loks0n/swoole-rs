@@ -36,10 +36,12 @@ unsafe fn stack_view(
     stack: *const ContextStackCell,
     extent: *const ContextExtent,
 ) -> ContextStackView {
+    // SAFETY: callers pass an initialized, readable stack cell with serialized access.
     let pointer = unsafe { (*stack).pointer };
     ContextStackView {
         pointer,
         top: ptr::null_mut(),
+        // SAFETY: callers pass an initialized, readable extent with serialized access.
         size: unsafe { (*extent).size } as usize,
         present: u8::from(!pointer.is_null()),
     }
@@ -53,6 +55,7 @@ pub unsafe extern "C" fn swr_v1_context_stack_read(
     stack: *const ContextStackCell,
     extent: *const ContextExtent,
 ) -> ContextStackView {
+    // SAFETY: forwards the caller's initialized, serialized cells.
     unsafe { stack_view(stack, extent) }
 }
 
@@ -74,7 +77,9 @@ pub unsafe extern "C" fn swr_v1_context_prepare(
     completion: *mut ContextCompletion,
     extent: *const ContextExtent,
 ) -> usize {
+    // SAFETY: per this function's `# Safety` contract, `completion` is live, aligned and writable.
     unsafe { completion.write(ContextCompletion { value: 0 }) };
+    // SAFETY: `extent` is null or live and aligned for this call.
     unsafe { extent.as_ref() }.map_or(0, |extent| extent.size as usize)
 }
 
@@ -83,6 +88,7 @@ pub unsafe extern "C" fn swr_v1_context_prepare(
 /// Completion is writable cell storage. No reference to its prior value is made.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_context_finish(completion: *mut ContextCompletion) {
+    // SAFETY: per this function's `# Safety` contract, `completion` is live, aligned and writable.
     unsafe { completion.write(ContextCompletion { value: 1 }) };
 }
 
@@ -90,6 +96,7 @@ pub unsafe extern "C" fn swr_v1_context_finish(completion: *mut ContextCompletio
 /// Completion is initialized readable storage without racing mutation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_context_completed(completion: *const ContextCompletion) -> u8 {
+    // SAFETY: per this function's `# Safety` contract, `completion` is live, aligned and initialized.
     u8::from(unsafe { (*completion).value } != 0)
 }
 
@@ -112,6 +119,7 @@ pub unsafe extern "C" fn swr_v1_context_stack_step(
     requested: usize,
 ) -> ContextStackView {
     if operation == 3 {
+        // SAFETY: the stack cell is writable storage (see the contract).
         unsafe {
             stack.write(ContextStackCell {
                 pointer: ptr::null_mut(),
@@ -123,16 +131,20 @@ pub unsafe extern "C" fn swr_v1_context_stack_step(
         return ContextStackView::empty();
     }
     if operation == 0 {
+        // SAFETY: as above; ADMIT initializes the cell.
         unsafe {
             stack.write(ContextStackCell {
                 pointer: allocation,
             })
         };
     }
+    // SAFETY: outside CLEAR the cell is initialized and the extent readable.
     let mut view = unsafe { stack_view(stack, extent) };
     match operation {
         2 => view.top = view.pointer.cast::<u8>().wrapping_add(view.size).cast(),
+        // SAFETY: MARK requires `requested` live, bounded, writable allocated bytes.
         4 => unsafe { crate::stack::mark(view.pointer.cast(), requested) },
+        // SAFETY: USAGE requires live bytes with initialized marker spans.
         5 => view.size = unsafe { crate::stack::usage(view.pointer.cast(), view.size) },
         _ => {}
     }
