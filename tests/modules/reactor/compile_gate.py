@@ -17,7 +17,6 @@ from tools.build_upstream import COMMIT as PIN
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--source', type=Path, required=True)
 p.add_argument('--report', type=Path, required=True)
-p.add_argument('--sockets-owned', action='store_true', help='Compile actual selected full backend TUs with registry ownership ON; original control remains OFF')
 a = p.parse_args()
 if a.report.exists():
     raise SystemExit('Refusing to replace an existing compile receipt')
@@ -51,12 +50,11 @@ with tempfile.TemporaryDirectory(prefix='swr-reactor-compile-') as tmp:
                 patch_proofs.append(apply_patch_verified(tree,patch,entry['upstream_paths'],entry['sha256']))
         for name in [*backends, 'stream']:
             selected_flags = [flag for flag in flags if variant != 'disabled' or flag != '-DSWOOLE_RS_REACTOR']
-            if a.sockets_owned and variant != 'original':selected_flags += ['-DSWOOLE_RS_REACTOR_SOCKETS_OWNED=1']
             cmd = ['c++', *selected_flags, '-c', str(tree/(('src/network/' if name == 'stream' else 'src/reactor/')+name+'.cc')), '-o', str(tree/(variant+'-'+name+'.o'))]
             result = subprocess.run(cmd, capture_output=True, text=True)
             passed = result.returncode == 0 if variant != 'disabled' else (result.returncode != 0 and 'Reactor overlay requires --enable-swoole-rs-reactor' in result.stderr)
             print(variant, name, result.returncode, 'PASS' if passed else 'FAIL', flush=True)
             rows.append(dict(variant=variant, backend=name, command=cmd, returncode=result.returncode, passed=passed, stderr=result.stderr))
 a.report.parent.mkdir(parents=True, exist_ok=True)
-a.report.write_text(json.dumps(dict(pin=PIN, selected_registry_owned=a.sockets_owned, staged_inputs=inputs, patch_application=patch_proofs, compiler=subprocess.check_output(['c++', '--version'], text=True).splitlines()[0], rows=rows), indent=2)+'\n')
+a.report.write_text(json.dumps(dict(pin=PIN, staged_inputs=inputs, patch_application=patch_proofs, compiler=subprocess.check_output(['c++', '--version'], text=True).splitlines()[0], rows=rows), indent=2)+'\n')
 raise SystemExit(any(not row['passed'] for row in rows))

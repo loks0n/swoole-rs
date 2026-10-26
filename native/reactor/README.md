@@ -20,23 +20,21 @@ Warnings stay in their original Native method so `__SW_FUNC__` is unchanged.
 | 0003-stream-framing | `src/network/stream.cc` |
 | 0004-socket-output | `src/network/socket.cc` |
 | 0005-iov-owned | `include/swoole_socket.h` |
-| 0006-socket-registry-admin | `ext-src/swoole_admin_server.cc` |
 | 0007-server-buffer-typed | `src/server/base.cc`, `src/server/reactor_thread.cc` |
 
 The optional M15 half-close patches apply first when requested and stay
 byte-identical; the M05 hunks continue after their prefixes.
 
-## Optional storage capabilities (all OFF by default)
+## Rust-owned storage
 
-| Macro / configure option | Effect when 1 |
-| --- | --- |
-| `SWOOLE_RS_REACTOR_IOV_OWNED` / `--enable-swoole-rs-reactor-iov-owned` | Rust owns IOVector arrays ([socket-io.md](socket-io.md)) |
-| `SWOOLE_RS_REACTOR_DEFER_OWNED` / `--enable-swoole-rs-reactor-defer-owned` | Rust FIFO for `defer_tasks` and `destroy_callbacks` ([callbacks.md](callbacks.md)) |
-| `SWOOLE_RS_REACTOR_SOCKETS_OWNED` / `--enable-swoole-rs-reactor-sockets-owned` | Rust socket registry ([socket-registry.md](socket-registry.md)) |
-| `SWOOLE_RS_BUFFER_TYPED` (on with Rust Buffer and reactor) | Server callers use the typed Rust Buffer queue ([output.md](output.md)) |
-
-The reactor capabilities require `SWOOLE_RS_REACTOR` (`--enable-swoole-rs-reactor`). Each changes the selected private class
-layout, so every selected SDK consumer must rebuild.
+Every `SWOOLE_RS_REACTOR` (`--enable-swoole-rs-reactor`) build uses Rust
+storage for IOVector arrays ([socket-io.md](socket-io.md)), the `defer_tasks`
+and `destroy_callbacks` FIFOs ([callbacks.md](callbacks.md)). These change the
+private Reactor layout, so every selected SDK consumer must rebuild. The socket
+map stays upstream's `std::unordered_map`: a Rust registry can only reproduce
+its iteration order per C++ standard library, and existed only for Apple libc++.
+`SWOOLE_RS_BUFFER_TYPED` (on with Rust Buffer and reactor) makes Server callers
+use the typed Rust Buffer queue ([output.md](output.md)).
 
 ## Contents
 
@@ -44,8 +42,6 @@ layout, so every selected SDK consumer must rebuild.
   registration, wait, batch decoding, readiness and signals.
 - [callbacks.md](callbacks.md): ordered end/exit callbacks, handlers, builtin
   defer/idle/exit scheduling, deferred queue ownership.
-- [socket-registry.md](socket-registry.md): Rust-owned fd→Socket registry,
-  iteration order and iterators.
 - [socket-io.md](socket-io.md): ordinary Socket I/O, options, connect,
   datagrams, blocking calls and IOVector.
 - [output.md](output.md): Socket output queue progression, writable/drain,

@@ -8,7 +8,9 @@
 #include <utility>
 #include <vector>
 #include "swoole_rs_reactor.h"
+#ifdef SWOOLE_RS_REACTOR
 #include "swoole_rs_reactor_defer.h"
+#endif
 #include "callback-queues.inc"
 int main() {
     unsigned checks=0;auto check=[&](bool v){assert(v);++checks;};

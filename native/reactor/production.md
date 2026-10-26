@@ -35,21 +35,18 @@ keep peers live until normal cleanup. They do not probe errors, interruption,
 zero-length I/O, lifetime or SSL. The `--ordinary-io` profile expects the
 kernel-timeout wrapper naming mismatch described in [socket-io.md](socket-io.md).
 The 9/78 socket-output inventory passes on macOS and Linux for both engines;
-the newer datagram, ordinary-io and owned-capability profiles had only been
-compiled, not executed, at the time of writing.
+the datagram, ordinary-io and owned-storage profiles pass on macOS.
 
 ## Capability modifiers
 
-Each modifier requires an explicit boolean in the selected manifest, Native
-OFF, the relevant Rust source in the attested closure, and the macro defined as
-literal 1 in the reconstructed selected SDK (absent/0 for Native). Modifiers
-add identity checks, not assertions.
+Modifiers add identity checks, not assertions. The owned-storage modifiers
+compare the selected engine (Rust storage, `SWOOLE_RS_REACTOR` in its SDK) with
+the Native control.
 
-| Modifier | Profile | Manifest input / source / macro |
+| Modifier | Profile | Checks |
 | --- | --- | --- |
-| `--require-owned-iov` | `--blocking` | `inputs.reactor_iov_owned_requested`, `iov_owned.rs`, `SWOOLE_RS_REACTOR_IOV_OWNED` |
-| `--require-owned-defer` | `--builtins` | `inputs.reactor_defer_owned_requested`, `deferred.rs`, `SWOOLE_RS_REACTOR_DEFER_OWNED` |
-| `--require-owned-sockets` | default | registry source and policy export, `SWOOLE_RS_REACTOR_SOCKETS_OWNED`; inline `get_event_num` must import the registry length symbol and policy must report 1 |
+| `--require-owned-iov` | `--blocking` | IOVector constructor/destructor and Rust-owned length origins |
+| `--require-owned-defer` | `--builtins` | defer import, field types and push/step/clear origins |
 | `--require-output-workflow` | `--socket-output` | exact workflow source and caller-overlay hashes, selected workflow symbol origin |
 | `--require-typed-buffer` | any | typed Buffer request/SDK/source; Buffer execution only in `--socket-output` |
 | `--require-batch` | any | refuses older production sources before compiling |

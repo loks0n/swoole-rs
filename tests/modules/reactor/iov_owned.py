@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
-"""Whole opt-in IOVector ownership: exact positive original/fallback/owned source consumers.
+"""Whole Rust-owned IOVector storage: exact positive original/owned source consumers.
 
 No allocation failures, foreign pointers, shallow copies, reentry, lifetime faults,
-network or performance probes. Capability is OFF unless explicitly defined as1.
+network or performance probes.
 """
 import argparse,io,json,subprocess,sys,tarfile,tempfile,shutil
 from pathlib import Path
 from ordered_gate import ROOT,PIN,block
-from poll_snapshot import digest
 sys.path.insert(0,str(ROOT))
 from tools.build_hybrid import apply_patch_verified
 from tools.build_upstream import require_build_space
@@ -17,8 +16,8 @@ p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=Pa
 if a.report.exists():raise ValueError('Choose a unique immutable receipt')
 manifest=ROOT/'migration/patches/reactor/manifest.json';entries=json.loads(manifest.read_text())['patches'];dest='src/network/socket.cc';header='include/swoole_socket.h'
 patches=[next(e for e in entries if e['upstream_paths']==[name]) for name in [dest,header]]
-fixed=ROOT/'migration/patches/halfclose/0003-send-tls-close-notify.patch';fixed_sha='9f168cde26029e14c0e94fd2542b5bce573c81435cb9b06d521d030640786bf5'
-if digest(fixed)!=fixed_sha:raise ValueError('Frozen repair changed')
+fixed=ROOT/'migration/patches/halfclose/0003-send-tls-close-notify.patch'
+fixed_sha=next(e['sha256'] for e in json.loads((fixed.parent/'manifest.json').read_text())['patches'] if e['path']==fixed.name)
 report=dict(assigned_to='@loks0n',scope=__doc__,pin=PIN,patch_application=[],sources={},syntax=[],commands=[],results=[],passed=False)
 with tempfile.TemporaryDirectory(prefix='swr-iov-owned-') as temporary:
  t=Path(temporary)
@@ -29,25 +28,22 @@ with tempfile.TemporaryDirectory(prefix='swr-iov-owned-') as temporary:
    for member in archive:
     if member.isfile():path=sdk/member.name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(archive.extractfile(member).read())
   original={name:subprocess.check_output(['git','-C',str(a.source),'show',PIN+':'+name]) for name in [dest,header]}
-  variants=[('native',False,False,None),('native-corrected',True,False,None),('rust-default',False,True,None),('rust-default-corrected',True,True,None),('rust-owned',False,True,1),('rust-owned-corrected',True,True,1),('rust-explicit-off',False,True,0)]
-  for name,corrected,selected,capability in variants:
+  for name,corrected,selected in [('native',False,False),('native-corrected',True,False),('rust',False,True),('rust-corrected',True,True)]:
    tree=t/name
    shutil.copytree(sdk,tree)
    for path,data in original.items():file=tree/path;file.parent.mkdir(parents=True,exist_ok=True);file.write_bytes(data)
    if corrected:report['patch_application'].append(dict(variant=name,proof=apply_patch_verified(tree,fixed,[dest],fixed_sha)))
    if selected:
     for entry in patches:report['patch_application'].append(dict(variant=name,proof=apply_patch_verified(tree,manifest.parent/entry['path'],entry['upstream_paths'],entry['sha256'])))
-   body=(tree/dest).read_text();h=(tree/header).read_text();report['sources'][name]={'capability':capability,'selected':selected,'optional_native_fix':corrected}
+   body=(tree/dest).read_text();h=(tree/header).read_text();report['sources'][name]={'selected':selected,'optional_native_fix':corrected}
    # Every unrelated public header byte must remain identical. Remove only the
    # exact IOVector declaration + known module-include guard before comparison.
    declaration=block(h,h.index('struct IOVector {'))[0]
    if selected:
-    guard='''\n#if defined(SWOOLE_RS_REACTOR_IOV_OWNED) && SWOOLE_RS_REACTOR_IOV_OWNED
-#ifndef SWOOLE_RS_REACTOR
+    guard='''\n#ifndef SWOOLE_RS_REACTOR
 #error "Owned IOVector capability requires --enable-swoole-rs-reactor"
 #endif
 #include "swoole_rs_reactor.h"
-#endif
 '''
     pinned=original[header].decode();old_decl=block(pinned,pinned.index('struct IOVector {'))[0]
     if h.replace(guard,'',1).replace(declaration,old_decl,1)!=pinned:raise ValueError('Unrelated public header bytes changed')
@@ -55,7 +51,6 @@ with tempfile.TemporaryDirectory(prefix='swr-iov-owned-') as temporary:
     old_length=block(old_decl,old_decl.index('size_t length()'))[0];new_length=block(declaration,declaration.index('size_t length()'))[0]
     if declaration.replace(new_length,old_length,1)!=old_decl:raise ValueError('Unrelated IOVector public bytes changed')
    options=['-DSWOOLE_RS_REACTOR'] if selected else []
-   if capability is not None:options+=['-DSWOOLE_RS_REACTOR_IOV_OWNED='+str(capability)]
    for ssl in [False,True]:
     cmd=['c++','-std=c++14','-fsyntax-only',*options,*(['-DSW_USE_OPENSSL'] if ssl else []),'-I'+str(tree/'include'),'-I'+str(tree),'-I'+str(ROOT/'native/reactor'),*subprocess.check_output(['pkg-config','--cflags','openssl'],text=True).split(),str(tree/dest)]
     r=run_isolated(cmd,cwd=t,timeout=60);report['syntax'].append(dict(variant=name,ssl=ssl,command=cmd,exit=r.returncode,stdout=r.stdout,stderr=r.stderr))
@@ -72,7 +67,7 @@ with tempfile.TemporaryDirectory(prefix='swr-iov-owned-') as temporary:
      report['commands'].append(dict(variant=name,standard=standard,stage=stage,command=command,exit=r['returncode'],stdout=r['stdout'],stderr=r['stderr']))
      if r['returncode'] or r['stderr']:raise RuntimeError(name+' '+standard+' '+stage+' failed/warned')
     report['results'].append(dict(variant=name,standard=standard,observations=json.loads(r['stdout'])))
-  if len({json.dumps(row['observations'],sort_keys=True) for row in report['results']})!=1:raise RuntimeError('Positive original/fallback/owned observations differ')
+  if len({json.dumps(row['observations'],sort_keys=True) for row in report['results']})!=1:raise RuntimeError('Positive original/owned observations differ')
   report['passed']=True
  except Exception as error:report['error']=str(error)
 a.report.parent.mkdir(parents=True,exist_ok=True);a.report.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps({k:report.get(k) for k in ['passed','error','results']}));raise SystemExit(not report['passed'])

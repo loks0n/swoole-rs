@@ -30,22 +30,6 @@ GRADUATED = ('crc32',)
 SELECTABLE = sorted(set(MODULES) - set(GRADUATED))
 
 
-REACTOR_OWNED_CAPABILITIES = ('iov', 'defer', 'sockets')
-
-
-def reactor_owned_capabilities(args):
-    return [name for name in REACTOR_OWNED_CAPABILITIES
-            if getattr(args, 'reactor_' + name + '_owned', False)]
-
-
-def reactor_owned_suffix(args):
-    return ''.join('-' + name + '-owned' for name in reactor_owned_capabilities(args))
-
-
-def storage_suffix(args):
-    return reactor_owned_suffix(args)
-
-
 def profile_suffix(args):
     return ('-php-sockets' if getattr(args, 'php_sockets', False) else '') + ('-stdext' if getattr(args, 'stdext', False) else '')
 
@@ -354,9 +338,6 @@ def main():
     parser.add_argument('--backend', choices=['rust', 'upstream'], default='rust', help='Rust ABI seam enabled, or explicit upstream fallback')
     parser.add_argument('--module', choices=SELECTABLE, action='append', default=[], help='Enable a migrated kernel; graduated modules are always on')
     parser.add_argument('--fix-halfclose', action='store_true', help='Apply the opt-in native queued-close drain repair (not a Rust kernel)')
-    for name in REACTOR_OWNED_CAPABILITIES:
-        parser.add_argument('--reactor-' + name + '-owned', action='store_true',
-                            help='Experimental Rust-owned ' + name + ' storage; requires --module reactor, default off')
     parser.add_argument('--dev', action='store_true', help='Reuse a private incremental tree; never publishes integration artifacts')
     parser.add_argument('--export', type=Path, help='Publish verified immutable copies to a new directory; refuses replacement')
     parser.add_argument('--native-build-root', type=Path, help='Private native build directory, including an explicitly mounted RAM filesystem')
@@ -367,9 +348,6 @@ def main():
         parser.error('Export already exists: ' + str(args.export))
     if 'phpcollections' in args.module and 'memory' not in args.module:
         parser.error('Rust PHP collections require --module memory for TableV2 storage')
-    for name in reactor_owned_capabilities(args):
-        if 'reactor' not in args.module or args.backend != 'rust':
-            parser.error('--reactor-' + name + '-owned requires --backend rust --module reactor')
     with exclusive(ROOT / 'target/hybrid/.builder.lock'):
         return build(args, parser)
 
@@ -408,12 +386,10 @@ def build(args, parser):
         timings['cargo'] = round(time.monotonic() - cargo_started, 4)
     switches = ['--with-swoole-rs={BUILD_PREFIX}'] if args.backend == 'rust' else ['--without-swoole-rs']
     switches += ['--enable-swoole-rs-' + module for module in args.module if module not in GRADUATED]
-    switches += ['--enable-swoole-rs-reactor-' + name + '-owned' for name in reactor_owned_capabilities(args)]
     effective_configure, effective_env = extension_configuration(args, switches)
     headers = headers_for(args.module)
     inputs = {'php_sockets_requested': getattr(args, 'php_sockets', False),
-              'compiler_cache': compiler_cache_identity(args), 'fix_halfclose': getattr(args, 'fix_halfclose', False), **{'reactor_' + name + '_owned_requested': name in reactor_owned_capabilities(args)
-                 for name in REACTOR_OWNED_CAPABILITIES}, 'modules': args.module, 'builder_sha256': digest(__file__), 'php_builder_sha256': digest(ROOT / 'tools/build_upstream.py'),
+              'compiler_cache': compiler_cache_identity(args), 'fix_halfclose': getattr(args, 'fix_halfclose', False), 'modules': args.module, 'builder_sha256': digest(__file__), 'php_builder_sha256': digest(ROOT / 'tools/build_upstream.py'),
               'effective_configure': effective_configure, 'effective_cppflags': effective_env['CPPFLAGS'],
               'upstream_commit': COMMIT, 'backend': args.backend, 'patches': patches,
               'rust_archive_sha256': digest(archive) if args.backend == 'rust' else None,
@@ -498,7 +474,7 @@ def build(args, parser):
         write_report(record_path, record)
     if args.backend == 'rust' and rust_sources(args.module) != rust_inputs:
         raise ValueError('Rust sources changed during native compilation; refusing to publish the extension')
-    suffix = storage_suffix(args) + ('-halfclose' if getattr(args, 'fix_halfclose', False) else '') + profile_suffix(args)
+    suffix = ('-halfclose' if getattr(args, 'fix_halfclose', False) else '') + profile_suffix(args)
     destination = ROOT / 'target/hybrid' / build_alias(args.backend, args.module, suffix, dev=args.dev)
     destination.mkdir(parents=True, exist_ok=True)
     switch_link(destination / 'src', source)

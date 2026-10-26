@@ -447,90 +447,37 @@ class Lanes(unittest.TestCase):
         from tools.build_hybrid import build_alias, MODULES
         variants = set()
         with tempfile.TemporaryDirectory() as directory:
-            for iov, defer, sockets, repair, stdext in product([False, True], repeat=5):
+            for repair, stdext in product([False, True], repeat=2):
                 args = SimpleNamespace(lane='integrate', all_modules=True, module=[],
-                                       reactor_iov_owned=iov, reactor_defer_owned=defer, reactor_sockets_owned=sockets,
                                        fix_halfclose=repair, stdext=stdext)
                 name = dev.build_variant(args)
                 self.assertLessEqual(len(os.fsencode(name)), 255)
                 (Path(directory)/name).mkdir()
                 variants.add(name)
                 self.assertEqual(name, build_alias('rust', reversed(sorted(MODULES)),
-                    ('-iov-owned' if iov else '') + ('-defer-owned' if defer else '') + ('-sockets-owned' if sockets else '') +
                     ('-halfclose' if repair else '') + ('-stdext' if stdext else '')))
-            self.assertEqual(len(variants), 32)
-        self.assertEqual(build_alias('rust', ['reactor'], '-iov-owned-stdext'),
-                         'rust-reactor-iov-owned-stdext')
+            self.assertEqual(len(variants), 4)
+        self.assertEqual(build_alias('rust', ['reactor'], '-halfclose-stdext'),
+                         'rust-reactor-halfclose-stdext')
 
-    def test_owned_reactor_storage_is_explicit_and_independent_of_native_repair(self):
+    def test_reactor_always_runs_owned_storage_gates(self):
         from itertools import product
         variants = set()
-        for owned, defer, sockets, repair, stdext in product([False, True], repeat=5):
+        for repair, stdext in product([False, True], repeat=2):
             args = SimpleNamespace(lane='integrate', module=['reactor'], all_modules=False,
                                    php='php', php_extension=[], jobs=2, test=None, case=None,
-                                   benchmark=False, compare=False, stdext=stdext,
-                                   fix_halfclose=repair, reactor_iov_owned=owned, reactor_defer_owned=defer,
-                                   reactor_sockets_owned=sockets)
+                                   benchmark=False, compare=False, stdext=stdext, fix_halfclose=repair)
             commands = dict(dev.plan(args, ROOT / 'target/reports/owned-config'))
-            for name, requested in [('iov', owned), ('defer', defer), ('sockets', sockets)]:
-                flag = '--reactor-' + name + '-owned'
-                self.assertEqual(flag in commands['build'], requested)
-                self.assertNotIn(flag, commands['stdext-reference-build' if stdext else 'reference-build'])
-            self.assertEqual('reactor-production-owned-iov' in commands, owned)
-            if owned:
-                self.assertIn('--blocking', commands['reactor-production-owned-iov'])
-                self.assertIn('--require-owned-iov', commands['reactor-production-owned-iov'])
-            self.assertEqual('reactor-production-owned-defer' in commands, defer)
-            if defer:
-                self.assertIn('--builtins', commands['reactor-production-owned-defer'])
-                self.assertIn('--require-owned-defer', commands['reactor-production-owned-defer'])
-                self.assertIn('--require-batch', commands['reactor-production-owned-defer'])
-            self.assertEqual('reactor-production-owned-sockets' in commands, sockets)
-            if sockets:
-                command = commands['reactor-production-owned-sockets']
-                self.assertIn('--require-owned-sockets', command)
-                self.assertIn('--require-batch', command)
-                self.assertIn('--selected-export', command)
-                self.assertIn('--native-export', command)
-                self.assertNotIn('--blocking', command)
-                self.assertNotIn('--builtins', command)
-            for phase in ['reactor-socket-registry-source-order', 'reactor-socket-registry-order-model']:
-                self.assertEqual(phase in commands, sockets)
-                if sockets:
-                    self.assertIn('--sanitize', commands[phase])
-                    self.assertIn('--archive', commands[phase])
-                    self.assertNotIn('--engine', commands[phase])
-            self.assertEqual('reactor-socket-registry-policy' in commands, sockets)
-            self.assertEqual('reactor-socket-iterators' in commands, sockets)
-            self.assertEqual('--sockets-owned' in commands['reactor-compile'], sockets)
-            if sockets:
-                for flag in ['--archive', '--sanitize', '--report']:
-                    self.assertIn(flag, commands['reactor-socket-iterators'])
-                self.assertNotIn('--engine', commands['reactor-socket-iterators'])
-            if sockets:
-                self.assertNotIn('--engine', commands['reactor-socket-registry-policy'])
-                self.assertNotIn('--order-model', commands['reactor-socket-registry-source-order'])
-                self.assertIn('--order-model', commands['reactor-socket-registry-order-model'])
-                model = commands['reactor-socket-registry-order-model']
-                self.assertEqual(model[model.index('--standard') + 1], 'c++14')
+            self.assertNotIn('-owned', ' '.join(map(str, commands['build'])))
+            for phase, flags in [('reactor-production-owned-iov', ['--blocking', '--require-owned-iov']),
+                                 ('reactor-production-owned-defer', ['--builtins', '--require-owned-defer', '--require-batch'])]:
+                for flag in flags:
+                    self.assertIn(flag, commands[phase])
+            self.assertNotIn('reactor-production-owned-sockets', commands)
             self.assertEqual('--stdext' in commands['build'], stdext)
             self.assertEqual('--fix-halfclose' in commands['build'], repair)
             variants.add(dev.build_variant(args))
-        self.assertEqual(len(variants), 32)
-
-    def test_owned_reactor_storage_without_reactor_rejected_before_building(self):
-        for name in ['iov', 'defer', 'sockets']:
-            with self.subTest(capability=name):
-                for options in [[], ['--backend', 'upstream', '--module', 'reactor']]:
-                    result = subprocess.run([sys.executable, str(ROOT/'tools/build_hybrid.py'),
-                                             '--reactor-' + name + '-owned', *options], text=True, capture_output=True)
-                    self.assertEqual(result.returncode, 2)
-                    self.assertIn('requires --backend rust --module reactor', result.stderr)
-                result = subprocess.run([sys.executable, str(ROOT/'tools/dev.py'), 'integrate',
-                                         '--module', 'buffer', '--reactor-' + name + '-owned', '--plan'],
-                                        text=True, capture_output=True)
-                self.assertEqual(result.returncode, 2)
-                self.assertIn('requires --module reactor or --all-modules', result.stderr)
+        self.assertEqual(len(variants), 4)
 
     def test_linux_consumer_hooks_load_curl_without_duplicating_explicit_dependency(self):
         for explicit in [[], ['curl']]:

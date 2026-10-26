@@ -48,8 +48,7 @@ swr_v1_reactor_output_action swr_v1_reactor_blocking_file(swr_v1_reactor_blockin
 size_t swr_v1_reactor_blocking_layout(uint32_t, uint32_t);
 
 struct iovec;
-/* New descriptor ownership capability is OFF unless the Native caller explicitly
- * defines SWOOLE_RS_REACTOR_IOV_OWNED. Existing ABI/progress APIs are unchanged. */
+/* Rust-owned IOVector descriptor storage, used by every Rust reactor build. */
 typedef struct { struct iovec *original, *iterator; int32_t status; } swr_v1_reactor_iov_allocation;
 swr_v1_reactor_iov_allocation swr_v1_reactor_iov_owned_new(const struct iovec *, int32_t);
 void swr_v1_reactor_iov_owned_free(struct iovec *);
@@ -82,38 +81,6 @@ typedef struct { uint32_t phase; } swr_v1_reactor_init_state;
 typedef struct { int32_t selected; uint32_t observe_kqueue, factory; } swr_v1_reactor_backend_plan;
 swr_v1_reactor_backend_plan swr_v1_reactor_backend_type(int32_t, uint32_t, uint32_t, uint32_t);
 int32_t swr_v1_reactor_init_next(swr_v1_reactor_init_state *, uint32_t, uint32_t, uint32_t, uint32_t);
-
-// Explicit OFF registry capability. Opaque owners hold metadata, never Socket custody.
-typedef struct swr_v1_reactor_sockets swr_v1_reactor_sockets;
-typedef struct swr_v1_reactor_socket_snapshot swr_v1_reactor_socket_snapshot;
-typedef struct { int32_t fd; uintptr_t token; } swr_v1_reactor_socket_entry;
-typedef struct { size_t current; uint64_t generation; uint32_t started, done; } swr_v1_reactor_socket_cursor;
-int32_t swr_v1_reactor_sockets_put(swr_v1_reactor_sockets **, int32_t, uintptr_t);
-/* Token for fd, or 0 when absent; never inserts. */
-uintptr_t swr_v1_reactor_sockets_get(const swr_v1_reactor_sockets *, int32_t);
-uint32_t swr_v1_reactor_sockets_contains(const swr_v1_reactor_sockets *, int32_t);
-size_t swr_v1_reactor_sockets_len(const swr_v1_reactor_sockets *);
-void swr_v1_reactor_sockets_erase(swr_v1_reactor_sockets *, int32_t);
-int32_t swr_v1_reactor_sockets_next(const swr_v1_reactor_sockets *, swr_v1_reactor_socket_cursor *, swr_v1_reactor_socket_entry *);
-int32_t swr_v1_reactor_sockets_snapshot(const swr_v1_reactor_sockets *, swr_v1_reactor_socket_snapshot **);
-int32_t swr_v1_reactor_sockets_snapshot_entry(const swr_v1_reactor_socket_snapshot *, size_t, swr_v1_reactor_socket_entry *);
-size_t swr_v1_reactor_sockets_snapshot_len(const swr_v1_reactor_socket_snapshot *);
-void swr_v1_reactor_sockets_free(swr_v1_reactor_sockets **);
-void swr_v1_reactor_sockets_snapshot_free(swr_v1_reactor_socket_snapshot *);
-size_t swr_v1_reactor_sockets_layout(uint32_t, uint32_t);
-uint32_t swr_v1_reactor_sockets_policy(void);
-/* Actual inline POD subobjects; never reinterpret a Native C++ class as Rust. */
-typedef struct { uintptr_t slot_identity; swr_v1_reactor_socket_cursor cursor;
-                 swr_v1_reactor_socket_entry value; uint8_t done; } swr_v1_reactor_socket_live_iterator;
-typedef struct { const swr_v1_reactor_socket_snapshot *owner; size_t index; } swr_v1_reactor_socket_snapshot_iterator;
-int32_t swr_v1_reactor_sockets_live_next(const swr_v1_reactor_sockets *, swr_v1_reactor_socket_live_iterator *);
-int32_t swr_v1_reactor_sockets_live_post(const swr_v1_reactor_sockets *, swr_v1_reactor_socket_live_iterator *, swr_v1_reactor_socket_live_iterator *);
-uint32_t swr_v1_reactor_sockets_live_compare(const swr_v1_reactor_socket_live_iterator *, const swr_v1_reactor_socket_live_iterator *, uint32_t);
-int32_t swr_v1_reactor_sockets_snapshot_iterator_entry(const swr_v1_reactor_socket_snapshot_iterator *, swr_v1_reactor_socket_entry *);
-void swr_v1_reactor_sockets_snapshot_iterator_next(swr_v1_reactor_socket_snapshot_iterator *);
-int32_t swr_v1_reactor_sockets_snapshot_iterator_post(swr_v1_reactor_socket_snapshot_iterator *, swr_v1_reactor_socket_snapshot_iterator *);
-uint32_t swr_v1_reactor_sockets_snapshot_iterator_compare(const swr_v1_reactor_socket_snapshot_iterator *, const swr_v1_reactor_socket_snapshot_iterator *, uint32_t);
-
 
 typedef struct swr_v1_reactor_deferred swr_v1_reactor_deferred;
 int32_t swr_v1_reactor_deferred_push(swr_v1_reactor_deferred **, uintptr_t);

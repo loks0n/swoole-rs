@@ -1,8 +1,8 @@
 diff --git a/config.m4 b/config.m4
-index 230b1c09a..4eacd05f8 100644
+index 230b1c09a..fea70c969 100644
 --- a/config.m4
 +++ b/config.m4
-@@ -38,2 +38,157 @@ PHP_ARG_ENABLE([swoole],
+@@ -38,2 +38,142 @@ PHP_ARG_ENABLE([swoole],
  
 +PHP_ARG_WITH([swoole-rs],
 +  [Rust migration bridge prefix],
@@ -73,21 +73,6 @@ index 230b1c09a..4eacd05f8 100644
 +  [Rust reactor policy],
 +  [AS_HELP_STRING([--enable-swoole-rs-reactor],
 +    [Use Rust reactor policy (requires --with-swoole-rs)])], [no], [no])
-+
-+PHP_ARG_ENABLE([swoole-rs-reactor-iov-owned],
-+  [Experimental Rust-owned IOVector storage],
-+  [AS_HELP_STRING([--enable-swoole-rs-reactor-iov-owned],
-+    [Use experimental Rust IOVector allocation (requires Rust reactor; default off)])], [no], [no])
-+
-+PHP_ARG_ENABLE([swoole-rs-reactor-defer-owned],
-+  [Experimental Rust-owned deferred queue storage],
-+  [AS_HELP_STRING([--enable-swoole-rs-reactor-defer-owned],
-+    [Use experimental Rust deferred queue ownership (requires Rust reactor; default off)])], [no], [no])
-+
-+PHP_ARG_ENABLE([swoole-rs-reactor-sockets-owned],
-+  [Experimental Rust-owned socket registry],
-+  [AS_HELP_STRING([--enable-swoole-rs-reactor-sockets-owned],
-+    [Use source-qualified Rust socket registry (requires Rust reactor; default off)])], [no], [no])
 +
 +PHP_ARG_ENABLE([swoole-rs-corebase],
 +  [Rust corebase policy],
@@ -160,7 +145,7 @@ index 230b1c09a..4eacd05f8 100644
 +    [Use Rust PHP Coroutine policy (requires --with-swoole-rs)])], [no], [no])
 +
  PHP_ARG_ENABLE([mysqlnd],
-@@ -1301,2 +1456,241 @@ EOF
+@@ -1301,2 +1441,202 @@ EOF
  
 +    if test "$PHP_SWOOLE_RS_WEBSOCKET" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust WebSocket kernel requires --with-swoole-rs=DIR])
@@ -197,15 +182,6 @@ index 230b1c09a..4eacd05f8 100644
 +    fi
 +    if test "$PHP_SWOOLE_RS_FRAMING" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust framing policy requires --with-swoole-rs=DIR])
-+    fi
-+    if test "$PHP_SWOOLE_RS_REACTOR_IOV_OWNED" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
-+        AC_MSG_ERROR([Rust-owned IOVector requires --with-swoole-rs and --enable-swoole-rs-reactor])
-+    fi
-+    if test "$PHP_SWOOLE_RS_REACTOR_DEFER_OWNED" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
-+        AC_MSG_ERROR([Rust-owned deferred queue requires --with-swoole-rs and --enable-swoole-rs-reactor])
-+    fi
-+    if test "$PHP_SWOOLE_RS_REACTOR_SOCKETS_OWNED" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
-+        AC_MSG_ERROR([Rust-owned socket registry requires --with-swoole-rs and --enable-swoole-rs-reactor])
 +    fi
 +    if test "$PHP_SWOOLE_RS_REACTOR" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust reactor policy requires --with-swoole-rs=DIR])
@@ -311,36 +287,6 @@ index 230b1c09a..4eacd05f8 100644
 +        fi
 +        if test "$PHP_SWOOLE_RS_REACTOR" != "no"; then
 +            AC_DEFINE(SWOOLE_RS_REACTOR, 1, [Use Rust reactor policy])
-+        fi
-+        if test "$PHP_SWOOLE_RS_REACTOR_IOV_OWNED" != "no"; then
-+            if test "$PHP_SWOOLE_RS_REACTOR" = "no"; then
-+                AC_MSG_ERROR([Rust-owned IOVector requires --enable-swoole-rs-reactor])
-+            fi
-+            AC_DEFINE(SWOOLE_RS_REACTOR_IOV_OWNED, 1, [Use experimental Rust-owned IOVector storage])
-+        fi
-+        if test "$PHP_SWOOLE_RS_REACTOR_DEFER_OWNED" != "no"; then
-+            if test "$PHP_SWOOLE_RS_REACTOR" = "no"; then
-+                AC_MSG_ERROR([Rust-owned deferred queue requires --enable-swoole-rs-reactor])
-+            fi
-+            AC_DEFINE(SWOOLE_RS_REACTOR_DEFER_OWNED, 1, [Use experimental Rust-owned deferred queue storage])
-+        fi
-+        if test "$PHP_SWOOLE_RS_REACTOR_SOCKETS_OWNED" != "no"; then
-+            if test "$PHP_SWOOLE_RS_REACTOR" = "no"; then
-+                AC_MSG_ERROR([Rust-owned socket registry requires --enable-swoole-rs-reactor])
-+            fi
-+            AC_LANG_PUSH([C++])
-+            swr_saved_CPPFLAGS="$CPPFLAGS"
-+            CPPFLAGS="$CPPFLAGS -I$PHP_SWOOLE_RS/include"
-+            AC_MSG_CHECKING([for the staged socket registry standard-library policy])
-+            AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
-+#define SWOOLE_RS_REACTOR 1
-+#define SWOOLE_RS_REACTOR_SOCKETS_OWNED 1
-+#include "swoole_rs_reactor_sockets.h"
-+int main(void) { return 0; }
-+            ]])], [AC_MSG_RESULT([yes])], [AC_MSG_FAILURE([Rust-owned socket registry requires the source-qualified standard-library/version/ABI policy in the staged header])])
-+            CPPFLAGS="$swr_saved_CPPFLAGS"
-+            AC_LANG_POP([C++])
-+            AC_DEFINE(SWOOLE_RS_REACTOR_SOCKETS_OWNED, 1, [Use source-qualified Rust-owned socket registry])
 +        fi
 +        if test "$PHP_SWOOLE_RS_COREBASE" != "no"; then
 +            AC_DEFINE(SWOOLE_RS_COREBASE, 1, [Use Rust corebase policy])

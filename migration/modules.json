@@ -136,7 +136,6 @@
         "include/swoole_reactor.h",
         "src/network/socket.cc",
         "include/swoole_socket.h",
-        "ext-src/swoole_admin_server.cc",
         "src/server/base.cc",
         "src/server/reactor_thread.cc"
       ],

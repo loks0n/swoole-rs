@@ -1,49 +1,40 @@
 diff --git a/include/swoole_reactor.h b/include/swoole_reactor.h
-index 238c0e6d1..2c594d612 100644
+index 238c0e6d1..8123f9272 100644
 --- a/include/swoole_reactor.h
 +++ b/include/swoole_reactor.h
-@@ -20,2 +20,9 @@
+@@ -20,2 +20,8 @@
  #include "swoole_socket.h"
 +#ifndef SWOOLE_RS_REACTOR
 +#error "Reactor overlay requires --enable-swoole-rs-reactor"
 +#endif
 +#include "swoole_rs_reactor.h"
 +#include "swoole_rs_reactor_defer.h"
-+#include "swoole_rs_reactor_sockets.h"
 +static_assert(SW_EVENT_READ == (1 << 9) && SW_EVENT_WRITE == (1 << 10) && SW_EVENT_DEAULT == 256 && SW_EVENT_ERROR == (1 << 11), "Reactor event ABI");
  
-@@ -166,4 +173,9 @@ class Reactor {
+@@ -166,4 +172,4 @@ class Reactor {
  
-+#if defined(SWOOLE_RS_REACTOR_DEFER_OWNED) && SWOOLE_RS_REACTOR_DEFER_OWNED
+-    CallbackManager *defer_tasks = nullptr;
+-    CallbackManager destroy_callbacks;
 +    ReactorDeferredQueue *defer_tasks = nullptr;
 +    ReactorDeferredQueue destroy_callbacks;
-+#else
-     CallbackManager *defer_tasks = nullptr;
-     CallbackManager destroy_callbacks;
-+#endif
  
-@@ -182,5 +194,8 @@ class Reactor {
+@@ -182,4 +188,3 @@ class Reactor {
      ReactorImpl *impl;
 -    std::map<int, std::function<void(Reactor *)>> end_callbacks;
 -    std::map<int, std::function<bool(Reactor *, size_t &)>> exit_conditions;
 +    ReactorCallbacks callbacks_;
-+#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
-+    ReactorSocketRegistry sockets_;
-+#else
      std::unordered_map<int, network::Socket *> sockets_;
-+#endif
- 
-@@ -210,3 +225,3 @@ class Reactor {
+@@ -210,3 +215,3 @@ class Reactor {
      size_t remove_exit_condition(const ExitCondition _id) {
 -        return exit_conditions.erase(_id);
 +        return callbacks_.erase_exit(_id);
      }
-@@ -214,3 +229,3 @@ class Reactor {
+@@ -214,3 +219,3 @@ class Reactor {
      bool isset_exit_condition(const ExitCondition _id) {
 -        return exit_conditions.find(_id) != exit_conditions.end();
 +        return callbacks_.has_exit(_id);
      }
-@@ -218,6 +233,3 @@ class Reactor {
+@@ -218,6 +223,3 @@ class Reactor {
      int add_event(network::Socket *_socket, EventType event_type) const {
 -        if (!(_socket->events & event_type)) {
 -            return set(_socket, _socket->events | event_type);
@@ -51,7 +42,7 @@ index 238c0e6d1..2c594d612 100644
 -        return SW_OK;
 +        return swr_reactor_interest(this, _socket, 0, event_type);
      }
-@@ -225,6 +237,3 @@ class Reactor {
+@@ -225,6 +227,3 @@ class Reactor {
      int del_event(network::Socket *_socket, EventType event_type) const {
 -        if (_socket->events & event_type) {
 -            return set(_socket, _socket->events & (~event_type));
@@ -59,7 +50,7 @@ index 238c0e6d1..2c594d612 100644
 -        return SW_OK;
 +        return swr_reactor_interest(this, _socket, 1, event_type);
      }
-@@ -232,8 +241,3 @@ class Reactor {
+@@ -232,8 +231,3 @@ class Reactor {
      int remove_read_event(network::Socket *_socket) const {
 -        if (_socket->events & SW_EVENT_WRITE) {
 -            _socket->events &= (~SW_EVENT_READ);
@@ -69,7 +60,7 @@ index 238c0e6d1..2c594d612 100644
 -        }
 +        return swr_reactor_interest(this, _socket, 2, 0);
      }
-@@ -241,8 +245,3 @@ class Reactor {
+@@ -241,8 +235,3 @@ class Reactor {
      int remove_write_event(network::Socket *_socket) const {
 -        if (_socket->events & SW_EVENT_READ) {
 -            _socket->events &= (~SW_EVENT_WRITE);
@@ -79,7 +70,7 @@ index 238c0e6d1..2c594d612 100644
 -        }
 +        return swr_reactor_interest(this, _socket, 3, 0);
      }
-@@ -250,8 +249,3 @@ class Reactor {
+@@ -250,8 +239,3 @@ class Reactor {
      int add_read_event(network::Socket *_socket) const {
 -        if (_socket->events & SW_EVENT_WRITE) {
 -            _socket->events |= SW_EVENT_READ;
@@ -89,7 +80,7 @@ index 238c0e6d1..2c594d612 100644
 -        }
 +        return swr_reactor_interest(this, _socket, 4, 0);
      }
-@@ -259,8 +253,3 @@ class Reactor {
+@@ -259,8 +243,3 @@ class Reactor {
      int add_write_event(network::Socket *_socket) const {
 -        if (_socket->events & SW_EVENT_READ) {
 -            _socket->events |= SW_EVENT_WRITE;
@@ -99,46 +90,13 @@ index 238c0e6d1..2c594d612 100644
 -        }
 +        return swr_reactor_interest(this, _socket, 5, 0);
      }
-@@ -272,3 +261,7 @@ class Reactor {
-     bool exists(const int fd) const {
-+#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
-+        return sockets_.contains(fd);
-+#else
-         return sockets_.find(fd) != sockets_.end();
-+#endif
-     }
-@@ -287,2 +280,6 @@ class Reactor {
- 
-+    #if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
-+    ReactorSocketView socket_registry_view() const { return sockets_.view(); }
-+    ReactorSocketSnapshot socket_registry_snapshot() const { return sockets_.snapshot(); }
-+#else
-     const std::unordered_map<int, network::Socket *> &get_sockets() {
-@@ -290,4 +287,9 @@ class Reactor {
-     }
-+#endif
- 
-     network::Socket *get_socket(const int fd) const {
-+#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
-+        // Missing lookups stay read-only: get() would publish a null entry.
-+        return sockets_.get(fd);
-+#else
-         auto i = sockets_.find(fd);
-@@ -297,2 +299,3 @@ class Reactor {
-         return i->second;
-+#endif
-     }
-@@ -300,3 +303,8 @@ class Reactor {
+@@ -300,3 +279,4 @@ class Reactor {
      void foreach_socket(const std::function<void(int, network::Socket *)> &callback) const {
 -        for (auto &kv : sockets_) {
-+#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
-+        for (auto kv : sockets_.view())
-+#else
 +        for (auto &kv : sockets_)
-+#endif
 +        {
              callback(kv.first, kv.second);
-@@ -306,12 +314,3 @@ class Reactor {
+@@ -306,12 +286,3 @@ class Reactor {
      ReactorHandler get_handler(const FdType fd_type, const EventType event) const {
 -        switch (event) {
 -        case SW_EVENT_READ:
@@ -152,7 +110,7 @@ index 238c0e6d1..2c594d612 100644
 -        }
 +        return swr_reactor_resolve_handler(this, fd_type, event, 2);
      }
-@@ -319,11 +318,3 @@ class Reactor {
+@@ -319,11 +290,3 @@ class Reactor {
      ReactorHandler get_error_handler(const FdType fd_type) const {
 -        ReactorHandler handler = get_handler(fd_type, SW_EVENT_ERROR);
 -        // error callback is not set, try to use readable or writable callback
@@ -164,22 +122,6 @@ index 238c0e6d1..2c594d612 100644
 -        }
 -        return handler;
 +        return swr_reactor_resolve_handler(this, fd_type, 0, 3);
-     }
-@@ -348,3 +339,7 @@ class Reactor {
-         _socket->removed = 0;
-+#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
-+        sockets_.put(_socket->fd, _socket);
-+#else
-         sockets_[_socket->fd] = _socket;
-+#endif
-     }
-@@ -356,3 +351,7 @@ class Reactor {
-     bool _exists(const network::Socket *_socket) {
-+#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
-+        return sockets_.contains(_socket->fd);
-+#else
-         return sockets_.find(_socket->fd) != sockets_.end();
-+#endif
      }
 diff --git a/src/reactor/epoll.cc b/src/reactor/epoll.cc
 index cc871e391..418c9e5f9 100644
@@ -1020,7 +962,7 @@ index 6ebce456a..cd8dfd158 100644
 -    return 0;
  }
 diff --git a/src/reactor/poll.cc b/src/reactor/poll.cc
-index e65b2c6e9..e959a5215 100644
+index e65b2c6e9..1ec3a7ddf 100644
 --- a/src/reactor/poll.cc
 +++ b/src/reactor/poll.cc
 @@ -18,2 +18,5 @@
@@ -1047,53 +989,48 @@ index e65b2c6e9..e959a5215 100644
 -    delete[] events_;
 +    swr_v1_reactor_poll_free(snapshot_);
      delete[] event_sockets_;
-@@ -57,3 +65,8 @@ ReactorPoll::~ReactorPoll() {
- int ReactorPoll::set_events() const {
-+#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
-+    const auto &sockets = reactor_->socket_registry_snapshot();
-+#else
+@@ -58,2 +66,3 @@ int ReactorPoll::set_events() const {
      const auto &sockets = reactor_->get_sockets();
-+#endif
 +    if (swr_v1_reactor_poll_reset(snapshot_) != 0) throw std::bad_alloc();
      int count = 0;
-@@ -61,5 +74,3 @@ int ReactorPoll::set_events() const {
+@@ -61,5 +70,3 @@ int ReactorPoll::set_events() const {
          const auto _socket = pair.second;
 -        events_[count].fd = _socket->fd;
 -        events_[count].events = translate_events_to_poll(_socket->events);
 -        events_[count].revents = 0;
 +        if (swr_v1_reactor_poll_push(snapshot_, _socket->fd, _socket->events) != 0) throw std::bad_alloc();
          event_sockets_[count] = _socket;
-@@ -71,3 +82,5 @@ int ReactorPoll::set_events() const {
+@@ -71,3 +78,5 @@ int ReactorPoll::set_events() const {
  int ReactorPoll::add(Socket *socket, const int events) {
 -    if (reactor_->_exists(socket)) {
 +    bool exists = reactor_->_exists(socket);
 +    int decision = swr_v1_reactor_poll_registration(0, exists, 0, exists ? 0 : reactor_->get_event_num(), max_events_);
 +    if (decision == 1) {
          swoole_error_log(
-@@ -85,3 +98,3 @@ int ReactorPoll::add(Socket *socket, const int events) {
+@@ -85,3 +94,3 @@ int ReactorPoll::add(Socket *socket, const int events) {
  
 -    if (reactor_->get_event_num() == static_cast<size_t>(max_events_)) {
 +    if (decision == 2) {
          swoole_error_log(
-@@ -99,3 +112,4 @@ int ReactorPoll::add(Socket *socket, const int events) {
+@@ -99,3 +108,4 @@ int ReactorPoll::add(Socket *socket, const int events) {
  int ReactorPoll::set(Socket *socket, int events) {
 -    if (!reactor_->_exists(socket)) {
 +    int decision = swr_v1_reactor_poll_registration(1, reactor_->_exists(socket), 0, 0, max_events_);
 +    if (decision == 3) {
          swoole_error_log(
-@@ -120,3 +134,5 @@ int ReactorPoll::set(Socket *socket, int events) {
+@@ -120,3 +130,5 @@ int ReactorPoll::set(Socket *socket, int events) {
  int ReactorPoll::del(Socket *socket) {
 -    if (socket->removed) {
 +    bool removed = socket->removed;
 +    int decision = swr_v1_reactor_poll_registration(2, removed ? 0 : reactor_->_exists(socket), removed, 0, max_events_);
 +    if (decision == 4) {
          swoole_error_log(
-@@ -133,3 +149,3 @@ int ReactorPoll::del(Socket *socket) {
+@@ -133,3 +145,3 @@ int ReactorPoll::del(Socket *socket) {
  
 -    if (!reactor_->_exists(socket)) {
 +    if (decision == 5) {
          swoole_error_log(SW_LOG_WARNING,
-@@ -152,25 +168,24 @@ int ReactorPoll::wait() {
+@@ -152,25 +164,24 @@ int ReactorPoll::wait() {
      ReactorHandler handler;
 -
 -    reactor_->before_wait();
@@ -1139,19 +1076,19 @@ index e65b2c6e9..e959a5215 100644
 +                int32_t batch_result;
 +                while ((batch_result = swr_v1_reactor_poll_record(events_, event_num, &batch, 1, &record)) > 0) {
  
-@@ -178,4 +193,4 @@ int ReactorPoll::wait() {
+@@ -178,4 +189,4 @@ int ReactorPoll::wait() {
                  // socket this entry was built from rather than whichever socket now holds that fd.
 -                event.socket = event_sockets_[i];
 -                event.fd = events_[i].fd;
 +                event.socket = event_sockets_[batch.current];
 +                event.fd = record.fd;
                  event.reactor_id = reactor_->id;
-@@ -183,3 +198,3 @@ int ReactorPoll::wait() {
+@@ -183,3 +194,3 @@ int ReactorPoll::wait() {
  
 -                if (events_[i].revents & (POLLHUP | POLLERR)) {
 +                if (record.mask & 4) {
                      event.socket->event_hup = 1;
-@@ -187,42 +202,66 @@ int ReactorPoll::wait() {
+@@ -187,42 +198,66 @@ int ReactorPoll::wait() {
                  swoole_trace("Event: fd=%d|reactor_id=%d|type=%d", event.fd, reactor_->id, event.type);
 -                // in
 -                if ((events_[i].revents & POLLIN) && !event.socket->removed) {
@@ -1252,7 +1189,7 @@ index e65b2c6e9..e959a5215 100644
      }
 -    return SW_OK;
  }
-@@ -230,12 +269,3 @@ int ReactorPoll::wait() {
+@@ -230,12 +265,3 @@ int ReactorPoll::wait() {
  int16_t translate_events_to_poll(int events) {
 -    int16_t poll_events = 0;
 -
@@ -1266,7 +1203,7 @@ index e65b2c6e9..e959a5215 100644
 -    return poll_events;
 +    return swr_v1_reactor_poll_to(events);
  }
-@@ -243,16 +273,3 @@ int16_t translate_events_to_poll(int events) {
+@@ -243,16 +269,3 @@ int16_t translate_events_to_poll(int events) {
  int translate_events_from_poll(int16_t events) {
 -    int sw_events = 0;
 -

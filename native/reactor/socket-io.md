@@ -104,14 +104,13 @@ with WAITALL it repeats to the requested length.
 
 ## IOVector
 
-Default: Native constructor, two arrays, copies and destructor. Rust scans
-`iovec` lengths lazily (never payloads) and returns remaining/index/offset and
-pointer progress; Native writes the public fields. Full completion publishes
-counters and returns before touching the iterator. The upstream `offset_bytes`
-quirk at an exact segment boundary after partial progress is kept.
+Rust scans `iovec` lengths lazily (never payloads) and returns
+remaining/index/offset and pointer progress; Native writes the public fields.
+Full completion publishes counters and returns before touching the iterator.
+The upstream `offset_bytes` quirk at an exact segment boundary after partial
+progress is kept.
 
-`SWOOLE_RS_REACTOR_IOV_OWNED` = 1 (requires `SWOOLE_RS_REACTOR`): the
-constructor makes one Rust allocation holding release `Layout` metadata followed
+Storage: the constructor makes one Rust allocation holding release `Layout` metadata followed
 by two contiguous `iovec` spans (original and iterator), copied from the caller's
 descriptors. Payload bytes are not copied or owned. Native publishes the
 returned pointers/counts; allocation refusal returns before Native throws
@@ -120,6 +119,6 @@ not the public count, and never drops payloads; NULL release is a no-op. Inline
 `length` reads the original span each call with C `size_t` wrapping. Public class
 layout and getters are unchanged.
 
-Incompatible under ON: replacing the public pointers with Native `new[]`
+Incompatible: replacing the public pointers with Native `new[]`
 arrays, or calling `delete[]` on Rust spans. Implicit C++ shallow copy is
 unchanged.

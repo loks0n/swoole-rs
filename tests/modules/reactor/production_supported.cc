@@ -41,17 +41,6 @@ PHP_FUNCTION(swr_reactor_supported) {
     image(return_value,"method_image","_ZN6swoole7ReactorC1EiNS0_4TypeE");
     image(return_value,"storage_image","swr_v1_reactor_poll_new");
     image(return_value,"batch_image","swr_v1_reactor_poll_record");
-#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
-    add_assoc_long(return_value,"registry_owned_compiled",1);
-    add_assoc_long(return_value,"registry_policy",swr_v1_reactor_sockets_policy());
-    image(return_value,"registry_len_image","swr_v1_reactor_sockets_len");
-    image(return_value,"registry_policy_image","swr_v1_reactor_sockets_policy");
-#else
-    add_assoc_long(return_value,"registry_owned_compiled",0);
-    add_assoc_long(return_value,"registry_policy",0);
-    add_assoc_null(return_value,"registry_len_image");
-    add_assoc_null(return_value,"registry_policy_image");
-#endif
     zval rows;array_init(&rows);unsigned cases=0;
     auto check=[&](bool value) { add_next_index_bool(&rows,value); };
     try {
@@ -196,7 +185,7 @@ PHP_FUNCTION(swr_reactor_builtins_supported) {
 #else
     image(return_value,"defer_method_image","_ZN6swoole7Reactor5deferERKSt8functionIFvPvEES2_");
 #endif
-#if defined(SWOOLE_RS_REACTOR_DEFER_OWNED) && SWOOLE_RS_REACTOR_DEFER_OWNED
+#if defined(SWOOLE_RS_REACTOR) && SWOOLE_RS_REACTOR
     static_assert(std::is_same<decltype(Reactor::defer_tasks),ReactorDeferredQueue *>::value,"selected deferred field source type");
     static_assert(std::is_same<decltype(Reactor::destroy_callbacks),ReactorDeferredQueue>::value,"selected actual destroy queue source type");
     add_assoc_long(return_value,"defer_owned_compiled",1);
@@ -314,7 +303,7 @@ PHP_FUNCTION(swr_reactor_blocking_supported) {
     image(return_value,"iov_image","_ZN6swoole7network8IOVector15update_iteratorEl");
     image(return_value,"iov_constructor_image","_ZN6swoole7network8IOVectorC1EPK5ioveci");
     image(return_value,"iov_destructor_image","_ZN6swoole7network8IOVectorD1Ev");
-#if defined(SWOOLE_RS_REACTOR_IOV_OWNED) && SWOOLE_RS_REACTOR_IOV_OWNED
+#if defined(SWOOLE_RS_REACTOR) && SWOOLE_RS_REACTOR
     add_assoc_long(return_value,"iov_owned_compiled",1);
     image(return_value,"iov_owned_length_image","swr_v1_reactor_iov_owned_length");
 #else

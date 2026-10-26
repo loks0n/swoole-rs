@@ -37,12 +37,6 @@ pub use handlers::*;
 mod initialize;
 pub use initialize::*;
 
-mod sockets;
-pub use sockets::*;
-
-mod socket_iterators;
-pub use socket_iterators::*;
-
 mod deferred;
 pub use deferred::*;
 

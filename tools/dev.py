@@ -15,7 +15,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.harness import ROOT, write_report
-from tools.build_hybrid import GRADUATED, MODULES, SELECTABLE, REACTOR_OWNED_CAPABILITIES, reactor_owned_capabilities, storage_suffix, profile_suffix, build_alias
+from tools.build_hybrid import GRADUATED, MODULES, SELECTABLE, profile_suffix, build_alias
 from tools.build_upstream import require_build_space
 from tools.dev_report import read_json
 from tools.private_copy import copy_private
@@ -75,7 +75,7 @@ def typed_buffer(args):
 
 
 def build_variant(args):
-    suffix = storage_suffix(args) + ('-halfclose' if getattr(args, 'fix_halfclose', False) else '') + profile_suffix(args)
+    suffix = ('-halfclose' if getattr(args, 'fix_halfclose', False) else '') + profile_suffix(args)
     return build_alias('rust', selected_modules(args), suffix, dev=args.lane != 'integrate')
 
 
@@ -101,9 +101,7 @@ def verify_artifact_report(args):
                 or manifest['inputs'].get('php_sockets_requested', False) != getattr(args, 'php_sockets', False)
                 or ('--enable-sockets' in manifest['configure']) != getattr(args, 'php_sockets', False)
                 or label == 'selected' and (sorted(set(manifest['inputs']['modules']) | set(GRADUATED)) != selected_modules(args)
-                    or manifest['inputs']['fix_halfclose'] != args.fix_halfclose
-                    or any(manifest['inputs'].get('reactor_' + name + '_owned_requested', False)
-                           != (name in reactor_owned_capabilities(args)) for name in REACTOR_OWNED_CAPABILITIES))):
+                    or manifest['inputs']['fix_halfclose'] != args.fix_halfclose)):
             raise ValueError('Artifact configuration differs: ' + label)
         build = ROOT / 'target/hybrid' / variant
         for name, path in [('swoole.so', build / 'modules/swoole.so'),
@@ -169,7 +167,7 @@ def plan(args, reports):
                *(['--ccache', args.ccache] if getattr(args, 'ccache', None) else ['--no-ccache']),
                *(['--native-build-root', args.native_build_root] if getattr(args, 'native_build_root', None) else []))
     selected_export = artifact_reports / 'selected-export'
-    script('build', 'tools/build_hybrid.py', *([] if integrate else ['--dev']), *flags, *repair, *['--reactor-' + name + '-owned' for name in reactor_owned_capabilities(args)], *(['--stdext'] if getattr(args, 'stdext', False) else []), *(['--php-sockets'] if getattr(args, 'php_sockets', False) else []),
+    script('build', 'tools/build_hybrid.py', *([] if integrate else ['--dev']), *flags, *repair, *(['--stdext'] if getattr(args, 'stdext', False) else []), *(['--php-sockets'] if getattr(args, 'php_sockets', False) else []),
            *(['--export', selected_export] if captured_reference else []), '--jobs', args.jobs,
            *(['--native-build-root', args.native_build_root] if getattr(args, 'native_build_root', None) else []),
            *(['--ccache', args.ccache] if getattr(args, 'ccache', None) else ['--no-ccache']))
@@ -265,28 +263,13 @@ def plan(args, reports):
                *php_for('posix', 'mbstring'), *engines,
                *(['--external-network'] if getattr(args, 'external_network', False) else []), *report('wrappers-originals'))
     if 'reactor' in modules:
-        if getattr(args, 'reactor_sockets_owned', False):
-            script('reactor-socket-iterators', 'tests/modules/reactor/socket_iterators.py',
-                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
-                   '--report', reports / 'reactor-socket-iterators.json')
-            for phase, extra in [('reactor-socket-registry-source-order', []),
-                                 ('reactor-socket-registry-order-model', ['--order-model', '--standard', 'c++14'])]:
-                script(phase, 'tests/modules/reactor/sockets.py', '--source', ROOT / 'target/upstream/src',
-                       '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-                       '--sanitize', *extra, '--report', reports / (phase + '.json'))
-            script('reactor-socket-registry-policy', 'tests/modules/reactor/sockets_policy.py',
-                   '--report', reports / 'reactor-socket-registry-policy.json')
         if integrate:
             for phase, extra in [('reactor-production-supported', []), ('reactor-production-callbacks', ['--callbacks']),
                                  ('reactor-production-handlers', ['--handlers']), ('reactor-production-builtins', ['--builtins']),
                                  ('reactor-production-socket-output', ['--socket-output', '--require-output-workflow']),
                                  ('reactor-production-blocking', ['--blocking']), ('reactor-production-ordinary-io', ['--ordinary-io']), ('reactor-production-datagram', ['--datagram']),
-                                 *([('reactor-production-owned-iov', ['--blocking', '--require-owned-iov'])]
-                                   if getattr(args, 'reactor_iov_owned', False) else []),
-                                 *([('reactor-production-owned-defer', ['--builtins', '--require-owned-defer'])]
-                                   if getattr(args, 'reactor_defer_owned', False) else []),
-                                 *([('reactor-production-owned-sockets', ['--require-owned-sockets'])]
-                                   if getattr(args, 'reactor_sockets_owned', False) else [])]:
+                                 ('reactor-production-owned-iov', ['--blocking', '--require-owned-iov']),
+                                 ('reactor-production-owned-defer', ['--builtins', '--require-owned-defer'])]:
                 script(phase, 'tests/modules/reactor/production_supported.py',
                        '--source', ROOT / 'target/upstream/src', '--source-ref', 'HEAD', *php_for(),
                        '--engine', f'hybrid={selected_export / "swoole.so"}',
@@ -331,7 +314,6 @@ def plan(args, reports):
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
                '--report', reports / 'reactor-filters.json')
         script('reactor-compile', 'tests/modules/reactor/compile_gate.py', '--source', ROOT / 'target/upstream/src',
-               *(['--sockets-owned'] if getattr(args, 'reactor_sockets_owned', False) else []),
                '--report', reports / 'reactor-compile.json')
     if typed_buffer(args):
         pytest('buffer-typed-layout', 'tests/modules/buffer/test_typed_layout.py')
@@ -940,9 +922,6 @@ def main():
     parser.add_argument('--php-sockets', action='store_true', help='Build matching Native/Rust PHP sockets-integration profiles')
     parser.add_argument('--external-network', action='store_true',
                         help='Also run original PHPTs that need internet access; without it they stay unmeasured')
-    for name in REACTOR_OWNED_CAPABILITIES:
-        parser.add_argument('--reactor-' + name + '-owned', action='store_true',
-                            help='Experimental Rust ' + name + ' storage; requires selected reactor, default off')
     parser.add_argument('--fix-halfclose', action='store_true', help='Select the separate native queued-close drain repair')
     parser.add_argument('--test', help='Rust test-name filter (edit lane only)')
     parser.add_argument('--case', action='append', help='Exact registered PHPT path (candidate lane only)')
@@ -976,9 +955,6 @@ def main():
     if args.frozen_source and (args.lane != 'integrate' or len(args.frozen_source) != 40
                                or any(c not in '0123456789abcdef' for c in args.frozen_source)):
         parser.error('--frozen-source requires integration and a literal lowercase 40-hex commit')
-    for name in reactor_owned_capabilities(args):
-        if 'reactor' not in selected_modules(args):
-            parser.error('--reactor-' + name + '-owned requires --module reactor or --all-modules')
     if args.jobs < 1 or args.test and args.lane != 'edit' or args.case and args.lane != 'candidate':
         parser.error('Positive --jobs required; --test is edit-only and --case is candidate-only')
     if args.redis_image and not args.redis_extension:

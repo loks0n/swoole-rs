@@ -26,12 +26,12 @@ with tempfile.TemporaryDirectory(prefix='swr-inert-queues-') as temporary:
     report['pinned_callback_alias']=alias
     manager=block(original['include/swoole_reactor.h'],original['include/swoole_reactor.h'].index('class CallbackManager'))[0]+';'
     try:
-        for variant in ['native','selected-default','selected-off','selected-owned']:
+        for variant in ['native','selected']:
             selected=variant!='native';header=(tree/'include/swoole_reactor.h').read_text() if selected else original['include/swoole_reactor.h'];base=(tree/'src/reactor/base.cc').read_text() if selected else original['src/reactor/base.cc']
             if block(header,header.index('class CallbackManager'))[0]+';'!=manager:raise ValueError('Protected original manager changed')
-            if selected:
-                start=header.index('#if defined(SWOOLE_RS_REACTOR_DEFER_OWNED)');field=header[start:header.index('#endif',start)+len('#endif')]
-            else:field='CallbackManager *defer_tasks=nullptr; CallbackManager destroy_callbacks;'
+            queue='ReactorDeferredQueue' if selected else 'CallbackManager'
+            field=queue+' *defer_tasks = nullptr;\n    '+queue+' destroy_callbacks;'
+            if field not in header:raise ValueError('Deferred queue fields are not bound')
             method=block(base,base.index('void Reactor::add_destroy_callback('))[0];destructor=block(base,base.index('Reactor::~Reactor('))[0]
             report['sources'][variant]=dict(actual_destructor_execute_call=destructor.count('destroy_callbacks.execute();')==1)
             if not report['sources'][variant]['actual_destructor_execute_call']:raise ValueError('Actual caller source changed')
@@ -39,7 +39,6 @@ with tempfile.TemporaryDirectory(prefix='swr-inert-queues-') as temporary:
             for standard in ['c++14','c++17','c++20']:
                 binary=tree/(variant+'-'+standard);command=['c++','-std='+standard,'-O1','-g','-I'+str(tree),'-I'+str(ROOT/'native/reactor'),ROOT/'tests/modules/reactor/callback_queues.cc',a.archive.resolve(),'-lpthread','-o',binary]
                 if selected:command+=['-DSWOOLE_RS_REACTOR=1']
-                if variant in ['selected-off','selected-owned']:command+=['-DSWOOLE_RS_REACTOR_DEFER_OWNED='+('1' if variant=='selected-owned' else '0')]
                 if a.sanitize:command+=['-fsanitize=address,undefined','-fno-omit-frame-pointer']
                 if sys.platform.startswith('linux'):command+=['-ldl','-lm']
                 for stage,cmd in [('compile',command),('execute',[binary])]:

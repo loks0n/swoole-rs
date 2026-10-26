@@ -1,24 +1,21 @@
 diff --git a/include/swoole_socket.h b/include/swoole_socket.h
-index e4d52b83e..4a09bc17c 100644
+index e4d52b83e..4c7044729 100644
 --- a/include/swoole_socket.h
 +++ b/include/swoole_socket.h
-@@ -24,2 +24,9 @@
+@@ -24,2 +24,7 @@
  
-+#if defined(SWOOLE_RS_REACTOR_IOV_OWNED) && SWOOLE_RS_REACTOR_IOV_OWNED
 +#ifndef SWOOLE_RS_REACTOR
 +#error "Owned IOVector capability requires --enable-swoole-rs-reactor"
 +#endif
 +#include "swoole_rs_reactor.h"
-+#endif
 +
  #include <poll.h>
-@@ -175,2 +182,5 @@ struct IOVector {
+@@ -175,7 +180,3 @@ struct IOVector {
      size_t length() {
-+#if defined(SWOOLE_RS_REACTOR_IOV_OWNED) && SWOOLE_RS_REACTOR_IOV_OWNED
+-        size_t len = 0;
+-        SW_LOOP_N(count) {
+-            len += iov[i].iov_len;
+-        }
+-        return len;
 +        return swr_v1_reactor_iov_owned_length(iov, count);
-+#else
-         size_t len = 0;
-@@ -180,2 +190,3 @@ struct IOVector {
-         return len;
-+    #endif
      }
