@@ -1,5 +1,5 @@
 diff --git a/src/core/timer.cc b/src/core/timer.cc
-index b21b4d99f..1fc676487 100644
+index b21b4d9..4fa05ae 100644
 --- a/src/core/timer.cc
 +++ b/src/core/timer.cc
 @@ -19,10 +19,32 @@
@@ -67,11 +67,30 @@ index b21b4d99f..1fc676487 100644
 +    pending_bailout_ = nullptr;
 +    if (bailout) bailout();
  }
-@@ -76,2 +105,3 @@ void Timer::reinit(bool manually_trigger) {
+@@ -62,7 +91,13 @@ void Timer::init_with_reactor(Reactor *reactor) {
+ 
+-    reactor->add_destroy_callback([](void *) {
+-        if (swoole_timer_is_available()) {
+-            swoole_timer_free();
+-        }
+-    });
++    reactor->add_destroy_callback(
++        [](void *data) {
++            if (swoole_timer_is_available()) {
++                // A coroutine bailout longjmps out of the timer callback that resumed it.
++                if (static_cast<Reactor *>(data)->bailout) {
++                    sw_timer()->abandon_selection();
++                }
++                swoole_timer_free();
++            }
++        },
++        reactor);
+ }
+@@ -76,2 +111,3 @@ void Timer::reinit(bool manually_trigger) {
  Timer::~Timer() {
 +    check(swr_v1_timer_close(queue_));
      if (close) {
-@@ -79,4 +109,28 @@ Timer::~Timer() {
+@@ -79,4 +115,28 @@ Timer::~Timer() {
      }
 -    for (const auto &iter : map) {
 -        release_node(iter.second);
@@ -102,7 +121,7 @@ index b21b4d99f..1fc676487 100644
 +    if (status != SWR_TIMER_EMPTY || swr_v1_timer_release(queue_) != SWR_TIMER_OK) {
 +        std::terminate();
      }
-@@ -89,62 +143,33 @@ TimerNode *Timer::add(long _msec, bool persistent, void *data, const TimerCallba
+@@ -89,62 +149,33 @@ TimerNode *Timer::add(long _msec, bool persistent, void *data, const TimerCallba
      }
 -
 -    auto *tnode = new TimerNode();
@@ -188,7 +207,7 @@ index b21b4d99f..1fc676487 100644
 -    release_node(tnode);
 +    release_node(apply(view));
      return true;
-@@ -153,54 +178,60 @@ bool Timer::remove(TimerNode *tnode) {
+@@ -153,54 +184,60 @@ bool Timer::remove(TimerNode *tnode) {
  void Timer::select() {
 -    const int64_t now_msec = get_relative_msec();
 -    TimerNode *tnode = nullptr;
