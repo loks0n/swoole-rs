@@ -1,5 +1,12 @@
 //! Pinned upstream C++ for differential tests. Add a module's original files to
 //! `upstream/` unchanged, compile them in `build.rs`, and declare them here.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 
 pub mod base64 {
     unsafe extern "C" {

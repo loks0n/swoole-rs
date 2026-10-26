@@ -1,4 +1,11 @@
 //! Copied worker/process transitions. Native alone executes callbacks and owns stores.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExitObservation {

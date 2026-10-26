@@ -1,4 +1,11 @@
 //! Thread-confined indexed timer queue; native code retains callbacks and tokens.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 mod runtime;
 pub use runtime::*;
 use std::alloc::{Layout, alloc, dealloc};
@@ -155,9 +162,8 @@ unsafe fn zero<T: Default>(out: *mut T) -> bool {
     if out.is_null() {
         false
     } else {
-        unsafe {
-            out.write(T::default());
-        }
+        // SAFETY: the caller passes null or valid, aligned, writable output.
+        unsafe { out.write(T::default()) };
         true
     }
 }
@@ -169,21 +175,21 @@ pub unsafe extern "C" fn swr_v1_timer_create(out: *mut *mut Timer) -> i32 {
     if out.is_null() {
         return INVALID;
     }
-    unsafe {
-        out.write(ptr::null_mut());
-    }
+    // SAFETY: non-null (checked above), valid, aligned output.
+    unsafe { out.write(ptr::null_mut()) };
     #[expect(
         clippy::cast_ptr_alignment,
         reason = "alloc honours Layout::new::<Timer>()"
     )]
+    // SAFETY: `Timer` is not zero-sized; null is handled below.
     let queue = unsafe { alloc(Layout::new::<Timer>()) }.cast::<Timer>();
     if queue.is_null() {
         return NOMEM;
     }
-    unsafe {
-        queue.write(Timer::default());
-        out.write(queue);
-    }
+    // SAFETY: `queue` is a fresh, non-null allocation with `Timer`'s layout.
+    unsafe { queue.write(Timer::default()) };
+    // SAFETY: as for the first write to `out`.
+    unsafe { out.write(queue) };
     OK
 }
 
@@ -194,14 +200,15 @@ pub unsafe extern "C" fn swr_v1_timer_release(queue: *mut Timer) -> i32 {
     if queue.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); a live handle from create, not concurrently mutated.
     let state = unsafe { &*queue };
     if !state.heap.is_empty() || state.selecting {
         return PENDING;
     }
-    unsafe {
-        ptr::drop_in_place(queue);
-        dealloc(queue.cast(), Layout::new::<Timer>());
-    }
+    // SAFETY: a live, exclusively owned handle from create, released exactly once.
+    unsafe { ptr::drop_in_place(queue) };
+    // SAFETY: allocated with this layout by create; its value was just dropped.
+    unsafe { dealloc(queue.cast(), Layout::new::<Timer>()) };
     OK
 }
 
@@ -216,12 +223,14 @@ pub unsafe extern "C" fn swr_v1_timer_add(
     token: *mut c_void,
     out: *mut TimerView,
 ) -> i32 {
+    // SAFETY: `out` is null or valid, aligned output disjoint from the handle.
     if !unsafe { zero(out) } || queue.is_null() {
         return INVALID;
     }
     if now < 0 || delay <= 0 || persistent > 1 || token.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); a live handle from create, exclusively accessed.
     let state = unsafe { &mut *queue };
     if state.closing {
         return CLOSING;
@@ -255,9 +264,8 @@ pub unsafe extern "C" fn swr_v1_timer_add(
     state.up(index);
     state.last_id = id;
     state.last_time = now;
-    unsafe {
-        out.write(view);
-    }
+    // SAFETY: `out` is non-null (checked above), valid, aligned and writable.
+    unsafe { out.write(view) };
     OK
 }
 
@@ -269,16 +277,17 @@ pub unsafe extern "C" fn swr_v1_timer_get(
     id: i64,
     out: *mut TimerView,
 ) -> i32 {
+    // SAFETY: `out` is null or valid, aligned output disjoint from the handle.
     if !unsafe { zero(out) } || queue.is_null() || id <= 0 {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); a live handle from create, not concurrently mutated.
     let state = unsafe { &*queue };
     let Some(&index) = state.positions.get(&id) else {
         return NOT_FOUND;
     };
-    unsafe {
-        out.write(state.heap[index]);
-    }
+    // SAFETY: `out` is non-null (checked above), valid, aligned and writable.
+    unsafe { out.write(state.heap[index]) };
     OK
 }
 
@@ -291,9 +300,11 @@ pub unsafe extern "C" fn swr_v1_timer_update(
     deadline: i64,
     out: *mut TimerView,
 ) -> i32 {
+    // SAFETY: `out` is null or valid, aligned output disjoint from the handle.
     if !unsafe { zero(out) } || queue.is_null() || id <= 0 || deadline < 0 {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); a live handle from create, exclusively accessed.
     let state = unsafe { &mut *queue };
     if state.closing {
         return CLOSING;
@@ -307,9 +318,8 @@ pub unsafe extern "C" fn swr_v1_timer_update(
     state.heap[index].deadline = deadline;
     let view = state.heap[index];
     state.repair(index);
-    unsafe {
-        out.write(view);
-    }
+    // SAFETY: `out` is non-null (checked above), valid, aligned and writable.
+    unsafe { out.write(view) };
     OK
 }
 
@@ -321,9 +331,11 @@ pub unsafe extern "C" fn swr_v1_timer_remove(
     id: i64,
     out: *mut TimerView,
 ) -> i32 {
+    // SAFETY: `out` is null or valid, aligned output disjoint from the handle.
     if !unsafe { zero(out) } || queue.is_null() || id <= 0 {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); a live handle from create, exclusively accessed.
     let state = unsafe { &mut *queue };
     let Some(&index) = state.positions.get(&id) else {
         return NOT_FOUND;
@@ -333,14 +345,12 @@ pub unsafe extern "C" fn swr_v1_timer_remove(
     }
     if state.active_id == id {
         state.heap[index].removed = 1;
-        unsafe {
-            out.write(state.heap[index]);
-        }
+        // SAFETY: `out` is non-null (checked above), valid, aligned and writable.
+        unsafe { out.write(state.heap[index]) };
         DEFERRED
     } else {
-        unsafe {
-            out.write(state.detach(index));
-        }
+        // SAFETY: `out` is non-null (checked above), valid, aligned and writable.
+        unsafe { out.write(state.detach(index)) };
         RELEASE
     }
 }
@@ -352,6 +362,7 @@ pub unsafe extern "C" fn swr_v1_timer_begin(queue: *mut Timer, now: i64) -> i32 
     if queue.is_null() || now < 0 {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); a live handle from create, exclusively accessed.
     let state = unsafe { &mut *queue };
     if state.closing {
         return CLOSING;
@@ -375,9 +386,11 @@ pub unsafe extern "C" fn swr_v1_timer_begin(queue: *mut Timer, now: i64) -> i32 
 /// Handle/output satisfy ABI v1; returned metadata does not transfer ownership.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_timer_next(queue: *mut Timer, out: *mut TimerView) -> i32 {
+    // SAFETY: `out` is null or valid, aligned output disjoint from the handle.
     if !unsafe { zero(out) } || queue.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); a live handle from create, exclusively accessed.
     let state = unsafe { &mut *queue };
     if !state.selecting {
         return INVALID;
@@ -395,9 +408,8 @@ pub unsafe extern "C" fn swr_v1_timer_next(queue: *mut Timer, out: *mut TimerVie
         return EMPTY;
     }
     state.active_id = view.id;
-    unsafe {
-        out.write(view);
-    }
+    // SAFETY: `out` is non-null (checked above), valid, aligned and writable.
+    unsafe { out.write(view) };
     OK
 }
 
@@ -409,9 +421,11 @@ pub unsafe extern "C" fn swr_v1_timer_complete(
     id: i64,
     out: *mut TimerView,
 ) -> i32 {
+    // SAFETY: `out` is null or valid, aligned output disjoint from the handle.
     if !unsafe { zero(out) } || queue.is_null() || id <= 0 {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); a live handle from create, exclusively accessed.
     let state = unsafe { &mut *queue };
     if !state.selecting || state.active_id != id {
         return INVALID;
@@ -449,9 +463,8 @@ pub unsafe extern "C" fn swr_v1_timer_complete(
     } else {
         state.detach(index)
     };
-    unsafe {
-        out.write(result);
-    }
+    // SAFETY: `out` is non-null (checked above), valid, aligned and writable.
+    unsafe { out.write(result) };
     status
 }
 
@@ -462,12 +475,12 @@ pub unsafe extern "C" fn swr_v1_timer_end(queue: *mut Timer, next_delay: *mut i6
     if next_delay.is_null() {
         return INVALID;
     }
-    unsafe {
-        next_delay.write(-1);
-    }
+    // SAFETY: `next_delay` is non-null (checked above), valid, aligned and writable.
+    unsafe { next_delay.write(-1) };
     if queue.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); a live handle from create, exclusively accessed.
     let state = unsafe { &mut *queue };
     if !state.selecting {
         return INVALID;
@@ -483,9 +496,8 @@ pub unsafe extern "C" fn swr_v1_timer_end(queue: *mut Timer, next_delay: *mut i6
     if !state.closing
         && let Some(head) = state.heap.first()
     {
-        unsafe {
-            next_delay.write((head.deadline - state.captured).max(1));
-        }
+        // SAFETY: `next_delay` is non-null (checked above), valid, aligned and writable.
+        unsafe { next_delay.write((head.deadline - state.captured).max(1)) };
     }
     OK
 }
@@ -494,10 +506,13 @@ pub unsafe extern "C" fn swr_v1_timer_end(queue: *mut Timer, next_delay: *mut i6
 /// Handle and exclusive output must follow ABI v1 validity/disjointness rules.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_timer_stats_get(queue: *const Timer, out: *mut TimerStats) -> i32 {
+    // SAFETY: `out` is null or valid, aligned output disjoint from the handle.
     if !unsafe { zero(out) } || queue.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); a live handle from create, not concurrently mutated.
     let state = unsafe { &*queue };
+    // SAFETY: `out` is non-null (checked above), valid, aligned and writable.
     unsafe {
         out.write(TimerStats {
             count: state.heap.len(),
@@ -519,13 +534,14 @@ pub unsafe extern "C" fn swr_v1_timer_ids(
     capacity: usize,
     count: *mut usize,
 ) -> i32 {
+    // SAFETY: `count` is null or valid, aligned output disjoint from the handle.
     if !unsafe { zero(count) } || queue.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); a live handle from create, not concurrently mutated.
     let state = unsafe { &*queue };
-    unsafe {
-        count.write(state.heap.len());
-    }
+    // SAFETY: `count` is non-null (checked above), valid, aligned and writable.
+    unsafe { count.write(state.heap.len()) };
     if capacity > (isize::MAX as usize) / mem::size_of::<i64>() {
         return OVERFLOW;
     }
@@ -536,9 +552,9 @@ pub unsafe extern "C" fn swr_v1_timer_ids(
         return INVALID;
     }
     for (index, entry) in state.heap.iter().enumerate() {
-        unsafe {
-            ids.add(index).write(entry.id);
-        }
+        // SAFETY: `index < heap.len() <= capacity`, and `ids` lends `capacity` writable,
+        // aligned slots (non-null when `capacity != 0`, checked above).
+        unsafe { ids.wrapping_add(index).write(entry.id) };
     }
     OK
 }
@@ -550,6 +566,7 @@ pub unsafe extern "C" fn swr_v1_timer_close(queue: *mut Timer) -> i32 {
     if queue.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); a live handle from create, exclusively accessed.
     let state = unsafe { &mut *queue };
     state.closing = true;
     if let Some(&index) = state.positions.get(&state.active_id) {
@@ -562,9 +579,11 @@ pub unsafe extern "C" fn swr_v1_timer_close(queue: *mut Timer) -> i32 {
 /// Handle/output are valid; only RELEASE transfers a token for native disposal.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_timer_drain(queue: *mut Timer, out: *mut TimerView) -> i32 {
+    // SAFETY: `out` is null or valid, aligned output disjoint from the handle.
     if !unsafe { zero(out) } || queue.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); a live handle from create, exclusively accessed.
     let state = unsafe { &mut *queue };
     if !state.closing {
         return INVALID;
@@ -576,9 +595,8 @@ pub unsafe extern "C" fn swr_v1_timer_drain(queue: *mut Timer, out: *mut TimerVi
     if index >= state.heap.len() {
         return DEFERRED;
     }
-    unsafe {
-        out.write(state.detach(index));
-    }
+    // SAFETY: `out` is non-null (checked above), valid, aligned and writable.
+    unsafe { out.write(state.detach(index)) };
     RELEASE
 }
 
