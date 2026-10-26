@@ -25,8 +25,7 @@ int32_t swr_v1_httpbindings_cookie(const swr_v1_httpbindings_cookie_input *, uin
 enum {
     SWR_HTTPBINDINGS_HEADER_APPEND = 0, SWR_HTTPBINDINGS_HEADER_COOKIE = 1,
     SWR_HTTPBINDINGS_HEADER_UPGRADE = 2, SWR_HTTPBINDINGS_HEADER_FORM = 3,
-    SWR_HTTPBINDINGS_HEADER_MULTIPART = 4, SWR_HTTPBINDINGS_HEADER_COMPRESSION = 5,
-    SWR_HTTPBINDINGS_HEADER_CHUNKED = 6
+    SWR_HTTPBINDINGS_HEADER_MULTIPART = 4, SWR_HTTPBINDINGS_HEADER_COMPRESSION = 5
 };
 int32_t swr_v1_httpbindings_request_option(swr_v1_httpbindings_text, uint32_t);
 int32_t swr_v1_httpbindings_compression(swr_v1_httpbindings_text, uint32_t);
