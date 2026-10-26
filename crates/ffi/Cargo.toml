@@ -74,3 +74,6 @@ swoole-rs-phphelpers = { path = "../phphelpers", optional = true }
 swoole-rs-phpcollections = { path = "../phpcollections", optional = true }
 swoole-rs-phpevents = { path = "../phpevents", optional = true }
 swoole-rs-phpcoroutines = { path = "../phpcoroutines", optional = true }
+
+[lints]
+workspace = true

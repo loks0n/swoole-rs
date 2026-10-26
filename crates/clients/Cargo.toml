@@ -6,3 +6,6 @@ edition = "2024"
 [lib]
 name = "swoole_rs_clients"
 crate-type = ["rlib"]
+
+[lints]
+workspace = true

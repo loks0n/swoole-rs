@@ -6,3 +6,6 @@ edition = "2024"
 [lib]
 name = "swoole_rs_protocols"
 crate-type = ["rlib", "staticlib"]
+
+[lints]
+workspace = true

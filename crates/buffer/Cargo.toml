@@ -13,3 +13,6 @@ libc = "=0.2.191"
 [lib]
 name = "swoole_rs_buffer"
 crate-type = ["rlib"]
+
+[lints]
+workspace = true

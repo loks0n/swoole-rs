@@ -1,5 +1,8 @@
 //! Callback-free memory/collection policies. Native facades own locks and syscalls.
-#![allow(clippy::missing_safety_doc)] // The module-local C contract covers all entry points.
+#![expect(
+    clippy::missing_safety_doc,
+    reason = "every export is covered by the module-local C contract"
+)]
 pub mod channel;
 pub mod fixed;
 pub mod global;

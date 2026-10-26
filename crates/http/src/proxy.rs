@@ -133,6 +133,10 @@ pub unsafe extern "C" fn swr_v1_http_proxy_credentials(
     };
     for (index, value) in credentials.iter().enumerate() {
         if index == 1 && sink.length < 255 {
+            #[expect(
+                clippy::let_underscore_must_use,
+                reason = "the 255-byte cap keeps the length from overflowing"
+            )]
             let _ = sink.append(b":");
         }
         let limit = field_limit(value).min(255 - sink.length);
@@ -142,6 +146,10 @@ pub unsafe extern "C" fn swr_v1_http_proxy_credentials(
             Err(error) => return error,
         };
         let input = &input[..input.iter().position(|&b| b == 0).unwrap_or(input.len())];
+        #[expect(
+            clippy::let_underscore_must_use,
+            reason = "the 255-byte cap keeps the length from overflowing"
+        )]
         let _ = sink.append(input);
     }
     unsafe {

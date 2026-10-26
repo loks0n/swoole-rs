@@ -1,6 +1,9 @@
 //! Native-compatible synchronization. Callers allocate/free storage outside Rust.
 #![deny(unsafe_op_in_unsafe_fn)]
-#![allow(clippy::missing_safety_doc)]
+#![expect(
+    clippy::missing_safety_doc,
+    reason = "every export is covered by the module-local C contract"
+)]
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 compile_error!("Rust locks require validated macOS or Linux platform contracts");
 

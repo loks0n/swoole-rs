@@ -1,5 +1,8 @@
 //! Callback-free packet decisions and immutable MIME policy; native IO stays native.
-#![allow(clippy::missing_safety_doc)]
+#![expect(
+    clippy::missing_safety_doc,
+    reason = "every export is covered by the module-local C contract"
+)]
 use std::slice;
 mod mime;
 

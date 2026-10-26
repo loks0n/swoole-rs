@@ -321,7 +321,6 @@ unsafe fn log_bytes<'a>(data: *const u8, precision: i32) -> &'a [u8] {
 /// readable through its first NUL or nonnegative precision, whichever comes first;
 /// negative precision requires a terminating NUL. Null is valid only at precision0.
 /// Capacity must fit i32; zero capacity permits null output and queries full size.
-#[allow(clippy::too_many_arguments)]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_utils_log_line(
     output: *mut u8,
@@ -354,7 +353,10 @@ pub unsafe extern "C" fn swr_v1_utils_log_line(
     sink.append(b"[");
     sink.append(unsafe { log_bytes(date, date_precision) });
     sink.append(&[b' ', symbol]);
-    // Integer Display has no fallible callbacks and this sink never returns Err.
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "integer Display has no fallible callbacks and this sink never returns Err"
+    )]
     let _ = write!(sink, "{pid}.{worker}]\t");
     sink.append(log_label(level).to_bytes());
     sink.append(b"\t");
@@ -383,6 +385,10 @@ pub unsafe extern "C" fn swr_v1_utils_log_micros(
         unsafe { std::slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), capacity) }
     };
     let mut sink = LogSink { bytes, required: 0 };
+    #[expect(
+        clippy::let_underscore_must_use,
+        reason = "integer Display has no fallible callbacks and this sink never returns Err"
+    )]
     let _ = write!(sink, "<.{microseconds}>");
     sink.finish()
 }

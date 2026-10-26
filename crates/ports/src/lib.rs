@@ -1,11 +1,20 @@
 //! Callback-free ListenPort decisions. All native effects and object custody stay native.
-#![allow(clippy::missing_safety_doc)]
+#![expect(
+    clippy::missing_safety_doc,
+    reason = "every export is covered by the module-local C contract"
+)]
 use std::ffi::{CStr, c_char, c_int};
 use std::slice;
 
 const _: () = {
-    assert!(std::mem::size_of::<std::sync::atomic::AtomicU32>() == std::mem::size_of::<u32>());
-    assert!(std::mem::align_of::<std::sync::atomic::AtomicU32>() == std::mem::align_of::<u32>());
+    assert!(
+        std::mem::size_of::<std::sync::atomic::AtomicU32>() == std::mem::size_of::<u32>(),
+        "AtomicU32 size must match u32"
+    );
+    assert!(
+        std::mem::align_of::<std::sync::atomic::AtomicU32>() == std::mem::align_of::<u32>(),
+        "AtomicU32 alignment must match u32"
+    );
 };
 
 #[repr(C)]
@@ -203,7 +212,7 @@ const fn binding(field: ProtocolField, value: u32) -> PortsProtocolAction {
     }
 }
 fn protocol_plan<const N: usize>(actions: [PortsProtocolAction; N]) -> PortsProtocolPlan {
-    const { assert!(N <= 6) };
+    const { assert!(N <= 6, "a protocol plan holds at most 6 actions") };
     let mut plan = PortsProtocolPlan {
         count: N as u32,
         actions: [PortsProtocolAction { kind: 0, value: 0 }; 6],
