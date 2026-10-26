@@ -40,7 +40,7 @@ jobs:
           shared-key: release
           save-if: false
       - run: rm -rf target/hybrid
-      - run: .devcontainer/install.sh
+      - uses: ./.github/actions/install
       - id: upstream
         uses: actions/cache@v4
         with:
@@ -95,7 +95,9 @@ jobs:
           shared-key: release
           save-if: false
       - if: steps.touched.outputs.modules != ''
-        run: rm -rf target/hybrid && .devcontainer/install.sh
+        run: rm -rf target/hybrid
+      - if: steps.touched.outputs.modules != ''
+        uses: ./.github/actions/install
       - if: steps.touched.outputs.modules != ''
         id: upstream
         uses: actions/cache@v4
