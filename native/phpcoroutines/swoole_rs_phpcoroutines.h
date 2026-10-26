@@ -187,26 +187,24 @@ uint8_t swr_v1_phpcoroutines_join_next(const swr_phpcoroutines_join_owner *, siz
 void swr_v1_phpcoroutines_join_release_membership(const swr_phpcoroutines_join_owner *);
 void swr_v1_phpcoroutines_join_cancel(const swr_phpcoroutines_join_owner *);
 uint8_t swr_v1_phpcoroutines_join_can_resume(const swr_phpcoroutines_join_owner *);
-/* Kinds and actions keep their ABI v1 values; the save/restore of output, basic globals and context
-   are upstream's inline code again (#366), so their kinds and actions are gone. */
+/* Kinds and actions keep their ABI v1 values; the save/restore of output, basic globals, context
+   and the VM stack are upstream's inline code again (#366), so their kinds and actions are gone. */
 enum { SWR_CORO_TRANSFER_ON_YIELD = 8, SWR_CORO_TRANSFER_ON_RESUME,
-       SWR_CORO_TRANSFER_INTERRUPT_RESUME, SWR_CORO_TRANSFER_INTERRUPT_FUNCTION,
-       SWR_CORO_TRANSFER_SAVE_VM_METADATA, SWR_CORO_TRANSFER_RESTORE_VM_METADATA };
-enum { SWR_CORO_TRANSFER_DONE, SWR_CORO_TRANSFER_VM, SWR_CORO_TRANSFER_SILENCE = 3, SWR_CORO_TRANSFER_STACK_LIMIT,
-       SWR_CORO_TRANSFER_FIBER = 17, SWR_CORO_TRANSFER_SAVE, SWR_CORO_TRANSFER_RESTORE,
+       SWR_CORO_TRANSFER_INTERRUPT_RESUME, SWR_CORO_TRANSFER_INTERRUPT_FUNCTION };
+enum { SWR_CORO_TRANSFER_DONE, SWR_CORO_TRANSFER_FIBER = 17, SWR_CORO_TRANSFER_SAVE, SWR_CORO_TRANSFER_RESTORE,
        SWR_CORO_TRANSFER_RECORD, SWR_CORO_TRANSFER_CALLBACK_PRESENCE,
        SWR_CORO_TRANSFER_CALLBACK, SWR_CORO_TRANSFER_TRACE,
        SWR_CORO_TRANSFER_CO_PRESENCE, SWR_CORO_TRANSFER_CO_ENDED, SWR_CORO_TRANSFER_RESUME,
        SWR_CORO_TRANSFER_TASK_PRESENCE, SWR_CORO_TRANSFER_TASK_CO_PRESENCE,
        SWR_CORO_TRANSFER_SCHEDULABLE, SWR_CORO_TRANSFER_DEFER, SWR_CORO_TRANSFER_YIELD };
 uint32_t swr_v1_phpcoroutines_transfer(uint32_t *, uint32_t, uint8_t, uint8_t);
-extern const swr_phpcoroutines_step swr_v1_phpcoroutines_transfer_table[14 * 8 * 4];
-static inline uint32_t swr_coro_transfer_next(uint32_t *stage, uint32_t kind, uint8_t observation, uint8_t stack_limit) {
-    if (kind >= 14 || *stage >= 8) {
+extern const swr_phpcoroutines_step swr_v1_phpcoroutines_transfer_table[12 * 8 * 2];
+static inline uint32_t swr_coro_transfer_next(uint32_t *stage, uint32_t kind, uint8_t observation) {
+    if (kind >= 12 || *stage >= 8) {
         return SWR_CORO_TRANSFER_DONE;
     }
     const swr_phpcoroutines_step step =
-        swr_v1_phpcoroutines_transfer_table[((kind * 8 + *stage) * 2 + (observation != 0)) * 2 + (stack_limit != 0)];
+        swr_v1_phpcoroutines_transfer_table[(kind * 8 + *stage) * 2 + (observation != 0)];
     *stage = step.next;
     return step.action;
 }

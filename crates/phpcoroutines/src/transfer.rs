@@ -8,11 +8,12 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_transfer(
     stage: *mut u32,
     kind: u32,
     observation: u8,
-    stack_limit: u8,
+    // ABI v1 keeps the parameter; no remaining kind depends on the stack limit.
+    _stack_limit: u8,
 ) -> u32 {
     // SAFETY: per this function's `# Safety` contract, `stage` is live, aligned and exclusive.
     let stage = unsafe { &mut *stage };
-    let (action, next) = step(*stage, kind, observation, stack_limit);
+    let (action, next) = step(*stage, kind, observation);
     *stage = next;
     action
 }
@@ -49,25 +50,23 @@ impl Step {
     }
 }
 
-/// [`step`] for every kind, stage, observation and stack limit, indexed
-/// `((kind * 8 + stage) * 2 + observation) * 2 + stack_limit`, so native code steps with a load
-/// instead of a call. Built at compile time from the same `step`.
+/// [`step`] for every kind, stage and observation, indexed `(kind * 8 + stage) * 2 + observation`,
+/// so native code steps with a load instead of a call. Built at compile time from the same `step`.
 #[unsafe(export_name = "swr_v1_phpcoroutines_transfer_table")]
-pub static TRANSFER_TABLE: [Step; 14 * STAGES * 4] = {
-    let mut table = [Step::DONE; 14 * STAGES * 4];
+pub static TRANSFER_TABLE: [Step; 12 * STAGES * 2] = {
+    let mut table = [Step::DONE; 12 * STAGES * 2];
     let mut index = 0;
     while index < table.len() {
         #[expect(
             clippy::cast_possible_truncation,
             reason = "kinds, stages and flags are below 16"
         )]
-        let (kind, stage, observation, stack_limit) = (
-            (index / (STAGES * 4)) as u32,
-            (index / 4 % STAGES) as u32,
-            (index / 2 % 2) as u8,
+        let (kind, stage, observation) = (
+            (index / (STAGES * 2)) as u32,
+            (index / 2 % STAGES) as u32,
             (index % 2) as u8,
         );
-        let (action, next) = step(stage, kind, observation, stack_limit);
+        let (action, next) = step(stage, kind, observation);
         table[index] = Step::new(action, next, STAGES);
         index += 1;
     }
@@ -75,7 +74,7 @@ pub static TRANSFER_TABLE: [Step; 14 * STAGES * 4] = {
 };
 
 /// One transfer step from `stage`: the action, and the stage after it (`u32::MAX` once done).
-const fn step(mut stage: u32, kind: u32, observation: u8, stack_limit: u8) -> (u32, u32) {
+const fn step(mut stage: u32, kind: u32, observation: u8) -> (u32, u32) {
     loop {
         let current = stage;
         stage = current.saturating_add(1);
@@ -116,12 +115,6 @@ const fn step(mut stage: u32, kind: u32, observation: u8, stack_limit: u8) -> (u
                 4 => 31, // yield after defer returns
                 5 => 21, // refresh original handler only after yield returns
                 6 if observation != 0 => 22,
-                _ => 0,
-            },
-            12 | 13 => match current {
-                0 => 1, // Native VM fields before metadata silence policy
-                1 => 3,
-                2 if stack_limit != 0 => 4,
                 _ => 0,
             },
             _ => 0,
@@ -198,18 +191,14 @@ mod tests {
 
     #[test]
     fn table_matches_step() {
-        for kind in 0..14u32 {
+        for kind in 0..12u32 {
             for stage in 0..8u32 {
                 for observation in 0..2u8 {
-                    for stack_limit in 0..2u8 {
-                        let entry = TRANSFER_TABLE[((kind as usize * STAGES + stage as usize) * 2
-                            + usize::from(observation))
-                            * 2
-                            + usize::from(stack_limit)];
-                        let (action, next) = step(stage, kind, observation, stack_limit);
-                        assert_eq!(u32::from(entry.action), action);
-                        assert_eq!(u32::from(entry.next), if action == 0 { 255 } else { next });
-                    }
+                    let entry = TRANSFER_TABLE
+                        [(kind as usize * STAGES + stage as usize) * 2 + usize::from(observation)];
+                    let (action, next) = step(stage, kind, observation);
+                    assert_eq!(u32::from(entry.action), action);
+                    assert_eq!(u32::from(entry.next), if action == 0 { 255 } else { next });
                 }
             }
         }

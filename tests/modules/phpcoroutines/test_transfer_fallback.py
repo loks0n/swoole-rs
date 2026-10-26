@@ -23,7 +23,8 @@ class TransferFallback(unittest.TestCase):
                 continue
             fallback = after.rsplit('#else\n', 1)[1].rsplit('#endif', 1)[0]
             self.assertEqual(fallback, before)
-            self.assertIn('swr_coro_transfer_next(', after)
+            # Rust decides through a transfer table or, for the VM stack's silence policy, metadata.
+            self.assertTrue('swr_coro_transfer_next(' in after or 'swr_v1_phpcoroutines_metadata(' in after)
             # Every native write/copy/helper effect is carried verbatim; only
             # the surrounding presence/order policy crosses the Rust boundary.
             new_body = after.split('#else\n', 1)[0]
