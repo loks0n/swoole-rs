@@ -33,7 +33,7 @@ byte-identical; the M05 hunks continue after their prefixes.
 | `SWOOLE_RS_REACTOR_IOV_OWNED` / `--enable-swoole-rs-reactor-iov-owned` | Rust owns IOVector arrays ([socket-io.md](socket-io.md)) |
 | `SWOOLE_RS_REACTOR_DEFER_OWNED` / `--enable-swoole-rs-reactor-defer-owned` | Rust FIFO for `defer_tasks` and `destroy_callbacks` ([callbacks.md](callbacks.md)) |
 | `SWOOLE_RS_REACTOR_SOCKETS_OWNED` / `--enable-swoole-rs-reactor-sockets-owned` | Rust socket registry ([socket-registry.md](socket-registry.md)) |
-| `SWOOLE_RS_BUFFER_TYPED` / `--enable-swoole-rs-buffer-typed` | Server callers use the typed Rust Buffer queue ([output.md](output.md)) |
+| `SWOOLE_RS_BUFFER_TYPED` (on with Rust Buffer and reactor) | Server callers use the typed Rust Buffer queue ([output.md](output.md)) |
 
 The reactor capabilities require `SWOOLE_RS_REACTOR` (`--enable-swoole-rs-reactor`). Each changes the selected private class
 layout, so every selected SDK consumer must rebuild.
