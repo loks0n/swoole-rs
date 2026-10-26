@@ -97,7 +97,7 @@ pub extern "C" fn swr_v1_memory_arena_lifecycle(shared: u32, owned: u32, phase: 
     } else if owned == 0 {
         0
     } else {
-        (1 + shared + 2 * phase) as i32
+        (1 + shared + 2 * phase).cast_signed()
     }
 }
 
@@ -162,7 +162,7 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_debug_step(
         self_link: u8::from(node.next == slice),
     };
     // Preserve the original post-print `line++ > max_lines` bound: max0 emits2.
-    cursor.next = if max_lines < 0 || cursor.line > max_lines as u64 {
+    cursor.next = if max_lines < 0 || u64::try_from(max_lines).is_ok_and(|max| cursor.line > max) {
         ptr::null_mut()
     } else {
         node.next
@@ -280,10 +280,22 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_construct(
     unsafe { field::<_, u32>(arena, offset_of!(Fixed, slice_num)).write(plan.slices) };
     // SAFETY: as above.
     unsafe { field::<_, u32>(arena, offset_of!(Fixed, slice_size)).write(plan.width) };
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "native uint8_t flag fields"
+    )]
     // SAFETY: as above.
-    unsafe { field::<_, u8>(arena, offset_of!(Fixed, shared)).write(shared as u8) };
+    unsafe {
+        field::<_, u8>(arena, offset_of!(Fixed, shared)).write(shared as u8)
+    };
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "native uint8_t flag fields"
+    )]
     // SAFETY: as above.
-    unsafe { field::<_, u8>(arena, offset_of!(Fixed, allocated)).write(owned as u8) };
+    unsafe {
+        field::<_, u8>(arena, offset_of!(Fixed, allocated)).write(owned as u8)
+    };
     // SAFETY: the header is fully initialized and `memory` holds `plan.usable` bytes.
     unsafe { swr_v1_memory_fixed_init(arena) }
 }
@@ -310,6 +322,10 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_init(pool: *mut Fixed) -> i32 {
     p.head = ptr::null_mut();
     p.tail = p.memory.cast();
     for i in 0..p.slice_num as usize {
+        #[expect(
+            clippy::cast_ptr_alignment,
+            reason = "slice headers are only accessed unaligned (see the slice invariant)"
+        )]
         // `slice_num * stride <= size` (checked above), so slice `i` lies inside `memory`.
         let node = p.memory.wrapping_add(i * stride).cast::<Slice>();
         // SAFETY: as above; the pool is exclusive during init.
@@ -380,6 +396,10 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_free(pool: *mut Fixed, data: *mut c
     if offset % stride != 0 || offset / stride >= p.slice_num as usize {
         return -1;
     }
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "slice headers are only accessed unaligned (see the slice invariant)"
+    )]
     // `offset` is a whole number of strides below `slice_num` (checked above), so `node` is a
     // slice of this pool (see the slice invariant); release is externally serialized.
     let node = p.memory.wrapping_add(offset).cast::<Slice>();
@@ -418,4 +438,9 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_free(pool: *mut Fixed, data: *mut c
 
 #[cfg(test)]
 #[path = "../../../tests/modules/memory/fixed.rs"]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests;

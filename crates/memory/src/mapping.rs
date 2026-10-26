@@ -88,6 +88,10 @@ unsafe fn extent(payload: *const u8) -> Option<Extent> {
     }
     // Caller supplies a live initialized mapping header immediately before payload.
     let base = payload.wrapping_sub(8);
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "the mapping header is checked 8-aligned above"
+    )]
     // SAFETY: as above; the header is 8-aligned (checked above).
     let total = unsafe { base.cast::<usize>().read() };
     if total < 8
@@ -114,8 +118,11 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_initialize(base: *mut u8, total: 
     {
         return std::ptr::null_mut();
     }
+    #[expect(clippy::cast_ptr_alignment, reason = "the mapping header is 8-aligned")]
     // SAFETY: non-null, 8-aligned and covering `total >= 8` bytes (checked above).
-    unsafe { base.cast::<usize>().write(total) };
+    unsafe {
+        base.cast::<usize>().write(total)
+    };
     base.wrapping_add(8)
 }
 /// Decode actual header storage for native unmap/protect, without retaining it.
@@ -168,4 +175,8 @@ pub use operation::{MappingEffect, MappingOperation, swr_v2_memory_mapping_step}
 
 #[cfg(test)]
 #[path = "../../../tests/modules/memory/mapping.rs"]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests;

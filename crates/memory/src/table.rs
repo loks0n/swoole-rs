@@ -144,6 +144,11 @@ pub unsafe extern "C" fn swr_v1_memory_table_layout(
     if rows < 64 || !rows.is_power_of_two() || !(0.2..=1.0).contains(&conflict) {
         return -1;
     }
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "native float row sizing"
+    )]
     let all_rows = (rows as f32 * (1.0 + conflict)) as usize;
     let Some(row_size) = mem::size_of::<Row>().checked_add(item) else {
         return -1;
@@ -241,6 +246,10 @@ pub unsafe extern "C" fn swr_v1_memory_table_arena(
         .cast::<u8>()
         .wrapping_add(l.rows as usize * mem::size_of::<*mut Row>());
     for i in 0..l.rows as usize {
+        #[expect(
+            clippy::cast_ptr_alignment,
+            reason = "Row fields are only accessed unaligned (see Row)"
+        )]
         let row = base.wrapping_add(i * l.row_size).cast::<Row>();
         // SAFETY: as above; bucket `i` is an aligned pointer slot.
         unsafe { table.wrapping_add(i).write(row) };
@@ -302,8 +311,14 @@ pub unsafe extern "C" fn swr_v1_memory_table_init(
             )
         };
     }
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "key length <= 63 (checked above)"
+    )]
     // SAFETY: as above.
-    unsafe { field::<u8>(row, mem::offset_of!(Row, key_len)).write_unaligned(length as u8) };
+    unsafe {
+        field::<u8>(row, mem::offset_of!(Row, key_len)).write_unaligned(length as u8)
+    };
     // SAFETY: as above.
     unsafe { field::<u8>(row, mem::offset_of!(Row, active)).write_unaligned(1) };
     0
@@ -467,8 +482,14 @@ pub unsafe extern "C" fn swr_v1_memory_table_delete(
                 length + 1,
             )
         };
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "key length <= 63 (checked above)"
+        )]
         // SAFETY: as above.
-        unsafe { field::<u8>(root, mem::offset_of!(Row, key_len)).write_unaligned(length as u8) };
+        unsafe {
+            field::<u8>(root, mem::offset_of!(Row, key_len)).write_unaligned(length as u8)
+        };
         if item_size != 0 {
             // SAFETY: as above.
             unsafe {
@@ -612,7 +633,7 @@ unsafe fn finish_set(m: &mut Mutation) -> i32 {
     }
     if !m.out_flags.is_null() {
         // SAFETY: non-null and aligned (checked by the caller), writable.
-        unsafe { m.out_flags.write(m.plan.flags as i32) };
+        unsafe { m.out_flags.write(m.plan.flags.cast_signed()) };
     }
     let counter = if m.plan.flags & 1 != 0 {
         m.counters.inserted
@@ -907,7 +928,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_clear_step(cursor: *mut Clear) -> i
         }
         state.position += state.take as usize;
     }
-    state.take = (state.count - state.position).min(8) as u32;
+    state.take = u32::try_from((state.count - state.position).min(8)).unwrap_or(8);
     if state.take == 0 {
         state.phase = 2;
         return 0;
@@ -1151,8 +1172,14 @@ pub unsafe extern "C" fn swr_v1_memory_table_set_value(
             } else {
                 length.min(width as usize - 4)
             };
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "length <= width - 4, a native uint32_t column width"
+            )]
             // SAFETY: as above; a 4-byte length prefix leads the column.
-            unsafe { data.cast::<u32>().write_unaligned(length as u32) };
+            unsafe {
+                data.cast::<u32>().write_unaligned(length as u32)
+            };
             if length != 0 {
                 // SAFETY: as above; `length <= width - 4` bytes follow the prefix, and `value`
                 // lends them readable, disjoint from the row.
@@ -1261,7 +1288,12 @@ pub unsafe extern "C" fn swr_v1_memory_table_lookup_step(cursor: *mut Lookup) ->
         state.phase = 1;
         return 1;
     }
-    state.index = state.hash as usize & state.mask;
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "native size_t hash on LP64"
+    )]
+    let hash = state.hash as usize;
+    state.index = hash & state.mask;
     if state.index >= state.count {
         return -1;
     }
@@ -1875,4 +1907,10 @@ pub unsafe extern "C" fn swr_v1_memory_table_core_teardown_step(
 
 #[cfg(test)]
 #[path = "../../../tests/modules/memory/table.rs"]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_ptr_alignment,
+    clippy::cast_sign_loss,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests;

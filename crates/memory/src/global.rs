@@ -107,6 +107,10 @@ pub unsafe extern "C" fn swr_v1_memory_global_create(
     if page_size < 8 || !page_size.is_multiple_of(8) {
         return -1;
     }
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<Global>()"
+    )]
     // SAFETY: `Global` is not zero-sized; null is handled below.
     let state = unsafe { alloc(Layout::new::<Global>()).cast::<Global>() };
     if state.is_null() {
@@ -193,6 +197,10 @@ pub unsafe extern "C" fn swr_v1_memory_global_step(
     // SAFETY: `state` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *state.cast::<Global>() };
     let mut effect = GlobalEffect {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the native uint32_t page size"
+        )]
         page_size: state.page_size as u32,
         ..GlobalEffect::default()
     };
@@ -278,8 +286,15 @@ pub unsafe extern "C" fn swr_v1_memory_global_alloc(
     // `offset + total <= page_size` (filtered above), so the 8-byte header and `size` payload
     // bytes fit in the last page (see `Global`); `offset` stays 8-aligned.
     let block = page.as_ptr().wrapping_add(state.offset);
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_ptr_alignment,
+        reason = "an 8-aligned native block header storing a sub-page uint32_t size"
+    )]
     // SAFETY: as above.
-    unsafe { block.cast::<u32>().write(size as u32) };
+    unsafe {
+        block.cast::<u32>().write(size as u32)
+    };
     // SAFETY: as above.
     unsafe { ptr::write_bytes(block.wrapping_add(8), 0, size) };
     // SAFETY: `output` is non-null (checked above), aligned and writable.

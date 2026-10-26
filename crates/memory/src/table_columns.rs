@@ -29,6 +29,10 @@ pub unsafe extern "C" fn swr_v1_memory_table_columns_create(output: *mut *mut Co
     unsafe {
         output.write(ptr::null_mut());
     }
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<Columns>()"
+    )]
     // SAFETY: a non-zero-sized layout; null is handled below.
     let columns = unsafe { alloc(Layout::new::<Columns>()).cast::<Columns>() };
     if columns.is_null() {
@@ -138,4 +142,8 @@ pub unsafe extern "C" fn swr_v1_memory_table_columns_discard(columns: *mut Colum
 }
 #[cfg(test)]
 #[path = "../../../tests/modules/memory/table_columns.rs"]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests;

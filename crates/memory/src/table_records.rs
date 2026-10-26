@@ -56,6 +56,10 @@ pub unsafe extern "C" fn swr_v1_memory_records_open(output: *mut *mut Records) -
     }
     // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(ptr::null_mut()) };
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<Records>()"
+    )]
     // SAFETY: a non-zero-sized layout; null is handled below.
     let owner = unsafe { alloc(Layout::new::<Records>()).cast::<Records>() };
     if owner.is_null() {

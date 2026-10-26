@@ -179,4 +179,8 @@ pub unsafe extern "C" fn swr_v2_memory_mapping_step(
 
 #[cfg(test)]
 #[path = "../../../tests/modules/memory/mapping_operation.rs"]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests;
