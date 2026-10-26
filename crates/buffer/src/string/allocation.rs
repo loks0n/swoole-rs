@@ -33,6 +33,7 @@ pub unsafe extern "C" fn swr_v1_string_allocation_plan(
         let action = match operation {
             0 => 1,
             1 if !source.is_null() => {
+                // SAFETY: non-null (checked above), valid, aligned POD.
                 let state = unsafe { *source };
                 state.validate()?;
                 if capacity < state.length {
@@ -48,6 +49,7 @@ pub unsafe extern "C" fn swr_v1_string_allocation_plan(
         Ok(result) => (OK, result),
         Err(status) => (status, StringAllocationPlan::default()),
     };
+    // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
     unsafe { output.write(result) };
     status
 }

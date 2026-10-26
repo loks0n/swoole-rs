@@ -39,6 +39,7 @@ pub unsafe extern "C" fn swr_v1_string_transition(
     let status = if source.is_null() {
         INVALID
     } else {
+        // SAFETY: non-null (checked above), valid, aligned POD.
         let source = unsafe { *source };
         match operation {
             0 => {
@@ -56,6 +57,7 @@ pub unsafe extern "C" fn swr_v1_string_transition(
             _ => INVALID,
         }
     };
+    // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
     unsafe { output.write(result) };
     status
 }
@@ -80,14 +82,12 @@ unsafe fn output<T: Default>(out: *mut T, calculate: impl FnOnce() -> Result<T, 
     if out.is_null() {
         return INVALID;
     }
-    unsafe {
-        out.write(T::default());
-    }
+    // SAFETY: `out` is non-null (checked above), aligned, writable and disjoint.
+    unsafe { out.write(T::default()) };
     match calculate() {
         Ok(value) => {
-            unsafe {
-                out.write(value);
-            }
+            // SAFETY: as above.
+            unsafe { out.write(value) };
             OK
         }
         Err(status) => status,
@@ -103,6 +103,7 @@ pub unsafe extern "C" fn swr_v1_string_capacity(
     alignment: usize,
     out: *mut usize,
 ) -> i32 {
+    // SAFETY: forwards the caller's aligned, writable, disjoint output.
     unsafe { output(out, || grown(current, minimum, alignment)) }
 }
 
@@ -118,14 +119,12 @@ pub unsafe extern "C" fn swr_v1_string_grow(
     reserve: *mut usize,
 ) -> i32 {
     if !next.is_null() {
-        unsafe {
-            next.write(0);
-        }
+        // SAFETY: non-null (checked above), aligned, writable and disjoint.
+        unsafe { next.write(0) };
     }
     if !reserve.is_null() {
-        unsafe {
-            reserve.write(0);
-        }
+        // SAFETY: as above.
+        unsafe { reserve.write(0) };
     }
     if next.is_null() || reserve.is_null() {
         return INVALID;
@@ -147,10 +146,10 @@ pub unsafe extern "C" fn swr_v1_string_grow(
     } else {
         capacity
     };
-    unsafe {
-        next.write(length);
-        reserve.write(requested);
-    }
+    // SAFETY: both are non-null (checked above), aligned, writable and disjoint.
+    unsafe { next.write(length) };
+    // SAFETY: as above.
+    unsafe { reserve.write(requested) };
     i32::from(length == capacity)
 }
 
@@ -203,6 +202,7 @@ pub unsafe extern "C" fn swr_v1_string_format_plan(
     alignment: usize,
     out: *mut StringFormatPlan,
 ) -> i32 {
+    // SAFETY: forwards the caller's aligned, writable, disjoint output.
     unsafe {
         output(out, || {
             formatting(length, capacity, formatted, flags, alignment)
@@ -266,6 +266,7 @@ pub unsafe extern "C" fn swr_v1_string_random_plan(
     page: usize,
     out: *mut StringRandomPlan,
 ) -> i32 {
+    // SAFETY: forwards the caller's aligned, writable, disjoint output.
     unsafe {
         output(out, || {
             random_storage(length, capacity, count, base64, alignment, page)

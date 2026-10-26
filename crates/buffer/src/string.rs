@@ -216,14 +216,20 @@ pub unsafe extern "C" fn swr_v1_string_prepare(
     let result = if state.is_null() || edit.is_null() {
         Err(INVALID)
     } else {
-        unsafe { (&*state).plan(&*edit) }
+        // SAFETY: both are non-null (checked above), valid, aligned PODs.
+        let state = unsafe { &*state };
+        // SAFETY: as above.
+        let edit = unsafe { &*edit };
+        state.plan(edit)
     };
     match result {
         Ok(plan) => {
+            // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
             unsafe { output.write(plan) };
             OK
         }
         Err(status) => {
+            // SAFETY: as above.
             unsafe { output.write(StringPlan::ZERO) };
             status
         }
@@ -248,17 +254,22 @@ pub unsafe extern "C" fn swr_v1_string_apply(
     if detached.is_null() {
         return INVALID;
     }
-    unsafe {
-        detached.write(ptr::null_mut());
-    }
+    // SAFETY: non-null (checked above), aligned, writable and disjoint.
+    unsafe { detached.write(ptr::null_mut()) };
     if state.is_null() || edit.is_null() || plan.is_null() {
         return INVALID;
     }
-    let (state, edit, plan) = unsafe { (&mut *state, &*edit, &*plan) };
+    // SAFETY: all three are non-null (checked above), valid, aligned, disjoint PODs.
+    let state = unsafe { &mut *state };
+    // SAFETY: as above.
+    let edit = unsafe { &*edit };
+    // SAFETY: as above.
+    let plan = unsafe { &*plan };
     // Revalidation reads metadata only, including after successful native realloc.
     if !matches!(state.plan(edit), Ok(expected) if expected == *plan) {
         return INVALID;
     }
+    // SAFETY: the plan was revalidated against this state and edit just above.
     unsafe { apply_plan(state, edit, plan, replacement, detached) }
 }
 
@@ -280,64 +291,94 @@ unsafe fn apply_plan(
     } else {
         replacement
     };
+    // `plan` was produced by `StringState::plan` for exactly this state and edit, so every
+    // destination range below lies within `plan.capacity` bytes of `data`, every source
+    // range lies within the edit's input (or, after rebasing, within `data`), and
+    // overlapping moves use `ptr::copy`. `replacement` is the requested allocation, or
+    // the unchanged storage when no allocation was needed.
     let source = if plan.source_offset == NO_SOURCE {
         edit.data
     } else {
-        unsafe { data.add(plan.source_offset) }
+        data.wrapping_add(plan.source_offset)
     };
-    unsafe {
-        match edit.operation {
-            APPEND | WRITE => {
-                if edit.length != 0 {
-                    let at = if edit.operation == WRITE {
-                        edit.offset as usize
-                    } else {
-                        state.length
-                    };
-                    ptr::copy(source, data.add(at), edit.length);
-                }
+    match edit.operation {
+        APPEND | WRITE => {
+            if edit.length != 0 {
+                let at = if edit.operation == WRITE {
+                    edit.offset as usize
+                } else {
+                    state.length
+                };
+                // SAFETY: as above.
+                unsafe { ptr::copy(source, data.wrapping_add(at), edit.length) };
             }
-            APPEND_I32 => {
-                let mut buffer = itoa::Buffer::new();
-                let text = buffer.format(edit.offset as i32);
-                ptr::copy_nonoverlapping(text.as_ptr(), data.add(state.length), text.len());
+        }
+        APPEND_I32 => {
+            let mut buffer = itoa::Buffer::new();
+            let text = buffer.format(edit.offset as i32);
+            // SAFETY: as above; `text` is a local buffer, disjoint from `data`.
+            unsafe {
+                ptr::copy_nonoverlapping(text.as_ptr(), data.wrapping_add(state.length), text.len())
+            };
+        }
+        COPY => {
+            if plan.length != 0 {
+                // SAFETY: as above.
+                unsafe { ptr::copy_nonoverlapping(source, data, plan.length) };
             }
-            COPY => {
-                if plan.length != 0 {
-                    ptr::copy_nonoverlapping(source, data, plan.length);
-                }
-            }
-            TERMINATE => data.add(state.length).write(0),
-            REPEAT => {
-                let added = plan.length - state.length;
-                if added != 0 {
-                    let destination = data.add(state.length);
-                    if edit.length == 1 {
-                        ptr::write_bytes(destination, *source, added);
-                    } else {
-                        ptr::copy(source, destination, edit.length);
-                        let mut filled = edit.length;
-                        while filled < added {
-                            let copied = filled.min(added - filled);
-                            ptr::copy_nonoverlapping(destination, destination.add(filled), copied);
-                            filled += copied;
-                        }
+        }
+        // SAFETY: as above.
+        TERMINATE => unsafe { data.wrapping_add(state.length).write(0) },
+        REPEAT => {
+            let added = plan.length - state.length;
+            if added != 0 {
+                let destination = data.wrapping_add(state.length);
+                if edit.length == 1 {
+                    // SAFETY: as above.
+                    let byte = unsafe { *source };
+                    // SAFETY: as above.
+                    unsafe { ptr::write_bytes(destination, byte, added) };
+                } else {
+                    // SAFETY: as above.
+                    unsafe { ptr::copy(source, destination, edit.length) };
+                    let mut filled = edit.length;
+                    while filled < added {
+                        let copied = filled.min(added - filled);
+                        // SAFETY: as above; doubling copies from the filled prefix into the
+                        // disjoint range that follows it.
+                        unsafe {
+                            ptr::copy_nonoverlapping(
+                                destination,
+                                destination.wrapping_add(filled),
+                                copied,
+                            )
+                        };
+                        filled += copied;
                     }
                 }
             }
-            REDUCE => {
-                if edit.offset != 0 && plan.length != 0 {
-                    ptr::copy(data.add(edit.offset as usize), data, plan.length);
-                }
-            }
-            POP if plan.length != 0 => {
-                ptr::copy_nonoverlapping(state.data.add(state.offset as usize), data, plan.length);
-            }
-            _ => {}
         }
-        if edit.operation == DROP || (plan.allocation == 1 && !state.data.is_null()) {
-            detached.write(state.data);
+        REDUCE => {
+            if edit.offset != 0 && plan.length != 0 {
+                // SAFETY: as above.
+                unsafe { ptr::copy(data.wrapping_add(edit.offset as usize), data, plan.length) };
+            }
         }
+        POP if plan.length != 0 => {
+            // SAFETY: as above; POP copies from the old storage into the fresh allocation.
+            unsafe {
+                ptr::copy_nonoverlapping(
+                    state.data.wrapping_add(state.offset as usize),
+                    data,
+                    plan.length,
+                )
+            };
+        }
+        _ => {}
+    }
+    if edit.operation == DROP || (plan.allocation == 1 && !state.data.is_null()) {
+        // SAFETY: the caller passes a valid, aligned, writable `detached` slot.
+        unsafe { detached.write(state.data) };
     }
     *state = StringState {
         data: if edit.operation == DROP {
@@ -365,28 +406,34 @@ pub unsafe extern "C" fn swr_v1_string_edit_in_place(
     detached: *mut *mut u8,
 ) -> i32 {
     if !detached.is_null() {
-        unsafe {
-            detached.write(ptr::null_mut());
-        }
+        // SAFETY: non-null (checked above), aligned, writable and disjoint.
+        unsafe { detached.write(ptr::null_mut()) };
     }
     if state.is_null() || edit.is_null() || output.is_null() || detached.is_null() {
         if !output.is_null() {
+            // SAFETY: non-null (checked above), aligned, writable and disjoint.
             unsafe { output.write(StringPlan::ZERO) };
         }
         return INVALID;
     }
-    let (state, edit) = unsafe { (&mut *state, &*edit) };
+    // SAFETY: both are non-null (checked above), valid, aligned, disjoint PODs.
+    let state = unsafe { &mut *state };
+    // SAFETY: as above.
+    let edit = unsafe { &*edit };
     let plan = match state.plan(edit) {
         Ok(plan) => plan,
         Err(status) => {
+            // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
             unsafe { output.write(StringPlan::ZERO) };
             return status;
         }
     };
+    // SAFETY: as above.
     unsafe { output.write(plan) };
     if plan.allocation != 0 {
         return 1;
     }
+    // SAFETY: `plan` was just computed for this state and edit and needs no allocation.
     unsafe { apply_plan(state, edit, &plan, state.data, detached) }
 }
 
@@ -409,18 +456,25 @@ pub unsafe extern "C" fn swr_v1_string_edit_system(
     if detached.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above), aligned, writable and disjoint.
     unsafe { detached.write(ptr::null_mut()) };
     if state.is_null() || edit.is_null() {
         return INVALID;
     }
     // These references borrow only disjoint POD metadata, never the allocation.
-    let (state, edit) = unsafe { (&mut *state, &*edit) };
+    // SAFETY: both are non-null (checked above), valid, aligned, disjoint PODs.
+    let state = unsafe { &mut *state };
+    // SAFETY: as above.
+    let edit = unsafe { &*edit };
     let plan = match state.plan(edit) {
         Ok(plan) => plan,
         Err(status) => return status,
     };
     let replacement = match plan.allocation {
+        // SAFETY: the standard C allocator; null is handled below.
         1 => unsafe { malloc(plan.capacity).cast::<u8>() },
+        // SAFETY: `state.data` is uniquely owned standard-libc storage (the caller verifies
+        // the allocator symbols); no borrow of it survives this call.
         2 => unsafe { realloc(state.data.cast(), plan.capacity).cast::<u8>() },
         _ => state.data,
     };
@@ -430,6 +484,7 @@ pub unsafe extern "C" fn swr_v1_string_edit_system(
     // No slice/borrow of old storage survived realloc. The private plan cannot
     // be changed by a caller between planning and apply; frozen apply still
     // independently validates external plans. Interior input is rebased here.
+    // SAFETY: as described above; `replacement` is the requested allocation.
     unsafe { apply_plan(state, edit, &plan, replacement, detached) }
 }
 
@@ -449,6 +504,7 @@ pub unsafe extern "C" fn swr_v1_string_append_in_place(
     if length.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above), aligned and readable.
     let used = unsafe { *length };
     let state = StringState {
         data,
@@ -471,12 +527,13 @@ pub unsafe extern "C" fn swr_v1_string_append_in_place(
     if end > capacity {
         return 1;
     }
-    unsafe {
-        if count != 0 {
-            ptr::copy(input, data.add(used), count);
-        }
-        length.write(end);
+    if count != 0 {
+        // SAFETY: validated state and input; `used + count <= capacity`, inside `data`.
+        // `ptr::copy` allows the internal aliases the contract permits.
+        unsafe { ptr::copy(input, data.wrapping_add(used), count) };
     }
+    // SAFETY: as for the read above, and writable.
+    unsafe { length.write(end) };
     OK
 }
 
@@ -513,10 +570,10 @@ pub unsafe extern "C" fn swr_v1_string_format_i32(value: i32, output: *mut u8) -
     }
     let mut buffer = itoa::Buffer::new();
     let text = buffer.format(value);
-    unsafe {
-        ptr::copy_nonoverlapping(text.as_ptr(), output, text.len());
-        output.add(text.len()).write(0);
-    }
+    // SAFETY: non-null (checked above) and writable for 12 bytes; at most 11 digits plus NUL.
+    unsafe { ptr::copy_nonoverlapping(text.as_ptr(), output, text.len()) };
+    // SAFETY: as above.
+    unsafe { output.wrapping_add(text.len()).write(0) };
     text.len()
 }
 
@@ -533,6 +590,7 @@ pub unsafe extern "C" fn swr_v1_string_append_i32(
 ) -> i32 {
     let mut buffer = itoa::Buffer::new();
     let text = buffer.format(value);
+    // SAFETY: forwards the caller's append contract; `text` is a local, disjoint input.
     unsafe { swr_v1_string_append_in_place(data, length, capacity, text.as_ptr(), text.len()) }
 }
 

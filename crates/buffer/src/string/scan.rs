@@ -17,6 +17,7 @@ unsafe fn bytes<'a>(data: *const u8, length: usize) -> Result<&'a [u8], i32> {
     if data.is_null() {
         return Err(INVALID);
     }
+    // SAFETY: non-null, `length <= isize::MAX`; callers lend that many initialized bytes.
     Ok(unsafe { slice::from_raw_parts(data, length) })
 }
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -43,10 +44,11 @@ pub unsafe extern "C" fn swr_v1_string_match(
             if count > length {
                 return Ok(false);
             }
-            Ok(find(unsafe { bytes(data, length)? }, unsafe {
-                bytes(needle, count)?
-            })
-            .is_some())
+            // SAFETY: the inspected haystack range is initialized and readable.
+            let haystack = unsafe { bytes(data, length)? };
+            // SAFETY: the inspected needle range is initialized and readable.
+            let needle = unsafe { bytes(needle, count)? };
+            Ok(find(haystack, needle).is_some())
         }
         STARTS_WITH | ENDS_WITH | EQUALS => {
             if (mode == EQUALS && length != count) || count > length {
@@ -62,7 +64,9 @@ pub unsafe extern "C" fn swr_v1_string_match(
             if data.is_null() {
                 return Err(INVALID);
             }
-            let view = unsafe { bytes(data.add(offset), count)? };
+            // SAFETY: non-null; `offset + count <= length`, the inspected readable range.
+            let view = unsafe { bytes(data.wrapping_add(offset), count)? };
+            // SAFETY: the inspected needle range is initialized and readable.
             Ok(view == unsafe { bytes(needle, count)? })
         }
         _ => Err(INVALID),
@@ -107,9 +111,8 @@ pub unsafe extern "C" fn swr_v1_string_split_next(
     if output.is_null() {
         return INVALID;
     }
-    unsafe {
-        output.write(StringSplitStep::default());
-    }
+    // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
+    unsafe { output.write(StringSplitStep::default()) };
     let result = (|| {
         let offset = usize::try_from(offset).map_err(|_| INVALID)?;
         let prefix = usize::try_from(prefix).map_err(|_| INVALID)?;
@@ -127,11 +130,14 @@ pub unsafe extern "C" fn swr_v1_string_split_next(
             if data.is_null() {
                 return Err(INVALID);
             }
-            unsafe { data.add(offset) }
+            // In range: `offset <= length` (checked above).
+            data.wrapping_add(offset)
         };
-        let found = find(unsafe { bytes(start, available)? }, unsafe {
-            bytes(delimiter, delimiter_length)?
-        });
+        // SAFETY: `available <= length - offset` initialized source bytes from `start`.
+        let haystack = unsafe { bytes(start, available)? };
+        // SAFETY: the delimiter's `delimiter_length` bytes are initialized and readable.
+        let delimiter = unsafe { bytes(delimiter, delimiter_length)? };
+        let found = find(haystack, delimiter);
         let step = if let Some(position) = found {
             let advance = position + delimiter_length;
             StringSplitStep {
@@ -158,9 +164,8 @@ pub unsafe extern "C" fn swr_v1_string_split_next(
     })();
     match result {
         Ok((status, step)) => {
-            unsafe {
-                output.write(step);
-            }
+            // SAFETY: as for the first write to `output`.
+            unsafe { output.write(step) };
             status
         }
         Err(status) => status,
@@ -260,6 +265,7 @@ pub unsafe extern "C" fn swr_v1_string_split_plan(
         if cursor.is_null() || accepted > 1 {
             return INVALID;
         }
+        // SAFETY: non-null (checked above), initialized, aligned and disjoint.
         let cursor = unsafe { &*cursor };
         if cursor.pending > 1 {
             return INVALID;
@@ -282,6 +288,7 @@ pub unsafe extern "C" fn swr_v1_string_split_plan(
         } else {
             0
         };
+        // SAFETY: forwards the caller's source and delimiter spans; the output is a local.
         let status = unsafe {
             swr_v1_string_split_next(
                 data,
@@ -318,6 +325,7 @@ pub unsafe extern "C" fn swr_v1_string_split_plan(
         0
     })();
     // Offset commits precede a subsequent scan error just as native += did.
+    // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
     unsafe { output.write(plan) };
     result
 }
