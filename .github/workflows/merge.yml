@@ -246,12 +246,15 @@ jobs:
           name: phpt-engines
           path: target/phpt
       - run: python3 corpus/upstream/inventory.py --shard ${{ matrix.index }}/6 --output target/phpt/manifest.json
+      # Keep core dumps: the runner has aborted with heap corruption after a batch (#200).
+      - run: sudo mkdir -m 1777 /tmp/cores && echo '/tmp/cores/core.%e.%p' | sudo tee /proc/sys/kernel/core_pattern
       # php -n loads nothing; load every extension the distribution enables, in its order.
       - id: extensions
         run: echo "args=$(sed -n 's/^extension=\(.*\)/--php-extension \1/p' /etc/php/*/cli/conf.d/*.ini | sed 's/\.so$//' | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
       # Exit 1 means some tests failed, which the gate judges; anything else (a runner
       # crash) fails the shard.
       - run: >
+          ulimit -c unlimited &&
           python3 corpus/upstream/run.py --manifest target/phpt/manifest.json --timeout 30 --external-network
           ${{ steps.extensions.outputs.args }}
           --engine ${{ matrix.engine }}=target/phpt/${{ matrix.engine }}.so
@@ -261,6 +264,14 @@ jobs:
         with:
           name: phpt-${{ matrix.engine }}-${{ matrix.index }}
           path: target/phpt/${{ matrix.engine }}-${{ matrix.index }}.json
+      # Read with gdb against /usr/bin/php (the runner's PHP 8.3 package) and the phpt-engines .so.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cores-${{ matrix.engine }}-${{ matrix.index }}
+          path: /tmp/cores/
+          if-no-files-found: ignore
+          retention-days: 7
 
   phpt-gate:
     needs: phpt
