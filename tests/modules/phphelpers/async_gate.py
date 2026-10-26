@@ -11,7 +11,8 @@ sys.path.insert(0, str(ROOT))
 from tools.build_hybrid import apply_patch_verified
 from tools.build_upstream import require_build_space
 from tools.harness import run_isolated, write_report
-BASELINE = 'f83caff3e8cf80e177ae09903e38a44cfc5beb86'
+# The accepted phphelpers patch as rebased onto v6.2.4 (#71): the async body is the only change allowed since.
+BASELINE = '2a2cf9a8d2c3a631fb7151c8617bf3c4afd542c5'
 DEST = 'ext-src/php_swoole_cxx.h'
 SIGNATURE = 'static inline bool php_swoole_async(bool blocking, const std::function<void(void)> &fn) {'
 

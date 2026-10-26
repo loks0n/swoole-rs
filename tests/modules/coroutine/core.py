@@ -105,7 +105,7 @@ def main():
             write_changed(staged / LIFETIME, lifetime)
             inventory = [{'name': f'{group}.{name}', 'path': path, 'sha256': sha(staged / path)}
                 for path in ASSERTIONS for group, name in re.findall(r'TEST\((\w+),\s*(\w+)\)', (staged / path).read_text())]
-            if len(inventory) != 32 or len({case['name'] for case in inventory}) != len(inventory):
+            if len(inventory) != 33 or len({case['name'] for case in inventory}) != len(inventory):
                 raise ValueError('Original coroutine inventory differs')
             report['original_inventory'] = inventory.copy()
             report['unmeasured_originals'] = [case['name'] for case in inventory] if args.lifetime_only else []
