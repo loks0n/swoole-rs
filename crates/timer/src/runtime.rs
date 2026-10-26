@@ -58,9 +58,18 @@ pub extern "C" fn swr_v1_timer_realtime_add(
     let mut fraction = nanoseconds.wrapping_add(milliseconds % 1000 * 1_000_000);
     if fraction >= BILLION {
         // The native helper stores the quotient in int before its int product.
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the native helper's int quotient"
+        )]
         let carry = (fraction / BILLION) as i32;
         seconds = seconds.wrapping_add(i64::from(carry));
-        fraction = fraction.wrapping_sub(i64::from(carry.wrapping_mul(BILLION as i32)));
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "BILLION fits the native int product"
+        )]
+        let billion = BILLION as i32;
+        fraction = fraction.wrapping_sub(i64::from(carry.wrapping_mul(billion)));
     }
     NativeTime { seconds, fraction }
 }
