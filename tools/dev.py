@@ -746,7 +746,7 @@ def plan(args, reports):
                                '--engine', f'hybrid={hybrid}']
             for name in ['reply', 'request', 'handlers', 'bailout']:
                 script('protocols-' + name, 'tests/modules/protocols/' + name + '.py',
-                       '--php', args.php, *reference_first, *report('protocols-' + name))
+                       *php, *reference_first, *report('protocols-' + name))
             script('protocols-lifecycle', 'tests/modules/protocols/lifecycle.py',
                    *php, *reference_first, *report('protocols-lifecycle'))
             script('protocols-originals', 'tests/modules/protocols/phpt.py', '--source', ROOT / 'target/upstream/src',
@@ -795,7 +795,7 @@ def plan(args, reports):
                *report('string-transitions'))
         if integrate:
             pytest('buffer-model', 'tests/modules/buffer/test_model.py', '--manifest', manifest, '--sanitize')
-        pytest('buffer-network', 'tests/modules/buffer/test_network.py', '--php', args.php, *engines)
+        pytest('buffer-network', 'tests/modules/buffer/test_network.py', *php, *engines)
     if 'websocket' in modules:
         archive = manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a'
         pytest('websocket-kernel', 'tests/modules/websocket/test_kernel.py', '--archive', archive, '--sanitize')
@@ -805,7 +805,7 @@ def plan(args, reports):
                '--engine', f'upstream={reference}', '--engine', f'hybrid={hybrid}')
         pytest('websocket-invalid', 'tests/modules/websocket/test_invalid.py', *php, *engines)
         if integrate:
-            pytest('websocket-close', 'tests/modules/websocket/test_close.py', '--php', args.php, *engines)
+            pytest('websocket-close', 'tests/modules/websocket/test_close.py', *php, *engines)
     if repair:
         tls13_python = getattr(args, 'tls13_python', None) or python
         add('halfclose-tls13-driver', tls13_python, '-I', '-S', '-B', '-c', TLS13_PROBE)

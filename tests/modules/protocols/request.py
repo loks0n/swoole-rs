@@ -93,11 +93,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--engine', action='append', required=True)
     parser.add_argument('--php', default='php')
+    parser.add_argument('--php-extension', action='append', default=[], help='PHP module loaded before Swoole')
     parser.add_argument('--output', type=Path, default=ROOT / 'target/reports/protocols-request.json')
     args = parser.parse_args()
     report = {'created_utc': datetime.now(timezone.utc).isoformat(), 'engines': [], 'results': [],
               'scope': 'Actual native PHP request dispatcher: null/int order, first string command, routing, binary/empty strings, overflow and 2MiB payloads; no optional clients.'}
-    for engine in parse_engines(args.engine, args.php):
+    for engine in parse_engines(args.engine, args.php, args.php_extension):
         report['engines'].append(engine.metadata())
         for mode, coroutines in [('base', False), ('base', True), ('process', False), ('process', True)]:
             row = {'engine': engine.name, 'mode': mode, 'coroutines': coroutines, 'passed': False, 'cases': []}
