@@ -122,7 +122,8 @@ def phase_changes(result):
         previous = run['databaseId'] < result['run'] and run['conclusion'] in ('success', 'failure') and phases(run['databaseId'])
         if previous:
             return {**result, 'previous_run': run['url'],
-                    'new_failures': [name for name in result['failed_phases'] if previous.get(name)],
+                    # A phase the previous run didn't have is new too: it was added and fails on its first run.
+                    'new_failures': [name for name in result['failed_phases'] if previous.get(name) is not False],
                     'fixed': sorted(name for name, passed in current.items() if passed and previous.get(name) is False)}
     return result
 

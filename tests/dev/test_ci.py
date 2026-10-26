@@ -133,12 +133,15 @@ class Ci(unittest.TestCase):
     def test_merge_tier_failure_lists_failed_new_and_fixed_phases(self):
         history = [{'databaseId': 7, 'conclusion': 'failure', 'url': 'u7'}, {'databaseId': 6, 'conclusion': 'cancelled', 'url': 'u6'},
                    {'databaseId': 5, 'conclusion': 'failure', 'url': 'u5'}, {'databaseId': 4, 'conclusion': 'failure', 'url': 'u4'}]
-        phases = {'7': [['build', False], ['timer-model', True], ['http-native', False], ['tls-native', True]],
+        phases = {'7': [['build', False], ['timer-model', True], ['http-native', False], ['tls-native', True],
+                        ['ports-added', False]],
                   '4': [['build', False], ['timer-model', False], ['http-native', True]]}
         code, result, _ = self.ci('status', runs={'c' * 40: ['failure']}, history=history, phases=phases)
-        self.assertEqual((code, result['failed_phases']), (1, ['build', 'http-native']))
+        self.assertEqual((code, result['failed_phases']), (1, ['build', 'http-native', 'ports-added']))
         # Run 6 was cancelled and run 5 has no phases artifact, so run 4 is the comparison.
-        self.assertEqual((result['previous_run'], result['new_failures'], result['fixed']), ('u4', ['http-native'], ['timer-model']))
+        # ports-added didn't exist in run 4, so its failure is new as well.
+        self.assertEqual((result['previous_run'], result['new_failures'], result['fixed']),
+                         ('u4', ['http-native', 'ports-added'], ['timer-model']))
         self.assertEqual(result['logs'], {'rust': ['2026-10-25T21:00:01Z error: boom']})
 
     def test_runs_without_phases_keep_the_log_tail(self):
