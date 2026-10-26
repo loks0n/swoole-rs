@@ -3,7 +3,11 @@
 //! byte, red zones included, must match.
 
 use swoole_rs_base64::{swr_v1_base64_decode, swr_v1_base64_encode};
-use swoole_rs_oracle::{base64 as upstream, websocket as upstream_ws};
+use swoole_rs_http::{
+    HttpCookie, swr_v1_http_cookie_next, swr_v1_http_url_capacity, swr_v1_http_url_decode,
+    swr_v1_http_url_encode,
+};
+use swoole_rs_oracle::{base64 as upstream, http as upstream_http, websocket as upstream_ws};
 use swoole_rs_websocket::{DecodedFrame, swr_v1_ws_decode, swr_v1_ws_frame_length, swr_v1_ws_mask};
 
 const RED_ZONE: usize = 17;
@@ -117,4 +121,79 @@ pub fn ws_mask(bytes: &[u8]) {
     // SAFETY: as above.
     unsafe { swr_v1_ws_mask(ours.as_mut_ptr(), ours.len(), key.as_ptr()) };
     assert_eq!(ours, data, "unmask for {bytes:?}");
+}
+
+/// Any bytes as a URL component: the same decoded bytes, terminator and length.
+pub fn http_url_decode(bytes: &[u8]) {
+    let mut theirs = [bytes, &[0xa5]].concat();
+    let mut ours = theirs.clone();
+    let mut written = 0;
+    // SAFETY: each side owns `length + 1` bytes; `written` is a local.
+    let (want, status) = unsafe {
+        (
+            upstream_http::url_decode(theirs.as_mut_ptr(), bytes.len()),
+            swr_v1_http_url_decode(ours.as_mut_ptr(), bytes.len(), &mut written),
+        )
+    };
+    assert_eq!((status, written), (0, want), "length for {bytes:?}");
+    assert!(theirs == ours, "decoded bytes for {bytes:?}");
+}
+
+/// Any bytes: the same percent-encoding, terminated.
+pub fn http_url_encode(bytes: &[u8]) {
+    let mut theirs = vec![0xa5; 3 * bytes.len() + 1];
+    let (mut capacity, mut written) = (0, 0);
+    // SAFETY: `theirs` has upstream's capacity; ours is sized by the capacity query.
+    let want =
+        unsafe { upstream_http::url_encode(bytes.as_ptr(), bytes.len(), theirs.as_mut_ptr()) };
+    assert_eq!(
+        unsafe { swr_v1_http_url_capacity(bytes.as_ptr(), bytes.len(), &mut capacity) },
+        0
+    );
+    let mut ours = vec![0xa5; capacity];
+    let status = unsafe {
+        swr_v1_http_url_encode(
+            bytes.as_ptr(),
+            bytes.len(),
+            ours.as_mut_ptr(),
+            capacity,
+            &mut written,
+        )
+    };
+    assert_eq!(
+        (status, written, capacity),
+        (0, want, want + 1),
+        "length for {bytes:?}"
+    );
+    assert_eq!(ours, theirs[..=want], "encoding for {bytes:?}");
+}
+
+/// Any bytes as a Cookie header: the same keys and values, in order.
+pub fn http_cookies(bytes: &[u8]) {
+    let mut theirs = vec![0; 8 * bytes.len() + 16];
+    // SAFETY: `theirs` has the documented capacity.
+    let size = unsafe { upstream_http::cookies(bytes.as_ptr(), bytes.len(), theirs.as_mut_ptr()) };
+    theirs.truncate(size);
+    // Like parse_cookie, tokenize a NUL-terminated copy in place.
+    let mut buffer = [bytes, &[0]].concat();
+    let (mut cursor, mut ours) = (0, Vec::new());
+    loop {
+        let mut cookie = HttpCookie::default();
+        // SAFETY: the buffer is writable and NUL-terminated; cursor and cookie are locals.
+        let status = unsafe {
+            swr_v1_http_cookie_next(buffer.as_mut_ptr(), buffer.len(), &mut cursor, &mut cookie)
+        };
+        assert!(status >= 0, "status {status} for {bytes:?}");
+        if status == 0 {
+            break;
+        }
+        for (offset, length) in [
+            (cookie.key_offset, cookie.key_length),
+            (cookie.value_offset, cookie.value_length),
+        ] {
+            ours.extend_from_slice(&(length as u32).to_ne_bytes());
+            ours.extend_from_slice(&buffer[offset..offset + length]);
+        }
+    }
+    assert_eq!(ours, theirs, "cookies for {bytes:?}");
 }

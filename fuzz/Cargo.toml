@@ -11,6 +11,7 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 swoole-rs-base64 = { path = "../crates/base64" }
+swoole-rs-http = { path = "../crates/http" }
 swoole-rs-oracle = { path = "../crates/oracle" }
 swoole-rs-websocket = { path = "../crates/websocket" }
 
@@ -45,6 +46,27 @@ bench = false
 [[bin]]
 name = "ws_mask"
 path = "fuzz_targets/ws_mask.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_cookies"
+path = "fuzz_targets/http_cookies.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_url_decode"
+path = "fuzz_targets/http_url_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_url_encode"
+path = "fuzz_targets/http_url_encode.rs"
 test = false
 doc = false
 bench = false

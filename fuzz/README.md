@@ -24,6 +24,12 @@ excluded: `decode` reads two bytes even from shorter input, and a payload
 within a header of `isize::MAX` overflows its signed length sum (Rust returns
 -1).
 
+
+For HTTP, `http_url_decode`, `http_url_encode` and `http_cookies` (keys and
+values in order) compare with upstream's `url_decode`, `url_encode` and
+`parse_cookie`. The shim gives each upstream `sw_malloc` one spare byte, because
+`url_encode` writes past its allocation (#145).
+
 libFuzzer writes new inputs to the first corpus directory, so keep `corpus/`
 (ignored) first and the committed `seeds/` second. A failure leaves its input in
 `artifacts/<target>/`; replay it with `cargo +nightly fuzz run <target> <file>`.
