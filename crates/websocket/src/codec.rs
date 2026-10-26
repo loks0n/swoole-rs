@@ -46,10 +46,15 @@ pub unsafe extern "C" fn swr_v1_ws_decode(
         return -1;
     }
     let mut header = 0;
-    // SAFETY: Input was checked above; header is a disjoint local variable.
     // The native Frame decoder passes header availability through uint32_t.
     // Preserve that conversion even for unusually large borrowed buffers.
-    let total = unsafe { swr_v1_ws_frame_length(data, length as u32 as usize, &mut header) };
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the native uint32_t header availability"
+    )]
+    let available = length as u32 as usize;
+    // SAFETY: Input was checked above; header is a disjoint local variable.
+    let total = unsafe { swr_v1_ws_frame_length(data, available, &mut header) };
     let mut frame = DecodedFrame {
         header_length: header as usize,
         ..DecodedFrame::default()
@@ -65,14 +70,14 @@ pub unsafe extern "C" fn swr_v1_ws_decode(
         frame.flags = flags(first, second);
         frame.length_code = second & 127;
     }
-    if total > 0 {
-        frame.payload_length = total as usize - frame.header_length;
-        if length >= total as usize && is_control(frame.opcode) && frame.flags & RSV1 != 0 {
+    if let Some(size) = usize::try_from(total).ok().filter(|&size| size > 0) {
+        frame.payload_length = size - frame.header_length;
+        if length >= size && is_control(frame.opcode) && frame.flags & RSV1 != 0 {
             // SAFETY: The caller supplies a disjoint, aligned output.
             unsafe { output.write(frame) };
             return INVALID_CONTROL;
         }
-        if length >= total as usize && frame.payload_length != 0 {
+        if length >= size && frame.payload_length != 0 {
             // A positive complete header bounds the payload and key inside `length`.
             if frame.flags & MASK != 0 {
                 // SAFETY: the 4-byte key ends at `header_length <= total <= length`.
@@ -186,7 +191,13 @@ pub unsafe extern "C" fn swr_v1_ws_encode_close(
         return 0;
     }
     let mut payload = [0u8; 127];
-    payload[..2].copy_from_slice(&(code as u16).to_be_bytes());
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "upstream packs the close code as uint16_t"
+    )]
+    let code = code as u16;
+    payload[..2].copy_from_slice(&code.to_be_bytes());
     if length != 0 {
         // SAFETY: Reason is borrowed and bounded by 125 bytes.
         payload[2..2 + length]

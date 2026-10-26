@@ -1,11 +1,5 @@
 //! Allocation-free WebSocket codec and message/control policy. Native callers
 //! retain storage, connection ownership, PHP dispatch and socket I/O.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
 #![cfg_attr(
     not(test),
     deny(
@@ -44,8 +38,13 @@ pub unsafe extern "C" fn swr_v1_ws_frame_length(
     } else if payload == 127 {
         header = 10;
     }
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a header is at most 14 bytes"
+    )]
+    let reported = header as u32;
     // SAFETY: the caller lends an aligned, writable `header_length`.
-    unsafe { header_length.write(header as u32) };
+    unsafe { header_length.write(reported) };
     if length < header {
         return 0;
     }
@@ -58,8 +57,13 @@ pub unsafe extern "C" fn swr_v1_ws_frame_length(
     }
     if bytes[1] & 0x80 != 0 {
         header += 4;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a header is at most 14 bytes"
+        )]
+        let reported = header as u32;
         // SAFETY: as above.
-        unsafe { header_length.write(header as u32) };
+        unsafe { header_length.write(reported) };
         if length < header {
             return 0;
         }
@@ -69,7 +73,7 @@ pub unsafe extern "C" fn swr_v1_ws_frame_length(
     if payload > (isize::MAX as u64) - header as u64 {
         return -1;
     }
-    (payload + header as u64) as i64
+    i64::try_from(payload + header as u64).unwrap_or(-1)
 }
 
 /// Write a wire header without a mask key or payload; return 0 without writes
@@ -100,10 +104,19 @@ pub unsafe extern "C" fn swr_v1_ws_write_header(
     header[0] = (opcode & 0xf) | (u8::from(flags & 1 != 0) << 7) | (u8::from(flags & 4 != 0) << 6);
     header[1] = u8::from(flags & 32 != 0) << 7;
     match size {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "size 2 means payload_length < 126"
+        )]
         2 => header[1] |= payload_length as u8,
         4 => {
             header[1] |= 126;
-            header[2..4].copy_from_slice(&(payload_length as u16).to_be_bytes());
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "size 4 means payload_length fits u16"
+            )]
+            let short = payload_length as u16;
+            header[2..4].copy_from_slice(&short.to_be_bytes());
         }
         _ => {
             header[1] |= 127;
