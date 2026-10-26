@@ -94,3 +94,98 @@ pub mod framing {
         ) -> isize;
     }
 }
+
+pub mod http_frame {
+    use std::ffi::c_char;
+
+    /// The `Request` fields request framing reads and writes, and the buffer offset.
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Default, PartialEq)]
+    pub struct State {
+        pub offset: usize,
+        pub content_length: u64,
+        pub method: u32,
+        pub version: u32,
+        pub excepted: u32,
+        pub known_length: u32,
+        pub url_offset: u32,
+        pub url_length: u32,
+        pub line_length: u32,
+        pub header_length: u32,
+    }
+
+    /// Request framing compiled from one engine's http.cc: `upstream` is the pinned
+    /// file, `candidate` the file with the http overlay patch, which calls the Rust
+    /// exports (the caller's binary must link `swr_v1_http_*`).
+    pub struct Engine {
+        /// `operation` 0 `get_protocol`, 1 `get_header_length`, 2
+        /// `get_chunked_body_length` over `length` bytes followed by a NUL;
+        /// returns `SW_OK` (0) or `SW_ERR` (-1).
+        pub frame: unsafe extern "C" fn(u32, *mut c_char, usize, *mut State) -> i32,
+        /// `Request::has_expect_header` over `length` bytes followed by a NUL.
+        pub expect: unsafe extern "C" fn(*mut c_char, usize) -> bool,
+        /// `Request::get_header(name)` with this url offset, url length and header
+        /// length, copied into `output` (capacity `length`); returns its size.
+        pub header: unsafe extern "C" fn(
+            *mut c_char,
+            usize,
+            u32,
+            u32,
+            u32,
+            *const c_char,
+            *mut c_char,
+        ) -> usize,
+        /// `get_method_string`.
+        pub method: unsafe extern "C" fn(i32) -> *const c_char,
+    }
+
+    unsafe extern "C" {
+        fn swr_oracle_http_frame_upstream(
+            operation: u32,
+            data: *mut c_char,
+            length: usize,
+            state: *mut State,
+        ) -> i32;
+        fn swr_oracle_http_expect_upstream(data: *mut c_char, length: usize) -> bool;
+        fn swr_oracle_http_header_upstream(
+            data: *mut c_char,
+            length: usize,
+            url_offset: u32,
+            url_length: u32,
+            header_length: u32,
+            name: *const c_char,
+            output: *mut c_char,
+        ) -> usize;
+        fn swr_oracle_http_method_upstream(method: i32) -> *const c_char;
+        fn swr_oracle_http_frame_candidate(
+            operation: u32,
+            data: *mut c_char,
+            length: usize,
+            state: *mut State,
+        ) -> i32;
+        fn swr_oracle_http_expect_candidate(data: *mut c_char, length: usize) -> bool;
+        fn swr_oracle_http_header_candidate(
+            data: *mut c_char,
+            length: usize,
+            url_offset: u32,
+            url_length: u32,
+            header_length: u32,
+            name: *const c_char,
+            output: *mut c_char,
+        ) -> usize;
+        fn swr_oracle_http_method_candidate(method: i32) -> *const c_char;
+    }
+
+    pub const UPSTREAM: Engine = Engine {
+        frame: swr_oracle_http_frame_upstream,
+        expect: swr_oracle_http_expect_upstream,
+        header: swr_oracle_http_header_upstream,
+        method: swr_oracle_http_method_upstream,
+    };
+    pub const CANDIDATE: Engine = Engine {
+        frame: swr_oracle_http_frame_candidate,
+        expect: swr_oracle_http_expect_candidate,
+        header: swr_oracle_http_header_candidate,
+        method: swr_oracle_http_method_candidate,
+    };
+}
