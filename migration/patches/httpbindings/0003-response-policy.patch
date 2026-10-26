@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
-index b7e2b14..1ed669b 100644
+index b7e2b14..d8cad30 100644
 --- a/ext-src/swoole_http_response.cc
 +++ b/ext-src/swoole_http_response.cc
 @@ -17,2 +17,9 @@
@@ -277,144 +277,7 @@ index b7e2b14..1ed669b 100644
 +        }
 +    }
  }
-@@ -781,18 +775,28 @@ void HttpContext::write(zend_string *sdata, zval *return_value) {
- void HttpContext::end(zend_string *sdata, zval *return_value) {
--    if (http2) {
--        RETURN_BOOL(swoole_http2_server_end(this, sdata));
--    }
--
--    if (send_chunked) {
--        if (sdata && ZSTR_LEN(sdata) > 0) {
--            zval retval;
--            write(sdata, &retval);
--            if (ZVAL_IS_FALSE(&retval)) {
--                RETURN_FALSE;
--            }
-+    uint32_t phase = 0;
-+    bool sent = false;
-+    zval retval;
-+    String *http_buffer = nullptr;
-+    const char *data = nullptr;
-+    size_t length = 0;
-+    for (;;) {
-+        uint32_t fact = 0;
-+        switch (phase) {
-+        case 0: fact = http2; break;
-+        case 1: fact = send_chunked ? 1 | ((sdata && ZSTR_LEN(sdata) > 0) ? 2 : 0) : 0; break;
-+        case 2: fact = !ZVAL_IS_FALSE(&retval); break;
-+        case 3: fact = send_trailer_; break;
-+        case 4: case 5: case 8: case 9: case 11: fact = sent; break;
-+        case 6: fact = length > 0; break;
-+        case 7: fact = length > SW_HTTP_MAX_APPEND_DATA; break;
-+        case 10: fact = upgrade && !is_co_socket(); break;
-+        case 12: fact = keepalive; break;
-         }
--        if (send_trailer_) {
--            if (!send(this, ZEND_STRL("0\r\n"))) {
--                RETURN_FALSE;
--            }
-+        switch (swr_v1_httpbindings_end(&phase, fact)) {
-+        case 0: break;
-+        case SWR_HTTPBINDINGS_END_HTTP2: RETURN_BOOL(swoole_http2_server_end(this, sdata));
-+        case SWR_HTTPBINDINGS_END_WRITE_CHUNK: write(sdata, &retval); break;
-+        case SWR_HTTPBINDINGS_END_TRAILER_ZERO: sent = send(this, ZEND_STRL("0\r\n")); break;
-+        case SWR_HTTPBINDINGS_END_CHUNK_ZERO: sent = send(this, ZEND_STRL("0\r\n\r\n")); break;
-+        case SWR_HTTPBINDINGS_END_TRAILER:
-             send_trailer(return_value);
-@@ -802,15 +806,10 @@ void HttpContext::end(zend_string *sdata, zval *return_value) {
-             }
--        } else {
--            if (!send(this, ZEND_STRL("0\r\n\r\n"))) {
--                RETURN_FALSE;
--            }
--        }
--        send_chunked = 0;
--    } else {
--        const char *data = sdata ? ZSTR_VAL(sdata) : nullptr;
--        size_t length = sdata ? ZSTR_LEN(sdata) : 0;
--
--        String *http_buffer = get_write_buffer();
--        http_buffer->clear();
--
-+            send_chunked = 0;
-+            break;
-+        case SWR_HTTPBINDINGS_END_CLEAR_CHUNK: send_chunked = 0; break;
-+        case SWR_HTTPBINDINGS_END_PREPARE:
-+            data = sdata ? ZSTR_VAL(sdata) : nullptr;
-+            length = sdata ? ZSTR_LEN(sdata) : 0;
-+            http_buffer = get_write_buffer();
-+            http_buffer->clear();
- #ifdef SW_HAVE_ZLIB
-@@ -843,5 +842,5 @@ void HttpContext::end(zend_string *sdata, zval *return_value) {
- 
--        build_header(http_buffer, data, length);
--
--        if (length > 0) {
-+            build_header(http_buffer, data, length);
-+            break;
-+        case SWR_HTTPBINDINGS_END_COMPRESSION:
- #ifdef SW_HAVE_COMPRESSION
-@@ -852,20 +851,16 @@ void HttpContext::end(zend_string *sdata, zval *return_value) {
- #endif
--            // send twice to reduce memory copy
--            if (length > SW_HTTP_MAX_APPEND_DATA) {
--                if (!send(this, http_buffer->str, http_buffer->length)) {
--                    send_header_ = 0;
--                    RETURN_FALSE;
--                }
--                if (!send(this, data, length)) {
--                    end_ = 1;
--                    close(this);
--                    RETURN_FALSE;
--                }
--                goto _skip_copy;
--            } else {
--                http_buffer->append(data, length);
--            }
--        }
--
--        if (!send(this, http_buffer->str, http_buffer->length)) {
-+            break;
-+        case SWR_HTTPBINDINGS_END_HEADERS:
-+            sent = send(this, http_buffer->str, http_buffer->length);
-+            break;
-+        case SWR_HTTPBINDINGS_END_BODY: sent = send(this, data, length); break;
-+        case SWR_HTTPBINDINGS_END_APPEND_SEND:
-+            http_buffer->append(data, length);
-+            sent = send(this, http_buffer->str, http_buffer->length);
-+            break;
-+        case SWR_HTTPBINDINGS_END_SEND_WHOLE:
-+            sent = send(this, http_buffer->str, http_buffer->length);
-+            break;
-+        case SWR_HTTPBINDINGS_END_HEADER_FAILED: send_header_ = 0; RETURN_FALSE;
-+        case SWR_HTTPBINDINGS_END_CLOSE_FAILED:
-             end_ = 1;
-@@ -873,7 +868,3 @@ void HttpContext::end(zend_string *sdata, zval *return_value) {
-             RETURN_FALSE;
--        }
--    }
--
--_skip_copy:
--    if (upgrade && !is_co_socket()) {
-+        case SWR_HTTPBINDINGS_END_UPGRADE: {
-         auto *serv = get_async_server();
-@@ -890,8 +881,10 @@ _skip_copy:
-         }
-+            break;
-+        }
-+        case SWR_HTTPBINDINGS_END_CLOSE: close(this); break;
-+        case SWR_HTTPBINDINGS_END_DONE: end_ = 1; RETURN_TRUE;
-+        case SWR_HTTPBINDINGS_END_FAILED: RETURN_FALSE;
-+        default: return;
-+        }
-     }
--    if (!keepalive) {
--        close(this);
--    }
--    end_ = 1;
--    RETURN_TRUE;
- }
-@@ -970,3 +963,6 @@ static PHP_METHOD(swoole_http_response, sendfile) {
+@@ -970,3 +964,6 @@ static PHP_METHOD(swoole_http_response, sendfile) {
      }
 -    if (file_stat.st_size < offset) {
 +    static_assert(sizeof(off_t) == sizeof(int64_t) && sizeof(zend_long) == sizeof(int64_t), "HTTP file range ABI");
@@ -422,12 +285,12 @@ index b7e2b14..1ed669b 100644
 +    int32_t range = swr_v1_httpbindings_file_range(file_stat.st_size, offset, length, &resolved_length);
 +    if (range == 1 || range == 3) {
          php_swoole_error(E_WARNING, "parameter $offset[" ZEND_LONG_FMT "] exceeds the file size", offset);
-@@ -974,3 +970,3 @@ static PHP_METHOD(swoole_http_response, sendfile) {
+@@ -974,3 +971,3 @@ static PHP_METHOD(swoole_http_response, sendfile) {
      }
 -    if (length > file_stat.st_size - offset) {
 +    if (range == 2) {
          php_swoole_error(E_WARNING, "parameter $length[" ZEND_LONG_FMT "] exceeds the file size", length);
-@@ -978,5 +974,4 @@ static PHP_METHOD(swoole_http_response, sendfile) {
+@@ -978,5 +975,4 @@ static PHP_METHOD(swoole_http_response, sendfile) {
      }
 -    if (length == 0) {
 -        length = file_stat.st_size - offset;
