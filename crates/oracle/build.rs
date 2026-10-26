@@ -87,6 +87,25 @@ fn http() {
     fs::write(out("http.inc"), text).unwrap();
 }
 
+/// The pinned packet length function and integer unpacking, copied unchanged for
+/// shim/framing.cc to compile.
+fn framing() {
+    let source = fs::read_to_string("upstream/src/protocol/base.cc").expect("vendored base.cc");
+    let from = source
+        .find("int64_t swoole_unpack(")
+        .expect("swoole_unpack");
+    let text = [
+        slice(
+            &source,
+            "ssize_t Protocol::default_length_func(",
+            "int Protocol::recv_split_by_eof(",
+        ),
+        source[from..].to_string(),
+    ]
+    .concat();
+    fs::write(out("framing.inc"), text).unwrap();
+}
+
 /// The pinned WebSocket length query, mask and decoder with the header definitions
 /// they use, copied unchanged for shim/websocket.cc to compile.
 fn websocket() {
@@ -144,6 +163,7 @@ fn main() {
     // beside the Rust-backed `swoole::` and `swoole_crc32`.
     websocket();
     http();
+    framing();
     cpp()
         .define("swoole", "oracle")
         .define("swoole_crc32", "oracle_swoole_crc32")
@@ -155,6 +175,7 @@ fn main() {
         .include(env::var("OUT_DIR").unwrap())
         .file("shim/websocket.cc")
         .file("shim/http.cc")
+        .file("shim/framing.cc")
         .compile("swoole_oracle");
 
     // The original core-test assertions, run against the adapters that forward

@@ -3,11 +3,15 @@
 //! byte, red zones included, must match.
 
 use swoole_rs_base64::{swr_v1_base64_decode, swr_v1_base64_encode};
+use swoole_rs_framing::{swr_v1_framing_default, swr_v1_framing_unpack, swr_v1_framing_width};
 use swoole_rs_http::{
     HttpCookie, swr_v1_http_cookie_next, swr_v1_http_url_capacity, swr_v1_http_url_decode,
     swr_v1_http_url_encode,
 };
-use swoole_rs_oracle::{base64 as upstream, http as upstream_http, websocket as upstream_ws};
+use swoole_rs_oracle::{
+    base64 as upstream, framing as upstream_framing, http as upstream_http,
+    websocket as upstream_ws,
+};
 use swoole_rs_websocket::{DecodedFrame, swr_v1_ws_decode, swr_v1_ws_frame_length, swr_v1_ws_mask};
 
 const RED_ZONE: usize = 17;
@@ -196,4 +200,74 @@ pub fn http_cookies(bytes: &[u8]) {
         }
     }
     assert_eq!(ours, theirs, "cookies for {bytes:?}");
+}
+
+/// Length types a server accepts for `package_length_type`.
+const FORMATS: &[u8] = b"cCsSnvIiLlNVqQJP";
+
+/// The first byte picks a length type, the rest is the field: the same value.
+pub fn framing_unpack(bytes: &[u8]) {
+    let Some((&pick, data)) = bytes.split_first() else {
+        return;
+    };
+    let format = FORMATS[usize::from(pick) % FORMATS.len()];
+    if data.len() < swr_v1_framing_width(format) {
+        return;
+    }
+    let mut got = 0;
+    // SAFETY: both read the format's width, which `data` covers.
+    let want = unsafe { upstream_framing::unpack(format, data.as_ptr()) };
+    assert_eq!(
+        unsafe { swr_v1_framing_unpack(format, data.as_ptr(), data.len(), &mut got) },
+        0
+    );
+    assert_eq!(want, got, "unpack {} of {data:?}", format as char);
+}
+
+/// A length type, field offset and body offset, then any received bytes: the same
+/// total length, "need more" header length, or error. Field size is the type's
+/// width, as the server configures it.
+pub fn framing_length(bytes: &[u8]) {
+    let Some((&[pick, offset_low, offset_high, body_low, body_high], data)) =
+        bytes.split_first_chunk::<5>()
+    else {
+        return;
+    };
+    let format = FORMATS[usize::from(pick) % FORMATS.len()];
+    let size = swr_v1_framing_width(format) as u8;
+    let (offset, body_offset) = (
+        u16::from_le_bytes([offset_low, offset_high]) % 64,
+        u16::from_le_bytes([body_low, body_high]),
+    );
+    let mut header = 0;
+    // SAFETY: both read at most `data.len()` bytes; outputs are locals.
+    let want = unsafe {
+        upstream_framing::length(
+            format,
+            size,
+            offset,
+            body_offset,
+            data.as_ptr(),
+            data.len() as u32,
+            &mut header,
+        )
+    };
+    let mut got = 0;
+    let status = unsafe {
+        swr_v1_framing_default(
+            format,
+            data.as_ptr(),
+            data.len(),
+            offset.into(),
+            size.into(),
+            body_offset.into(),
+            &mut got,
+        )
+    };
+    match status {
+        0 => assert_eq!((want, header as i64), (0, got), "need more for {bytes:?}"),
+        1 => assert_eq!(want as i64, got, "total for {bytes:?}"),
+        // Upstream adds the body offset to a body length near i64::MAX as a signed sum (undefined).
+        _ => assert!(want < 0, "error {status} vs {want} for {bytes:?}"),
+    }
 }
