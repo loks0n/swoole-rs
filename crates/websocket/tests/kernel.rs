@@ -1,3 +1,8 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "#157: casts not yet checked"
+)]
 use std::ptr::{null, null_mut};
 use swoole_rs_websocket::*;
 

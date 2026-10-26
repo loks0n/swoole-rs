@@ -170,7 +170,7 @@ fn poll(mut timeout: i32, mut attempt: impl FnMut() -> i32) -> i32 {
             return 0;
         }
         // SAFETY: usleep has no memory preconditions.
-        unsafe { usleep(sleep.wrapping_mul(1000) as u32) };
+        unsafe { usleep(sleep.wrapping_mul(1000).cast_unsigned()) };
         sleep = sleep.wrapping_mul(2);
         if timeout > 0 && timeout.wrapping_sub(sleep) < 0 {
             sleep = timeout;

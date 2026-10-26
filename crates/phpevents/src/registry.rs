@@ -33,6 +33,10 @@ unsafe fn try_insert_slot(slot: *mut *mut PhpEventRegistry, fd: i32, value: usiz
     }
     unsafe {
         if (*slot).is_null() {
+            #[expect(
+                clippy::cast_ptr_alignment,
+                reason = "alloc honours Layout::new::<PhpEventRegistry>()"
+            )]
             let owner = std::alloc::alloc(std::alloc::Layout::new::<PhpEventRegistry>())
                 .cast::<PhpEventRegistry>();
             if owner.is_null() {

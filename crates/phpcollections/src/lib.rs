@@ -259,7 +259,7 @@ mod tests {
                 let mut frozen = Vec::new();
                 for stage in 0..7 {
                     let action = swr_v1_phpcollections_channel_next(operation, stage, success);
-                    frozen.push(action as u8);
+                    frozen.push(u8::try_from(action).expect("action codes fit a byte"));
                     if [6, 9, 12].contains(&action) {
                         break;
                     }
@@ -268,7 +268,7 @@ mod tests {
                 for phase in [0, 1] {
                     let mut bits = swr_v1_phpcollections_channel_plan(operation, phase, success);
                     while bits != 0 {
-                        planned.push(bits as u8);
+                        planned.push(bits.to_le_bytes()[0]);
                         bits >>= 8;
                     }
                 }
@@ -293,7 +293,7 @@ mod tests {
             assert_eq!(
                 swr_v1_phpcollections_kind(kind),
                 if (1..=3).contains(&kind) {
-                    kind as u32
+                    u32::try_from(kind).expect("1..=3 fits u32")
                 } else {
                     0
                 }

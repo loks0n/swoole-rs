@@ -88,7 +88,7 @@ pub unsafe extern "C" fn swr_v1_wrappers_content_length(
     let mut remaining = length;
     loop {
         start -= 1;
-        digits[start] = b'0' + (remaining % 10) as u8;
+        digits[start] = b"0123456789"[remaining % 10];
         remaining /= 10;
         if remaining == 0 {
             break;
@@ -159,6 +159,10 @@ fn assign(dst: &mut Vec<u8>, src: &[u8]) -> i32 {
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_wrappers_request_new() -> *mut Request {
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<Request>()"
+    )]
     let p = unsafe { alloc(Layout::new::<Request>()) as *mut Request };
     if !p.is_null() {
         unsafe { p.write(Request::default()) };

@@ -1,4 +1,10 @@
 //! PHP HTTP policy. Native effects execute only after these functions return.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "#157: casts not yet checked"
+)]
 #![deny(unsafe_op_in_unsafe_fn)]
 mod emission;
 mod file;

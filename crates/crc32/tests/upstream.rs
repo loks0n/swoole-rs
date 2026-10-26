@@ -41,7 +41,7 @@ fn empty_and_every_one_and_two_byte_input() {
 
 #[test]
 fn every_length_up_to_sixty_four() {
-    let bytes: Vec<u8> = (0..64u32).map(|i| (i * 37 + 19) as u8).collect();
+    let bytes: Vec<u8> = (0..64u32).map(|i| (i * 37 + 19).to_le_bytes()[0]).collect();
     for length in 0..=bytes.len() {
         compare(&bytes[..length]);
     }

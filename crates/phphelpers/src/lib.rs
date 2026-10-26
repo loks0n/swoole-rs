@@ -1,4 +1,9 @@
 //! Common PHP helper policy. Zend storage, calls, allocation and VM effects stay native.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "#157: casts not yet checked"
+)]
 use std::ffi::c_char;
 mod asynchronous;
 mod facade;

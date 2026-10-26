@@ -1,4 +1,9 @@
 //! PHP Scheduler frontend metadata. Zend payloads and execution stay native.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "#157: casts not yet checked"
+)]
 mod activation;
 mod allocation;
 mod autoload;

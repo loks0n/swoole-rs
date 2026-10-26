@@ -1,4 +1,12 @@
 //! Allocation-free Swoole base64, including its permissive decoder write semantics.
+#![expect(
+    clippy::cast_possible_truncation,
+    reason = "#157: casts not yet checked"
+)]
+#![cfg_attr(
+    test,
+    expect(clippy::cast_sign_loss, reason = "#157: casts not yet checked")
+)]
 // Ported from Swoole src/core/base64.cc, Copyright (c) 2012-2017 The Swoole Group.
 // Original author: Tianfeng Han <rango@swoole.com>. Apache License, Version 2.0.
 #![cfg_attr(

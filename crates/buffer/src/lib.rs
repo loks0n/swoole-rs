@@ -1,4 +1,11 @@
 //! Allocation-fallible owned buffer queue. See docs/buffer-abi-v1.md.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_ptr_alignment,
+    clippy::cast_sign_loss,
+    reason = "#157: casts not yet checked"
+)]
 mod typed;
 use std::alloc::{Layout, alloc};
 use std::collections::VecDeque;

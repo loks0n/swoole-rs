@@ -1,4 +1,11 @@
 //! Readiness/interest and opt-in metadata ownership; Native retains effects and default registries.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_ptr_alignment,
+    clippy::cast_sign_loss,
+    reason = "#157: casts not yet checked"
+)]
 #[cfg(unix)]
 mod batch;
 #[cfg(unix)]

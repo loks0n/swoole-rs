@@ -1,4 +1,11 @@
 //! Client policy and private persistent-pool storage; native Client/Zend effects stay native.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_ptr_alignment,
+    clippy::cast_sign_loss,
+    reason = "#157: casts not yet checked"
+)]
 
 pub mod async_client;
 pub mod coro_client;

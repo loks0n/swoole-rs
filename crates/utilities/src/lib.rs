@@ -1,4 +1,11 @@
 //! Pinned utility arithmetic and logging byte policy; no native callbacks.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_ptr_alignment,
+    clippy::cast_sign_loss,
+    reason = "#157: casts not yet checked"
+)]
 mod bytes;
 mod frontdoor;
 pub use frontdoor::*;

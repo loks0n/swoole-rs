@@ -1,5 +1,11 @@
 //! Allocation-free WebSocket codec and message/control policy. Native callers
 //! retain storage, connection ownership, PHP dispatch and socket I/O.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "#157: casts not yet checked"
+)]
 #![cfg_attr(
     not(test),
     deny(

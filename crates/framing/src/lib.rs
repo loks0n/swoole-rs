@@ -1,5 +1,11 @@
 //! Callback-free packet decisions and immutable MIME policy; native IO stays native.
 #![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "#157: casts not yet checked"
+)]
+#![expect(
     clippy::missing_safety_doc,
     reason = "every export is covered by the module-local C contract"
 )]
