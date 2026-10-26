@@ -173,10 +173,10 @@ def plan(args, reports):
            *(['--export', selected_export] if captured_reference else []), '--jobs', args.jobs,
            *(['--native-build-root', args.native_build_root] if getattr(args, 'native_build_root', None) else []),
            *(['--ccache', args.ccache] if getattr(args, 'ccache', None) else ['--no-ccache']))
-    script('abi', 'tests/modules/integration/test_bridge.py', '--php', args.php, '--hybrid', hybrid, '--reference', reference,
+    script('abi', 'tests/modules/integration/test_bridge.py', *php_for('sockets'), '--hybrid', hybrid, '--reference', reference,
            *([] if integrate else ['--startup-only']))
     if integrate:
-        script('abi-startup', 'tests/modules/integration/test_bridge.py', '--php', args.php, '--hybrid', hybrid,
+        script('abi-startup', 'tests/modules/integration/test_bridge.py', *php_for('sockets'), '--hybrid', hybrid,
                '--reference', reference, '--startup-only')
         script('api-surface', 'tools/capability_inventory.py', '--source', ROOT / 'target/upstream/src',
                *php_for('curl', 'sockets', 'tokenizer'), *engines, '--require-same-api', *report('api-surface'))
