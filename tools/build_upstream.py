@@ -40,6 +40,8 @@ def add_build_arguments(parser):
     parser.add_argument('--ccache', type=Path, default=shutil.which('ccache'), help='Compiler cache executable; shared bounded cache, detected by default')
     parser.add_argument('--no-ccache', dest='ccache', action='store_const', const=None, help='Disable compiler caching for this build')
     parser.add_argument('--openssl-dir', help='Optional OpenSSL prefix; detected through Homebrew on macOS')
+    parser.add_argument('--configure', action='append', default=[], metavar='ARG',
+                        help='Extra ./configure argument (write --configure=--enable-x), after the defaults so it overrides them; repeatable')
 
 
 def extension_configuration(args, extra=()):
@@ -54,6 +56,7 @@ def extension_configuration(args, extra=()):
         prefix = subprocess.check_output(['brew', '--prefix', 'openssl@3'], text=True).strip()
     if prefix:
         configure.append(f'--with-openssl-dir={prefix}')
+    configure += getattr(args, 'configure', [])
     env = os.environ.copy()
     includes = subprocess.check_output(['pkg-config', '--cflags', 'libpcre2-8'], text=True).strip()
     env['CPPFLAGS'] = f'{env.get("CPPFLAGS", "")} {includes}'.strip()
