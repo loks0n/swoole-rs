@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_coroutine.cc b/ext-src/swoole_coroutine.cc
-index daecf43c2..f4c4f42a5 100644
+index daecf43c2..c2e07045c 100644
 --- a/ext-src/swoole_coroutine.cc
 +++ b/ext-src/swoole_coroutine.cc
 @@ -35,3 +35,10 @@ END_EXTERN_C()
@@ -2426,7 +2426,7 @@ index daecf43c2..f4c4f42a5 100644
      }
 +#endif
  }
-@@ -1462,2 +3538,55 @@ static PHP_METHOD(swoole_coroutine, cancel) {
+@@ -1462,2 +3538,53 @@ static PHP_METHOD(swoole_coroutine, cancel) {
  static PHP_METHOD(swoole_coroutine, setTimeLimit) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -2440,8 +2440,7 @@ index daecf43c2..f4c4f42a5 100644
 +    long cid = 0;
 +    PHPContext *ctx = nullptr;
 +    uint32_t stage = 0;
-+    // Negative timeouts are rejected like a missing coroutine.
-+    int64_t observation = co != nullptr && timeout > 0;
++    int64_t observation = co != nullptr;
 +    for (;;) {
 +        const auto plan = swr_v1_phpcoroutines_control(&stage, SWR_CORO_CONTROL_TIME_LIMIT, observation, timeout);
 +        switch (plan.action) {
@@ -2452,7 +2451,6 @@ index daecf43c2..f4c4f42a5 100644
 +            ctx = static_cast<PHPContext *>(co->get_task());
 +            break;
 +        case SWR_CORO_CONTROL_TIMER: {
-+            // Seconds keep their fractional precision; plan.value is the truncated legacy millisecond count.
 +            TimerNode *timer = swoole_timer_add(timeout, false, [cid](Timer *, TimerNode *) {
 +                PHPContext *ctx = PHPCoroutine::get_context_by_cid(cid);
 +                uint32_t callback_stage = 0;
@@ -2482,11 +2480,11 @@ index daecf43c2..f4c4f42a5 100644
 +    }
 +#else
      double timeout = 0;
-@@ -1494,2 +3623,3 @@ static PHP_METHOD(swoole_coroutine, setTimeLimit) {
+@@ -1494,2 +3621,3 @@ static PHP_METHOD(swoole_coroutine, setTimeLimit) {
      RETURN_TRUE;
 +#endif
  }
-@@ -1502,2 +3632,23 @@ static PHP_METHOD(swoole_coroutine, isCanceled) {
+@@ -1502,2 +3630,23 @@ static PHP_METHOD(swoole_coroutine, isCanceled) {
  PHP_FUNCTION(swoole_test_kernel_coroutine) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    if (!PHPCoroutine::is_activated()) {
@@ -2510,11 +2508,11 @@ index daecf43c2..f4c4f42a5 100644
 +    });
 +#else
      if (!PHPCoroutine::is_activated()) {
-@@ -1520,2 +3671,3 @@ PHP_FUNCTION(swoole_test_kernel_coroutine) {
+@@ -1520,2 +3669,3 @@ PHP_FUNCTION(swoole_test_kernel_coroutine) {
      });
 +#endif
  }
-@@ -1523,2 +3675,47 @@ PHP_FUNCTION(swoole_test_kernel_coroutine) {
+@@ -1523,2 +3673,47 @@ PHP_FUNCTION(swoole_test_kernel_coroutine) {
  static PHP_METHOD(swoole_coroutine, getBackTrace) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -2562,11 +2560,11 @@ index daecf43c2..f4c4f42a5 100644
 +#else
 +
      zend_long cid = 0;
-@@ -1547,2 +3744,3 @@ static PHP_METHOD(swoole_coroutine, getBackTrace) {
+@@ -1547,2 +3742,3 @@ static PHP_METHOD(swoole_coroutine, getBackTrace) {
      }
 +#endif
  }
-@@ -1561,2 +3759,35 @@ void sw_php_print_backtrace_impl(int skip_last, int options, int limit, bool inc
+@@ -1561,2 +3757,35 @@ void sw_php_print_backtrace_impl(int skip_last, int options, int limit, bool inc
  void sw_php_print_backtrace(zend_long cid, zend_long options, zend_long limit, zval *return_value) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -2602,7 +2600,7 @@ index daecf43c2..f4c4f42a5 100644
 +#else
 +
      if (!cid || cid == PHPCoroutine::get_cid()) {
-@@ -1577,2 +3808,3 @@ void sw_php_print_backtrace(zend_long cid, zend_long options, zend_long limit, z
+@@ -1577,2 +3806,3 @@ void sw_php_print_backtrace(zend_long cid, zend_long options, zend_long limit, z
      }
 +#endif
  }
