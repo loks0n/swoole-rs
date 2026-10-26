@@ -1190,6 +1190,7 @@ class ChangedModules(unittest.TestCase):
                          ['base64', 'timer'])
         self.assertEqual(self.changed('.github/workflows/pr.yml', 'tests/dev/test_tooling.py'), [])
         self.assertEqual(self.changed('crates/ffi/src/lib.rs'), sorted(dev.MODULES))
+        self.assertEqual(self.changed('crates/oracle/build.rs', 'fuzz/src/lib.rs'), [])
         self.assertEqual(self.changed('migration/patches/halfclose/manifest.json'), sorted(dev.MODULES))
 
 

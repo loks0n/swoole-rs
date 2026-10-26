@@ -190,3 +190,27 @@ jobs:
         with:
           name: alpine-reports
           path: target/reports/
+
+  # One minute per differential fuzz target against the pinned C++ oracle (fuzz/README.md).
+  fuzz:
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install nightly --profile minimal
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - working-directory: fuzz
+        run: |
+          for target in base64_decode base64_encode; do
+            mkdir -p corpus/$target
+            cargo +nightly fuzz run $target corpus/$target seeds/$target -- -dict=base64.dict -max_total_time=60
+          done
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/
