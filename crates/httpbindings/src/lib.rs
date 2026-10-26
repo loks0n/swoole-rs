@@ -1,10 +1,4 @@
 //! PHP HTTP policy. Native effects execute only after these functions return.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![cfg_attr(
     not(test),
@@ -273,6 +267,10 @@ pub unsafe extern "C" fn swr_v1_httpbindings_cookie(
             Phase::AgePrefix => literal(APPEND, b"; Max-Age="),
             Phase::ReadAge => effect(READ_AGE),
             Phase::Age => Action {
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "PHP's (zend_long) Max-Age; Rust saturates where C is undefined"
+                )]
                 value: if input.age >= 0.0 {
                     input.age as i64
                 } else {

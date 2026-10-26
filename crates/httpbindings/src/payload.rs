@@ -24,7 +24,8 @@ pub unsafe extern "C" fn swr_v1_httpbindings_request_option(key: Text, capabilit
     OPTIONS
         .iter()
         .position(|&(name, required)| capabilities & required == required && case_equal(key, name))
-        .map_or(0, |index| index as i32 + 1)
+        .and_then(|index| i32::try_from(index + 1).ok())
+        .unwrap_or(0)
 }
 
 /// Exact case-sensitive native substring preference, including matches inside
