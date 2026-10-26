@@ -83,7 +83,6 @@ pub unsafe extern "C" fn swr_v1_memory_table_config(
     if rows.is_null() || conflict.is_null() {
         return -1;
     }
-    // SAFETY: a fresh, non-null allocation with its type's layout.
     unsafe {
         rows.write(0);
         conflict.write(0.0);
@@ -450,7 +449,6 @@ pub unsafe extern "C" fn swr_v1_memory_table_next(
     }
     let mut row = root;
     if unsafe { next(root) }.is_null() {
-        // SAFETY: a fresh, non-null allocation with its type's layout.
         unsafe { advance.write(1) };
         // SAFETY: `next_index` is non-null (checked above), aligned and writable.
         unsafe { next_index.write(index) };
@@ -465,7 +463,6 @@ pub unsafe extern "C" fn swr_v1_memory_table_next(
             return -1;
         };
         // SAFETY: `next_index` is non-null (checked above), aligned and writable.
-        // SAFETY: a fresh, non-null allocation with its type's layout.
         unsafe {
             next_index.write(following);
         }
@@ -1110,7 +1107,6 @@ pub unsafe extern "C" fn swr_v1_memory_table_get_string(
     if count > width - 4 {
         return -1;
     }
-    // SAFETY: a fresh, non-null allocation with its type's layout.
     unsafe { output.write(data.add(4).cast_mut()) };
     // SAFETY: `length` is non-null (checked above), aligned and writable.
     unsafe { length.write(count) };
