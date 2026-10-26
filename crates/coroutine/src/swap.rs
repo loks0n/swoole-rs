@@ -26,6 +26,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_swap_publish(
     cell: *mut CoroutineSwapCallback,
     function: Option<CoroutineSwapFunction>,
 ) {
+    // SAFETY: per this function's `# Safety` contract, `cell` is live, aligned and writable.
     unsafe { cell.write(CoroutineSwapCallback { function }) };
 }
 
@@ -61,9 +62,11 @@ pub unsafe extern "C" fn swr_v1_coroutine_dispatch(
     let function = if operation == 1 && bailout != 0 {
         None
     } else {
+        // SAFETY: per this function's `# Safety` contract, `callback` is live, aligned and initialized.
         unsafe { (*callback).function }
     };
     let token = if function.is_some() {
+        // SAFETY: per this function's `# Safety` contract, `task` is live, aligned and initialized.
         unsafe { (*task).token }
     } else {
         ptr::null_mut()
@@ -71,6 +74,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_dispatch(
     let facts = (u32::from(bailout != 0) * crate::BAILOUT)
         | (u32::from(function.is_some()) * crate::CALLBACK)
         | (u32::from(!token.is_null()) * crate::TASK);
+    // SAFETY: per this function's `# Safety` contract, `status` is live, aligned and exclusive.
     let plan = crate::status::transition(unsafe { &mut *status }, operation, facts, 1);
     let admitted = plan.actions & crate::CALL != 0;
     CoroutineDispatch {

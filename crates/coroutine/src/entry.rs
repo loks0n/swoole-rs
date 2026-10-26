@@ -22,6 +22,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_entry_step(
     cursor: *mut CoroutineEntryCursor,
     observed: c_long,
 ) -> CoroutineEntryAction {
+    // SAFETY: per this function's `# Safety` contract, `cursor` is live, aligned and exclusive.
     let c = unsafe { &mut *cursor };
     let action = match c.phase {
         0 if c.mode == 0 => {

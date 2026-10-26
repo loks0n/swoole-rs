@@ -30,11 +30,13 @@ pub unsafe extern "C" fn swr_v1_coroutine_timing_switch(
     resuming: *mut CoroutineTiming,
     now: c_long,
 ) {
+    // SAFETY: `yielding` is null or live, aligned and exclusively lent for this call.
     if let Some(yielding) = unsafe { yielding.as_mut() } {
         let delta = now.wrapping_sub(yielding.switch_usec);
         yielding.execute_usec = yielding.execute_usec.wrapping_add(delta);
     }
     // The first exclusive borrow ends before observing this possibly same cell.
+    // SAFETY: `resuming` is null or live, aligned and exclusively lent for this call.
     if let Some(resuming) = unsafe { resuming.as_mut() } {
         resuming.switch_usec = now;
     }
@@ -48,6 +50,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_timing_usage(
     timing: *const CoroutineTiming,
     now: c_long,
 ) -> c_long {
+    // SAFETY: per this function's `# Safety` contract, `timing` is live, aligned and initialized.
     let timing = unsafe { &*timing };
     now.wrapping_sub(timing.switch_usec)
         .wrapping_add(timing.execute_usec)

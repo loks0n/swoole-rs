@@ -19,11 +19,12 @@ impl ChannelTokens {
 
     // Fallible admission precedes clone observation; Box alone owns cleanup.
     fn try_new() -> Option<Box<Self>> {
+        // SAFETY: `ChannelTokens` is not zero-sized; null is handled by `NonNull::new`.
         let raw = NonNull::new(unsafe { alloc(Layout::new::<Self>()).cast::<Self>() })?;
-        unsafe {
-            raw.as_ptr().write(Self(VecDeque::new()));
-            Some(Box::from_raw(raw.as_ptr()))
-        }
+        // SAFETY: a fresh, non-null allocation with this type's layout.
+        unsafe { raw.as_ptr().write(Self(VecDeque::new())) };
+        // SAFETY: a global allocation with `Box`'s layout, initialized above.
+        Some(unsafe { Box::from_raw(raw.as_ptr()) })
     }
 }
 
@@ -43,6 +44,7 @@ pub unsafe extern "C" fn swr_v1_channel_tokens_clone(
     let Some(mut copy) = ChannelTokens::try_new() else {
         return ptr::null_mut();
     };
+    // SAFETY: `tokens` is a live owner with no concurrent mutation.
     let source = unsafe { &(*tokens).0 };
     if copy.0.try_reserve(source.len()).is_err() {
         return ptr::null_mut();
@@ -56,6 +58,7 @@ pub unsafe extern "C" fn swr_v1_channel_tokens_clone(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_channel_tokens_free(tokens: *mut ChannelTokens) {
     if !tokens.is_null() {
+        // SAFETY: an exclusive, live owner from `tokens_new`, freed once.
         drop(unsafe { Box::from_raw(tokens) });
     }
 }
@@ -64,6 +67,7 @@ pub unsafe extern "C" fn swr_v1_channel_tokens_free(tokens: *mut ChannelTokens) 
 /// `tokens` is a live owner, with no concurrent mutation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_channel_tokens_len(tokens: *const ChannelTokens) -> usize {
+    // SAFETY: per this function's `# Safety` contract, `tokens` is live, aligned and initialized.
     unsafe { (*tokens).0.len() }
 }
 
@@ -74,6 +78,7 @@ pub unsafe extern "C" fn swr_v1_channel_tokens_push(
     tokens: *mut ChannelTokens,
     token: *mut c_void,
 ) -> i32 {
+    // SAFETY: per this function's `# Safety` contract, `tokens` is live, aligned and exclusive.
     unsafe { &mut *tokens }.try_push(token).map_or(-1, |()| 0)
 }
 
@@ -85,8 +90,10 @@ pub unsafe extern "C" fn swr_v1_channel_tokens_front(
     tokens: *const ChannelTokens,
     output: *mut *mut c_void,
 ) -> i32 {
+    // SAFETY: per this function's `# Safety` contract, `tokens` is live, aligned and initialized.
     match unsafe { (*tokens).0.front() } {
         Some(&token) => {
+            // SAFETY: per this function's `# Safety` contract, `output` is live, aligned and writable.
             unsafe { output.write(token) };
             1
         }
@@ -98,6 +105,7 @@ pub unsafe extern "C" fn swr_v1_channel_tokens_front(
 /// `tokens` is an exclusive live owner. Removed tokens remain native-owned.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_channel_tokens_pop(tokens: *mut ChannelTokens) {
+    // SAFETY: per this function's `# Safety` contract, `tokens` is live, aligned and initialized.
     unsafe { (*tokens).0.pop_front() };
 }
 
@@ -109,6 +117,7 @@ pub unsafe extern "C" fn swr_v1_channel_tokens_remove(
     tokens: *mut ChannelTokens,
     token: *mut c_void,
 ) {
+    // SAFETY: per this function's `# Safety` contract, `tokens` is live, aligned and initialized.
     unsafe { (*tokens).0.retain(|&entry| entry != token) };
 }
 

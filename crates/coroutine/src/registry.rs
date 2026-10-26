@@ -47,6 +47,10 @@ impl Policy {
         }
     }
 }
+/// Link invariant: every non-null `*mut Entry` in `first`, `buckets` or an entry's
+/// `previous`/`next` is a live `Box<Entry>` owned by this registry. Entries are freed
+/// only by `remove` (after unlinking) and `clear`, and `&mut self` makes link updates
+/// exclusive.
 struct Registry {
     count: usize,
     first: *mut Entry,
@@ -73,14 +77,15 @@ impl Default for Registry {
 fn try_box<T>(value: T) -> Result<Box<T>, ()> {
     // Both concrete types are non-zero-sized. Allocation failure returns to
     // Native before Native raises; no infallible Box allocation is hidden here.
-    unsafe {
-        let pointer = std::alloc::alloc(std::alloc::Layout::new::<T>()).cast::<T>();
-        if pointer.is_null() {
-            return Err(());
-        }
-        pointer.write(value);
-        Ok(Box::from_raw(pointer))
+    // SAFETY: `T` is non-zero-sized (above); null is handled below.
+    let pointer = unsafe { std::alloc::alloc(std::alloc::Layout::new::<T>()) }.cast::<T>();
+    if pointer.is_null() {
+        return Err(());
     }
+    // SAFETY: a fresh, non-null allocation with `T`'s layout.
+    unsafe { pointer.write(value) };
+    // SAFETY: a global allocation with `Box`'s layout, initialized above.
+    Ok(unsafe { Box::from_raw(pointer) })
 }
 impl Registry {
     fn find(&self, cid: c_long) -> *mut Entry {
@@ -89,13 +94,16 @@ impl Registry {
         }
         let bucket = cid as usize % self.buckets.len();
         let mut entry = self.buckets[bucket];
-        unsafe {
-            while !entry.is_null() && (*entry).cid as usize % self.buckets.len() == bucket {
-                if (*entry).cid == cid {
-                    return entry;
-                }
-                entry = (*entry).next;
+        while !entry.is_null() {
+            // SAFETY: a non-null link owned by this registry (see `Registry`).
+            let current = unsafe { &*entry };
+            if current.cid as usize % self.buckets.len() != bucket {
+                break;
             }
+            if current.cid == cid {
+                return entry;
+            }
+            entry = current.next;
         }
         ptr::null_mut()
     }
@@ -120,6 +128,7 @@ impl Registry {
         let entry = self.slot(cid)?;
         // Whole ordinary operator[] assignment: a miss owns a null token
         // before assignment; a hit keeps its token until this one write.
+        // SAFETY: a non-null link owned by this registry (see `Registry`).
         unsafe { (*entry).token = token };
         Ok(())
     }
@@ -128,28 +137,31 @@ impl Registry {
         if pointer.is_null() {
             return false;
         }
-        unsafe {
-            let entry = Box::from_raw(pointer);
-            let bucket = cid as usize % self.buckets.len();
-            if self.buckets[bucket] == pointer {
-                self.buckets[bucket] = if !entry.next.is_null()
-                    && (*entry.next).cid as usize % self.buckets.len() == bucket
-                {
-                    entry.next
-                } else {
-                    ptr::null_mut()
-                };
-            }
-            if entry.previous.is_null() {
-                self.first = entry.next;
+        // SAFETY: `find` returned a non-null link owned by this registry; it is unlinked
+        // below and freed when `entry` drops, so no link to it survives.
+        let entry = unsafe { Box::from_raw(pointer) };
+        let bucket = cid as usize % self.buckets.len();
+        if self.buckets[bucket] == pointer {
+            self.buckets[bucket] = if !entry.next.is_null()
+                // SAFETY: a non-null link owned by this registry (see `Registry`).
+                && unsafe { (*entry.next).cid } as usize % self.buckets.len() == bucket
+            {
+                entry.next
             } else {
-                (*entry.previous).next = entry.next;
-            }
-            if !entry.next.is_null() {
-                (*entry.next).previous = entry.previous;
-            }
-            self.count -= 1;
+                ptr::null_mut()
+            };
         }
+        if entry.previous.is_null() {
+            self.first = entry.next;
+        } else {
+            // SAFETY: a non-null link owned by this registry (see `Registry`).
+            unsafe { (*entry.previous).next = entry.next };
+        }
+        if !entry.next.is_null() {
+            // SAFETY: a non-null link owned by this registry (see `Registry`).
+            unsafe { (*entry.next).previous = entry.previous };
+        }
+        self.count -= 1;
         true
     }
 }
@@ -161,42 +173,53 @@ impl Registry {
         let mut buckets = Vec::new();
         buckets.try_reserve_exact(count).map_err(|_| ())?;
         buckets.resize(count, ptr::null_mut());
-        unsafe {
-            if !self.first.is_null() {
-                let mut previous = self.first;
-                let mut previous_bucket = (*previous).cid as usize % count;
-                buckets[previous_bucket] = previous;
-                loop {
-                    let current = (*previous).next;
-                    if current.is_null() {
-                        break;
+        // Every pointer dereferenced below is a non-null link owned by this registry (see
+        // `Registry`); the loop only relinks existing entries.
+        if !self.first.is_null() {
+            let mut previous = self.first;
+            // SAFETY: as above.
+            let mut previous_bucket = unsafe { (*previous).cid } as usize % count;
+            buckets[previous_bucket] = previous;
+            loop {
+                // SAFETY: as above.
+                let current = unsafe { (*previous).next };
+                if current.is_null() {
+                    break;
+                }
+                // SAFETY: as above.
+                let bucket = unsafe { (*current).cid } as usize % count;
+                if bucket == previous_bucket {
+                    previous = current;
+                } else if buckets[bucket].is_null() {
+                    buckets[bucket] = current;
+                    previous = current;
+                    previous_bucket = bucket;
+                } else {
+                    // Merge the later bucket run at its earlier run's head.
+                    // SAFETY: as above.
+                    let next = unsafe { (*current).next };
+                    // SAFETY: as above.
+                    unsafe { (*previous).next = next };
+                    if !next.is_null() {
+                        // SAFETY: as above.
+                        unsafe { (*next).previous = previous };
                     }
-                    let bucket = (*current).cid as usize % count;
-                    if bucket == previous_bucket {
-                        previous = current;
-                    } else if buckets[bucket].is_null() {
-                        buckets[bucket] = current;
-                        previous = current;
-                        previous_bucket = bucket;
+                    let head = buckets[bucket];
+                    // SAFETY: as above; bucket heads are links.
+                    let before = unsafe { (*head).previous };
+                    // SAFETY: as above.
+                    unsafe { (*current).next = head };
+                    // SAFETY: as above.
+                    unsafe { (*current).previous = before };
+                    // SAFETY: as above.
+                    unsafe { (*head).previous = current };
+                    if before.is_null() {
+                        self.first = current;
                     } else {
-                        // Merge the later bucket run at its earlier run's head.
-                        let next = (*current).next;
-                        (*previous).next = next;
-                        if !next.is_null() {
-                            (*next).previous = previous;
-                        }
-                        let head = buckets[bucket];
-                        let before = (*head).previous;
-                        (*current).next = head;
-                        (*current).previous = before;
-                        (*head).previous = current;
-                        if before.is_null() {
-                            self.first = current;
-                        } else {
-                            (*before).next = current;
-                        }
-                        buckets[bucket] = current;
+                        // SAFETY: as above.
+                        unsafe { (*before).next = current };
                     }
+                    buckets[bucket] = current;
                 }
             }
         }
@@ -259,6 +282,7 @@ impl Registry {
         let mut cursor = self.first;
         self.first = ptr::null_mut();
         while !cursor.is_null() {
+            // SAFETY: a non-null link owned by this registry (see `Registry`).
             let next = unsafe { (*cursor).next };
             // GNU visits every old node, including contiguous bucket runs.
             // Reinserting at each new bucket head reverses those runs.
@@ -269,28 +293,34 @@ impl Registry {
         self.next_resize = next_resize;
         Ok(())
     }
+    // `entry` is an owned entry being (re)linked; every other pointer touched is a
+    // non-null link owned by this registry (see `Registry`).
     fn link_order(&mut self, entry: *mut Entry) {
-        unsafe {
-            let bucket = (*entry).cid as usize % self.buckets.len();
-            let head = self.buckets[bucket];
-            let next = if head.is_null() { self.first } else { head };
-            let previous = if head.is_null() {
-                ptr::null_mut()
-            } else {
-                (*head).previous
-            };
-            (*entry).next = next;
-            (*entry).previous = previous;
-            if previous.is_null() {
-                self.first = entry;
-            } else {
-                (*previous).next = entry;
-            }
-            if !next.is_null() {
-                (*next).previous = entry;
-            }
-            self.buckets[bucket] = entry;
+        // SAFETY: as above.
+        let bucket = unsafe { (*entry).cid } as usize % self.buckets.len();
+        let head = self.buckets[bucket];
+        let next = if head.is_null() { self.first } else { head };
+        let previous = if head.is_null() {
+            ptr::null_mut()
+        } else {
+            // SAFETY: as above.
+            unsafe { (*head).previous }
+        };
+        // SAFETY: as above.
+        unsafe { (*entry).next = next };
+        // SAFETY: as above.
+        unsafe { (*entry).previous = previous };
+        if previous.is_null() {
+            self.first = entry;
+        } else {
+            // SAFETY: as above.
+            unsafe { (*previous).next = entry };
         }
+        if !next.is_null() {
+            // SAFETY: as above.
+            unsafe { (*next).previous = entry };
+        }
+        self.buckets[bucket] = entry;
     }
 }
 fn next_prime(requested: usize) -> Result<usize, ()> {
@@ -387,10 +417,10 @@ impl Registry {
         let mut cursor = self.first;
         while !cursor.is_null() {
             // Metadata only: opaque Native tokens have no Rust destructor.
-            unsafe {
-                let entry = Box::from_raw(cursor);
-                cursor = entry.next;
-            }
+            // SAFETY: a non-null link owned by this registry; `clear` frees every entry
+            // and then resets every link to null.
+            let entry = unsafe { Box::from_raw(cursor) };
+            cursor = entry.next;
         }
         self.first = ptr::null_mut();
         self.count = 0;
@@ -413,10 +443,12 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_insert(
     cid: c_long,
     token: usize,
 ) -> i32 {
+    // SAFETY: forwards the caller's live, serialized owner contract unchanged.
     unsafe { insert(owner, cid, token) }
 }
 
 pub(crate) unsafe fn insert(owner: *mut *mut c_void, cid: c_long, token: usize) -> i32 {
+    // SAFETY: forwards the caller's live, serialized owner contract unchanged.
     unsafe { insert_with_policy(owner, cid, token, None) }
 }
 
@@ -431,6 +463,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_selected_insert(
     token: usize,
     policy: CoroutineRegistryPolicy,
 ) -> i32 {
+    // SAFETY: forwards the caller's live, serialized owner contract unchanged.
     unsafe { selected_insert(owner, cid, token, policy) }
 }
 
@@ -443,6 +476,7 @@ pub(crate) unsafe fn selected_insert(
     let Some(policy) = Policy::decode(policy) else {
         return -4;
     };
+    // SAFETY: forwards the caller's live, serialized owner contract unchanged.
     unsafe { insert_with_policy(owner, cid, token, Some(policy)) }
 }
 
@@ -452,8 +486,10 @@ unsafe fn insert_with_policy(
     token: usize,
     policy: Option<Policy>,
 ) -> i32 {
-    unsafe {
-        if (*owner).is_null() {
+    // SAFETY: `owner` is a live, aligned, serialized handle slot.
+    let slot = unsafe { &mut *owner };
+    {
+        if slot.is_null() {
             // Policy is captured at this original lazy allocation point only.
             let Ok(mut registry) = try_box(Registry::new(policy.unwrap_or_else(Policy::legacy)))
             else {
@@ -462,9 +498,10 @@ unsafe fn insert_with_policy(
             if registry.insert(cid, token).is_err() {
                 return -3;
             }
-            *owner = Box::into_raw(registry).cast();
+            *slot = Box::into_raw(registry).cast();
         } else {
-            let registry = &mut *(*owner).cast::<Registry>();
+            // SAFETY: a non-null slot holds this module's live `Registry`, serialized.
+            let registry = unsafe { &mut *slot.cast::<Registry>() };
             if policy.is_some_and(|value| value != registry.policy) {
                 return -4;
             }
@@ -479,6 +516,7 @@ unsafe fn insert_with_policy(
 /// A null or live owner created here; serialized with every map/cursor operation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_coroutine_registry_remove(owner: *mut c_void, cid: c_long) {
+    // SAFETY: forwards the caller's live, serialized owner contract unchanged.
     unsafe { erase(owner, cid) };
 }
 
@@ -486,6 +524,7 @@ pub(crate) unsafe fn erase(owner: *mut c_void, cid: c_long) -> usize {
     if owner.is_null() {
         0
     } else {
+        // SAFETY: `owner` is non-null (checked above) and a live, serialized `Registry`.
         usize::from(unsafe { (&mut *owner.cast::<Registry>()).remove(cid) })
     }
 }
@@ -494,6 +533,7 @@ pub(crate) unsafe fn erase(owner: *mut c_void, cid: c_long) -> usize {
 /// Null or a live serialized owner; Native still owns every token pointee.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_coroutine_registry_erase(owner: *mut c_void, cid: c_long) -> usize {
+    // SAFETY: forwards the caller's live, serialized owner contract unchanged.
     unsafe { erase(owner, cid) }
 }
 
@@ -508,10 +548,12 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_lookup(
     if owner.is_null() {
         return 0;
     }
+    // SAFETY: `owner` is non-null (checked above) and a live, serialized `Registry`.
     let found = unsafe { (&*owner.cast::<Registry>()).find(cid) };
     if found.is_null() {
         0
     } else {
+        // SAFETY: `found` is non-null (checked above), aligned and initialized per the caller contract.
         unsafe { (*found).token }
     }
 }
@@ -526,12 +568,14 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_find(
     if owner.is_null() {
         return ptr::null();
     }
+    // SAFETY: `owner` is non-null (checked above) and a live, serialized `Registry`.
     unsafe { (&*owner.cast::<Registry>()).find(cid).cast() }
 }
 /// # Safety
 /// A null or live owner created here, without racing access.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_coroutine_registry_count(owner: *const c_void) -> usize {
+    // SAFETY: forwards the caller's live, serialized owner contract unchanged.
     unsafe { count(owner) }
 }
 
@@ -539,6 +583,7 @@ pub(crate) unsafe fn count(owner: *const c_void) -> usize {
     if owner.is_null() {
         0
     } else {
+        // SAFETY: `owner` is non-null (checked above) and a live, serialized `Registry`.
         unsafe { (&*owner.cast::<Registry>()).count }
     }
 }
@@ -549,6 +594,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_first(owner: *const c_void) -
     if owner.is_null() {
         ptr::null()
     } else {
+        // SAFETY: `owner` is non-null (checked above) and a live, serialized `Registry`.
         unsafe { (&*owner.cast::<Registry>()).first.cast() }
     }
 }
@@ -571,13 +617,12 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_item(cursor: *const c_void) -
             next: ptr::null(),
         };
     }
-    unsafe {
-        let entry = &*cursor.cast::<Entry>();
-        RegistryItem {
-            cid: entry.cid,
-            token: entry.token,
-            next: entry.next.cast(),
-        }
+    // SAFETY: non-null (checked above); a still-live entry from this registry, unraced.
+    let entry = unsafe { &*cursor.cast::<Entry>() };
+    RegistryItem {
+        cid: entry.cid,
+        token: entry.token,
+        next: entry.next.cast(),
     }
 }
 /// # Safety
@@ -587,6 +632,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_item(cursor: *const c_void) -
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_coroutine_registry_clear(owner: *mut c_void) {
     if !owner.is_null() {
+        // SAFETY: `owner` is non-null (checked above) and a live, serialized `Registry`.
         unsafe { (&mut *owner.cast::<Registry>()).clear() };
     }
 }
@@ -595,11 +641,12 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_clear(owner: *mut c_void) {
 /// operation can outlive this destruction. Native object tokens are not destroyed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_coroutine_registry_drop(owner: *mut *mut c_void) {
-    unsafe {
-        if !(*owner).is_null() {
-            drop(Box::from_raw((*owner).cast::<Registry>()));
-            *owner = ptr::null_mut();
-        }
+    // SAFETY: `owner` is a live slot owning its null or uniquely allocated handle.
+    let slot = unsafe { &mut *owner };
+    if !slot.is_null() {
+        // SAFETY: as above; no cursor or operation outlives this destruction.
+        drop(unsafe { Box::from_raw(slot.cast::<Registry>()) });
+        *slot = ptr::null_mut();
     }
 }
 
@@ -635,6 +682,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_print_step(
     object: *const c_void,
     status_offset: usize,
 ) -> RegistryPrintAction {
+    // SAFETY: per this function's `# Safety` contract, `cursor` is live, aligned and exclusive.
     let c = unsafe { &mut *cursor };
     let mut result = RegistryPrintAction {
         action: 0,
@@ -648,10 +696,12 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_print_step(
             if owner.is_null() {
                 ptr::null_mut()
             } else {
+                // SAFETY: `owner` is non-null (checked above) and a live, serialized `Registry`.
                 unsafe { (*owner.cast::<Registry>()).first }
             }
         }
         1 => c.entry.cast_mut().cast::<Entry>(),
+        // SAFETY: the selected entry stays live through output and this increment.
         2 => unsafe { (*c.entry.cast::<Entry>()).next },
         _ => return result,
     };
@@ -663,13 +713,16 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_print_step(
         c.entry = entry.cast();
         c.phase = 1;
         result.action = if first { 1 } else { 2 }; // Native object/first offset projection.
+        // SAFETY: a non-null live entry of this registry (checked above).
         result.token = unsafe { (*entry).token };
         return result;
     }
+    // SAFETY: at phase 1 `object` is the exact native pointer, with an initialized, aligned
+    // `CoroutineStatus` at `status_offset` inside its allocation.
     let status = unsafe {
         object
             .cast::<u8>()
-            .add(status_offset)
+            .wrapping_add(status_offset)
             .cast::<crate::CoroutineStatus>()
             .read()
     };
@@ -686,6 +739,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_print_step(
         } // Native abort, never invoked here.
     };
     result.action = 3;
+    // SAFETY: the selected entry stays live through output (see the contract).
     result.cid = unsafe { (*entry).cid };
     result.label = label.as_ptr().cast();
     c.phase = 2;

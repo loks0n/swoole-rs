@@ -24,6 +24,7 @@ const STACK_ALIGNMENT: usize = 4 * 1024;
 pub unsafe extern "C" fn swr_v1_coroutine_scheduler_next_id(
     state: *mut CoroutineScheduler,
 ) -> c_long {
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     next_id(unsafe { &mut *state })
 }
 
@@ -42,12 +43,12 @@ pub unsafe extern "C" fn swr_v1_coroutine_scheduler_registration(
     count: usize,
     stage: u32,
 ) -> u32 {
-    unsafe {
-        match stage {
-            0 => u32::from(count as u64 > (*state).peak_num),
-            1 => u32::from((*state).activated == 0),
-            _ => 0,
-        }
+    // SAFETY: `state` is a live, aligned, readable record without concurrent mutation.
+    let state = unsafe { &*state };
+    match stage {
+        0 => u32::from(count as u64 > state.peak_num),
+        1 => u32::from(state.activated == 0),
+        _ => 0,
     }
 }
 
@@ -60,6 +61,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_scheduler_publish_peak(
     state: *mut CoroutineScheduler,
     count: usize,
 ) {
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     state.peak_num = count as u64;
 }
@@ -73,6 +75,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_scheduler_set_stack_size(
     requested: usize,
 ) {
     let bounded = requested.clamp(STACK_MIN, STACK_MAX);
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     state.stack_size = (bounded + STACK_ALIGNMENT - 1) & !(STACK_ALIGNMENT - 1);
 }
@@ -85,6 +88,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_scheduler_set_active(
     state: *mut CoroutineScheduler,
     active: u8,
 ) {
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     state.activated = u8::from(active != 0);
 }
@@ -97,6 +101,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_scheduler_bind_socket(
     state: *mut CoroutineScheduler,
     cid: c_long,
 ) {
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     state.socket_bound_cid = cid;
 }

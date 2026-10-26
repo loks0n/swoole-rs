@@ -10,6 +10,13 @@
     test,
     expect(clippy::cast_possible_wrap, reason = "#157: casts not yet checked")
 )]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 
 mod tokens;
 pub use tokens::*;
@@ -160,6 +167,7 @@ pub unsafe extern "C" fn swr_v1_channel_step(
     op: u32,
     facts: u32,
 ) -> i32 {
+    // SAFETY: `cursor` is null or live, aligned and exclusively lent for this call.
     let Some(cursor) = (unsafe { cursor.as_mut() }) else {
         return -4;
     };
