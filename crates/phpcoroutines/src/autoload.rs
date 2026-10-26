@@ -21,6 +21,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_push(
     queue: *mut AutoloadQueue,
     token: usize,
 ) {
+    // SAFETY: per this function's `# Safety` contract, `queue` is live, aligned and exclusive.
     unsafe { &mut *queue }.waiters.push_back(token);
 }
 
@@ -31,8 +32,10 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_pop(
     queue: *mut AutoloadQueue,
     token: *mut usize,
 ) -> u8 {
+    // SAFETY: per this function's `# Safety` contract, `queue` is live, aligned and exclusive.
     match unsafe { &mut *queue }.waiters.pop_front() {
         Some(value) => {
+            // SAFETY: `token` is writable and does not alias the queue (see the contract).
             unsafe { *token = value };
             1
         }
@@ -44,6 +47,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_pop(
 /// Consume the owned handle once. Only metadata drops; no native token cleanup.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_drop(queue: *mut AutoloadQueue) {
+    // SAFETY: the owned handle from `try_owned`, consumed exactly once.
     unsafe { drop(Box::from_raw(queue)) };
 }
 
@@ -57,6 +61,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_policy(
     stage: *mut u32,
     observation: u8,
 ) -> u32 {
+    // SAFETY: per this function's `# Safety` contract, `stage` is live, aligned and exclusive.
     let stage = unsafe { &mut *stage };
     loop {
         let current = *stage;
@@ -102,6 +107,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_try_push(
     queue: *mut AutoloadQueue,
     token: usize,
 ) -> u8 {
+    // SAFETY: per this function's `# Safety` contract, `queue` is live, aligned and exclusive.
     let tokens = &mut unsafe { &mut *queue }.waiters;
     if tokens.try_reserve(1).is_err() {
         return 0;
@@ -127,6 +133,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_is_owner(
     queue: *const AutoloadQueue,
     owner: usize,
 ) -> u8 {
+    // SAFETY: per this function's `# Safety` contract, `queue` is live, aligned and initialized.
     u8::from(unsafe { &*queue }.owner == owner)
 }
 #[cfg(test)]

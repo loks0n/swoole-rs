@@ -136,6 +136,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_bootstrap(
         2 => SYSTEM,
         _ => return plan(0, 0, None),
     };
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     loop {
         let Some(row) = rows.get(state.index as usize) else {

@@ -4,6 +4,13 @@
     clippy::cast_sign_loss,
     reason = "#157: casts not yet checked"
 )]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 mod activation;
 mod allocation;
 mod autoload;
@@ -77,6 +84,7 @@ impl SchedulerQueue {
     }
     /// Consume exactly one live owner, after Native payloads have been drained.
     unsafe fn drop_owned(queue: *mut Self) {
+        // SAFETY: callers pass an owned queue from `try_owned`, dropped exactly once.
         unsafe { drop(Box::from_raw(queue)) };
     }
 }
@@ -94,6 +102,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_push(
     token: usize,
     count: i64,
 ) {
+    // SAFETY: per this function's `# Safety` contract, `queue` is live, aligned and exclusive.
     unsafe { &mut *queue }.push(token, count);
 }
 
@@ -106,8 +115,10 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_pop(
     queue: *mut SchedulerQueue,
     output: *mut SchedulerTask,
 ) -> u8 {
+    // SAFETY: per this function's `# Safety` contract, `queue` is live, aligned and exclusive.
     match unsafe { &mut *queue }.pop() {
         Some(task) => {
+            // SAFETY: per this function's `# Safety` contract, `output` is live, aligned and writable.
             unsafe { output.write(task) };
             1
         }
@@ -120,6 +131,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_pop(
 /// This drops metadata only and never calls Zend or destroys a token's referent.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_drop(queue: *mut SchedulerQueue) {
+    // SAFETY: the caller consumes its owned handle once.
     unsafe { SchedulerQueue::drop_owned(queue) };
 }
 
@@ -137,5 +149,6 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_try_push(
     token: usize,
     count: i64,
 ) -> u8 {
+    // SAFETY: per this function's `# Safety` contract, `queue` is live, aligned and exclusive.
     unsafe { &mut *queue }.try_push(token, count)
 }

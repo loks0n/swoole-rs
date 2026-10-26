@@ -22,6 +22,7 @@ pub extern "C" fn swr_v1_phpcoroutines_yield_put(cid: i64, token: usize) {
 pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_take(cid: i64, token: *mut usize) -> u8 {
     YIELDED.with_borrow_mut(|registry| match registry.remove(&cid) {
         Some(value) => {
+            // SAFETY: `token` is writable for one usize and doesn't alias the registry.
             unsafe { *token = value };
             1
         }
@@ -49,10 +50,12 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_put(
     cid: i64,
     token: usize,
 ) {
+    // SAFETY: per this function's `# Safety` contract, `owner` is live, aligned and exclusive.
     let owner = unsafe { &mut *owner };
     if owner.is_null() {
         *owner = Box::into_raw(Box::new(YieldRegistry(Registry::default())));
     }
+    // SAFETY: the slot now holds a live, exclusive handle (created above if it was null).
     unsafe { &mut **owner }.0.insert(cid, token);
 }
 
@@ -65,11 +68,13 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_take(
     cid: i64,
     token: *mut usize,
 ) -> u8 {
+    // SAFETY: `registry` is null or live, aligned and exclusively lent for this call.
     let Some(registry) = (unsafe { registry.as_mut() }) else {
         return 0;
     };
     match registry.0.remove(&cid) {
         Some(value) => {
+            // SAFETY: `token` is writable for one usize and doesn't alias the registry.
             unsafe { *token = value };
             1
         }
@@ -84,6 +89,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_erase(
     registry: *mut YieldRegistry,
     cid: i64,
 ) {
+    // SAFETY: `registry` is null or live, aligned and exclusively lent for this call.
     if let Some(registry) = unsafe { registry.as_mut() } {
         registry.0.remove(&cid);
     }
@@ -95,6 +101,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_erase(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_drop(registry: *mut YieldRegistry) {
     if !registry.is_null() {
+        // SAFETY: a non-null owned handle, consumed exactly once at native destruction.
         unsafe { drop(Box::from_raw(registry)) };
     }
 }
@@ -109,12 +116,14 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_try_put(
     cid: i64,
     token: usize,
 ) -> u8 {
+    // SAFETY: per this function's `# Safety` contract, `owner` is live, aligned and exclusive.
     let owner = unsafe { &mut *owner };
     if owner.is_null() {
         let ptr = crate::allocation::try_owned(YieldRegistry(Registry::default()));
         if ptr.is_null() {
             return 0;
         }
+        // SAFETY: a fresh, non-null allocation from `try_owned`, uniquely owned here.
         let mut candidate = unsafe { Box::from_raw(ptr) };
         if candidate.0.try_reserve(1).is_err() {
             return 0;
@@ -123,6 +132,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_try_put(
         *owner = Box::into_raw(candidate);
         return 1;
     }
+    // SAFETY: a non-null slot holds one live, exclusive handle.
     let registry = &mut unsafe { &mut **owner }.0;
     if let Some(existing) = registry.get_mut(&cid) {
         *existing = token;

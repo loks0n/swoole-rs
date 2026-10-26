@@ -82,6 +82,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_options(
     observation: i64,
     default_max: i64,
 ) -> OptionPlan {
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     loop {
         match state.stage {

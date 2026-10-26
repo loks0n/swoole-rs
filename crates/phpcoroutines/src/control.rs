@@ -17,6 +17,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_control(
     observation: i64,
     timeout: f64,
 ) -> ControlPlan {
+    // SAFETY: per this function's `# Safety` contract, `stage` is live, aligned and exclusive.
     let stage = unsafe { &mut *stage };
     loop {
         let current = *stage;
@@ -191,6 +192,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_control(
 /// Short/unreadable windows have no defined original result and are unqualified.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_create_destructor(name: *const u8) -> u8 {
+    // SAFETY: `name` points to the readable ten-byte window the native memcmp reads.
     u8::from(unsafe { std::slice::from_raw_parts(name, 10) } == b"__destruct")
 }
 

@@ -48,7 +48,9 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_metadata(
     observation: i64,
     limit: u8,
 ) -> MetadataPlan {
+    // SAFETY: per this function's `# Safety` contract, `cells` is live, aligned and initialized.
     let cells = unsafe { &*cells };
+    // SAFETY: per this function's `# Safety` contract, `stage` is live, aligned and exclusive.
     let stage = unsafe { &mut *stage };
     let current = *stage;
     *stage = current.saturating_add(1);
@@ -60,28 +62,36 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_metadata(
         0 => match current {
             // begin silence: flag before fresh Native mask
             0 => {
+                // SAFETY: this kind's cells are valid and initialized (see the contract).
                 unsafe { (*cells.silence).started = 1 };
                 plan.action = 1;
             }
+            // SAFETY: this kind's cells are valid and initialized (see the contract).
             1 => unsafe { (*cells.original).value = observation as c_int },
             _ => (),
         },
+        // SAFETY: this kind's cells are valid and initialized (see the contract).
         1 => unsafe { (*cells.silence).started = 0 },
         2 => match current {
             // save: temporary before original-mask restoration
+            // SAFETY: this kind's cells are valid and initialized (see the contract).
             0 if unsafe { (*cells.silence).started != 0 } => plan.action = 1,
             1 => {
+                // SAFETY: this kind's cells are valid and initialized (see the contract).
                 unsafe { (*cells.temporary).value = observation as c_int };
                 plan = MetadataPlan {
                     action: 2,
+                    // SAFETY: this kind's cells are valid and initialized (see the contract).
                     value: unsafe { (*cells.original).value }.into(),
                 };
             }
             _ => (),
         },
+        // SAFETY: this kind's cells are valid and initialized (see the contract).
         3 if current == 0 && unsafe { (*cells.silence).started != 0 } => {
             plan = MetadataPlan {
                 action: 2,
+                // SAFETY: this kind's cells are valid and initialized (see the contract).
                 value: unsafe { (*cells.temporary).value }.into(),
             };
         }
@@ -89,18 +99,22 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_metadata(
             // toggle only a present, initialized task cell
             if !cells.scheduler.is_null() {
                 let requested = u8::from(kind == 4);
+                // SAFETY: this kind's cells are valid and initialized (see the contract).
                 if unsafe { (*cells.scheduler).started } != requested {
+                    // SAFETY: this kind's cells are valid and initialized (see the contract).
                     unsafe { (*cells.scheduler).started = requested };
                     plan.value = 1;
                 }
             }
         }
         6 => match current {
+            // SAFETY: this kind's cells are valid and initialized (see the contract).
             0 if unsafe { (*cells.scheduler).started != 0 } => plan.action = 3,
             0 => plan.action = 4,
             1 => {
                 // clock already observed; only now read saved last_msec
                 plan.action = if i128::from(observation)
+                    // SAFETY: this kind's cells are valid and initialized (see the contract).
                     - i128::from(unsafe { (*cells.clock).value })
                     > i128::from(limit)
                 {
@@ -120,22 +134,28 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_metadata(
                     reason = "c_long is i64 on the supported 64-bit targets"
                 )]
                 {
+                    // SAFETY: this kind's cells are valid and initialized (see the contract).
                     plan.value = unsafe { (*cells.parent).value } as i64;
                 }
             }
         }
+        // SAFETY: this kind's cells are valid and initialized (see the contract).
         8 => unsafe { (*cells.parent).value = observation as c_long },
+        // SAFETY: this kind's cells are valid and initialized (see the contract).
         9 => unsafe { (*cells.clock).value = observation },
         10 => {
             // whole fiber switch policy; internal flag steps never escape
             *stage = current;
             let mut fact = observation;
             loop {
+                // SAFETY: `stage` is this call's exclusive, zeroed POD; no context is passed.
                 let action = unsafe {
                     crate::fiber::swr_v1_phpcoroutines_fiber(stage, 1, fact, std::ptr::null())
                 };
                 match action {
+                    // SAFETY: this kind's cells are valid and initialized (see the contract).
                     10 => fact = i64::from(unsafe { (*cells.notified).started }),
+                    // SAFETY: this kind's cells are valid and initialized (see the contract).
                     14 => unsafe { (*cells.notified).started = 1 },
                     _ => {
                         plan.action = action;
@@ -144,8 +164,10 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_metadata(
                 }
             }
         }
+        // SAFETY: this kind's cells are valid and initialized (see the contract).
         11 => unsafe { (*cells.scheduler).started = 1 }, // first publication, no read
-        12 => unsafe { (*cells.notified).started = 1 },  // main-context initialization, no read
+        // SAFETY: this kind's cells are valid and initialized (see the contract).
+        12 => unsafe { (*cells.notified).started = 1 }, // main-context initialization, no read
         _ => (),
     }
     if plan.action == 0 {

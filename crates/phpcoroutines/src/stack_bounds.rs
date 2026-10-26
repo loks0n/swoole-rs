@@ -22,6 +22,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_bounds(
     caps: u8,
     observation: usize,
 ) -> BoundsPlan {
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     let current = state.stage;
     state.stage = current.saturating_add(1);

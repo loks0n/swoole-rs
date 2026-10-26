@@ -19,6 +19,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_fiber(
     observation: i64,
     states: *const FiberStates,
 ) -> u32 {
+    // SAFETY: per this function's `# Safety` contract, `stage` is live, aligned and exclusive.
     let stage = unsafe { &mut *stage };
     let current = *stage;
     *stage = current.saturating_add(1);
@@ -28,6 +29,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_fiber(
             1 if observation != 0 => 2, // main is running, no state access
             1 => 3,                     // observe coroutine state once
             2 => {
+                // SAFETY: per this function's `# Safety` contract, `states` is live, aligned and initialized.
                 let states = unsafe { &*states };
                 if observation == states.init {
                     4

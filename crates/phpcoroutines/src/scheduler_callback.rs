@@ -36,18 +36,24 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_configure_owned(
     mut observation: u8,
     created: usize,
 ) -> OwnedConfigurePlan {
+    // SAFETY: per this function's `# Safety` contract, `owner` is live, aligned and initialized.
     let identity = unsafe { (*owner).identity.get() };
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and initialized.
     if unsafe { (*state).stage } == 10 {
+        // SAFETY: per this function's `# Safety` contract, `identity` is live, aligned and writable.
         unsafe { identity.write(created) };
         observation = u8::from(created != 0);
     }
     loop {
+        // SAFETY: forwards the caller's live, exclusive configure state.
         let plan = unsafe { swr_v1_phpcoroutines_configure(state, observation) };
         if plan.action == 7 {
+            // SAFETY: per this function's `# Safety` contract, `identity` is live, aligned and initialized.
             observation = u8::from(unsafe { identity.read() } != 0);
             continue;
         }
         let token = if plan.action == 8 {
+            // SAFETY: per this function's `# Safety` contract, `identity` is live, aligned and initialized.
             unsafe { identity.read() }
         } else {
             0
@@ -71,30 +77,37 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_callback_control(
     mut observation: i64,
     constants: *const SchedulerConstants,
 ) -> CallbackControlPlan {
+    // SAFETY: per this function's `# Safety` contract, `owner` is live, aligned and initialized.
     let identity = unsafe { (*owner).identity.get() };
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     if kind == 0 && state.asserted == 0 {
         state.asserted = 1;
         return CallbackControlPlan {
             action: 18,
+            // SAFETY: per this function's `# Safety` contract, `identity` is live, aligned and initialized.
             identity: unsafe { identity.read() },
         };
     }
     loop {
+        // SAFETY: `state.stage` is a live, exclusive field; the constants are the caller's.
         let action = unsafe {
             swr_v1_phpcoroutines_scheduler_control(&mut state.stage, kind, observation, constants)
         };
         match action {
             13 => {
+                // SAFETY: per this function's `# Safety` contract, `identity` is live, aligned and initialized.
                 observation = i64::from(unsafe { identity.read() } != 0);
             }
             15 => {
+                // SAFETY: per this function's `# Safety` contract, `identity` is live, aligned and writable.
                 unsafe { identity.write(0) };
             }
             _ => {
                 return CallbackControlPlan {
                     action,
                     identity: if action == 1 || action == 14 {
+                        // SAFETY: per this function's `# Safety` contract, `identity` is live, aligned and initialized.
                         unsafe { identity.read() }
                     } else {
                         0

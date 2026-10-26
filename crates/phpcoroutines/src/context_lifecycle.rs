@@ -65,6 +65,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_lifecycle(
     observation: i64,
 ) -> u32 {
     use Action::*;
+    // SAFETY: per this function's `# Safety` contract, `stage` is live, aligned and exclusive.
     let stage = unsafe { &mut *stage };
     loop {
         let current = *stage;

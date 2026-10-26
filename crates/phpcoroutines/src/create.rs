@@ -10,6 +10,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_create(
     user_function: u8,
     internal_function: u8,
 ) -> u32 {
+    // SAFETY: per this function's `# Safety` contract, `phase` is live, aligned and exclusive.
     let phase = unsafe { &mut *phase };
     match *phase {
         0 => {
@@ -56,6 +57,7 @@ pub struct RepeatState {
 /// loop increments AFTER the effect; no Rust borrow/frame spans sleep/yield.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_repeat(state: *mut RepeatState) -> u8 {
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     if state.pending != 0 {
         // Prior admission proves index < count <= i64::MAX, so this cannot overflow.

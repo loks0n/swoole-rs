@@ -23,6 +23,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_system_file(
     flags: i64,
     config: *const FileConfig,
 ) -> FilePlan {
+    // SAFETY: per this function's `# Safety` contract, `config` is live, aligned and initialized.
     let config = unsafe { &*config };
     FilePlan {
         accepted: u8::from(nonempty != 0),
@@ -100,6 +101,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_system_complete(
         2 => plan.action = if result < 0 { 1 } else { 3 },
         3 => plan.action = if count == 0 { 1 } else { 4 },
         4 | 5 => {
+            // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
             let state = unsafe { &mut *state };
             if state.started == 0 {
                 state.started = 1;
@@ -131,6 +133,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_system_complete(
             }
         }
         6..=9 => {
+            // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
             let state = unsafe { &mut *state };
             let phase = state.index;
             state.index = phase.saturating_add(1);

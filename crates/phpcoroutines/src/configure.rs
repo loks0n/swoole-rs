@@ -36,6 +36,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_configure(
     state: *mut ConfigureState,
     observation: u8,
 ) -> ConfigurePlan {
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     loop {
         let stage = state.stage;
