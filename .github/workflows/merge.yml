@@ -89,8 +89,10 @@ jobs:
           restore-keys: ccache-${{ runner.os }}-
       - run: cargo fetch --locked
       - run: |
-          python3 tools/build_hybrid.py --backend upstream --php-sockets | tee upstream.log
-          python3 tools/build_hybrid.py --php-sockets $(python3 -c 'from tools.build_hybrid import SELECTABLE; print(*(f"--module {m}" for m in SELECTABLE))') | tee hybrid.log
+          # Database hooks as upstream's own CI builds them (scripts/docker-compile.sh).
+          services="--configure=--enable-swoole-pgsql --configure=--enable-mysqlnd"
+          python3 tools/build_hybrid.py --backend upstream --php-sockets $services | tee upstream.log
+          python3 tools/build_hybrid.py --php-sockets $services $(python3 -c 'from tools.build_hybrid import SELECTABLE; print(*(f"--module {m}" for m in SELECTABLE))') | tee hybrid.log
           mkdir -p target/phpt
           cp -L "$(sed -n 's/^\(Built\|Cached\) upstream: //p' upstream.log)" target/phpt/upstream.so
           cp -L "$(sed -n 's/^\(Built\|Cached\) rust: //p' hybrid.log)" target/phpt/hybrid.so
@@ -108,15 +110,35 @@ jobs:
       matrix:
         index: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
         engine: [upstream, hybrid]
-    # Upstream's tests/include/config.php points CI at http://httpbin:80.
+    # The services upstream's PHPTs expect, as in its scripts/docker-compose.yml, under
+    # the host names its tests/include/config.php uses on CI (httpbin at http://httpbin:80).
     services:
       httpbin:
         image: kennethreitz/httpbin
         ports: ['80:80']
+      pgsql:
+        image: postgres:14
+        env:
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: root
+          POSTGRES_DB: test
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 2s --health-retries 30
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test
+        ports: ['3306:3306']
+        options: --health-cmd "mysqladmin ping -proot" --health-interval 2s --health-retries 60
+      redis:
+        image: redis:7.4
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 2s --health-retries 30
     steps:
       - uses: actions/checkout@v4
       - run: .devcontainer/install.sh && sudo apt-get install -yq php-gmp php-bcmath php-mysql php-pgsql
-      - run: echo '127.0.0.1 httpbin' | sudo tee -a /etc/hosts
+      - run: echo '127.0.0.1 httpbin pgsql mysql redis' | sudo tee -a /etc/hosts
       - uses: actions/cache/restore@v4
         with:
           path: target/upstream
