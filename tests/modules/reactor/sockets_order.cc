@@ -66,9 +66,9 @@ int main() {
                 objects[count+i].fd=objects[i].fd;
                 registry._add(&objects[count+i],2);expected[objects[i].fd]=&objects[count+i];observe();
             }
-            // Preserve original defined operator[] insertion of a null value; never dereference it.
-            const int absent=-1000000-pattern;CHECK(registry.get_socket(absent)==nullptr);expected[absent]=nullptr;
-            CHECK(registry.exists(absent));observe();
+            // Since v6.2.4 (5c1018b49) a missed lookup returns null without inserting.
+            const int absent=-1000000-pattern;CHECK(registry.get_socket(absent)==nullptr);
+            CHECK(!registry.exists(absent));observe();
         }
     }
     std::cout<<"{\"common\":{\"checks\":"<<checks<<",\"traces\":"<<live.size()<<",\"scenarios\":30},\"live_order\":";emit(live);std::cout<<",\"snapshot_order\":";emit(copied);std::cout<<"}\n";

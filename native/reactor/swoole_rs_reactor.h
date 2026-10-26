@@ -89,7 +89,8 @@ typedef struct swr_v1_reactor_socket_snapshot swr_v1_reactor_socket_snapshot;
 typedef struct { int32_t fd; uintptr_t token; } swr_v1_reactor_socket_entry;
 typedef struct { size_t current; uint64_t generation; uint32_t started, done; } swr_v1_reactor_socket_cursor;
 int32_t swr_v1_reactor_sockets_put(swr_v1_reactor_sockets **, int32_t, uintptr_t);
-int32_t swr_v1_reactor_sockets_get(swr_v1_reactor_sockets **, int32_t, uintptr_t *);
+/* Token for fd, or 0 when absent; never inserts. */
+uintptr_t swr_v1_reactor_sockets_get(const swr_v1_reactor_sockets *, int32_t);
 uint32_t swr_v1_reactor_sockets_contains(const swr_v1_reactor_sockets *, int32_t);
 size_t swr_v1_reactor_sockets_len(const swr_v1_reactor_sockets *);
 void swr_v1_reactor_sockets_erase(swr_v1_reactor_sockets *, int32_t);
