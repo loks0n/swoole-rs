@@ -72,7 +72,6 @@ tests/modules/http/request_splits.py
 tests/modules/http/request_v2_compat.py
 tests/modules/http/request_v2_model.py
 tests/modules/http/static_server.py
-tests/modules/http/tasks_bench.cc
 tests/modules/http2/decompression_calls.py
 tests/modules/http2/queue_failure_calls.py
 tests/modules/httpbindings/cookie_gate.py

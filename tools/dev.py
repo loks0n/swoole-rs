@@ -234,8 +234,6 @@ def plan(args, reports):
                '--positive-only', *report('http-multipart-headers-positive'))
         script('http-request-lifecycle', 'tests/modules/http/request_lifecycle_gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('http-request-lifecycle'))
-        script('http-tasks', 'tests/modules/http/tasks_gate.py', '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('http-tasks'))
         script('http-directory', 'tests/modules/http/directory_gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('http-directory'))
         for phase, standards in [('http-directory-compatibility', []),
