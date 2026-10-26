@@ -11,10 +11,11 @@ use one PHP worker. The benchmark never loads both extensions into one process.
 (Linux, `valgrind` installed), with instrumentation on only while requests are
 served. Counts barely vary between runs of the same binaries, so the
 hybrid/upstream ratio is stable on shared runners where timings are not.
-`gh workflow run bench.yml` runs it for `plaintext`.
+The merge tier's `callgrind` job runs it for `plaintext` and `echo-64k` on the
+all-modules hybrid and fails above +5% (graduation criterion 3).
 
 ```sh
-python3 benchmarks/callgrind.py --requests 1000 \
+python3 benchmarks/callgrind.py --requests 1000 --workload plaintext --workload echo-64k --max-ratio 1.05 \
   --engine hybrid=target/hybrid/rust-buffer-websocket/modules/swoole.so \
   --engine upstream=target/upstream/src/modules/swoole.so
 ```
