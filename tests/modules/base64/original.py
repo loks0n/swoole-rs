@@ -64,7 +64,10 @@ def main():
         thread = threading.Thread(target=fixture.serve_forever)
         thread.start()
         try:
-            result = run_isolated(command, timeout=180, env={**os.environ, 'HTTPBIN_SERVER_HOST': '127.0.0.1',
+            # Upstream's config treats GITHUB_ACTIONS as its own CI and points at an httpbin
+            # service container instead of HTTPBIN_SERVER_HOST; ours has no such service.
+            env = {key: value for key, value in os.environ.items() if key != 'GITHUB_ACTIONS'}
+            result = run_isolated(command, timeout=180, env={**env, 'HTTPBIN_SERVER_HOST': '127.0.0.1',
                                                           'HTTPBIN_SERVER_PORT': str(fixture.server_port)})
         finally:
             fixture.shutdown()
