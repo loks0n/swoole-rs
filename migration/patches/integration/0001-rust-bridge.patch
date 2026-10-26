@@ -1,8 +1,8 @@
 diff --git a/config.m4 b/config.m4
-index 230b1c0..ab4e952 100644
+index 230b1c0..51ad93a 100644
 --- a/config.m4
 +++ b/config.m4
-@@ -38,2 +38,132 @@ PHP_ARG_ENABLE([swoole],
+@@ -38,2 +38,127 @@ PHP_ARG_ENABLE([swoole],
  
 +PHP_ARG_WITH([swoole-rs],
 +  [Rust migration bridge prefix],
@@ -53,11 +53,6 @@ index 230b1c0..ab4e952 100644
 +  [Rust wrapper policies],
 +  [AS_HELP_STRING([--enable-swoole-rs-wrappers],
 +    [Use the Rust wrapper policies (requires --with-swoole-rs)])], [no], [no])
-+
-+PHP_ARG_ENABLE([swoole-rs-framing],
-+  [Rust packet framing and MIME policy],
-+  [AS_HELP_STRING([--enable-swoole-rs-framing],
-+    [Use Rust packet framing and MIME policy (requires --with-swoole-rs)])], [no], [no])
 +
 +PHP_ARG_ENABLE([swoole-rs-reactor],
 +  [Rust reactor policy],
@@ -135,7 +130,7 @@ index 230b1c0..ab4e952 100644
 +    [Use Rust PHP Coroutine policy (requires --with-swoole-rs)])], [no], [no])
 +
  PHP_ARG_ENABLE([mysqlnd],
-@@ -1301,2 +1431,190 @@ EOF
+@@ -1301,2 +1426,184 @@ EOF
  
 +    if test "$PHP_SWOOLE_RS_WEBSOCKET" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust WebSocket kernel requires --with-swoole-rs=DIR])
@@ -163,9 +158,6 @@ index 230b1c0..ab4e952 100644
 +    fi
 +    if test "$PHP_SWOOLE_RS_WRAPPERS" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust wrapper policies require --with-swoole-rs=DIR])
-+    fi
-+    if test "$PHP_SWOOLE_RS_FRAMING" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
-+        AC_MSG_ERROR([Rust framing policy requires --with-swoole-rs=DIR])
 +    fi
 +    if test "$PHP_SWOOLE_RS_REACTOR" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust reactor policy requires --with-swoole-rs=DIR])
@@ -266,9 +258,6 @@ index 230b1c0..ab4e952 100644
 +        if test "$PHP_SWOOLE_RS_WRAPPERS" != "no"; then
 +            AC_DEFINE(SWOOLE_RS_WRAPPERS, 1, [Use the Rust wrapper policies])
 +        fi
-+        if test "$PHP_SWOOLE_RS_FRAMING" != "no"; then
-+            AC_DEFINE(SWOOLE_RS_FRAMING, 1, [Use Rust packet framing and MIME policy])
-+        fi
 +        if test "$PHP_SWOOLE_RS_REACTOR" != "no"; then
 +            AC_DEFINE(SWOOLE_RS_REACTOR, 1, [Use Rust reactor policy])
 +        fi
@@ -327,7 +316,7 @@ index 230b1c0..ab4e952 100644
 +
      if test "$PHP_MYSQLND" = "yes"; then
 diff --git a/ext-src/php_swoole.cc b/ext-src/php_swoole.cc
-index 66f2386..1cc75c5 100644
+index 66f2386..e5763e1 100644
 --- a/ext-src/php_swoole.cc
 +++ b/ext-src/php_swoole.cc
 @@ -21,2 +21,7 @@
@@ -338,7 +327,7 @@ index 66f2386..1cc75c5 100644
 +#endif
 +
  BEGIN_EXTERN_C()
-@@ -614,2 +619,163 @@ static void sw_after_fork(void *args) {
+@@ -614,2 +619,157 @@ static void sw_after_fork(void *args) {
  PHP_MINIT_FUNCTION(swoole) {
 +#ifdef SWOOLE_RS_BRIDGE
 +    const uint32_t rust_abi = swr_v1_abi_version();
@@ -399,12 +388,6 @@ index 66f2386..1cc75c5 100644
 +#ifdef SWOOLE_RS_WRAPPERS
 +    if ((rust_features & 2048) == 0) {
 +        php_error_docref(nullptr, E_WARNING, "Rust bridge missing wrappers feature");
-+        return FAILURE;
-+    }
-+#endif
-+#ifdef SWOOLE_RS_FRAMING
-+    if ((rust_features & 4096) == 0) {
-+        php_error_docref(nullptr, E_WARNING, "Rust bridge missing framing feature");
 +        return FAILURE;
 +    }
 +#endif
@@ -502,7 +485,7 @@ index 66f2386..1cc75c5 100644
 +    SW_REGISTER_LONG_CONSTANT("SWOOLE_RS_FEATURE_BITS", rust_features);
 +#endif
      ZEND_INIT_MODULE_GLOBALS(swoole, php_swoole_init_globals, nullptr);
-@@ -1106,2 +1272,7 @@ PHP_MINFO_FUNCTION(swoole) {
+@@ -1106,2 +1266,7 @@ PHP_MINFO_FUNCTION(swoole) {
      php_info_print_table_row(2, "Version", SWOOLE_VERSION);
 +#ifdef SWOOLE_RS_BRIDGE
 +    snprintf(buf, sizeof(buf), "ABI %u, features %llu", static_cast<unsigned>(swr_v1_abi_version()),

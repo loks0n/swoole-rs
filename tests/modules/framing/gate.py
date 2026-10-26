@@ -15,7 +15,7 @@ def main():
     if a.rust_asan and (not a.sanitize or '__asan_report_' not in subprocess.check_output(['nm','-u',str(a.archive)],text=True,stderr=subprocess.DEVNULL)):p.error('--rust-asan requires --sanitize and an instrumented archive')
     report={'scope':__doc__,'passed':False,'rust_instrumented':a.rust_asan}
     with tempfile.TemporaryDirectory(prefix='swr-wrapper-gate-') as folder:
-        binary=Path(folder)/'gate';cmd=['c++','-std=c++17','-O2','-UNDEBUG','-DSWOOLE_RS_FRAMING','-I'+str(ROOT/'native/framing'),str(Path(__file__).with_suffix('.cc')),str(a.archive.resolve()),'-lpthread','-ldl','-lm','-o',str(binary)]
+        binary=Path(folder)/'gate';cmd=['c++','-std=c++17','-O2','-UNDEBUG','-I'+str(ROOT/'native/framing'),str(Path(__file__).with_suffix('.cc')),str(a.archive.resolve()),'-lpthread','-ldl','-lm','-o',str(binary)]
         if a.sanitize:cmd+=['-fsanitize=address,undefined','-fno-sanitize-recover=all']
         report['compile']=cmd;r=run_isolated(cmd,timeout=90);report.update(compile_exit=r.returncode,compile_stderr=r.stderr)
         if not r.returncode:

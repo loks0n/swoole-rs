@@ -32,7 +32,7 @@ def main():
             for path, text in generated().items():
                 (build / (engine + '-' + Path(path).name)).write_text(original(path) if engine == 'upstream' else text)
             binary = build / engine
-            command = ['c++', '-std=c++14', '-O2', '-UNDEBUG', '-DSWOOLE_RS_FRAMING', '-I' + str(build), '-I' + str(own), '-I' + str(ROOT / 'native/framing'), str(own / 'trace.cpp'), str(build / 'split.cpp'), *[str(build / (engine + '-' + Path(path).name)) for path in generated()], '-o', str(binary)]
+            command = ['c++', '-std=c++14', '-O2', '-UNDEBUG', '-I' + str(build), '-I' + str(own), '-I' + str(ROOT / 'native/framing'), str(own / 'trace.cpp'), str(build / 'split.cpp'), *[str(build / (engine + '-' + Path(path).name)) for path in generated()], '-o', str(binary)]
             if engine == 'rust':
                 command.append(str(archive))
             commands.append(command)

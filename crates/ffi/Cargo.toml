@@ -21,7 +21,6 @@ http = ["dep:swoole-rs-http"]
 utilities = ["dep:swoole-rs-utilities"]
 locks = ["dep:swoole-rs-locks"]
 wrappers = ["dep:swoole-rs-wrappers"]
-framing = ["dep:swoole-rs-framing"]
 
 reactor = ["dep:swoole-rs-reactor"]
 
@@ -56,7 +55,7 @@ swoole-rs-http = { path = "../http", optional = true }
 swoole-rs-utilities = { path = "../utilities", optional = true }
 swoole-rs-locks = { path = "../locks", optional = true }
 swoole-rs-wrappers = { path = "../wrappers", optional = true }
-swoole-rs-framing = { path = "../framing", optional = true }
+swoole-rs-framing = { path = "../framing" }
 swoole-rs-reactor = { path = "../reactor", optional = true }
 swoole-rs-corebase = { path = "../corebase", optional = true }
 swoole-rs-coroutine = { path = "../coroutine", optional = true }

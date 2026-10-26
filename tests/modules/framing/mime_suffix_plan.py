@@ -11,7 +11,7 @@ def main():
  if a.output.exists():p.error('Refusing an existing receipt')
  folder=a.output.resolve().with_suffix('');folder.mkdir(parents=True);generated=overlay.generated();report={'scope':__doc__,'pin':overlay.PIN,'results':[],'sdk':[],'passed':False,'Rust_instrumented':False,'Native_ASan_UBSan':True,'fault_or_limit_or_timing_executed':False,'whole_module_parity_passed':False,'performance_qualified':False}
  includes=[a.core,a.core/'include',a.core/'thirdparty',a.core/'thirdparty/llhttp',a.core.parent/'rust-prefix/include',*a.include]
- base=['c++','-std=c++14','-O1','-g','-UNDEBUG','-DHAVE_CONFIG_H','-DSWOOLE_RS_FRAMING','-I'+str(ROOT/'native/framing'),*['-I'+str(x.resolve())for x in includes]]
+ base=['c++','-std=c++14','-O1','-g','-UNDEBUG','-DHAVE_CONFIG_H','-I'+str(ROOT/'native/framing'),*['-I'+str(x.resolve())for x in includes]]
  def guard():
   try:require_build_space(ROOT)
   except RuntimeError as e:report.update(blocked=str(e),passed=False);write_report(a.output,report);raise
