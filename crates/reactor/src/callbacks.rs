@@ -54,6 +54,8 @@ pub struct ReactorCallbackCursor {
     pub key: i32,
     ///0 initial,1 previous callback returned,2 complete true,3 complete false.
     pub phase: u32,
+    /// Where `key` was; reused while it still holds `key`, so the walk is O(1) per step.
+    pub index: usize,
 }
 
 ///1 found/0 absent/-1 invalid. A null owner is a lazy empty store.
@@ -230,11 +232,19 @@ fn next_metadata(
     let entries = &owner.entries[kind as usize];
     let index = if cursor.phase == 0 {
         0
+    } else if entries
+        .get(cursor.index)
+        .is_some_and(|entry| entry.key == cursor.key)
+    {
+        // Keys are unique and sorted, so the next key is the next entry.
+        cursor.index + 1
     } else {
+        // A callback changed the map before the current key; search afresh.
         entries.partition_point(|entry| entry.key <= cursor.key)
     };
     if let Some(entry) = entries.get(index) {
         cursor.key = entry.key;
+        cursor.index = index;
         cursor.phase = 1;
         *token = entry.token;
         1
@@ -544,6 +554,11 @@ mod tests {
                 1
             );
             assert_eq!((cursor.key, token), (25, 125));
+            // An insertion before the cursor moves its entry; the walk still continues after 25.
+            assert_eq!(
+                swr_v1_reactor_callbacks_insert(&mut owner, 0, 5, 105, &mut token),
+                1
+            );
             assert_eq!(
                 swr_v1_reactor_callbacks_next(owner, 0, &mut cursor, 1, &mut token),
                 1
@@ -568,7 +583,10 @@ mod tests {
             while swr_v1_reactor_callbacks_drain(owner, &mut kind, &mut token) == 1 {
                 released.push((kind, token));
             }
-            assert_eq!(released, [(1, 202), (1, 201), (0, 130), (0, 125), (0, 110)]);
+            assert_eq!(
+                released,
+                [(1, 202), (1, 201), (0, 130), (0, 125), (0, 110), (0, 105)]
+            );
             assert_eq!(swr_v1_reactor_callbacks_free(owner), 0);
         }
     }
