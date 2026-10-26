@@ -16,7 +16,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.build_upstream import COMMIT, VERSION, add_build_arguments, build_extension, extension_configuration, require_build_space, compiler_cache_identity
-from tools.check_migration import validate, frozen_target_owners
+from tools.check_migration import validate
 from tools.harness import ROOT, write_report
 from tools.harness import exclusive
 from tools.private_copy import copy_private
@@ -189,14 +189,12 @@ def output(command, cwd=ROOT):
 
 
 def patches_for(modules, *, root=None, read_bytes=None):
-    """Validate declared and actual patch destinations, not just overlay folders."""
+    """Each module's patches, checked against its manifest and the upstream pin."""
     root = (Path(root) if root is not None else ROOT).resolve()
     read_bytes = read_bytes or (lambda path: path.read_bytes())
     collected = []
-    destinations = {}
-    # A frozen Native repair precedes its new mutable Rust owner. Native-only
-    # repair profiles remain valid when that Rust module is not selected.
-    for module in sorted(modules, key=lambda item: not bool(item.get('frozen_upstream_patches'))):
+    # A native repair (halfclose) applies before the Rust patches whose context includes it.
+    for module in sorted(modules, key=lambda item: not item.get('applies_first')):
         directories = [root / path for path in module['owned_paths'] if path.startswith('migration/patches/')]
         if len(directories) != 1:
             raise ValueError(f'A module must own exactly one patch directory: {module["id"]}')
@@ -204,8 +202,6 @@ def patches_for(modules, *, root=None, read_bytes=None):
         manifest = json.loads(read_bytes(directory / 'manifest.json'))
         if manifest['upstream_commit'] != COMMIT:
             raise ValueError(f'{module["id"]}: patch upstream pin differs')
-        frozen = {entry['path']: entry for entry in module.get('frozen_upstream_patches', [])}
-        seen_frozen = set()
         for patch in manifest['patches']:
             path = (directory / patch['path']).resolve()
             if directory.resolve() not in path.parents:
@@ -235,27 +231,7 @@ def patches_for(modules, *, root=None, read_bytes=None):
                     line_delta += added - removed
             if not actual or set(actual) != set(patch['upstream_paths']):
                 raise ValueError(f'Patch destination declaration differs: {path}')
-            relative = str(path.relative_to(root))
-            retained = frozen.get(relative)
-            if retained:
-                if patch['sha256'] != retained['sha256'] or set(actual) != set(retained['upstream_paths']):
-                    raise ValueError(f'Frozen overlay identity changed: {path}')
-                seen_frozen.add(relative)
-            allowed = module['upstream_patch_targets'] + (retained['upstream_paths'] if retained else [])
-            for target in actual:
-                if not any(target == reserved or target.startswith(reserved.rstrip('/') + '/') for reserved in allowed):
-                    raise ValueError(f'{module["id"]}: unowned patch target: {target}')
-                if target in destinations and (retained or destinations[target] != module['id']):
-                    raise ValueError(f'Multiple patches touch {target}; integrator must consolidate')
-                # Only this frozen entry permits one following owner, never a
-                # third patch or an unrelated module touching the destination.
-                destinations[target] = frozen_target_owners(retained)[target] if retained else None
-            row = {'path': relative, 'sha256': patch['sha256'], 'upstream_paths': actual}
-            if retained:
-                row['frozen_overlay_for'] = retained.get('target_owner', frozen_target_owners(retained))
-            collected.append(row)
-        if set(frozen) != seen_frozen:
-            raise ValueError(f'{module["id"]}: frozen overlay missing from patch manifest')
+            collected.append({'path': str(path.relative_to(root)), 'sha256': patch['sha256'], 'upstream_paths': actual})
     return collected
 
 

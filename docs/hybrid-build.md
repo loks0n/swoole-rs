@@ -26,9 +26,7 @@ rm -rf target/patches/phphelpers
 Upstream changes then surface as ordinary rebase conflicts. Export keeps the
 bytes of every patch whose commit diff is unchanged, writes the others as
 `git diff` output and drops patch files that no longer have a commit; add a
-commit to add a patch. New destinations must be in the module's
-`upstream_patch_targets` in `migration/modules.json`, and an edited patch listed
-in `frozen_upstream_patches` needs its new sha256 there too.
+commit to add a patch.
 
 ## Following an upstream release
 
@@ -55,8 +53,8 @@ rm -rf target/upstream && python3 tools/build_upstream.py
 changed between the two commits, wherever the repo records it, and lists
 upstream files that were deleted. It leaves commit and tag references (some are
 history) and recorded line counts alone. Then add any new original PHPTs to
-`corpus/upstream/manifest.json` (`git diff --stat $OLD $TAG -- tests`), update
-frozen patch hashes in `migration/modules.json`, and run the merge tier.
+`corpus/upstream/manifest.json` (`git diff --stat $OLD $TAG -- tests`) and run
+the merge tier.
 
 ## Build variants
 

@@ -11,15 +11,13 @@ v6.2.4, commit `c7e514509451beafd4d70ce5b78943d51e76381c`, fetched at
 | `wave` | Position in the dependency order. |
 | `depends_on` | Module IDs that must be integrated first. |
 | `owned_paths` | Repository paths for the module (crate, native adapter, patches, tests). |
-| `upstream_patch_targets` | Upstream files the module's patches may change. Targets are exclusive across modules. |
-| `frozen_upstream_patches` | Byte-frozen patches (path, sha256, `upstream_paths`, target module) that touch files targeted by another module. Only M15 uses this. |
+| `upstream_patch_targets` | Upstream files the module mainly patches (informational). |
+| `applies_first` | Apply this module's patches before every other module's. Only M15 (halfclose) sets it: Rust patches on the same files include its changes as context. |
 | `feature_bit_reserved` | Feature value, where one is listed. |
 | `abi_contract` | Path to the module's contract document or header. |
 
-`python3 tools/check_migration.py` validates the manifest: unknown
-prerequisites, unsafe paths, overlapping `owned_paths` or
-`upstream_patch_targets`, invalid frozen patch entries and dependency cycles.
-It prints the resulting waves.
+`python3 tools/check_migration.py` checks for duplicate IDs, unknown
+prerequisites and dependency cycles, and prints the resulting waves.
 
 Each module's patches live in `migration/patches/<module>/` with a
 `manifest.json` declaring patch hashes and upstream destinations.
@@ -49,7 +47,7 @@ Feature values come from `MODULES` in `tools/build_hybrid.py`.
 | M12 | `memory` | 64 | `src/memory/`, `src/core/{heap,channel}.cc` (+ headers) | Memory pools, shared storage, core collections. `native/memory/swoole_rs_memory.h`. |
 | M13 | `protocols` | 128 | `src/protocol/{mqtt,redis,socks5,message_bus}.cc`, `ext-src/swoole_redis_server.cc` (+ headers) | Packet protocol and proxy codecs. `native/protocols/swoole_rs_protocols.h`. |
 | M14 | `utilities` | 512 | `src/core/{misc,log}.cc`, `include/swoole_{log,util}.h`, `include/swoole.h` | Core utilities and logging. Hash width, signed-char promotion and wrapping follow the pinned code. [Contract](../native/utilities/contract.md). |
-| M15 | `--fix-halfclose` | — | frozen patches on `src/server/{base,master,reactor_thread}.cc`, `src/network/socket.cc` | Native (not Rust) correction: drain queued output before close, keep pre-queue responses, send TLS close_notify. |
+| M15 | `--fix-halfclose` | — | patches (applied first) on `src/server/{base,master,reactor_thread}.cc`, `src/network/socket.cc` | Native (not Rust) correction: drain queued output before close, keep pre-queue responses, send TLS close_notify. |
 | M16 | `locks` | 1024 | `src/lock/*.cc`, `ext-src/swoole_{lock,atomic,thread_lock,thread_atomic}.cc` (+ headers) | Native locks and PHP lock/atomic. [Contract](../native/locks/contract.md). |
 | M17 | `wrappers` | 2048 | `src/wrapper/{event,http}.cc` | Event, timer and HTTP wrapper policy. [Contract](../native/wrappers/contract.md). |
 | M18 | `framing` | 4096 | `src/protocol/{base,mime_type}.cc` | Packet framing and MIME lookup. |
