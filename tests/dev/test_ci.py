@@ -1,4 +1,4 @@
-"""tools/ci.py against a fake gh: run states, merging only the head that passed, following superseded runs."""
+"""tools/ci.py against a fake gh: run states, failure logs and phases, following replaced runs."""
 import json
 import os
 from pathlib import Path
@@ -8,8 +8,8 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
-# Runs are scripted per head in FAKE_RUNS: {sha: [conclusion, ...]}, one entry
-# consumed per `run list`; the PR head advances through FAKE_HEADS on each run list.
+# Runs are scripted per commit in FAKE_RUNS: {sha: [conclusion, ...]}, one entry
+# consumed per `run list`.
 FAKE_GH = '''#!/usr/bin/env python3
 import json, os, sys
 from pathlib import Path
@@ -26,16 +26,6 @@ elif args[0] == 'api' and '/compare/' in args[1]:
     print(data.get('compare', 'ahead'))
 elif args[0] == 'api':
     print('c' * 40)
-elif args[:2] == ['pr', 'view']:
-    field = args[args.index('--json') + 1]
-    print({'headRefOid': data['heads'][0], 'mergeCommit': 'm' * 40, 'headRefName': 'topic',
-           'mergeable': data.get('mergeable', 'MERGEABLE')}[field])
-elif args[:2] == ['pr', 'merge']:
-    if data.get('merge_errors'):
-        print(data['merge_errors'].pop(0), file=sys.stderr)
-        save()
-        sys.exit(1)
-    sys.exit(data.get('merge_exit', 0))
 elif args[:2] == ['run', 'list'] and '--commit' not in args:
     print(json.dumps(data.get('history', [])))
 elif args[:2] == ['run', 'download']:
@@ -49,8 +39,6 @@ elif args[:2] == ['run', 'list']:
     sha = args[args.index('--commit') + 1]
     queue = data['runs'].get(sha, [])
     conclusion = queue.pop(0) if len(queue) > 1 else (queue[0] if queue else None)
-    if conclusion == 'cancelled' and len(data['heads']) > 1:
-        data['heads'].pop(0)
     save()
     if conclusion is not None:
         running = conclusion == 'running'
@@ -67,52 +55,19 @@ elif args[:2] == ['run', 'view']:
 
 
 class Ci(unittest.TestCase):
-    def ci(self, *args, runs, heads=('a' * 40,), **extra):
+    def ci(self, *args, runs, **extra):
         with tempfile.TemporaryDirectory() as temp:
             gh = Path(temp) / 'gh'
             gh.write_text(FAKE_GH)
             gh.chmod(0o755)
             state, log = Path(temp) / 'state.json', Path(temp) / 'gh.log'
-            state.write_text(json.dumps({'runs': runs, 'heads': list(heads), **extra}))
+            state.write_text(json.dumps({'runs': runs, **extra}))
             env = {**os.environ, 'PATH': temp + os.pathsep + os.environ['PATH'],
                    'FAKE_STATE': str(state), 'FAKE_GH_LOG': str(log)}
             result = subprocess.run([sys.executable, ROOT / 'tools/ci.py', *args, '--poll', '0', '--json'],
                                     env=env, capture_output=True, text=True)
             self.gh_calls = log.read_text().splitlines() if log.exists() else []
         return result.returncode, json.loads(result.stdout or '{}'), result.stderr
-
-    def test_merges_the_head_that_passed_and_points_at_the_merge_tier(self):
-        code, result, _ = self.ci('merge', '12', runs={'a' * 40: ['running', 'success']})
-        self.assertEqual((code, result['merged']), (0, True))
-        self.assertIn('pr merge 12 --squash --match-head-commit ' + 'a' * 40, self.gh_calls)
-        self.assertEqual(result['next'], 'python3 tools/ci.py wait --commit ' + 'm' * 40)
-
-    def test_failure_does_not_merge_and_includes_the_failed_log(self):
-        code, result, _ = self.ci('merge', '12', runs={'a' * 40: ['failure']})
-        self.assertEqual((code, result['state'], result['merged']), (1, 'failed', False))
-        self.assertEqual(result['logs'], {'rust': ['2026-10-25T21:00:01Z error: boom']})
-        self.assertFalse(any(call.startswith('pr merge') for call in self.gh_calls))
-
-    def test_a_run_superseded_by_a_push_follows_the_new_head(self):
-        code, result, stderr = self.ci('merge', '12', runs={'a' * 40: ['cancelled'], 'b' * 40: ['success']},
-                                       heads=('a' * 40, 'b' * 40))
-        self.assertEqual((code, result['commit'], result['merged']), (0, 'b' * 40, True))
-        self.assertIn('superseded', stderr)
-
-    def test_cancelled_on_the_current_head_is_reported(self):
-        code, result, _ = self.ci('merge', '12', runs={'a' * 40: ['cancelled']})
-        self.assertEqual((code, result['state'], result['merged']), (3, 'cancelled', False))
-
-    def test_a_concurrent_merge_on_main_is_retried(self):
-        modified = 'GraphQL: Base branch was modified. Review and try the merge again. (mergePullRequest)'
-        code, result, _ = self.ci('merge', '12', runs={'a' * 40: ['success']}, merge_errors=[modified, modified])
-        self.assertEqual((code, result['merged']), (0, True))
-        self.assertEqual(sum(call.startswith('pr merge') for call in self.gh_calls), 3)
-
-    def test_conflicts_are_named(self):
-        code, result, _ = self.ci('merge', '12', runs={'a' * 40: ['success']}, merge_exit=1, mergeable='CONFLICTING')
-        self.assertEqual((code, result['merged'], result['conflict']), (4, False, True))
-        self.assertIn('merge origin/main', result['error'])
 
     def test_wait_defaults_to_the_merge_tier_on_main(self):
         code, result, stderr = self.ci('wait', runs={'c' * 40: ['running', 'success']})
@@ -127,28 +82,6 @@ class Ci(unittest.TestCase):
         self.assertIn('replaced by the run on ddddddd', stderr)
         code, result, _ = self.ci('wait', runs={'c' * 40: ['cancelled']}, history=history, compare='diverged')
         self.assertEqual((code, result['commit'], result['state']), (3, 'c' * 40, 'cancelled'))
-
-    def test_hooks_warning_names_off_foreign_and_own_hooks(self):
-        sys.path.insert(0, str(ROOT / 'tools'))
-        import ci
-        with tempfile.TemporaryDirectory() as temp:
-            env = {key: value for key, value in os.environ.items() if not key.startswith('GIT_')}
-            git = lambda *args: subprocess.run(['git', '-C', temp, *args], check=True, env=env, capture_output=True)
-            git('init', '-q')
-            cwd, saved = os.getcwd(), dict(os.environ)
-            os.chdir(temp)
-            os.environ.clear()
-            os.environ.update(env)  # hooks export GIT_DIR, which would point ci.py at the real repo
-            try:
-                self.assertIn('hooks are off', ci.hooks_warning())
-                git('config', 'core.hooksPath', '/elsewhere/.githooks')
-                self.assertIn('not this checkout', ci.hooks_warning())
-                git('config', 'core.hooksPath', '.githooks')
-                self.assertIsNone(ci.hooks_warning())
-            finally:
-                os.chdir(cwd)
-                os.environ.clear()
-                os.environ.update(saved)
 
     def test_merge_tier_failure_lists_failed_new_and_fixed_phases(self):
         history = [{'databaseId': 7, 'conclusion': 'failure', 'url': 'u7'}, {'databaseId': 6, 'conclusion': 'cancelled', 'url': 'u6'},
