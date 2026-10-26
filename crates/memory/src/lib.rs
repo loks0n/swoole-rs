@@ -10,6 +10,13 @@
     clippy::missing_safety_doc,
     reason = "every export is covered by the module-local C contract"
 )]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 pub mod channel;
 pub mod fixed;
 pub mod global;
