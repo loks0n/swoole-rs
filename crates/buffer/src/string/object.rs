@@ -328,6 +328,41 @@ unsafe fn write(
     Ok(())
 }
 
+/// `String::append(bytes)` when the bytes fit the current capacity: no allocation,
+/// so nothing to re-read. Returns 0 when appended; anything else leaves the String
+/// unchanged for `swr_v1_string_edit_object` to do the whole append.
+/// # Safety
+/// `object` is a live String; `data` holds `length` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_string_append(
+    object: *mut StringObject,
+    data: *const u8,
+    length: usize,
+) -> i32 {
+    if object.is_null() {
+        return INVALID;
+    }
+    // SAFETY: live String.
+    let s = unsafe { read(object) };
+    let Some(end) = s
+        .length
+        .checked_add(length)
+        .filter(|&end| end <= s.capacity)
+    else {
+        return 1;
+    };
+    if length != 0 {
+        if s.data.is_null() || data.is_null() {
+            return INVALID;
+        }
+        // SAFETY: `length + count <= capacity` is writable; `ptr::copy` allows aliasing input.
+        unsafe { ptr::copy(data, s.data.wrapping_add(s.length), length) };
+    }
+    // SAFETY: live String.
+    unsafe { update(object, |o| o.length = end) };
+    OK
+}
+
 /// One public String operation on `object`, a live `swoole::String` (only written
 /// for COPY). `source` is null or a String (required for COPY, else appended).
 /// First allocations use `initial`: the source's allocator for COPY, else the
@@ -348,29 +383,6 @@ pub unsafe extern "C" fn swr_v1_string_edit_object(
     }
     // SAFETY: non-null (checked above) and valid per the contract.
     let edit = unsafe { &*edit };
-    if edit.operation == APPEND && source.is_null() {
-        // Fast path for the common append that fits: no allocation, so nothing to re-read.
-        // SAFETY: live String.
-        let s = unsafe { read(object) };
-        if let Some(end) = s
-            .length
-            .checked_add(edit.length)
-            .filter(|&end| end <= s.capacity)
-        {
-            if edit.length != 0 {
-                if s.data.is_null() || edit.data.is_null() {
-                    return INVALID;
-                }
-                // SAFETY: `length + count <= capacity` is writable; `ptr::copy` allows aliasing input.
-                unsafe { ptr::copy(edit.data, s.data.wrapping_add(s.length), edit.length) };
-            }
-            // SAFETY: live String.
-            unsafe { update(object, |o| o.length = end) };
-            // SAFETY: writable per the contract.
-            unsafe { result.write(ptr::null_mut()) };
-            return OK;
-        }
-    }
     let outcome = match edit.operation {
         COPY if source.is_null() => Err(INVALID),
         // SAFETY: the contract makes every pointer live.
@@ -587,6 +599,19 @@ mod tests {
             (OK, ptr::null_mut())
         );
         assert_eq!(s.data, before);
+    }
+    #[test]
+    fn append_in_place_only_when_it_fits() {
+        let mut s = string(b"ab", 4);
+        // SAFETY: live test String and input.
+        assert_eq!(
+            unsafe { swr_v1_string_append(&mut s, b"cd".as_ptr(), 2) },
+            OK
+        );
+        assert_eq!(bytes(&s), b"abcd");
+        // SAFETY: as above.
+        assert_eq!(unsafe { swr_v1_string_append(&mut s, b"e".as_ptr(), 1) }, 1);
+        assert_eq!((bytes(&s), s.capacity), (b"abcd".to_vec(), 4));
     }
     #[test]
     fn failed_realloc_changes_nothing() {

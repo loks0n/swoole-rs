@@ -20,7 +20,7 @@ impl StringTransition {
     };
 }
 
-/// Plan clear (0) or take (1) without accessing allocation contents.
+/// Plan take (1) without accessing allocation contents.
 /// Public metadata is copied verbatim, including offset and opaque data pointer;
 /// this is not a byte-storage validator. Native retains allocator-token custody.
 /// # Safety
@@ -42,14 +42,6 @@ pub unsafe extern "C" fn swr_v1_string_transition(
         // SAFETY: non-null (checked above), valid, aligned POD.
         let source = unsafe { *source };
         match operation {
-            0 => {
-                result.state = StringState {
-                    length: 0,
-                    offset: 0,
-                    ..source
-                };
-                OK
-            }
             1 => {
                 result.owner = source;
                 OK
@@ -295,12 +287,6 @@ mod tests {
                     let original = fields(source);
                     let mut result = StringTransition::EMPTY;
                     assert_eq!(
-                        unsafe { swr_v1_string_transition(&source, 0, &mut result) },
-                        OK
-                    );
-                    assert_eq!(fields(result.state), (source.data, 0, capacity, 0));
-                    assert_eq!(fields(result.owner), fields(EMPTY_STATE));
-                    assert_eq!(
                         unsafe { swr_v1_string_transition(&source, 1, &mut result) },
                         OK
                     );
@@ -316,16 +302,16 @@ mod tests {
             owner: EMPTY_STATE,
         };
         assert_eq!(
-            unsafe { swr_v1_string_transition(&EMPTY_STATE, 99, &mut result) },
+            unsafe { swr_v1_string_transition(&EMPTY_STATE, 0, &mut result) },
             INVALID
         );
         assert_eq!(fields(result.owner), fields(EMPTY_STATE));
         assert_eq!(
-            unsafe { swr_v1_string_transition(std::ptr::null(), 0, &mut result) },
+            unsafe { swr_v1_string_transition(std::ptr::null(), 1, &mut result) },
             INVALID
         );
         assert_eq!(
-            unsafe { swr_v1_string_transition(&EMPTY_STATE, 0, std::ptr::null_mut()) },
+            unsafe { swr_v1_string_transition(&EMPTY_STATE, 1, std::ptr::null_mut()) },
             INVALID
         );
     }
