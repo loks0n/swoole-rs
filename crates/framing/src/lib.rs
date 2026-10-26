@@ -334,7 +334,7 @@ pub unsafe extern "C" fn swr_v1_framing_unpack(
         b'C' => v[0] as i64,
         b's' => i16::from_ne_bytes([raw[0], raw[1]]) as i64,
         b'S' => u16::from_ne_bytes([raw[0], raw[1]]) as i64,
-        b'n' => u16::from_le_bytes([raw[0], raw[1]]) as i64,
+        b'n' => u16::from_be_bytes([raw[0], raw[1]]) as i64,
         b'v' => u16::from_le_bytes([raw[0], raw[1]]) as i64,
         b'i' | b'l' => i32::from_ne_bytes([raw[0], raw[1], raw[2], raw[3]]) as i64,
         b'I' | b'L' => u32::from_ne_bytes([raw[0], raw[1], raw[2], raw[3]]) as i64,
