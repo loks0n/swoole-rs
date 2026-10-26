@@ -136,18 +136,22 @@ SDK profile does not establish actual stdext runtime support. The canonical
 `tools/dev.py integrate --module phphelpers --stdext` plan builds separate genuine
 enabled native/selected worlds before running the official original runner.
 
-## Full baseline on upstream
+## Every PHPT, gated on upstream
 
-`.github/workflows/phpt-baseline.yml` (dispatch only) runs every pinned PHPT
-against the upstream reference built with PHP sockets support, in 12 shards:
+The merge tier (`phpt-*` jobs in `.github/workflows/merge.yml`) runs every pinned
+PHPT against the upstream reference and the all-modules hybrid, both built with
+PHP sockets support, in 12 shards per engine:
 
 ```sh
 python3 corpus/upstream/inventory.py --shard 3/12 --output manifest.json
-python3 corpus/upstream/run.py --manifest manifest.json --engine upstream=/absolute/swoole.so --output shard-3.json
-python3 corpus/upstream/baseline_summary.py shard-*.json --output baseline.json
+python3 corpus/upstream/run.py --manifest manifest.json --engine hybrid=/absolute/swoole.so --output hybrid-3.json
+python3 corpus/upstream/gate.py upstream-*.json hybrid-*.json --output phpt.json
 ```
 
 `inventory.py` lists every `.phpt` at the pin (family = its `tests/` directory)
-and every other file under `tests/` as a support file. The summary records each
-result and, for skips, the SKIPIF reason and a category (service, network, ZTS,
-stdext, platform, extension, other). Only the runner's PASSED counts as passed.
+and every other file under `tests/` as a support file. `gate.py` fails if any test
+that passes on upstream does not pass on the hybrid, including when its result is
+missing, and refuses interrupted shards. Tests failing on both are listed, not
+hidden. It records each result and, for skips, the SKIPIF reason and a category
+(service, network, ZTS, stdext, platform, extension, other). Only the runner's
+PASSED counts as passed.

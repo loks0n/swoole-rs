@@ -2,6 +2,7 @@
 #include "swoole_server.h"
 #include "swoole_static_handler.h"
 #include "swoole_rs_http.h"
+#include "swoole_rs_http_rewrite_store.h"
 #include <sstream>
 #include <stdexcept>
 #include <tuple>

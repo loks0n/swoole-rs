@@ -53,6 +53,12 @@ jobs:
         with:
           path: .ccache
           key: ccache-${{ runner.os }}-${{ github.sha }}
+      # Small on purpose: tools/ci.py downloads it to list failed, new and fixed phases.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phases
+          path: target/reports/dev/*/loop.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -61,6 +67,95 @@ jobs:
             target/reports/
             target/upstream/build.log
             target/hybrid/*/build-manifest.json
+
+  # Every pinned PHPT on upstream and on the all-modules hybrid: any test that passes
+  # on upstream must pass on the hybrid (corpus/upstream/gate.py).
+  phpt-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: .devcontainer/install.sh
+      - id: upstream
+        uses: actions/cache@v4
+        with:
+          path: target/upstream
+          key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
+      - if: steps.upstream.outputs.cache-hit != 'true'
+        run: python3 tools/build_upstream.py
+      - uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-
+      - run: cargo fetch --locked
+      - run: |
+          python3 tools/build_hybrid.py --backend upstream --php-sockets | tee upstream.log
+          python3 tools/build_hybrid.py --php-sockets $(python3 -c 'from tools.build_hybrid import MODULES; print(*(f"--module {m}" for m in MODULES))') | tee hybrid.log
+          mkdir -p target/phpt
+          cp -L "$(sed -n 's/^\(Built\|Cached\) upstream: //p' upstream.log)" target/phpt/upstream.so
+          cp -L "$(sed -n 's/^\(Built\|Cached\) rust: //p' hybrid.log)" target/phpt/hybrid.so
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phpt-engines
+          path: target/phpt/
+
+  phpt:
+    needs: phpt-build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        index: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        engine: [upstream, hybrid]
+    steps:
+      - uses: actions/checkout@v4
+      - run: .devcontainer/install.sh && sudo apt-get install -yq php-gmp php-bcmath php-mysql php-pgsql
+      - uses: actions/cache/restore@v4
+        with:
+          path: target/upstream
+          key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
+          fail-on-cache-miss: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: phpt-engines
+          path: target/phpt
+      - run: python3 corpus/upstream/inventory.py --shard ${{ matrix.index }}/12 --output target/phpt/manifest.json
+      # php -n loads nothing; load every extension the distribution enables, in its order.
+      - id: extensions
+        run: echo "args=$(sed -n 's/^extension=\(.*\)/--php-extension \1/p' /etc/php/*/cli/conf.d/*.ini | sed 's/\.so$//' | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+      # Exit 1 means some tests failed, which the gate judges; anything else (a runner
+      # crash) fails the shard.
+      - run: >
+          python3 corpus/upstream/run.py --manifest target/phpt/manifest.json --timeout 30 --external-network
+          ${{ steps.extensions.outputs.args }}
+          --engine ${{ matrix.engine }}=target/phpt/${{ matrix.engine }}.so
+          --output target/phpt/${{ matrix.engine }}-${{ matrix.index }}.json || [ $? -eq 1 ]
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phpt-${{ matrix.engine }}-${{ matrix.index }}
+          path: target/phpt/${{ matrix.engine }}-${{ matrix.index }}.json
+
+  phpt-gate:
+    needs: phpt
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: phpt-*-*
+          merge-multiple: true
+          path: shards
+      - run: python3 corpus/upstream/gate.py shards/*.json --output phpt.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phpt
+          path: phpt.json
+      - if: needs.phpt.result != 'success'
+        run: echo "A PHPT shard crashed; its tests are missing from the gate" && exit 1
 
   # musl and PHP 8.5, as on php:8.5-alpine in Appwrite's base image: build the
   # reference and the all-modules hybrid, then run the corpus and original PHPTs
@@ -95,3 +190,28 @@ jobs:
         with:
           name: alpine-reports
           path: target/reports/
+
+  # One minute per differential fuzz target against the pinned C++ oracle (fuzz/README.md).
+  fuzz:
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install nightly --profile minimal
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - working-directory: fuzz
+        run: |
+          for target in base64_decode base64_encode ws_decode ws_frame_length ws_mask; do
+            mkdir -p corpus/$target
+            dict=$([ -f ${target%%_*}.dict ] && echo -dict=${target%%_*}.dict)
+            cargo +nightly fuzz run $target corpus/$target seeds/$target -- $dict -max_total_time=60
+          done
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/

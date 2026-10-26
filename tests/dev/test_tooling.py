@@ -1190,6 +1190,7 @@ class ChangedModules(unittest.TestCase):
                          ['base64', 'timer'])
         self.assertEqual(self.changed('.github/workflows/pr.yml', 'tests/dev/test_tooling.py'), [])
         self.assertEqual(self.changed('crates/ffi/src/lib.rs'), sorted(dev.MODULES))
+        self.assertEqual(self.changed('crates/oracle/build.rs', 'fuzz/src/lib.rs'), [])
         self.assertEqual(self.changed('migration/patches/halfclose/manifest.json'), sorted(dev.MODULES))
 
 
@@ -1231,6 +1232,23 @@ class FocusedPhases(unittest.TestCase):
                 self.assertFalse(report['full_plan_passed'])
                 self.assertEqual([row['phase'] for row in report['not_run']], ['api', 'originals'])
                 self.assertTrue(all(row['status'] == 'not_run' for row in report['not_run']))
+
+    def test_failed_phases_are_listed_with_logs_and_in_the_step_summary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); summary = root / 'summary.md'
+            planned = [('first', ['fixture']), ('second', ['fixture']), ('third', ['fixture'])]
+            results = iter([1, 0, 2])
+            with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
+                 patch.object(dev.subprocess, 'run', side_effect=lambda *a, **k: SimpleNamespace(returncode=next(results))), \
+                 patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': str(summary)}), \
+                 patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer']), \
+                 patch('sys.stdout', new_callable=__import__('io').StringIO) as stdout:
+                self.assertEqual(dev.main(), 1)
+            for text in [stdout.getvalue(), summary.read_text()]:
+                self.assertIn('2 of 3 phases failed:', text)
+                self.assertIn('- first (exit 1): ' + str(next(root.glob('target/reports/dev/*')) / 'first.log'), text)
+                self.assertIn('- third (exit 2): ', text)
+                self.assertNotIn('- second', text)
 
     def test_child_disk_refusal_stops_but_behavior_failure_continues(self):
         for error, details, expected_calls in [('Build disk space low: fixture needs 4GiB', {}, 1),

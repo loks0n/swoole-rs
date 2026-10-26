@@ -1,14 +1,14 @@
-"""The PHPT baseline shards every test exactly once and classifies skips by their runner reason."""
+"""The PHPT gate shards every test once, classifies skips and fails only on upstream passes the hybrid loses."""
 import json
 from pathlib import Path
 import tempfile
 import unittest
 
-from corpus.upstream.baseline_summary import category, markdown, rows, skip_reason
+from corpus.upstream.gate import category, compare, markdown, rows, skip_reason
 from corpus.upstream.inventory import shard
 
 
-class PhptBaseline(unittest.TestCase):
+class PhptGate(unittest.TestCase):
     def test_shards_partition_every_path(self):
         paths = [f'tests/t/{n}.phpt' for n in range(25)]
         parts = [shard(paths, index, 4) for index in range(1, 5)]
@@ -32,6 +32,26 @@ class PhptBaseline(unittest.TestCase):
         self.assertEqual([r['status'] for r in results], ['passed', 'skipped', 'failed'])
         self.assertIn('1 passed, 1 failed, 1 skipped', markdown(results))
         self.assertIn('| a | 1 | 0 | 1 |', markdown(results))
+
+    def test_only_upstream_passes_gate_the_hybrid(self):
+        def row(test, engine, status):
+            return {'test': test, 'family': 'a', 'engine': engine, 'status': status, 'category': 'other'}
+        results = [row('kept', 'upstream', 'passed'), row('kept', 'hybrid', 'passed'),
+                   row('lost', 'upstream', 'passed'), row('lost', 'hybrid', 'failed'),
+                   row('absent', 'upstream', 'passed'),
+                   row('both', 'upstream', 'failed'), row('both', 'hybrid', 'failed'),
+                   row('fixed', 'upstream', 'failed'), row('fixed', 'hybrid', 'passed'),
+                   row('skip', 'upstream', 'skipped'), row('skip', 'hybrid', 'failed')]
+        self.assertEqual(compare(results), (['absent (hybrid: missing)', 'lost (hybrid: failed)'], ['both']))
+        self.assertEqual(compare([row('only', 'upstream', 'failed')]), ([], []))
+        self.assertIn('2 passing on upstream but not here', markdown(results))
+
+    def test_incomplete_shards_are_refused(self):
+        with tempfile.TemporaryDirectory() as temp:
+            report = Path(temp) / 'shard.json'
+            report.write_text(json.dumps({'execution_status': 'interrupted', 'results': []}))
+            with self.assertRaises(ValueError):
+                list(rows([report]))
 
 
 if __name__ == '__main__':

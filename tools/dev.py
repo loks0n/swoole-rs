@@ -44,8 +44,9 @@ def require_frozen_source(expected):
 
 
 # A change here can affect every module's native build or behaviour.
-SHARED_PATHS = ('crates/', 'native/', 'migration/patches/integration/', 'migration/patches/halfclose/', 'Cargo.toml',
-                'Cargo.lock', 'tools/build_hybrid.py', 'tools/build_upstream.py', 'migration/modules.json')
+SHARED_PATHS = ('crates/ffi/', 'native/include/', 'native/integration/', 'native/halfclose/',
+                'migration/patches/integration/', 'migration/patches/halfclose/', 'Cargo.toml', 'Cargo.lock',
+                'tools/build_hybrid.py', 'tools/build_upstream.py', 'migration/modules.json')
 
 
 def changed_modules(base):
@@ -1177,6 +1178,14 @@ def main():
         report['seconds'] = round(time.monotonic() - started, 4)
         write_report(reports / 'loop.json', report)
         print(f'Loop: {reports / "loop.json"}', flush=True)
+        failures = [row for row in report['phases'] if row['failed']]
+        if failures:
+            lines = [f'{len(failures)} of {len(report["phases"])} phases failed:'] + [
+                f'- {row["phase"]} (exit {row.get("returncode")}): {row.get("log")}' for row in failures]
+            print(*lines, sep='\n', flush=True)
+            if os.environ.get('GITHUB_STEP_SUMMARY'):
+                with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+                    summary.write('### Failed phases\n\n' + '\n'.join(lines) + '\n\n')
     return int(report['status'] not in {'passed', 'partial_passed'})
 
 

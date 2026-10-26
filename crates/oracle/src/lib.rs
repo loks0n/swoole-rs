@@ -29,3 +29,30 @@ pub mod crc32 {
         pub fn original_test_failures() -> i32;
     }
 }
+
+pub mod websocket {
+    /// Fields of upstream's `websocket::Frame` after `decode`; flags as `Frame::get_flags()`.
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Default, PartialEq)]
+    pub struct Frame {
+        pub payload_length: u64,
+        pub header_length: u16,
+        pub opcode: u8,
+        pub flags: u8,
+        pub length_code: u8,
+        pub mask_key: [u8; 4],
+    }
+
+    unsafe extern "C" {
+        /// Upstream `get_package_length_impl` over `length` bytes; `header_length`
+        /// is the `PacketLength::header_len` it starts from and leaves.
+        #[link_name = "swr_oracle_ws_frame_length"]
+        pub fn frame_length(data: *const u8, length: usize, header_length: *mut u32) -> isize;
+        /// Upstream `websocket::decode`, which unmasks the payload in place.
+        #[link_name = "swr_oracle_ws_decode"]
+        pub fn decode(data: *mut u8, length: usize, frame: *mut Frame) -> bool;
+        /// Upstream `websocket::mask`.
+        #[link_name = "swr_oracle_ws_mask"]
+        pub fn mask(data: *mut u8, length: usize, key: *const u8);
+    }
+}

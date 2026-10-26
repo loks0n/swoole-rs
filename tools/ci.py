@@ -5,6 +5,9 @@
   ci.py wait [--commit SHA]  wait for a workflow run (default: the merge tier on main)
   ci.py status [--commit SHA]  the same, without waiting
 
+For the merge tier, failed phases come from its `phases` artifact, with new and fixed ones
+against the previous completed run on main; other failures show each failed job's log tail.
+
 Progress goes to stderr and the result to stdout (--json for machine output).
 Exit codes: 0 passed or merged, 1 failed, 2 no run, still running or timed out, 3 cancelled,
 4 the pull request conflicts with main or could not be merged.
@@ -16,10 +19,13 @@ from pathlib import Path
 import json
 import subprocess
 import sys
+import tempfile
 import time
 
 EXIT = {'passed': 0, 'failed': 1, 'none': 2, 'running': 2, 'cancelled': 3}
 LOG_LINES = 40
+# The merge-tier job whose dev.py phases the `phases` artifact lists, replacing its log tail.
+PHASES_JOB = 'full-gates'
 
 
 def gh(*args):
@@ -93,6 +99,34 @@ def failure_logs(result):
     return {**result, 'logs': {job: lines[-LOG_LINES:] for job, lines in tails.items()}}
 
 
+def phases(run):
+    """{phase: passed} from a run's `phases` artifact (the merge tier's loop.json), or None without one."""
+    with tempfile.TemporaryDirectory() as directory:
+        try:
+            gh('run', 'download', str(run), '-n', 'phases', '-D', directory)
+        except subprocess.CalledProcessError:
+            return None
+        loop = next(Path(directory).rglob('loop.json'), None)
+        return {row['phase']: not row['failed'] for row in json.loads(loop.read_text())['phases']} if loop else None
+
+
+def phase_changes(result):
+    """Failed phases, plus those new or fixed since the previous completed run on main that has phases."""
+    current = phases(result['run'])
+    if current is None:
+        return result
+    result = {**result, 'failed_phases': sorted(name for name, passed in current.items() if not passed)}
+    runs = json.loads(gh('run', 'list', '--workflow', result['workflow'], '--branch', 'main', '--status', 'completed',
+                         '--limit', '30', '--json', 'databaseId,conclusion,url'))
+    for run in runs:
+        previous = run['databaseId'] < result['run'] and run['conclusion'] in ('success', 'failure') and phases(run['databaseId'])
+        if previous:
+            return {**result, 'previous_run': run['url'],
+                    'new_failures': [name for name in result['failed_phases'] if previous.get(name)],
+                    'fixed': sorted(name for name, passed in current.items() if passed and previous.get(name) is False)}
+    return result
+
+
 def merge(number, workflow, deadline, poll):
     while True:
         head = pr_head(number)
@@ -147,6 +181,11 @@ def report(result, as_json):
     print(line + (' (timed out)' if result.get('timed_out') else '') + (f"  {result['url']}" if 'url' in result else ''))
     for job in result.get('jobs', []):
         print(f"  {job['name']}: {job['state']}" + (f" in {job['seconds']}s" if job['seconds'] is not None else ''))
+    if 'failed_phases' in result:
+        print(f"  failed phases ({len(result['failed_phases'])}): " + (', '.join(result['failed_phases']) or 'none'))
+    if 'previous_run' in result:
+        print(f"  since {result['previous_run']}: new failures: {', '.join(result['new_failures']) or 'none'}; "
+              f"fixed: {', '.join(result['fixed']) or 'none'}")
     for job, lines in result.get('logs', {}).items():
         print(f'--- {job} (last {len(lines)} lines)', *lines, sep='\n')
     if result.get('error'):
@@ -178,8 +217,11 @@ def main(argv=None):
             result = merge(args.pr, args.workflow, deadline, args.poll)
         else:
             sha = resolve(args.commit)
-            result = failure_logs(status(args.workflow, sha) if args.command == 'status'
-                                  else wait(args.workflow, sha, deadline, args.poll))
+            result = status(args.workflow, sha) if args.command == 'status' else wait(args.workflow, sha, deadline, args.poll)
+            if result['state'] in ('passed', 'failed'):
+                result = failure_logs(phase_changes(result))
+            if 'failed_phases' in result:
+                result.get('logs', {}).pop(PHASES_JOB, None)
     except subprocess.CalledProcessError as failure:
         sys.exit(f"gh {' '.join(failure.cmd[1:])}: {failure.stderr.strip()}")
     report(result, args.json)
