@@ -4,6 +4,7 @@ name: Appwrite base
 # control, so the two images differ only in swoole.so.
 on:
   workflow_dispatch:
+  workflow_call:
 env:
   DOCKER_BASE_COMMIT: fd467ebe3b4ddcb6469078d3b41b2a67f7ca6fdf
 permissions:
