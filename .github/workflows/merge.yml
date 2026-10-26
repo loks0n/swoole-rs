@@ -264,9 +264,16 @@ jobs:
         with:
           name: phpt-${{ matrix.engine }}-${{ matrix.index }}
           path: target/phpt/${{ matrix.engine }}-${{ matrix.index }}.json
-      # Read with gdb against /usr/bin/php (the runner's PHP 8.3 package) and the phpt-engines .so.
-      - uses: actions/upload-artifact@v4
+      # Many originals kill processes on purpose, so cores are kept only when the shard's
+      # report shows glibc heap corruption (#200). Read them with gdb against /usr/bin/php
+      # (the runner's PHP 8.3 package) and the phpt-engines .so.
+      - id: cores
         if: always()
+        run: |
+          report=target/phpt/${{ matrix.engine }}-${{ matrix.index }}.json
+          echo "keep=$(grep -qsE 'corrupted|double free|free\(\): ' $report && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.cores.outputs.keep == 'true'
         with:
           name: cores-${{ matrix.engine }}-${{ matrix.index }}
           path: /tmp/cores/
