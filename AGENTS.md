@@ -66,6 +66,12 @@ environments to one shared machine. Each executor loops:
    gated behind the goal agent.
 8. Repeat.
 
+**Upstream security bugs stay private.** This repo is public. A memory-safety bug
+or other likely vulnerability in upstream Swoole (or any dependency) never goes in
+an issue, PR, commit message or code comment. Create a draft repository security
+advisory on this repo (visible only to admins) with the reproducer and the upstream
+location, then stop; a person handles disclosure.
+
 Don't stop to ask before routine next steps (merge on green, close, file
 follow-ups). Stop only for destructive or genuinely ambiguous decisions.
 
