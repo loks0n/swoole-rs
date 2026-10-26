@@ -856,9 +856,14 @@ def retain_build_manifest(build, reports):
 BARRIER_PHASES = {'ownership', 'build', 'reference-build', 'stdext-reference-build', 'buffer-legacy-build'}
 
 
+# Phases that run original PHPTs under another name (their servers race for ports under load).
+PHPT_PHASES = {'phpt', 'framing-versioned-expectation', 'phpcollections-global-handlers',
+               'phpcollections-prerequisites', 'utilities-lowercase-runtime'}
+
+
 def serial_phase(name):
     """Phases that can't share the machine: fixed ports (the PHPT runners), timing, benchmarks."""
-    return (name == 'phpt' or name.endswith('-originals') or 'benchmark' in name or 'timing' in name)
+    return (name in PHPT_PHASES or name.endswith('-originals') or 'benchmark' in name or 'timing' in name)
 
 
 def phase_dependencies(commands, reports):
