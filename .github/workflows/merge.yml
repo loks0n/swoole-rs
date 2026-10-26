@@ -29,6 +29,9 @@ jobs:
         shard: [1, 2]
     steps:
       - uses: actions/checkout@v4
+        # Gates compare against accepted patch states at older commits (git show <sha>:...).
+        with:
+          fetch-depth: 0
       # Saved from main under a key the PR tier's hybrid and gates jobs restore.
       - uses: Swatinem/rust-cache@v2
         with:
@@ -59,7 +62,7 @@ jobs:
       - run: python3 corpus/thirdparty/hyperf.py --prepare
       - run: python3 tests/modules/buffer/baseline.py --sanitize
       # Unit, native, ABI, model and PHP gates, every application and original PHPT, upstream as control.
-      - run: python3 tools/dev.py integrate --all-modules --php-extension pdo --php-extension pdo_sqlite --php-extension curl --php-extension sockets --php-extension tokenizer --external-network --php-sockets --shard ${{ matrix.shard }}/2
+      - run: python3 tools/dev.py integrate --all-modules --php-extension pdo --php-extension pdo_sqlite --php-extension curl --php-extension sockets --php-extension tokenizer --php-extension ffi --external-network --php-sockets --shard ${{ matrix.shard }}/2
       - if: always()
         run: python3 tools/merge_summary.py >> "$GITHUB_STEP_SUMMARY"
       - if: always() && matrix.shard == 1
