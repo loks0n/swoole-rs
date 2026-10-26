@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 from tools.build_upstream import require_build_space
 from tools.harness import run_isolated, write_report
-from make_patches import DEST, SOURCE_SHA, body, header_selected, HEADER_DEST, HEADER_SIGNATURES
+from overlay import DEST, SOURCE_SHA, body, header_selected, HEADER_DEST, HEADER_SIGNATURES
 
 
 def sha(path):

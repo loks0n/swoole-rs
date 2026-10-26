@@ -12,11 +12,12 @@ Selected `PHPContext` field source types (deferred-owner pointer, primitive
 metadata cells) and private static state types differ from native, so consumers
 must rebuild against the selected SDK. Public layouts and offsets are unchanged.
 
-## Patch generation
+## Patches
 
-`make_patches.py --source PINNED` regenerates
-`migration/patches/phpcoroutines/000{1..4}-*.patch` and `manifest.json` from the
-`*_bodies.py` transforms. It refuses a pinned source whose checksum differs.
+Edit `migration/patches/phpcoroutines/000{1..4}-*.patch` with `tools/patches.py`
+(see [hybrid build](../../../docs/hybrid-build.md#editing-patches)). `overlay.py`
+applies them to the pinned sources for the source-shape tests and `gate.py`; the
+`*_bodies.py` modules hold the signatures those tests check.
 
 ## Gates
 

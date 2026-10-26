@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 import unittest
-from make_patches import body, selected, coroutine_selected, system_selected
+from overlay import body, selected, coroutine_selected, system_selected
 from method_catalogue_bodies import BRIDGE, declarations, bindings, selected_table
 
 

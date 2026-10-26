@@ -8,7 +8,7 @@ from metadata_bodies import FIELDS
 from config_bodies import CONFIG_SIGNATURES, CONFIG_DECL, CONFIG_SELECTED_DECL
 from activated_bodies import ACTIVATED_DECL, ACTIVATED_SELECTED_DECL
 from interrupt_bodies import DECL as INTERRUPT_DECL, SELECTED_DECL as INTERRUPT_SELECTED_DECL
-from make_patches import HEADER_SHA, HEADER_SIGNATURES, body, header_selected
+from overlay import HEADER_SHA, HEADER_SIGNATURES, body, header_selected
 
 
 class HeaderBoundary(unittest.TestCase):
