@@ -19,6 +19,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
+from tools.build_hybrid import MODULES, SELECTABLE
 from tools.private_copy import copy_private
 
 
@@ -206,15 +207,12 @@ int main(void) {
         command = shlex.split(lines[0])
         self.assertEqual(command.count('-lswoole_rs_ffi'), 1, 'Rust archive missing from link recipe')
         cases = [(999, 0, 'Rust bridge ABI mismatch: expected 1, got 999')]
-        if ARGS.feature_bits & 1:
-            cases.append((1, ARGS.feature_bits & ~1, 'Rust bridge missing WebSocket kernel feature'))
-        if ARGS.feature_bits & 2:
-            cases.append((1, ARGS.feature_bits & ~2, 'Rust bridge missing buffer feature'))
-        if ARGS.feature_bits & 4:
-            cases.append((1, ARGS.feature_bits & ~4, 'Rust bridge missing timer feature'))
-        for bit, name in [(64, 'memory'), (128, 'protocols'), (256, 'http'), (512, 'utilities'), (1024, 'locks'), (2048, 'wrappers'), (8192, 'corebase'), (16384, 'reactor'), (32768, 'coroutine'), (65536, 'hooks'), (131072, 'ossupport'), (262144, 'tls'), (524288, 'process'), (1048576, 'clients'), (2097152, 'httpbindings'), (4194304, 'http2'), (8388608, 'ports'), (16777216, 'phphelpers'), (33554432, 'phpcollections'), (67108864, 'phpevents'), (134217728, 'phpcoroutines')]:
+        # Graduated modules are always on, so only selectable modules can be missing.
+        for name in SELECTABLE:
+            bit = MODULES[name][1]
             if ARGS.feature_bits & bit:
-                cases.append((1, ARGS.feature_bits & ~bit, f'Rust bridge missing {name} feature'))
+                label = 'WebSocket kernel' if name == 'websocket' else name
+                cases.append((1, ARGS.feature_bits & ~bit, f'Rust bridge missing {label} feature'))
         # Discover and remove invariant real query members once. Each case gets
         # an independent copy of the same real implementation archive.
         with tempfile.TemporaryDirectory(prefix='swoole-rs-abi-preparation-') as directory:
