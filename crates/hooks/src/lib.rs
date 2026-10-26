@@ -1,11 +1,5 @@
 //! Coroutine I/O policy over copied scalars. No native callbacks, storage,
 //! syscalls, errno, allocation, retained borrows or context switching.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
 
 /// The original per-hook guard. Some DNS hooks intentionally do not use it.
 #[unsafe(no_mangle)]
@@ -91,7 +85,7 @@ pub extern "C" fn swr_v1_hook_transfer_result(result: i64, total: u64) -> i64 {
     if result < 0 && total == 0 {
         -1
     } else {
-        total as i64
+        total.cast_signed()
     }
 }
 
@@ -111,7 +105,7 @@ pub extern "C" fn swr_v1_hook_transfer(
     requested: u64,
     wait: bool,
 ) -> Transfer {
-    let total = total.wrapping_add(if result > 0 { result as u64 } else { 0 });
+    let total = total.wrapping_add(if result > 0 { result.unsigned_abs() } else { 0 });
     Transfer {
         total,
         again: (result < 0 && wait) || (result > 0 && total < requested),
@@ -151,6 +145,10 @@ pub struct Completion {
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_completion(result: i64, canceled: i32, timeout: i32) -> Completion {
     if result < 0 {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "io_uring results are an i32 cqe.res"
+        )]
         let error = result.wrapping_neg() as i32;
         Completion {
             result: -1,
@@ -477,7 +475,7 @@ pub extern "C" fn swr_v1_hook_packet_length(length: i64, maximum: u32) -> i32 {
 /// otherwise -1 after a timeout or 0 (upstream 0f96dc478).
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_packet_result(buffered: u64, expected: i64, timed_out: bool) -> i64 {
-    if buffered == expected as u64 {
+    if buffered == expected.cast_unsigned() {
         expected
     } else if timed_out {
         -1
@@ -509,7 +507,11 @@ pub extern "C" fn swr_v1_hook_packet_eof(
     maximum: u32,
 ) -> EofPlan {
     let (offset, grow, action) = if found >= 0 {
-        ((found as u64).wrapping_add(u64::from(eof_length)), 0, 1)
+        (
+            found.unsigned_abs().wrapping_add(u64::from(eof_length)),
+            0,
+            1,
+        )
     } else if buffered == u64::from(maximum) {
         (0, 0, -1)
     } else if buffered == size && size < u64::from(maximum) {
