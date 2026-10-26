@@ -66,8 +66,8 @@ pub fn ws_frame_length(bytes: &[u8]) {
             swr_v1_ws_frame_length(bytes.as_ptr(), bytes.len(), &mut got_header),
         )
     };
-    // A payload within a header of isize::MAX overflows upstream's signed sum
-    // (undefined); Rust reports -1 there.
+    // Upstream's result is undefined for some lengths (private advisory);
+    // Rust reports -1 there.
     assert!(
         want as i64 == got || got == -1 && want < 0,
         "total {want} vs {got} for {bytes:?}"
@@ -270,7 +270,7 @@ pub fn framing_length(bytes: &[u8]) {
     match status {
         0 => assert_eq!((want, header as i64), (0, got), "need more for {bytes:?}"),
         1 => assert_eq!(want as i64, got, "total for {bytes:?}"),
-        // Upstream adds the body offset to a body length near i64::MAX as a signed sum (undefined).
+        // Upstream is undefined for some lengths (private advisory); only an error must match.
         _ => assert!(want < 0, "error {status} vs {want} for {bytes:?}"),
     }
 }
@@ -284,8 +284,8 @@ fn terminated(data: &[u8]) -> Vec<c_char> {
         .collect()
 }
 
-/// Whether strtoul could read a chunk length that overflows upstream's pointer
-/// sum: a negated non-zero number, or more than 12 significant hex digits.
+/// Whether upstream's result is undefined for this chunk length (private
+/// advisory), so it isn't compared.
 fn huge_chunk(data: &[u8]) -> bool {
     let mut at = 0;
     while at < data.len() {
@@ -350,13 +350,13 @@ pub fn http_frame(bytes: &[u8]) {
         };
     }
     let got = frame(&CANDIDATE, operation, data, state);
-    // Upstream's pointer arithmetic wraps on these lengths (#178).
+    // Not comparable: upstream is undefined here (private advisory).
     if operation == 2 && huge_chunk(&data[state.offset..]) {
         return;
     }
     let want = frame(&UPSTREAM, operation, data, state);
-    // Upstream accepts a request line cut before its version, at an offset 8
-    // bytes past what it read (#177); the candidate waits for more.
+    // Upstream is undefined for these inputs (private advisory); the candidate
+    // must wait for more data.
     if operation == 0 && want.0 == 0 && want.1.offset > data.len() {
         assert_eq!(
             (got.0, got.1.offset),
@@ -425,8 +425,8 @@ pub fn http_header(bytes: &[u8]) {
 }
 
 /// Upstream `mqtt::get_package_length` and the candidate over the same received
-/// bytes. With nothing received upstream's size - 1 wraps and it reads past the
-/// buffer, so only the candidate runs there.
+/// bytes. With nothing received upstream is undefined (private advisory), so
+/// only the candidate runs there.
 pub fn mqtt_length(bytes: &[u8]) {
     let data: Vec<c_char> = bytes.iter().map(|&byte| byte as c_char).collect();
     let size = data.len().min(u32::MAX as usize) as u32;
@@ -440,11 +440,8 @@ pub fn mqtt_length(bytes: &[u8]) {
 }
 
 /// Walks upstream `redis::parse` over `data` (and the NUL after it) without
-/// reading it: false where upstream dereferences the null `get_number` returns
-/// for a malformed number, copies a string of negative length or past the input
-/// (#224), or finds a byte other than `*`, `$` or `:` where a type belongs. There
-/// it emits an empty or stale-length string; parse only sees packets recv_packet
-/// accepted (upstream calls it from core-tests alone), so that is not compared.
+/// reading it: false where upstream is undefined (private advisory) or where it
+/// meets input `recv_packet` never passes it. Those inputs are not compared.
 fn resp_parse_in_bounds(data: &[u8]) -> bool {
     let at = |index: usize| data.get(index).copied().unwrap_or(0);
     // get_number: strtol after the type byte, then CRLF; Some((ret, next)).
