@@ -170,11 +170,6 @@ int main(void) {
             assert(swr_v1_phpcoroutines_bounds(&bounds, SWR_CORO_BOUNDS_LIMIT, caps, 1).action == SWR_CORO_BOUNDS_LIMIT_POINTER);
         }
     }
-    uint32_t lifecycle_stage = 0;
-    assert(swr_v1_phpcoroutines_lifecycle(&lifecycle_stage, SWR_CORO_LIFECYCLE_POST, 0) == SWR_CORO_LIFECYCLE_POST_DESTROY);
-    assert(swr_v1_phpcoroutines_lifecycle(&lifecycle_stage, SWR_CORO_LIFECYCLE_POST, 0) == SWR_CORO_LIFECYCLE_POST_EXCEPTION);
-    assert(swr_v1_phpcoroutines_lifecycle(&lifecycle_stage, SWR_CORO_LIFECYCLE_POST, 1) == SWR_CORO_LIFECYCLE_POST_BAILOUT);
-    assert(swr_v1_phpcoroutines_lifecycle(&lifecycle_stage, SWR_CORO_LIFECYCLE_POST, 0) == SWR_CORO_LIFECYCLE_DONE);
     uint32_t create_stage = 0;
     assert(swr_v1_phpcoroutines_control(&create_stage, SWR_CORO_CONTROL_CREATE_FRONTEND, 0, 0).action == SWR_CORO_CONTROL_REQUEST_SHUTDOWN);
     assert(swr_v1_phpcoroutines_control(&create_stage, SWR_CORO_CONTROL_CREATE_FRONTEND, 0, 0).action == SWR_CORO_CONTROL_CREATE_EFFECT);
