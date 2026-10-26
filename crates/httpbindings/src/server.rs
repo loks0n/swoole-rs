@@ -81,6 +81,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_receive(
     flags: u32,
     result: u32,
 ) -> i32 {
+    // SAFETY: `phase` is null or aligned, writable and exclusively lent for this call.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return -1;
     };
@@ -189,7 +190,11 @@ pub unsafe extern "C" fn swr_v1_httpbindings_receive(
 /// by the native custody guard before observing a potentially absent context path.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_httpbindings_handler(path: Text, pattern: Text) -> i32 {
-    let (Some(path), Some(pattern)) = (unsafe { bytes(path) }, unsafe { bytes(pattern) }) else {
+    // SAFETY: `path` spans `length` initialized bytes (null only when empty) for this call.
+    let path = unsafe { bytes(path) };
+    // SAFETY: `pattern` spans `length` initialized bytes (null only when empty) for this call.
+    let pattern = unsafe { bytes(pattern) };
+    let (Some(path), Some(pattern)) = (path, pattern) else {
         return -1;
     };
     i32::from(case_prefix(path, pattern))
@@ -214,6 +219,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_accept(
     error: i32,
     errors: *const AcceptErrors,
 ) -> i32 {
+    // SAFETY: `errors` is null or aligned, initialized and lent for this call.
     let Some(errors) = (unsafe { errors.as_ref() }) else {
         return -1;
     };

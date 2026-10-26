@@ -16,6 +16,7 @@ enum WriteAction {
 /// `phase` is an initialized caller-owned writable scalar for this call only.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_httpbindings_write(phase: *mut u32, fact: u32) -> i32 {
+    // SAFETY: `phase` is null or aligned, writable and exclusively lent for this call.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return -1;
     };
@@ -74,6 +75,7 @@ enum EndAction {
 /// `phase` is an initialized caller-owned writable scalar for this call only.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_httpbindings_end(phase: *mut u32, fact: u32) -> i32 {
+    // SAFETY: `phase` is null or aligned, writable and exclusively lent for this call.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return -1;
     };

@@ -17,6 +17,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_request_option(key: Text, capabilit
         (b"websocket_compression", 2),
         (b"upload_tmp_dir", 0),
     ];
+    // SAFETY: `key` spans `length` initialized bytes (null only when empty) for this call.
     let Some(key) = (unsafe { bytes(key) }) else {
         return -1;
     };
@@ -33,6 +34,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_request_option(key: Text, capabilit
 /// Encoding is an initialized borrowed span, readable only for this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_httpbindings_compression(encoding: Text, capabilities: u32) -> i32 {
+    // SAFETY: `encoding` spans `length` initialized bytes (null only when empty) for this call.
     let Some(encoding) = (unsafe { bytes(encoding) }) else {
         return -1;
     };
@@ -94,7 +96,11 @@ pub unsafe extern "C" fn swr_v1_httpbindings_body_prefix(
     beginning: u32,
     output: *mut usize,
 ) -> i32 {
-    let (Some(body), Some(output)) = (unsafe { bytes(body) }, unsafe { output.as_mut() }) else {
+    // SAFETY: `body` spans `length` initialized bytes (null only when empty) for this call.
+    let body = unsafe { bytes(body) };
+    // SAFETY: `output` is null or aligned, writable and exclusively lent for this call.
+    let output = unsafe { output.as_mut() };
+    let (Some(body), Some(output)) = (body, output) else {
         return -1;
     };
     *output = if beginning == 0 {

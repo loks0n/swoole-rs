@@ -13,6 +13,7 @@ pub(crate) fn case_equal(left: &[u8], right: &[u8]) -> bool {
 pub(crate) fn case_prefix(left: &[u8], right: &[u8]) -> bool {
     left.len() >= right.len()
         && (right.is_empty()
+            // SAFETY: both slices hold at least `right.len()` readable bytes.
             || unsafe {
                 strncasecmp(left.as_ptr().cast(), right.as_ptr().cast(), right.len()) == 0
             })
@@ -24,6 +25,8 @@ pub(crate) unsafe fn bytes<'a>(text: Text) -> Option<&'a [u8]> {
     if text.length == 0 {
         Some(&[])
     } else {
+        // SAFETY: non-null, `length <= isize::MAX`, and the caller lends that many
+        // initialized bytes for the borrow's lifetime.
         Some(unsafe { core::slice::from_raw_parts(text.data, text.length) })
     }
 }
@@ -38,7 +41,11 @@ pub unsafe extern "C" fn swr_v1_httpbindings_request_header(
     method: u32,
     flags: u32,
 ) -> i32 {
-    let (Some(name), Some(value)) = (unsafe { bytes(name) }, unsafe { bytes(value) }) else {
+    // SAFETY: `name` spans `length` initialized bytes (null only when empty) for this call.
+    let name = unsafe { bytes(name) };
+    // SAFETY: `value` spans `length` initialized bytes (null only when empty) for this call.
+    let value = unsafe { bytes(value) };
+    let (Some(name), Some(value)) = (name, value) else {
         return -1;
     };
     if flags & 1 != 0 && case_equal(name, b"cookie") {
@@ -76,6 +83,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_request_key(name: Text) -> i32 {
         b"connection",
         b"accept-encoding",
     ];
+    // SAFETY: `name` spans `length` initialized bytes (null only when empty) for this call.
     let Some(name) = (unsafe { bytes(name) }) else {
         return -1;
     };
@@ -98,6 +106,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_tokens(
     fast_extent: usize,
     mode: u32,
 ) -> i32 {
+    // SAFETY: `data` spans `length` initialized bytes (null only when empty) for this call.
     let Some(input) = (unsafe { bytes(Text { data, length }) }) else {
         return -1;
     };
@@ -113,6 +122,8 @@ pub unsafe extern "C" fn swr_v1_httpbindings_tokens(
         }
         // SW_STRCASEEQ uses sizeof(value)-1 on a pointer in the pinned helper.
         // Preserve its architecture-dependent bounded comparison, not strlen.
+        // SAFETY: `data` spans `length` bytes and the caller makes `value` readable for
+        // this bounded comparison.
         return if unsafe { strncasecmp(data.cast(), value.cast(), length) } == 0 {
             1
         } else {
@@ -128,8 +139,15 @@ pub unsafe extern "C" fn swr_v1_httpbindings_tokens(
     let end = input.iter().position(|&c| c == 0).unwrap_or(length);
     // Raw byte effects permit the original value pointer to alias scratch.
     // Immutable token/value views exist only during the final pure comparison.
-    let read = |index: usize| unsafe { data.add(index).read() };
-    let write = |index: usize, byte| unsafe { data.add(index).write(byte) };
+    // Every index stays below `end <= length`, inside the caller's writable scratch.
+    let read = |index: usize| {
+        // SAFETY: as above.
+        unsafe { data.wrapping_add(index).read() }
+    };
+    let write = |index: usize, byte| {
+        // SAFETY: as above.
+        unsafe { data.wrapping_add(index).write(byte) }
+    };
     let mut cursor = 0;
     while cursor < end {
         while cursor < end && read(cursor) == b',' {
@@ -149,9 +167,11 @@ pub unsafe extern "C" fn swr_v1_httpbindings_tokens(
         }
         let mut first = start;
         let mut last = stop;
+        // SAFETY: isspace receives the native char value, as the pinned helper did.
         while first < last && unsafe { isspace((read(first) as c_char) as c_int) } != 0 {
             first += 1;
         }
+        // SAFETY: as above.
         while last > first && unsafe { isspace((read(last - 1) as c_char) as c_int) } != 0 {
             last -= 1;
             write(last, 0);
@@ -159,8 +179,11 @@ pub unsafe extern "C" fn swr_v1_httpbindings_tokens(
         if value.is_null() {
             return -1;
         }
+        // SAFETY: non-null and, on scan paths, readable through its C-string terminator.
         let value = unsafe { core::ffi::CStr::from_ptr(value.cast()) }.to_bytes();
-        let token = unsafe { core::slice::from_raw_parts(data.add(first), last - first) };
+        // SAFETY: `first <= last <= end <= length`, inside the scratch, and no write
+        // happens while this view is alive.
+        let token = unsafe { core::slice::from_raw_parts(data.wrapping_add(first), last - first) };
         if case_equal(token, value) {
             return 1;
         }
@@ -183,7 +206,11 @@ pub unsafe extern "C" fn swr_v1_httpbindings_request_url(
     input: Text,
     output: *mut UrlParts,
 ) -> i32 {
-    let (Some(input), Some(output)) = (unsafe { bytes(input) }, unsafe { output.as_mut() }) else {
+    // SAFETY: `input` spans `length` initialized bytes (null only when empty) for this call.
+    let input = unsafe { bytes(input) };
+    // SAFETY: `output` is null or aligned, writable and exclusively lent for this call.
+    let output = unsafe { output.as_mut() };
+    let (Some(input), Some(output)) = (input, output) else {
         return -1;
     };
     let path_length = input.iter().position(|&c| c == b'?').unwrap_or(input.len());
@@ -219,12 +246,14 @@ pub unsafe extern "C" fn swr_v1_httpbindings_trim_quotes(
     if length > isize::MAX as usize || (data.is_null() && length != 0) {
         return -1;
     }
+    // SAFETY: `output` is null or aligned, writable and exclusively lent for this call.
     let Some(output) = (unsafe { output.as_mut() }) else {
         return -1;
     };
     let input = if length == 0 {
         &mut []
     } else {
+        // SAFETY: non-null, `length <= isize::MAX`, initialized and exclusively writable.
         unsafe { core::slice::from_raw_parts_mut(data, length) }
     };
     let mut offset = 0;
@@ -257,6 +286,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_response_key(data: *mut u8, length:
     let input = if length == 0 {
         &mut []
     } else {
+        // SAFETY: non-null, `length <= isize::MAX`, initialized and exclusively writable.
         unsafe { core::slice::from_raw_parts_mut(data, length) }
     };
     let mut initial = true;
