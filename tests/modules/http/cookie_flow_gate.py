@@ -46,7 +46,7 @@ def main():
                     path=tree/member.name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(archive.extractfile(member).read())
         source=tree/'src/protocol/http.cc';original=source.read_text()
         apply_http_patch(tree,ROOT/'migration/patches/http/0001-http-helpers.patch',report)
-        flags=['-O1','-g','-fsanitize=address,undefined','-fno-sanitize-recover=all','-DSWOOLE_RS_HTTP','-I'+str(tree/'include'),'-I'+str(tree),'-I'+str(ROOT/'native/http'),'-I'+str(local)]
+        flags=['-O1','-g','-fsanitize=address,undefined','-fno-sanitize-recover=all','-I'+str(tree/'include'),'-I'+str(tree),'-I'+str(ROOT/'native/http'),'-I'+str(local)]
         if args.codes_only:flags.append('-DSWR_HTTP_STATUS_CODES')
         flags+=shlex.split(subprocess.check_output(['pkg-config','--cflags','openssl'],text=True))
         if not guard():return 1

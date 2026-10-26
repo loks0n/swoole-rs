@@ -71,9 +71,6 @@ def main():
                     path.write_bytes(archive.extractfile(member).read())
         original_protocol = tree/'src/protocol/http.cc'
         original_static = tree/'src/server/static_handler.cc'
-        (tree/'protocol-original.cc').write_bytes(original_protocol.read_bytes())
-        (tree/'static-original.cc').write_bytes(original_static.read_bytes())
-        shutil.copytree(tree/'include', tree/'legacy-include')
         report['warning_policy'] = {'unused_parameter_suppression': args.upstream_unused_parameter_policy, 'scope': 'Explicit unused-parameter subset of pinned maintainer flags, not full configure/maintainer qualification'}
         for name in ['0001-http-helpers.patch', '0002-static-ranges.patch', '0003-static-inline.patch']:
             apply_http_patch(tree, ROOT/'migration/patches/http'/name, report)
@@ -87,20 +84,18 @@ def main():
         if args.upstream_unused_parameter_policy:
             common.append('-Wno-unused-parameter')
         common += shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
-        modes = [('legacy', []), ('http-only', ['SWOOLE_RS_HTTP']), ('ports-only', ['SWOOLE_RS_PORTS']),
-                 ('paired', ['SWOOLE_RS_HTTP', 'SWOOLE_RS_PORTS', 'SWOOLE_RS_HTTP_REQUEST_V2']),
-                 ('old-flags-staged', ['SWOOLE_RS_HTTP', 'SWOOLE_RS_PORTS'])]
+        # HTTP is graduated: every Rust build has its patched sources (#123).
+        modes = [('http-only', []), ('paired', ['SWOOLE_RS_PORTS', 'SWOOLE_RS_HTTP_REQUEST_V2']),
+                 ('old-flags-staged', ['SWOOLE_RS_PORTS'])]
         for mode, macros in modes:
             for standard in ['c++14', 'c++17']:
-                for label, path in [('all-accessors', model), ('protocol', original_protocol if 'SWOOLE_RS_HTTP' in macros else tree/'protocol-original.cc'),
-                                    ('static', original_static if 'SWOOLE_RS_HTTP' in macros else tree/'static-original.cc')]:
+                for label, path in [('all-accessors', model), ('protocol', original_protocol), ('static', original_static)]:
                     free = shutil.disk_usage(tree).free
                     if free < report['minimum_free_bytes']:
                         report['blocked'] = {'reason': 'Unchanged4GiB guard', 'free_bytes': free, 'mode': mode, 'standard': standard, 'label': label}
                         write_report(args.output, report)
                         return 1
-                    include = tree/('include' if 'SWOOLE_RS_HTTP' in macros else 'legacy-include')
-                    command = ['c++', '-std='+standard, *common, '-I'+str(include), *['-D'+macro for macro in macros], str(path)]
+                    command = ['c++', '-std='+standard, *common, '-I'+str(tree/'include'), *['-D'+macro for macro in macros], str(path)]
                     result = run_isolated(command, timeout=60)
                     report['checks'].append({'mode': mode, 'standard': standard, 'label': label, 'command': command, 'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr})
                     write_report(args.output, report)

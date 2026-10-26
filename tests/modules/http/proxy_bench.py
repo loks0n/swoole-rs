@@ -49,7 +49,7 @@ def main():
         globals_source += '\n' + table + '\n' + body(codec, 'size_t base64_encode(')
         dependencies = tree/'dependencies.cc'; dependencies.write_text(globals_source)
         apply_http_patch(tree, patch, report)
-        flags = ['-std=c++14', '-DSWOOLE_RS_HTTP', '-O3', '-DNDEBUG', '-I'+str(tree/'include'), '-I'+str(tree), '-I'+str(ROOT/'native/http'), '-I'+str(local)]
+        flags = ['-std=c++14', '-O3', '-DNDEBUG', '-I'+str(tree/'include'), '-I'+str(tree), '-I'+str(ROOT/'native/http'), '-I'+str(local)]
         flags += shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
         if args.positive_only:flags.append('-DSWR_HTTP_PROXY_POSITIVE')
         native_command = ['c++', *['-std=c++14' if flag == '-std=c++14' else flag for flag in flags], '-c', str(source), '-o', str(tree/'static.o')]

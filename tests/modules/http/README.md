@@ -2,7 +2,7 @@
 
 The HTTP module moves first-party helpers, request/header/chunk framing, cookies,
 proxy policy, static paths/ranges/headers/calendar/rewrite/index rendering and
-multipart accounting into Rust behind `SWOOLE_RS_HTTP`. Native code keeps PHP and
+multipart accounting into Rust; it is graduated (always on). Native code keeps PHP and
 server configuration, allocation/IO/logging, libc calendar/locale behaviour,
 `std::regex` and the external llhttp/multipart parsers. See
 [the ABI contract](../../../native/http/contract.md) for exact contracts.

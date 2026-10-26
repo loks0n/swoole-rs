@@ -1,20 +1,17 @@
 diff --git a/include/swoole_static_handler.h b/include/swoole_static_handler.h
-index 71a18bb42..19e383e08 100644
+index 71a18bb..02c4ab7 100644
 --- a/include/swoole_static_handler.h
 +++ b/include/swoole_static_handler.h
-@@ -21,2 +21,7 @@
+@@ -21,2 +21,4 @@
  #include "swoole_mime_type.h"
-+#ifndef SWOOLE_RS_HTTP
-+#error "HTTP inline overlay requires --enable-swoole-rs-http"
-+#endif
 +#include "swoole_rs_http.h"
 +#include <stdexcept>
  
-@@ -25,2 +30,3 @@
+@@ -25,2 +27,3 @@
  
 +
  namespace swoole {
-@@ -79,8 +85,3 @@ class StaticHandler {
+@@ -79,8 +82,3 @@ class StaticHandler {
      bool catch_error() {
 -        if (last) {
 -            status_code = SW_HTTP_NOT_FOUND;
@@ -24,7 +21,7 @@ index 71a18bb42..19e383e08 100644
 -        }
 +        return swr_v1_http_static_catch(last, &status_code) == 1;
      }
-@@ -120,5 +121,8 @@ class StaticHandler {
+@@ -120,5 +118,8 @@ class StaticHandler {
      const std::string &get_boundary() {
 -        if (boundary.empty()) {
 -            boundary = std::string(SW_HTTP_SERVER_BOUNDARY_PREKEY);
@@ -36,7 +33,7 @@ index 71a18bb42..19e383e08 100644
 +            boundary = std::string(reinterpret_cast<const char *>(prefix));
 +            swoole_random_string(boundary, random_length);
          }
-@@ -128,8 +132,18 @@ class StaticHandler {
+@@ -128,8 +129,18 @@ class StaticHandler {
      const std::string &get_content_type() {
 -        if (tasks.size() > 1) {
 -            content_type = std::string("multipart/byteranges; boundary=") + get_boundary();
@@ -59,12 +56,12 @@ index 71a18bb42..19e383e08 100644
          }
 +        return get_mimetype();
      }
-@@ -171,3 +185,3 @@ class StaticHandler {
+@@ -171,3 +182,3 @@ class StaticHandler {
      bool is_absolute_path() {
 -        return swoole_strnpos(filename, l_filename, SW_STRL("..")) == -1;
 +        return swr_v1_http_static_path_check(reinterpret_cast<const uint8_t *>(filename), l_filename, nullptr, 0, 0) == 1;
      }
-@@ -176,6 +190,4 @@ class StaticHandler {
+@@ -176,6 +187,4 @@ class StaticHandler {
          const std::string &document_root = serv->get_document_root();
 -        const size_t l_document_root = document_root.length();
 -

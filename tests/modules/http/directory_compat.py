@@ -64,7 +64,7 @@ static_assert(std::is_same<decltype(std::declval<V&>().get_content_type(std::dec
 static_assert(std::is_same<decltype(std::declval<const V&>().copy_tasks()),std::vector<swr_v2_http_static_task>>::value,"owned typed send snapshot by value");
 static_assert(!std::is_copy_constructible<V>::value && !std::is_copy_assignable<V>::value,"sole directory owner");
 ''')
-        flags = ['-DSWOOLE_RS_HTTP', '-DNDEBUG', '-Wall', '-Wextra', '-Werror', '-I'+str(tree/'include'), '-I'+str(ROOT/'native/http')]
+        flags = ['-DNDEBUG', '-Wall', '-Wextra', '-Werror', '-I'+str(tree/'include'), '-I'+str(ROOT/'native/http')]
         flags += shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
         for standard in standards:
             layouts = []

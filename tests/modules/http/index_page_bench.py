@@ -32,7 +32,7 @@ def main():
         source = tree/'src/server/static_handler.cc'; original = source.read_text()
         apply_http_patch(tree, patch, report)
         apply_static_header(tree, report)
-        flags = ['-std=c++14', '-DSWOOLE_RS_HTTP', '-O3', '-DNDEBUG', '-I'+str(tree/'include'), '-I'+str(ROOT/'native/http'), '-I'+str(local), '-I'+str(tree)]
+        flags = ['-std=c++14', '-O3', '-DNDEBUG', '-I'+str(tree/'include'), '-I'+str(ROOT/'native/http'), '-I'+str(local), '-I'+str(tree)]
         flags += shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
         native_command = ['c++', *['-std=c++14' if flag == '-std=c++14' else flag for flag in flags], '-c', str(source), '-o', str(tree/'static.o')]
         native = run_isolated(native_command, timeout=60)

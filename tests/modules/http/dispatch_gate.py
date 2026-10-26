@@ -36,7 +36,7 @@ def main():
         originals = {name: (tree/name).read_text() for name in paths}
         for patch in patches:
             apply_http_patch(tree, patch, report)
-        flags = ['-std=c++17', '-DSWOOLE_RS_HTTP', '-O1', '-g', '-I'+str(tree/'include'), '-I'+str(tree), '-I'+str(ROOT/'native/http'), '-I'+str(local), '-fsanitize=address,undefined', '-fno-sanitize-recover=all']
+        flags = ['-std=c++17', '-O1', '-g', '-I'+str(tree/'include'), '-I'+str(tree), '-I'+str(ROOT/'native/http'), '-I'+str(local), '-fsanitize=address,undefined', '-fno-sanitize-recover=all']
         flags += shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
         report['whole_native_translation_units'] = {}
         for index, name in enumerate(paths):

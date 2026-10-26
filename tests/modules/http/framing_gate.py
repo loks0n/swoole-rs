@@ -54,7 +54,7 @@ def main():
         report['selected_original_tests'] = ['get_protocol', 'has_expect_header', 'all_method']
         report['entropy_fixture'] = 'minimum requested count of deterministic base64 alphabet bytes; original assertions unchanged'
         apply_http_patch(tree, patch, report)
-        flags = ['-std=c++17', '-DSWOOLE_RS_HTTP', '-O1', '-g', '-I'+str(tree/'include'), '-I'+str(tree), '-I'+str(ROOT/'native/http'), '-I'+str(local), '-fsanitize=address,undefined', '-fno-sanitize-recover=all']
+        flags = ['-std=c++17', '-O1', '-g', '-I'+str(tree/'include'), '-I'+str(tree), '-I'+str(ROOT/'native/http'), '-I'+str(local), '-fsanitize=address,undefined', '-fno-sanitize-recover=all']
         flags += shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
         native_command = ['c++', *['-std=c++14' if flag == '-std=c++17' else flag for flag in flags], '-c', str(source), '-o', str(tree/'static.o')]
         native = run_isolated(native_command, timeout=60)

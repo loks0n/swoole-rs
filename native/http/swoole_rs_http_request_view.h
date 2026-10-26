@@ -3,7 +3,7 @@
 #include "swoole_http.h"
 #include "swoole_server.h"
 #if defined(SWOOLE_RS_HTTP_REQUEST_V2)
-#if !defined(SWOOLE_RS_HTTP) || !defined(SWOOLE_RS_PORTS)
+#if !defined(SWOOLE_RS_PORTS)
 #error "RequestV2 capability requires the coherent HTTP/Ports caller pair"
 #endif
 #include "swoole_rs_http_request_v2.h"

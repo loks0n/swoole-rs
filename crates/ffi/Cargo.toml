@@ -17,7 +17,6 @@ protocols = ["dep:swoole-rs-protocols"]
 
 memory = ["dep:swoole-rs-memory"]
 
-http = ["dep:swoole-rs-http"]
 utilities = ["dep:swoole-rs-utilities"]
 locks = ["dep:swoole-rs-locks"]
 wrappers = ["dep:swoole-rs-wrappers"]
@@ -51,7 +50,7 @@ swoole-rs-crc32 = { path = "../crc32" }
 swoole-rs-error = { path = "../error" }
 swoole-rs-protocols = { path = "../protocols", optional = true }
 swoole-rs-memory = { path = "../memory", optional = true }
-swoole-rs-http = { path = "../http", optional = true }
+swoole-rs-http = { path = "../http" }
 swoole-rs-utilities = { path = "../utilities", optional = true }
 swoole-rs-locks = { path = "../locks", optional = true }
 swoole-rs-wrappers = { path = "../wrappers", optional = true }
