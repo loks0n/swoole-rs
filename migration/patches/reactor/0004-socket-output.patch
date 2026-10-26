@@ -1,5 +1,5 @@
 diff --git a/src/network/socket.cc b/src/network/socket.cc
-index ed3945714..07dc7e150 100644
+index ed39457..3bceb42 100644
 --- a/src/network/socket.cc
 +++ b/src/network/socket.cc
 @@ -21,2 +21,7 @@
@@ -595,7 +595,7 @@ index ed3945714..07dc7e150 100644
  #else
 -    return -1;
 +    const uint32_t available = 0;
-+#endif
+ #endif
 +    uint32_t phase = 0;
 +    int observed = 0;
 +    for (;;) {
@@ -605,7 +605,7 @@ index ed3945714..07dc7e150 100644
 +        case 0: return static_cast<int>(reply.value);
 +#ifdef TCP_CORK
 +        case 1: observed = set_option(IPPROTO_TCP, TCP_CORK, nopush); break;
- #endif
++#endif
 +        case 2: tcp_nopush = nopush; break;
 +        default: std::abort();
 +        }
@@ -1071,14 +1071,6 @@ index ed3945714..07dc7e150 100644
 -    } else {
 -        if (send_timer) {
 -            last_sent_time = time<std::chrono::milliseconds>(true);
--        }
--    }
--
--    // sendfile completed
--    if (task->begin == task->end) {
--        if (task->corked == 1) {
--            uncork();
--            task->corked = 0;
 +        case 4: observed = catch_write_error(errno); break;
 +        case 5: swoole_sys_warning("sendfile(%s, %ld, %zu) failed", task->get_filename(), (long) task->begin, requested); break;
 +        case 6: close_wait = 1; return SW_ERR;
@@ -1092,8 +1084,16 @@ index ed3945714..07dc7e150 100644
 +        case 21: observed = send_timer != nullptr; break;
 +        default: std::abort();
          }
--        buffer->pop();
      }
+-
+-    // sendfile completed
+-    if (task->begin == task->end) {
+-        if (task->corked == 1) {
+-            uncork();
+-            task->corked = 0;
+-        }
+-        buffer->pop();
+-    }
 -
 -    return SW_OK;
  }
@@ -1259,114 +1259,7 @@ index ed3945714..07dc7e150 100644
 -
 -    return SW_OK;
  }
-@@ -871,41 +939,28 @@ int Socket::sendfile_async(const char *filename, off_t offset, size_t length) {
- ssize_t Socket::recv(void *_buf, size_t _n, int _flags) {
--    ssize_t total_bytes = 0;
--
--    do {
--        if (ssl) {
--            ssize_t retval = 0;
--            while (static_cast<size_t>(total_bytes) < _n) {
--                retval = ssl_recv(static_cast<char *>(_buf) + total_bytes, _n - total_bytes);
--                if (retval <= 0) {
--                    if (total_bytes == 0) {
--                        total_bytes = retval;
--                    }
--                    break;
--                } else {
--                    total_bytes += retval;
--                    if (!(nonblock || (_flags & MSG_WAITALL))) {
--                        break;
--                    }
--                }
--            }
--        } else {
--            total_bytes = ::recv(fd, _buf, _n, _flags);
--        }
--    } while (total_bytes < 0 && (errno == EINTR && !dont_restart));
--
--    if (total_bytes > 0) {
--        total_recv_bytes += total_bytes;
--        if (recv_timer) {
--            last_received_time = time<std::chrono::milliseconds>(true);
-+    uint32_t phase = 0;
-+    int observed = 0;
-+    ssize_t result = 0, total = 0;
-+    for (;;) {
-+        auto reply = swr_v1_reactor_ordinary_io(1, phase, observed, result, total, _n, _flags);
-+        phase = reply.phase;
-+        switch (reply.action) {
-+        case 0: return static_cast<ssize_t>(reply.value);
-+        case 1: observed = ssl != nullptr; break;
-+        case 2: result = ssl_recv(static_cast<char *>(_buf) + total, _n - total); break;
-+        case 3: result = ::recv(fd, _buf, _n, _flags); break;
-+        case 4: observed = errno; break;
-+        case 5: observed = dont_restart; break;
-+        case 6: total_recv_bytes += static_cast<ssize_t>(reply.value); break;
-+        case 7: observed = recv_timer != nullptr; break;
-+        case 8: last_received_time = time<std::chrono::milliseconds>(true); break;
-+        case 9: observed = catch_read_error(errno); break;
-+        case 10: observed = event_hup; break;
-+        case 11: total = 0; break;
-+        case 13: observed = nonblock; break;
-+        case 15: total = static_cast<ssize_t>(reply.value); break;
-+        case 16: total += static_cast<ssize_t>(reply.value); break;
-+        case 12: swoole_trace_log(SW_TRACE_SOCKET, "recv %ld/%ld bytes, errno=%d", total, _n, errno); break;
-+        default: std::abort();
-         }
-     }
--
--    // The POLLHUP event is triggered, but Socket::recv returns EAGAIN
--    if (total_bytes < 0 && catch_read_error(errno) == SW_WAIT && event_hup) {
--        total_bytes = 0;
--    }
--
--    swoole_trace_log(SW_TRACE_SOCKET, "recv %ld/%ld bytes, errno=%d", total_bytes, _n, errno);
--
--    return total_bytes;
- }
-@@ -913,22 +968,22 @@ ssize_t Socket::recv(void *_buf, size_t _n, int _flags) {
- ssize_t Socket::send(const void *_buf, size_t _n, int _flags) {
--    ssize_t retval;
--
--    do {
--        if (ssl) {
--            retval = ssl_send(_buf, _n);
--        } else {
--            retval = ::send(fd, _buf, _n, _flags);
--        }
--    } while (retval < 0 && (errno == EINTR && !dont_restart));
--
--    if (retval > 0) {
--        total_send_bytes += retval;
--        if (send_timer) {
--            last_sent_time = time<std::chrono::milliseconds>(true);
-+    uint32_t phase = 0;
-+    int observed = 0;
-+    ssize_t result = 0, total = 0;
-+    for (;;) {
-+        auto reply = swr_v1_reactor_ordinary_io(0, phase, observed, result, total, _n, _flags);
-+        phase = reply.phase;
-+        switch (reply.action) {
-+        case 0: return static_cast<ssize_t>(reply.value);
-+        case 1: observed = ssl != nullptr; break;
-+        case 2: result = ssl_send(_buf, _n); break;
-+        case 3: result = ::send(fd, _buf, _n, _flags); break;
-+        case 4: observed = errno; break;
-+        case 5: observed = dont_restart; break;
-+        case 6: total_send_bytes += static_cast<ssize_t>(reply.value); break;
-+        case 7: observed = send_timer != nullptr; break;
-+        case 8: last_sent_time = time<std::chrono::milliseconds>(true); break;
-+        case 12: swoole_trace_log(SW_TRACE_SOCKET, "send %ld/%ld bytes, errno=%d", result, _n, errno); break;
-+        default: std::abort();
-         }
-     }
--
--    swoole_trace_log(SW_TRACE_SOCKET, "send %ld/%ld bytes, errno=%d", retval, _n, errno);
--
--    return retval;
- }
-@@ -936,6 +991,15 @@ ssize_t Socket::send(const void *_buf, size_t _n, int _flags) {
+@@ -936,6 +1004,15 @@ ssize_t Socket::send(const void *_buf, size_t _n, int _flags) {
  ssize_t Socket::send_async(const void *_buf, size_t _n) {
 -    if (!swoole_event_is_available()) {
 -        return send_sync(_buf, _n, 0);
@@ -1386,7 +1279,7 @@ index ed3945714..07dc7e150 100644
 +        default: std::abort();
 +        }
      }
-@@ -945,14 +1009,8 @@ ssize_t Socket::read_sync(void *_buf, size_t _len) {
+@@ -945,14 +1022,8 @@ ssize_t Socket::read_sync(void *_buf, size_t _len) {
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -1407,7 +1300,7 @@ index ed3945714..07dc7e150 100644
 +    }, SW_EVENT_READ, sec2msec(read_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -961,14 +1019,8 @@ ssize_t Socket::write_sync(const void *_buf, size_t _len) {
+@@ -961,14 +1032,8 @@ ssize_t Socket::write_sync(const void *_buf, size_t _len) {
      ssize_t bytes = 0;
 -
 -    auto rv = wait_for(
@@ -1428,7 +1321,7 @@ index ed3945714..07dc7e150 100644
 +    }, SW_EVENT_WRITE, sec2msec(write_timeout));
 +    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
  }
-@@ -976,14 +1028,20 @@ ssize_t Socket::write_sync(const void *_buf, size_t _len) {
+@@ -976,14 +1041,20 @@ ssize_t Socket::write_sync(const void *_buf, size_t _len) {
  ssize_t Socket::readv(IOVector *io_vector) {
 -    ssize_t retval;
 -
@@ -1460,7 +1353,7 @@ index ed3945714..07dc7e150 100644
 -    return retval;
 +    }
  }
-@@ -991,14 +1049,20 @@ ssize_t Socket::readv(IOVector *io_vector) {
+@@ -991,14 +1062,20 @@ ssize_t Socket::readv(IOVector *io_vector) {
  ssize_t Socket::writev(IOVector *io_vector) {
 -    ssize_t retval;
 -
@@ -1492,7 +1385,7 @@ index ed3945714..07dc7e150 100644
 -    return retval;
 +    }
  }
-@@ -1006,15 +1070,19 @@ ssize_t Socket::writev(IOVector *io_vector) {
+@@ -1006,15 +1083,19 @@ ssize_t Socket::writev(IOVector *io_vector) {
  ssize_t Socket::peek(void *_buf, size_t _n, int _flags) const {
 -    ssize_t retval;
 -    _flags |= MSG_PEEK;
@@ -1524,7 +1417,7 @@ index ed3945714..07dc7e150 100644
 -    return retval;
 +    }
  }
-@@ -1022,33 +1090,10 @@ ssize_t Socket::peek(void *_buf, size_t _n, int _flags) const {
+@@ -1022,33 +1103,10 @@ ssize_t Socket::peek(void *_buf, size_t _n, int _flags) const {
  int Socket::catch_error(const int err) {
 -    switch (err) {
 -    case EFAULT:
