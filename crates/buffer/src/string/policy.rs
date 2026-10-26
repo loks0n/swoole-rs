@@ -285,7 +285,7 @@ mod tests {
         let mut bytes = [91u8; 64];
         for capacity in [0, 1, 7, 8, 33, 64] {
             for length in [0, capacity / 2, capacity] {
-                for offset in [-1, 0, length as i64] {
+                for offset in [-1, 0, i64::try_from(length).unwrap()] {
                     let source = StringState {
                         data: bytes.as_mut_ptr(),
                         length,

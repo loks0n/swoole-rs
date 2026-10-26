@@ -179,7 +179,12 @@ pub(super) unsafe fn step(
             let mut text = itoa::Buffer::new();
             let text = text.format(value).as_bytes();
             cursor.digits[..text.len()].copy_from_slice(text);
-            cursor.digits_length = text.len() as u32;
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a formatted integer has at most 20 digits"
+            )]
+            let digits = text.len() as u32;
+            cursor.digits_length = digits;
         }
         let count = amount(edit, cursor, &source, source_object);
         let at = if edit.operation == WRITE {

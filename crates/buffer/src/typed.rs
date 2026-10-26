@@ -113,7 +113,7 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_front(buffer: *const Buffer, out: *
     match queue.entries.front() {
         None => return EMPTY,
         Some(Entry::Data(bytes)) => {
-            result.length = bytes.len() as u32;
+            result.length = crate::chunk_length(bytes);
             result.data = bytes.as_ptr().cast_mut();
         }
         Some(Entry::TypedToken(token)) => {
@@ -151,7 +151,7 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_consume(
     };
     if generation != cursor.generation
         || offset != cursor.offset
-        || count > bytes.len() as u32 - cursor.offset
+        || count > crate::chunk_length(bytes) - cursor.offset
     {
         return INVALID;
     }
@@ -183,7 +183,7 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_pop(buffer: *mut Buffer, out: *mut 
     };
     let effect = match entry {
         Entry::Data(bytes) => {
-            queue.length -= bytes.len() as u32;
+            queue.length -= crate::chunk_length(&bytes);
             Detached::default()
         }
         Entry::TypedToken(token) => Detached {
@@ -245,7 +245,7 @@ mod tests {
                 );
                 assert_eq!(swr_v1_buffer_typed_pop(queue, &mut detached), OK);
                 assert!(detached.token.is_null() && detached.dispose.is_none());
-                total -= bytes.len() as u32;
+                total -= u32::try_from(bytes.len()).unwrap();
                 assert_eq!((*queue).length, total);
             }
             assert_eq!(swr_v1_buffer_typed_front(queue, &mut view), OK);

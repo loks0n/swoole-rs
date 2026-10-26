@@ -6,13 +6,6 @@
         clippy::multiple_unsafe_ops_per_block
     )
 )]
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_ptr_alignment,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
 mod typed;
 use std::alloc::{Layout, alloc};
 use std::collections::VecDeque;
@@ -25,6 +18,15 @@ const INVALID: i32 = -1;
 const OVERFLOW: i32 = -2;
 const NOMEM: i32 = -3;
 const PENDING_NATIVE: i32 = -4;
+
+/// A data chunk's length: chunks hold at most `chunk_size: u32` bytes (`appendv`).
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "a data chunk holds at most chunk_size: u32 bytes"
+)]
+pub(crate) fn chunk_length(bytes: &[u8]) -> u32 {
+    bytes.len() as u32
+}
 
 #[repr(C)]
 pub struct BufferIovec {
@@ -83,8 +85,8 @@ impl Entry {
         match self {
             Self::Data(bytes) => BufferView {
                 kind: 0,
-                length: bytes.len() as u32,
-                capacity: bytes.len() as u32,
+                length: chunk_length(bytes),
+                capacity: chunk_length(bytes),
                 data: bytes.as_ptr().cast_mut(),
                 token: ptr::null_mut(),
             },
@@ -125,6 +127,10 @@ impl Buffer {
     // One initialized owning value for both ordinary modes. No raw exported C
     // operation is used as an internal constructor or mutates a published owner.
     fn try_new(chunk_size: u32, mode: Mode) -> Result<Box<Self>, i32> {
+        #[expect(
+            clippy::cast_ptr_alignment,
+            reason = "alloc honours Layout::new::<Buffer>()"
+        )]
         // SAFETY: `Buffer` is not zero-sized; null is handled below.
         let handle = unsafe { alloc(Layout::new::<Self>()) }.cast::<Self>();
         if handle.is_null() {
@@ -162,7 +168,7 @@ impl Buffer {
         *view = ptr::null_mut();
         let token = match entry {
             Entry::Data(bytes) => {
-                self.length -= bytes.len() as u32;
+                self.length -= chunk_length(&bytes);
                 ptr::null_mut()
             }
             Entry::Native(token) => token,
@@ -192,7 +198,9 @@ impl Buffer {
         if offset > total as u64 {
             return INVALID;
         }
-        let offset = offset as usize;
+        let Ok(offset) = usize::try_from(offset) else {
+            return INVALID;
+        };
         let Some(remaining) = total.checked_sub(offset) else {
             return INVALID;
         };
@@ -409,7 +417,7 @@ pub unsafe extern "C" fn swr_v1_buffer_append_iovec(
     // SAFETY: `buffer` is non-null (checked above), live and exclusive.
     let queue = unsafe { &mut *buffer };
     // SAFETY: the borrowed input follows the frozen ABI's validity rules.
-    unsafe { queue.appendv(parts, offset as u64) }
+    unsafe { queue.appendv(parts, offset.unsigned_abs()) }
 }
 
 /// Transfer one opaque native token to the queue on success.
@@ -805,7 +813,7 @@ mod tests {
                         owned.0,
                         vectors.as_ptr(),
                         vectors.len(),
-                        offset as i64,
+                        i64::try_from(offset).unwrap(),
                     )
                 };
                 if offset > expected.len() {

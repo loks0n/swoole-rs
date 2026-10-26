@@ -123,6 +123,10 @@ pub unsafe extern "C" fn swr_v1_string_split_next(
             return Err(OVERFLOW);
         }
         // The pinned helper accepts uint32 lengths. Preserve its search window.
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the pinned helper's uint32 search window"
+        )]
         let available = (length - offset) as u32 as usize;
         let start = if offset == 0 {
             data
@@ -144,7 +148,7 @@ pub unsafe extern "C" fn swr_v1_string_split_next(
                 begin: offset - prefix,
                 length: advance + prefix,
                 advance,
-                resume: (offset + advance) as i64,
+                resume: i64::try_from(offset + advance).unwrap_or(i64::MAX),
                 consumed: 0,
             }
         } else {
@@ -153,9 +157,9 @@ pub unsafe extern "C" fn swr_v1_string_split_next(
             StringSplitStep {
                 consumed: offset - prefix,
                 resume: if prefix == offset {
-                    length.saturating_sub(delimiter_length) as i64
+                    i64::try_from(length.saturating_sub(delimiter_length)).unwrap_or(i64::MAX)
                 } else {
-                    offset as i64
+                    i64::try_from(offset).unwrap_or(i64::MAX)
                 },
                 ..StringSplitStep::default()
             }
@@ -305,17 +309,17 @@ pub unsafe extern "C" fn swr_v1_string_split_plan(
         }
         if status == 0 {
             plan.offset = plan.step.resume;
-            plan.value = plan.step.consumed as i64;
+            plan.value = i64::try_from(plan.step.consumed).unwrap_or(i64::MAX);
             if plan.step.consumed > 0 && plan.step.consumed < length {
                 plan.trace = 5;
-                plan.trace_value = length - plan.offset as usize;
+                plan.trace_value = length - usize::try_from(plan.offset).unwrap_or(length);
             } else if plan.step.consumed >= length {
                 plan.trace = 3;
             }
         } else {
             plan.action = 1;
             plan.trace = 4;
-            plan.trace_value = plan.step.resume as usize;
+            plan.trace_value = usize::try_from(plan.step.resume).unwrap_or(0);
             plan.cursor = StringSplitCursor {
                 prefix: 0,
                 advance: plan.step.advance,
