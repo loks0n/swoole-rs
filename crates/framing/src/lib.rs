@@ -1,11 +1,5 @@
 //! Callback-free packet decisions and immutable MIME policy; native IO stays native.
 #![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
-#![expect(
     clippy::missing_safety_doc,
     reason = "every export is covered by the module-local C contract"
 )]
@@ -115,7 +109,12 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                     return done(0);
                 };
                 s.recv = if i.offset > 0 {
-                    (i.offset as u64).wrapping_sub(i.len as u64) as u32
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        reason = "the native uint32_t recv store"
+                    )]
+                    let recv = i.offset.unsigned_abs().wrapping_sub(i.len as u64) as u32;
+                    recv
                 } else {
                     i.length_offset.wrapping_add(s.head)
                 };
@@ -132,7 +131,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                 if i.result == 0 {
                     return done(-1);
                 };
-                return emit(s, 5, 3, i.result as u64);
+                return emit(s, 5, 3, i.result.unsigned_abs());
             }
             (0, 4) | (1, 2) => {
                 if i.result == 3 {
@@ -145,7 +144,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
             }
             (0, 5) => {
                 if i.flags & WAIT != 0 {
-                    if i.offset >= 0 && i.len >= i.offset as usize {
+                    if usize::try_from(i.offset).is_ok_and(|offset| i.len >= offset) {
                         s.phase = 9
                     } else if i.flags & TLS != 0 {
                         s.phase = 1
@@ -169,22 +168,22 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                     };
                 }
                 if s.packet > i.max as i64 {
-                    return emit(s, 900, 17, s.packet as u64);
+                    return emit(s, 900, 17, s.packet.unsigned_abs());
                 }
-                if i.cap < (s.packet as usize) {
-                    return emit(s, 7, 5, s.packet as u64);
+                if usize::try_from(s.packet).map_or(true, |packet| i.cap < packet) {
+                    return emit(s, 7, 5, s.packet.unsigned_abs());
                 }
                 s.phase = 7;
             }
-            (0, 7) => return emit(s, 8, 6, s.packet as u64),
+            (0, 7) => return emit(s, 8, 6, s.packet.unsigned_abs()),
             (0, 8) => {
-                s.phase = if i.offset >= 0 && i.len >= i.offset as usize {
+                s.phase = if usize::try_from(i.offset).is_ok_and(|offset| i.len >= offset) {
                     9
                 } else {
                     1
                 };
             }
-            (0, 9) => return emit(s, 10, 7, i.offset as u64),
+            (0, 9) => return emit(s, 10, 7, i.offset.unsigned_abs()),
             (0, 10) => {
                 if i.result < 0 {
                     return done(-1);
@@ -195,8 +194,8 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                 return emit(s, 11, 8, 0);
             }
             (0, 11) => {
-                if i.offset >= 0 && i.len > i.offset as usize {
-                    return emit(s, 2, 9, i.offset as u64);
+                if usize::try_from(i.offset).is_ok_and(|offset| i.len > offset) {
+                    return emit(s, 2, 9, i.offset.unsigned_abs());
                 }
                 return emit(s, 12, 10, 0);
             }
@@ -218,7 +217,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                 if i.result == 0 {
                     return done(-1);
                 }
-                return emit(s, 3, 3, i.result as u64);
+                return emit(s, 3, 3, i.result.unsigned_abs());
             }
             (1, 3) => {
                 if i.len < (i.eof_len as usize) {
@@ -281,6 +280,10 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                             return done(-1);
                         }
                         let p = i.page as usize;
+                        #[expect(
+                            clippy::cast_possible_truncation,
+                            reason = "the native uint32_t buffer size"
+                        )]
                         let n = i
                             .cap
                             .wrapping_mul(2)
@@ -311,8 +314,8 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                 if i.result == 0 {
                     return done(1);
                 }
-                if (i.result as usize) < i.len {
-                    return emit(s, 2, 9, i.result as u64);
+                if usize::try_from(i.result).is_ok_and(|result| result < i.len) {
+                    return emit(s, 2, 9, i.result.unsigned_abs());
                 }
                 return emit(s, 3, 10, 0);
             }
@@ -357,7 +360,7 @@ pub unsafe extern "C" fn swr_v1_framing_unpack(
     let mut raw = [0u8; 8];
     raw[..width].copy_from_slice(&v[..width]);
     *out = match format {
-        b'c' => v[0] as i8 as i64,
+        b'c' => i64::from(v[0].cast_signed()),
         b'C' => v[0] as i64,
         b's' => i16::from_ne_bytes([raw[0], raw[1]]) as i64,
         b'S' => u16::from_ne_bytes([raw[0], raw[1]]) as i64,
@@ -368,8 +371,8 @@ pub unsafe extern "C" fn swr_v1_framing_unpack(
         b'N' => u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]) as i64,
         b'V' => u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]) as i64,
         b'q' | b'Q' => i64::from_ne_bytes(raw),
-        b'J' => u64::from_be_bytes(raw) as i64,
-        b'P' => u64::from_le_bytes(raw) as i64,
+        b'J' => u64::from_be_bytes(raw).cast_signed(),
+        b'P' => u64::from_le_bytes(raw).cast_signed(),
         _ => return -1,
     };
     0
@@ -397,7 +400,7 @@ pub unsafe extern "C" fn swr_v1_framing_default(
     };
     let need = offset as usize + size as usize;
     if len < need {
-        *out = need as i64;
+        *out = i64::try_from(need).unwrap_or(i64::MAX);
         return 0;
     }
     // SAFETY: the caller lends `len` initialized bytes at `data`.
@@ -503,7 +506,7 @@ pub unsafe extern "C" fn swr_v1_framing_mime_suffix(
             c as i32
         };
         // SAFETY: `input` is EOF or an unsigned char value, as tolower requires.
-        let lower = unsafe { tolower(input) } as u8;
+        let lower = unsafe { tolower(input) }.to_le_bytes()[0];
         // SAFETY: `n < suffix.len() <= cap`, and the caller lends `cap` writable bytes at `out`.
         let slot = unsafe { out.add(n) };
         // SAFETY: as above, `slot` is writable.
