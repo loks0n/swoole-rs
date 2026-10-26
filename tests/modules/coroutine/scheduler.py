@@ -36,8 +36,14 @@ def main():
 public:
 constexpr static int STACK_ALIGNED_SIZE=4096,MIN_STACK_SIZE=65536,MAX_STACK_SIZE=16777216;
 using SwapCallback=void(*)(void*);using BailoutCallback=std::function<void()>;
+// Same guards as the identity/swap/creation patches: the selected engine stores Rust-owned slots.
+#if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE
+static SW_THREAD_LOCAL swr_v1_coroutine_identity current;
+static SW_THREAD_LOCAL swr_v1_coroutine_swap_callback on_yield,on_resume,on_close;
+#else
 static SW_THREAD_LOCAL Coroutine *current;
 static SW_THREAD_LOCAL SwapCallback on_yield,on_resume,on_close;
+#endif
 static SW_THREAD_LOCAL BailoutCallback on_bailout;
 #ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
 static SW_THREAD_LOCAL RustCoroutineRegistry<Coroutine> coroutines;
@@ -58,12 +64,18 @@ static bool active_model(){return activated;}
 #endif
 static bool bailout_model(){return bool(on_bailout);}
 static size_t count(){observations.push_back(2);return coroutines.size();}
-long cid;Context ctx;
+#if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE
+swr_v1_coroutine_cid cid;
+#else
+long cid;
+#endif
+Context ctx;
 Coroutine(const CoroutineFunc&,void*);
 static void activate();static void deactivate();
 '''
    decl+='\n'.join(block(header,m)for m in methods)+'\n};\n'
-   start=source.index('SW_THREAD_LOCAL Coroutine *Coroutine::current');end=source.index('#ifdef SW_USE_THREAD_CONTEXT\nnamespace',start)
+   # Static members start right after the namespace opens; the identity patch guards the first one.
+   start=source.index('namespace swoole {\n')+len('namespace swoole {\n');end=source.index('#ifdef SW_USE_THREAD_CONTEXT\nnamespace',start)
    text=decl+source[start:end]+'\n'+block(source,'void Coroutine::activate()')+'\n'+block(source,'void Coroutine::deactivate()')+'\n'+block(source,'Coroutine::Coroutine(')+'\n';inc=folder/'scheduler.inc';inc.write_text(text)
    for threaded in (False,True):
     binary=folder/('metadata-thread'if threaded else'metadata-global');command=['c++','-std=c++14','-O1','-g','-UNDEBUG','-Wall','-Wextra','-Werror','-I'+str(folder),'-I'+str(ROOT/'native/coroutine'),*(['-DSWOOLE_RS_COROUTINE_REGISTRY_V2','-include',str(ROOT/'native/coroutine/swoole_rs_coroutine_registry.h')]if a.registry and engine=='selected'else[]),*(['-DSWOOLE_RS_COROUTINE']if engine=='selected'else[]),*(['-DSW_THREAD']if threaded else[]),str(Path(__file__).with_suffix('.cc')),*([str(a.archive.resolve())]if engine=='selected'else[]),'-lpthread',*(['-ldl','-lm']if sys.platform.startswith('linux')else[]),'-o',str(binary)]
