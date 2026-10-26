@@ -7,6 +7,7 @@ and unchanged original/API tests remain separate gates. No network operations.
 import argparse
 import base64
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -31,6 +32,25 @@ def apply_overlay(scratch, output):
 
 LOG = None
 SERIAL = 0
+# A driver built with SHARDED_MAIN visits every SHARD_COUNT-th outer value from SHARD_INDEX.
+SHARDED_MAIN = ('#include <cstdlib>\nstatic unsigned SHARD_INDEX = 0, SHARD_COUNT = 1;\n'
+                'static int sharded_main();\nint main(int argc, char **argv) {\n'
+                '    if (argc == 3) { SHARD_INDEX = std::strtoul(argv[1], nullptr, 10); SHARD_COUNT = std::strtoul(argv[2], nullptr, 10); }\n'
+                '    return sharded_main();\n}\n')
+
+
+def run_shards(executables, count=None):
+    """Run every executable as `count` shards at once; return each one's summed case count."""
+    count = count or os.cpu_count() or 1
+    jobs = [(exe, subprocess.Popen([str(exe), str(i), str(count)], stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+            for exe in executables for i in range(count)]
+    totals = {}
+    for exe, job in jobs:
+        out, err = job.communicate()
+        if job.returncode:
+            raise subprocess.CalledProcessError(job.returncode, job.args, out, err)
+        totals[exe] = totals.get(exe, 0) + int(out.strip())
+    return [totals[exe] for exe in executables]
 
 def run(args):
     global SERIAL
