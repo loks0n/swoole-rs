@@ -28,7 +28,7 @@ class DiskSpace(unittest.TestCase):
             with patch.object(dev, 'ROOT', root), \
                  patch('sys.argv', ['dev.py', 'edit', '--module', 'error']), \
                  patch.object(dev, 'require_build_space', side_effect=RuntimeError('disk low')), \
-                 patch.object(dev.subprocess, 'run') as run:
+                 patch.object(dev, 'execute') as run:
                 self.assertEqual(dev.main(), 1)
                 run.assert_not_called()
             report = json.loads(next(root.rglob('loop.json')).read_text())
