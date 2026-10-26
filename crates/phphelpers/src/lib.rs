@@ -1,9 +1,4 @@
 //! Common PHP helper policy. Zend storage, calls, allocation and VM effects stay native.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
 use std::ffi::c_char;
 mod asynchronous;
 mod facade;
@@ -229,9 +224,9 @@ pub unsafe extern "C" fn swr_v1_phphelpers_arguments(
     }
     unsafe {
         *output = ArgumentPlan {
-            head: position as u32,
-            tail_begin: (position + 1) as u32,
-            tail_count: (count - position - 1) as u32,
+            head: position.cast_unsigned(),
+            tail_begin: (position + 1).cast_unsigned(),
+            tail_count: (count - position - 1).cast_unsigned(),
         };
     }
     1
@@ -894,12 +889,16 @@ unsafe fn write_type_layout(
         Some(_) => return 0,
         None => (UNDEF, 1),
     };
+    // `offset` and `length` stay below `logical`, a u16.
+    let Ok(offset16) = u16::try_from(offset) else {
+        return 0;
+    };
     if key != UNDEF && key != LONG && key != 5 {
         unsafe {
             *output = TypeLayout {
                 key,
                 value: UNDEF,
-                offset: offset as u16,
+                offset: offset16,
                 length: 0,
             };
         }
@@ -912,12 +911,15 @@ unsafe fn write_type_layout(
         return 0;
     }
     let value = kind(&bytes[offset..offset + length]);
+    let Ok(length) = u16::try_from(length) else {
+        return 0;
+    };
     unsafe {
         *output = TypeLayout {
             key,
             value,
-            offset: offset as u16,
-            length: length as u16,
+            offset: offset16,
+            length,
         };
     }
     1
@@ -1368,9 +1370,12 @@ mod tests {
                 actual.push(source[0]);
                 actual.extend_from_slice(&source[plan.tail_begin as usize..]);
                 let mut expected = source;
-                expected[..=position as usize].rotate_left(1);
+                expected[..=usize::try_from(position).unwrap()].rotate_left(1);
                 assert_eq!(actual, expected);
-                assert_eq!(plan.tail_count, (count - position - 1) as u32);
+                assert_eq!(
+                    plan.tail_count,
+                    u32::try_from(count - position - 1).unwrap()
+                );
             }
         }
     }
