@@ -82,15 +82,22 @@ def recheck(tests, rechecked):
     for test in tests:
         upstream = runs[test].get('upstream', [])
         others = [status for engine, statuses in runs[test].items() if engine != 'upstream' for status in statuses]
-        if not upstream or not others:
+        if any(status != 'passed' for status in upstream):
+            flaky.append(test)  # decided by the upstream failure; the other engine needn't re-run
+        elif not upstream or not others:
             regressions.append(test)
-        elif any(status != 'passed' for status in upstream):
-            flaky.append(test)
         elif any(status != 'passed' for status in others):
             regressions.append(test)
         else:
             recovered.append(test)
     return regressions, flaky, recovered
+
+
+def pending(tests, rechecked):
+    """Flagged tests still worth re-running: one that failed an upstream re-run is already
+    flaky on upstream, whatever else happens."""
+    failed_upstream = {row['test'] for row in rechecked if row['engine'] == 'upstream' and row['status'] != 'passed'}
+    return [test for test in tests if test not in failed_upstream]
 
 
 def listing(title, tests):
@@ -131,12 +138,17 @@ def main():
     parser.add_argument('--output', type=Path)
     parser.add_argument('--recheck', type=Path, nargs='+', help='Reports of re-runs of the flagged tests')
     parser.add_argument('--print-regressions', action='store_true', help='Print flagged test paths and exit')
+    parser.add_argument('--print-pending', action='store_true',
+                        help='Print flagged tests not yet failed on an upstream re-run (--recheck), and exit')
     args = parser.parse_args()
     results = sorted(rows(args.reports), key=lambda row: (row['test'], row['engine']))
     if args.print_regressions:
         print('\n'.join(flagged(results)))
         return 0
     rechecked = list(rows(args.recheck)) if args.recheck else None
+    if args.print_pending:
+        print('\n'.join(pending(flagged(results), rechecked or [])))
+        return 0
     if args.output:
         args.output.write_text(json.dumps(results, indent=1) + '\n')
     print(markdown(results, rechecked))
