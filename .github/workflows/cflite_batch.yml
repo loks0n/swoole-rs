@@ -23,6 +23,7 @@ jobs:
           fuzz-seconds: ${{ github.event.schedule == '0 6 * * *' && 600 || 3600 }}
           mode: ${{ github.event.schedule == '0 6 * * *' && 'prune' || 'batch' }}
           sanitizer: address
+          minimize-crashes: true
       - if: failure() && steps.build.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
