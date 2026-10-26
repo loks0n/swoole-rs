@@ -53,6 +53,12 @@ jobs:
         with:
           path: .ccache
           key: ccache-${{ runner.os }}-${{ github.sha }}
+      # Small on purpose: tools/ci.py downloads it to list failed, new and fixed phases.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phases
+          path: target/reports/dev/*/loop.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
