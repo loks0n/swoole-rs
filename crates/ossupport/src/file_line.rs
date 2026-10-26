@@ -25,6 +25,7 @@ pub unsafe extern "C" fn swr_v1_os_file_line_result(
             extra: 0,
         };
     }
+    // SAFETY: a positive read result is the length of the initialized prefix at `data`.
     let end = unsafe { crate::swr_v1_os_line_end(data, crate::size_t(read_result)) };
     FileLineResult {
         length: if end == 0 {
