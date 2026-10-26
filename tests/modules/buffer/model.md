@@ -1,8 +1,8 @@
 # Seeded buffer model gate
 
 ```sh
-python3 tests/modules/buffer/model.py --sanitize
-python3 tests/modules/buffer/model.py --archive /absolute/libswoole_rs_ffi.a --sanitize
+python3 -m pytest tests/modules/buffer/test_model.py --sanitize --manifest target/hybrid/rust-buffer-websocket/build-manifest.json
+python3 -m pytest tests/modules/buffer/test_model.py --sanitize --archive /absolute/libswoole_rs_ffi.a
 ```
 
 With `--build-manifest` (default `target/hybrid/rust-buffer-websocket/build-manifest.json`)

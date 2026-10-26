@@ -160,6 +160,6 @@ tests against both engines. Focused positive profiles: `--transition-only`,
 `--copy-only`, `--split-only`, `--integer-only`, `--ownership-only`,
 `--allocation-only`, `--format-only`, `--random-only`. The gate needs the pinned
 native core/base, os/base and base64 sources and `pkg-config openssl`. ASan/UBSan
-covers the C++ side only. `tests/modules/buffer/string/compatibility.py` checks the
+covers the C++ side only. `tests/modules/buffer/string/test_compatibility.py` checks the
 compatibility step; `production.py --consumer compatibility` loads it into a PHP
 build. See `tests/modules/buffer/string/profiles.md`.

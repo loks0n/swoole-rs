@@ -14,7 +14,6 @@ done
 for test in \
     tests/modules/buffer/string/test_gate_profiles.py \
     tests/modules/buffer/string/test_production.py \
-    tests/modules/buffer/test_facade_instrumentation.py \
     tests/modules/clients/test_gate_output.py \
     tests/modules/integration/test_bridge_inventory.py \
     tests/modules/memory/test_benchmark.py \

@@ -30,4 +30,4 @@ token and CLOSE entries. Exports: `create`, `push`, `front`, `consume` (cursor) 
   admission/publication adapter. Teardown pairs `Box::into_raw` with
   `Box::from_raw`.
 
-Tests: `tests/modules/buffer/typed.py`, `typed_layout.py`.
+Tests: `tests/modules/buffer/test_typed.py`, `test_typed_layout.py`.

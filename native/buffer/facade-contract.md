@@ -47,4 +47,4 @@ this path calls the callback while the bytes are still live. A callback that rea
 DATA during destruction therefore behaves differently; upstream's behavior there
 is a use-after-free.
 
-Test: `tests/modules/buffer/facade.py`.
+Test: `tests/modules/buffer/test_facade.py`.
