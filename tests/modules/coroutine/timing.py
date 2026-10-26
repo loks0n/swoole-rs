@@ -12,6 +12,9 @@ from tools.build_hybrid import apply_patch_verified
 from tools.build_upstream import require_build_space
 from tools.harness import run_isolated,write_report
 
+def find(text,anchor,start=0):
+ if anchor not in text[start:]:raise ValueError('Extraction anchor not found: '+repr(anchor))
+ return text.index(anchor,start)
 def digest(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def main():
  p=argparse.ArgumentParser(description=__doc__)
@@ -40,8 +43,10 @@ def main():
   r['patch_proofs']=[apply_patch_verified(tree,manifest.parent/e['path'],e['upstream_paths'],e['sha256'])for e in entries]
   for engine in ('native','selected'):
    folder=work/engine;folder.mkdir();header=originals['include/swoole_coroutine.h']if engine=='native'else(tree/'include/swoole_coroutine.h').read_text();source=originals['src/coroutine/base.cc']if engine=='native'else(tree/'src/coroutine/base.cc').read_text()
-   begin=header.index('    long init_msec =')if engine=='native'else header.index('#ifdef SWOOLE_RS_COROUTINE\n    static swr_v1_coroutine_timing seed_timing()')
-   end=header.index('    void *task = nullptr;',begin)
+   begin=find(header,'    long init_msec =')if engine=='native'else find(header,'#ifdef SWOOLE_RS_COROUTINE\n    static swr_v1_coroutine_timing seed_timing()')
+   # Timing members end after execute_usec (and the selected side's #endif); the next member's spelling varies by patch.
+   end=find(header,'\n',find(header,'long execute_usec = 0;',begin))+1
+   if engine!='native':end=find(header,'#endif\n',end)+len('#endif\n')
    text='class Coroutine {\n'+header[begin:end]+'Context ctx;\npublic:\n'+block(header,'long get_init_msec() const')+'\n'+block(header,'long get_execute_usec() const')+'\nstatic void calc_execute_usec(Coroutine *, Coroutine *);\n};\n'+block(source,'void Coroutine::calc_execute_usec(')+'\n'
    inc=folder/'timing.inc';inc.write_text(text);binary=folder/'timing'
    command=['c++','-std=c++14','-O1','-g','-UNDEBUG','-Wall','-Wextra','-Werror','-I'+str(folder),'-I'+str(ROOT/'native/coroutine'),*(['-DSWOOLE_RS_COROUTINE']if engine=='selected'else[]),str(Path(__file__).with_suffix('.cc')),*([str(a.archive.resolve())]if engine=='selected'else[]),'-lpthread',*(['-ldl','-lm']if sys.platform.startswith('linux')else[]),'-o',str(binary)]
