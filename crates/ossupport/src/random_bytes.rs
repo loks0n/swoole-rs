@@ -17,6 +17,7 @@ pub unsafe extern "C" fn swr_v1_os_random_bytes_next(
     result: i64,
     retry: bool,
 ) -> u32 {
+    // SAFETY: `state` is null or the caller's aligned, exclusively owned state.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return u32::MAX;
     };

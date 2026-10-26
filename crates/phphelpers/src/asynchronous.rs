@@ -19,6 +19,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_async(
     blocking: u8,
     coroutine: u8,
 ) -> u32 {
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Action::Done as u32;
     };

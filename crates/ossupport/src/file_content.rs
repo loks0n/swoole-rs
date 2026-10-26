@@ -18,6 +18,7 @@ pub unsafe extern "C" fn swr_v1_os_file_content_next(
     size: i64,
     maximum: u64,
 ) -> u32 {
+    // SAFETY: `state` is null or the caller's aligned, exclusively owned state.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return u32::MAX;
     };

@@ -49,6 +49,7 @@ unsafe fn key<'a>(data: *const u8, length: usize) -> Option<&'a [u8]> {
     } else if data.is_null() || length > isize::MAX as usize {
         None
     } else {
+        // SAFETY: `data` is non-null and `length <= isize::MAX` (checked above); the caller lends `length` initialized bytes for this call.
         Some(unsafe { std::slice::from_raw_parts(data, length) })
     }
 }
@@ -64,8 +65,10 @@ pub extern "C" fn swr_v1_clients_pool_create() -> *mut c_void {
         clippy::cast_ptr_alignment,
         reason = "alloc honours Layout::new::<Pool>()"
     )]
+    // SAFETY: `Pool` is not zero-sized; null is handled below.
     let memory = unsafe { alloc(Layout::new::<Pool>()) }.cast::<Pool>();
     if !memory.is_null() {
+        // SAFETY: `memory` is a fresh, non-null allocation with `Pool`'s layout.
         unsafe {
             memory.write(Pool {
                 queues: HashMap::with_hasher(BuildHasherDefault::default()),
@@ -82,10 +85,10 @@ pub extern "C" fn swr_v1_clients_pool_create() -> *mut c_void {
 pub unsafe extern "C" fn swr_v1_clients_pool_destroy(handle: *mut c_void) {
     if !handle.is_null() {
         let pool = handle.cast::<Pool>();
-        unsafe {
-            std::ptr::drop_in_place(pool);
-            dealloc(pool.cast(), Layout::new::<Pool>());
-        }
+        // SAFETY: a live, uniquely owned pool from `swr_v1_clients_pool_create`.
+        unsafe { std::ptr::drop_in_place(pool) };
+        // SAFETY: allocated with this layout by create; its value was just dropped.
+        unsafe { dealloc(pool.cast(), Layout::new::<Pool>()) };
     }
 }
 
@@ -101,12 +104,14 @@ pub unsafe extern "C" fn swr_v1_clients_pool_push(
     length: usize,
     token: *mut c_void,
 ) -> u32 {
+    // SAFETY: key bytes are initialized for `length` (null only when empty) for this call.
     let Some(key) = (unsafe { key(data, length) }) else {
         return INVALID_ARGUMENT;
     };
     if handle.is_null() || token.is_null() {
         return INVALID_ARGUMENT;
     }
+    // SAFETY: non-null (checked above); a live pool from `swr_v1_clients_pool_create`, exclusively accessed.
     let pool = unsafe { &mut *handle.cast::<Pool>() };
     if !pool.queues.contains_key(key) {
         let mut owned = Vec::new();
@@ -148,12 +153,14 @@ pub unsafe extern "C" fn swr_v1_clients_pool_state(
     data: *const u8,
     length: usize,
 ) -> PoolState {
+    // SAFETY: key bytes are initialized for `length` (null only when empty) for this call.
     let Some(key) = (unsafe { key(data, length) }) else {
         return PoolState::default();
     };
     if handle.is_null() {
         return PoolState::default();
     }
+    // SAFETY: non-null (checked above); a live pool from `swr_v1_clients_pool_create`.
     match unsafe { &*handle.cast::<Pool>() }.queues.get(key) {
         None => PoolState::default(),
         Some(queue) => PoolState {
@@ -172,12 +179,14 @@ pub unsafe extern "C" fn swr_v1_clients_pool_take(
     data: *const u8,
     length: usize,
 ) -> *mut c_void {
+    // SAFETY: key bytes are initialized for `length` (null only when empty) for this call.
     let Some(key) = (unsafe { key(data, length) }) else {
         return std::ptr::null_mut();
     };
     if handle.is_null() {
         return std::ptr::null_mut();
     }
+    // SAFETY: non-null (checked above); a live pool from `swr_v1_clients_pool_create`, exclusively accessed.
     unsafe { &mut *handle.cast::<Pool>() }
         .queues
         .get_mut(key)
@@ -194,12 +203,14 @@ pub unsafe extern "C" fn swr_v1_clients_pool_remove_empty(
     data: *const u8,
     length: usize,
 ) -> u8 {
+    // SAFETY: key bytes are initialized for `length` (null only when empty) for this call.
     let Some(key) = (unsafe { key(data, length) }) else {
         return 0;
     };
     if handle.is_null() {
         return 0;
     }
+    // SAFETY: non-null (checked above); a live pool from `swr_v1_clients_pool_create`, exclusively accessed.
     let pool = unsafe { &mut *handle.cast::<Pool>() };
     if pool.queues.get(key).is_some_and(VecDeque::is_empty) {
         pool.queues.remove(key);
@@ -293,6 +304,7 @@ mod tests {
             unsafe { swr_v1_clients_pool_push(handle, key.as_ptr(), key.len(), token) },
             OK
         );
+        // SAFETY: non-null (checked above); a live pool from `swr_v1_clients_pool_create`.
         let capacity = unsafe { &*handle.cast::<Pool>() }
             .queues
             .get(key.as_slice())

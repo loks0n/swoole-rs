@@ -25,8 +25,14 @@ impl Writer {
             .len()
             .min(self.capacity.saturating_sub(1).saturating_sub(offset));
         if copied != 0 {
+            // SAFETY: `offset + copied <= capacity - 1`, inside the caller's writable output,
+            // which is disjoint from every input span.
             unsafe {
-                std::ptr::copy_nonoverlapping(bytes.as_ptr(), self.output.add(offset), copied)
+                std::ptr::copy_nonoverlapping(
+                    bytes.as_ptr(),
+                    self.output.wrapping_add(offset),
+                    copied,
+                )
             };
         }
         self.count = count;
@@ -60,9 +66,10 @@ impl Writer {
             self.count.min(self.capacity - 1)
         };
         if self.capacity != 0 {
+            // SAFETY: `written <= capacity - 1` (or 0), inside the writable output.
             unsafe {
                 self.output
-                    .add(if error == 0 { written } else { 0 })
+                    .wrapping_add(if error == 0 { written } else { 0 })
                     .write(0)
             };
         }
@@ -75,6 +82,7 @@ unsafe fn span<'a>(value: ClientsFormatSpan) -> Option<&'a [u8]> {
     } else if value.data.is_null() || value.length > isize::MAX as usize {
         None
     } else {
+        // SAFETY: `value.data` is non-null and `value.length <= isize::MAX` (checked above); the caller lends `value.length` initialized bytes for this call.
         Some(unsafe { std::slice::from_raw_parts(value.data, value.length) })
     }
 }
@@ -134,6 +142,7 @@ pub unsafe extern "C" fn swr_v1_clients_http_format(
                 writer.append(b"\r\n\r\n")?;
             }
             1 => {
+                // SAFETY: required spans name `length` initialized bytes, disjoint from the output.
                 let host = unsafe { span(first) }?;
                 writer.append(b"http://")?;
                 writer.append(c_string(host))?;
@@ -142,22 +151,28 @@ pub unsafe extern "C" fn swr_v1_clients_http_format(
                     writer.append(b":")?;
                     writer.decimal(number)?;
                 }
+                // SAFETY: required spans name `length` initialized bytes, disjoint from the output.
                 writer.append(c_string(unsafe { span(second) }?))?;
             }
             2 => {
                 writer.append(b"Content-Type: multipart/form-data; boundary=")?;
+                // SAFETY: required spans name `length` initialized bytes, disjoint from the output.
                 writer.append(precision_string(unsafe { span(first) }?))?;
                 writer.append(b"\r\n")?;
             }
             3 | 4 => {
                 writer.append(b"--")?;
+                // SAFETY: required spans name `length` initialized bytes, disjoint from the output.
                 writer.append(precision_string(unsafe { span(first) }?))?;
                 writer.append(b"\r\nContent-Disposition: form-data; name=\"")?;
+                // SAFETY: required spans name `length` initialized bytes, disjoint from the output.
                 writer.append(precision_string(unsafe { span(second) }?))?;
                 if kind == 4 {
                     writer.append(b"\"; filename=\"")?;
+                    // SAFETY: required spans name `length` initialized bytes, disjoint from the output.
                     writer.append(precision_string(unsafe { span(third) }?))?;
                     writer.append(b"\"\r\nContent-Type: ")?;
+                    // SAFETY: required spans name `length` initialized bytes, disjoint from the output.
                     writer.append(precision_string(unsafe { span(fourth) }?))?;
                 } else {
                     writer.append(b"\"")?;
@@ -166,6 +181,7 @@ pub unsafe extern "C" fn swr_v1_clients_http_format(
             }
             5 => {
                 writer.append(b"--")?;
+                // SAFETY: required spans name `length` initialized bytes, disjoint from the output.
                 writer.append(precision_string(unsafe { span(first) }?))?;
                 writer.append(b"--\r\n")?;
             }

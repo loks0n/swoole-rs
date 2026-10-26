@@ -1,4 +1,11 @@
 //! OS support policy. All storage, syscalls, threads and callbacks remain native.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 mod read_content;
 pub use read_content::{ReadContentState, swr_v1_os_read_content_next};
 mod file_content;
@@ -158,7 +165,7 @@ pub unsafe extern "C" fn swr_v1_os_line_end(data: *const u8, length: usize) -> u
     if length == 0 {
         return 0;
     }
-    // The native read already established this initialized prefix.
+    // SAFETY: the native read already established `length` initialized bytes at `data`.
     let bytes = unsafe { std::slice::from_raw_parts(data, length) };
     bytes
         .iter()
@@ -297,8 +304,10 @@ pub extern "C" fn swr_v1_os_queue_create() -> *mut OsQueue {
         reason = "alloc honours Layout::new::<OsQueue>()"
     )]
     let memory =
+        // SAFETY: `OsQueue` is not zero-sized; null is handled below.
         unsafe { std::alloc::alloc(std::alloc::Layout::new::<OsQueue>()) }.cast::<OsQueue>();
     if !memory.is_null() {
+        // SAFETY: `memory` is a fresh, non-null allocation with `OsQueue`'s layout.
         unsafe {
             memory.write(OsQueue {
                 entries: std::collections::VecDeque::new(),
@@ -315,10 +324,10 @@ pub extern "C" fn swr_v1_os_queue_create() -> *mut OsQueue {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_os_queue_destroy(queue: *mut OsQueue) {
     if !queue.is_null() {
-        unsafe {
-            std::ptr::drop_in_place(queue);
-            std::alloc::dealloc(queue.cast(), std::alloc::Layout::new::<OsQueue>());
-        }
+        // SAFETY: a live handle from create, exclusively owned and destroyed once.
+        unsafe { std::ptr::drop_in_place(queue) };
+        // SAFETY: allocated with this layout by create; its value was just dropped.
+        unsafe { std::alloc::dealloc(queue.cast(), std::alloc::Layout::new::<OsQueue>()) };
     }
 }
 
@@ -327,6 +336,7 @@ pub unsafe extern "C" fn swr_v1_os_queue_destroy(queue: *mut OsQueue) {
 /// queue is null or a live handle, with exclusive native mutex custody.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_os_queue_push(queue: *mut OsQueue, token: usize) -> bool {
+    // SAFETY: null or a live handle, under the caller's exclusive native mutex.
     let Some(queue) = (unsafe { queue.as_mut() }) else {
         return false;
     };
@@ -342,6 +352,7 @@ pub unsafe extern "C" fn swr_v1_os_queue_push(queue: *mut OsQueue, token: usize)
 /// is dereferenced or deleted. An empty result is distinct from stored token0.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_os_queue_pop(queue: *mut OsQueue) -> QueueItem {
+    // SAFETY: null or a live handle, under the caller's exclusive native mutex.
     let value = unsafe { queue.as_mut() }.and_then(|q| q.entries.pop_front());
     QueueItem {
         token: value.unwrap_or(0),
@@ -354,6 +365,7 @@ pub unsafe extern "C" fn swr_v1_os_queue_pop(queue: *mut OsQueue) -> QueueItem {
 /// a Rust borrow; native may inspect its own event only after this function returns.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_os_queue_front(queue: *const OsQueue) -> QueueItem {
+    // SAFETY: null or a live handle, under the caller's native mutex.
     let value = unsafe { queue.as_ref() }.and_then(|q| q.entries.front().copied());
     QueueItem {
         token: value.unwrap_or(0),
@@ -365,6 +377,7 @@ pub unsafe extern "C" fn swr_v1_os_queue_front(queue: *const OsQueue) -> QueueIt
 /// queue is null or a live handle protected by the existing native mutex.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_os_queue_count(queue: *const OsQueue) -> usize {
+    // SAFETY: null or a live handle, under the caller's native mutex.
     unsafe { queue.as_ref() }.map_or(0, |q| q.entries.len())
 }
 

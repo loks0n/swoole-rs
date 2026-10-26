@@ -88,6 +88,7 @@ pub unsafe extern "C" fn swr_v1_clients_ip(
     if data.is_null() || length > isize::MAX as usize {
         return result;
     }
+    // SAFETY: `data` is non-null and `length <= isize::MAX` (checked above); the caller lends `length` initialized bytes for this call.
     let input = unsafe { std::slice::from_raw_parts(data, length) };
     let input = &input[..input.iter().position(|&b| b == 0).unwrap_or(input.len())];
     let Ok(text) = std::str::from_utf8(input) else {
@@ -123,6 +124,7 @@ pub unsafe extern "C" fn swr_v1_clients_loopback(version: u8, address: *const u8
     if address.is_null() {
         return 0;
     }
+    // SAFETY: non-null (checked above); the caller lends the 4- or 16-byte address for `version`.
     let bytes = unsafe { std::slice::from_raw_parts(address, length) };
     u8::from(if version == 4 {
         bytes == [127, 0, 0, 1]
@@ -153,6 +155,7 @@ pub unsafe extern "C" fn swr_v1_clients_ip_text(version: u8, address: *const u8)
     if address.is_null() {
         return output;
     }
+    // SAFETY: non-null (checked above); the caller lends the 4- or 16-byte address for `version`.
     let bytes = unsafe { std::slice::from_raw_parts(address, length) };
     let mut end = 0;
     if version == 4 {
