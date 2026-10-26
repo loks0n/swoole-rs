@@ -62,9 +62,12 @@ pub unsafe extern "C" fn swr_v1_context_stack_read(
 /// Original unsigned field conversion, not stack-size normalization/admission.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_context_extent_new(requested: usize) -> ContextExtent {
-    ContextExtent {
-        size: requested as u32,
-    }
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "the native uint32_t stack size field"
+    )]
+    let size = requested as u32;
+    ContextExtent { size }
 }
 
 /// First constructor-body publication; fn/extent/private-data initialization

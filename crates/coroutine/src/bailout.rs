@@ -79,16 +79,20 @@ pub unsafe extern "C" fn swr_v1_coroutine_bailout_step(
 
 // The only foreign address calculation: designated cell, never whole object.
 unsafe fn origin_at(object: *mut c_void, offset: usize) -> *mut c_void {
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "the caller guarantees an aligned identity cell (see SAFETY)"
+    )]
     // SAFETY: the caller guarantees an initialized, aligned identity cell at `offset`
     // inside `object`'s allocation; only that cell is read.
-    unsafe {
+    let cell = unsafe {
         object
             .cast::<u8>()
             .wrapping_add(offset)
             .cast::<CoroutineIdentity>()
             .read()
-            .token
-    }
+    };
+    cell.token
 }
 
 #[cfg(test)]

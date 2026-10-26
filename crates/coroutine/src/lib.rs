@@ -1,15 +1,5 @@
 //! Coroutine policy and sole channel token storage. Native code owns payloads
 //! and executes callbacks, stack switches, timers and destructors after return.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_ptr_alignment,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
-#![cfg_attr(
-    test,
-    expect(clippy::cast_possible_wrap, reason = "#157: casts not yet checked")
-)]
 #![cfg_attr(
     not(test),
     deny(
