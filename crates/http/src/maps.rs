@@ -104,6 +104,7 @@ pub extern "C" fn swr_v1_http_status(code: i32) -> *const c_char {
 /// Nonempty input is readable for length bytes. No borrow/allocator escapes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_http_method(data: *const u8, length: usize) -> i32 {
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let input = match unsafe { bytes(data, length) } {
         Ok(v) => v,
         Err(e) => return e,

@@ -42,6 +42,7 @@ pub unsafe extern "C" fn swr_v1_http_static_headers(
     if capacity > i32::MAX as usize {
         return OVERFLOW;
     }
+    // SAFETY: `header` is non-null (checked above), aligned and initialized per the caller contract.
     let header = unsafe { &*header };
     if header.variant > 3 || header.range_kind > 2 {
         return INVALID;
@@ -153,6 +154,7 @@ pub unsafe extern "C" fn swr_v1_http_static_headers(
     if capacity != 0 {
         unsafe { output.add(length).write(0) };
     }
+    // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(length) };
     0
 }

@@ -35,6 +35,7 @@ pub unsafe extern "C" fn swr_v1_http_index_page(
     if capacity > isize::MAX as usize {
         return OVERFLOW;
     }
+    // SAFETY: `page` is non-null (checked above), aligned and initialized per the caller contract.
     let page = unsafe { &*page };
     if page.part > 2 {
         return INVALID;
@@ -97,6 +98,7 @@ pub unsafe extern "C" fn swr_v1_http_index_page(
             return OVERFLOW;
         }
     }
+    // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(sink.length) };
     0
 }
@@ -142,10 +144,12 @@ pub(crate) unsafe fn emit_page(
     output: *mut crate::HttpContextPageBuffer,
     mut render: impl FnMut(*mut u8, usize, *mut usize) -> i32,
 ) -> i32 {
+    // SAFETY: `output` is null or live, aligned and exclusively lent for this call.
     let Some(output) = (unsafe { output.as_mut() }) else {
         return INVALID;
     };
     *output = crate::HttpContextPageBuffer::default();
+    // SAFETY: `input` is null or live and aligned for this call.
     let Some(input) = (unsafe { input.as_ref() }) else {
         return INVALID;
     };

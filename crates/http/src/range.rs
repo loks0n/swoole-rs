@@ -131,14 +131,18 @@ pub unsafe extern "C" fn swr_v1_http_range_next(
     if state.is_null() || span.is_null() {
         return INVALID;
     }
+    // SAFETY: `span` is non-null (checked above), aligned and writable.
     unsafe {
         span.write(HttpSpan::default());
     }
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let input = match unsafe { bytes(data, length) } {
         Ok(v) => v,
         Err(e) => return e,
     };
+    // SAFETY: `state` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *state };
+    // SAFETY: `span` is non-null (checked above), aligned and exclusive per the caller contract.
     state.step(input, size, unsafe { &mut *span })
 }
 #[cfg(test)]

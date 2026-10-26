@@ -37,6 +37,7 @@ pub unsafe extern "C" fn swr_v1_http_conditional(state: *mut HttpConditional) ->
     if state.is_null() {
         return INVALID;
     }
+    // SAFETY: `state` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *state };
     if state.kind > 1 {
         return INVALID;

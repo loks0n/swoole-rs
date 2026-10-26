@@ -78,6 +78,7 @@ pub unsafe extern "C" fn swr_v1_http_range_format(
     if capacity > isize::MAX as usize {
         return OVERFLOW;
     }
+    // SAFETY: `input` is non-null (checked above), aligned and initialized per the caller contract.
     let input = unsafe { &*input };
     if input.part > 1 {
         return INVALID;
@@ -120,12 +121,14 @@ pub unsafe extern "C" fn swr_v1_http_range_format(
         let count = sink.length.min(capacity - 1);
         unsafe { output.add(count).write(0) };
         if libc_overflow {
+            // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
             unsafe { output.write(0) };
             0
         } else {
             count
         }
     };
+    // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(count) };
     i32::from(libc_overflow)
 }
@@ -213,6 +216,7 @@ impl HttpRangeFinish {
 /// end_length after action2 and modified after action3; no owner/borrow survives.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_http_range_finish(state: *mut HttpRangeFinish) -> i32 {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return INVALID;
     };

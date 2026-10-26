@@ -41,6 +41,7 @@ pub unsafe extern "C" fn swr_v2_http_multipart_upload(
         return std::ptr::null();
     }
     let observed = if stage == 0 {
+        // SAFETY: forwards the caller's readable `length`-byte header span.
         match unsafe { crate::swr_v1_http_multipart_disposition(header, length) } {
             0 => false,
             1 => true,
@@ -52,6 +53,7 @@ pub unsafe extern "C" fn swr_v2_http_multipart_upload(
     let Some(actions) = plan(stage, observed) else {
         return std::ptr::null();
     };
+    // SAFETY: `count` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { count.write(actions.len()) };
     actions.as_ptr()
 }

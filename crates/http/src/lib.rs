@@ -97,6 +97,7 @@ unsafe fn bytes<'a>(data: *const u8, length: usize) -> Result<&'a [u8], i32> {
     if data.is_null() {
         return Err(INVALID);
     }
+    // SAFETY: non-null, `length <= isize::MAX`; callers lend that many initialized bytes.
     Ok(unsafe { slice::from_raw_parts(data, length) })
 }
 unsafe extern "C" {
@@ -111,6 +112,7 @@ unsafe extern "C" {
 /// IO or Zend boundary. ASCII folding alone differs for configured binary paths.
 fn case_prefix(input: &[u8], expected: &[u8]) -> bool {
     input.len() >= expected.len()
+        // SAFETY: both slices hold at least `expected.len()` readable bytes.
         && unsafe {
             strncasecmp(
                 input.as_ptr().cast(),
@@ -146,11 +148,14 @@ pub unsafe extern "C" fn swr_v1_http_url_capacity(
     if output.is_null() {
         return INVALID;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(0);
     }
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     match unsafe { bytes(data, length) }.and_then(encoded_length) {
         Ok(n) => {
+            // SAFETY: `output` is non-null (checked above), aligned and writable.
             unsafe {
                 output.write(n);
             }
@@ -174,9 +179,11 @@ pub unsafe extern "C" fn swr_v1_http_url_encode(
     if written.is_null() {
         return INVALID;
     }
+    // SAFETY: `written` is non-null (checked above), aligned and writable.
     unsafe {
         written.write(0);
     }
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let input = match unsafe { bytes(data, length) } {
         Ok(v) => v,
         Err(e) => return e,
@@ -188,10 +195,12 @@ pub unsafe extern "C" fn swr_v1_http_url_encode(
     if output.is_null() || capacity < needed {
         return INVALID;
     }
+    // SAFETY: non-null, `needed <= capacity`; the caller lends writable, disjoint storage.
     let output = unsafe { slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), needed) };
     let at = if needed == input.len() + 1 {
         // Exact capacity proves every byte is unreserved, so emission can copy
         // the entire initialized input without reclassifying each byte.
+        // SAFETY: `input.len() < needed` slots in the disjoint output.
         unsafe {
             std::ptr::copy_nonoverlapping(input.as_ptr(), output.as_mut_ptr().cast(), input.len())
         };
@@ -212,6 +221,7 @@ pub unsafe extern "C" fn swr_v1_http_url_encode(
         at
     };
     output[at].write(0);
+    // SAFETY: `written` is non-null (checked above), aligned and writable.
     unsafe {
         written.write(at);
     }
@@ -237,6 +247,7 @@ pub unsafe extern "C" fn swr_v1_http_url_decode(
     if written.is_null() {
         return INVALID;
     }
+    // SAFETY: `written` is non-null (checked above), aligned and writable.
     unsafe {
         written.write(0);
     }
@@ -246,6 +257,7 @@ pub unsafe extern "C" fn swr_v1_http_url_decode(
     if data.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null, `length + 1 <= isize::MAX` (checked above), writable initialized bytes.
     let input = unsafe { slice::from_raw_parts_mut(data, length) };
     let (mut read, mut write) = (0, 0);
     while read < length {
@@ -266,9 +278,9 @@ pub unsafe extern "C" fn swr_v1_http_url_decode(
         read += 1;
         write += 1;
     }
-    unsafe {
-        data.add(write).write(0);
-    }
+    // SAFETY: `write <= length`, and the caller lends `length + 1` writable bytes.
+    unsafe { data.wrapping_add(write).write(0) };
+    // SAFETY: `written` is non-null (checked above), aligned and writable.
     unsafe {
         written.write(write);
     }
@@ -293,9 +305,11 @@ pub unsafe extern "C" fn swr_v1_http_boundary(
     if output.is_null() {
         return INVALID;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(HttpSpan::default());
     }
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let input = match unsafe { bytes(data, length) } {
         Ok(v) => v,
         Err(e) => return e,
@@ -331,6 +345,7 @@ pub unsafe extern "C" fn swr_v1_http_boundary(
     if count > i32::MAX as usize {
         return OVERFLOW;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(HttpSpan {
             offset,

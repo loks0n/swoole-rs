@@ -218,14 +218,17 @@ pub unsafe extern "C" fn swr_v1_http_chunk_step(
     if output.is_null() {
         return INVALID;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(HttpChunkStep::default());
     }
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let input = match unsafe { bytes(data, length) } {
         Ok(v) => v,
         Err(e) => return e,
     };
     let (status, step) = chunk_step(input, cursor, header, initial != 0);
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(step);
     }
@@ -245,10 +248,12 @@ pub unsafe extern "C" fn swr_v1_http_frame(
     if frame.is_null() {
         return INVALID;
     }
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let input = match unsafe { bytes(data, length) } {
         Ok(v) => v,
         Err(e) => return e,
     };
+    // SAFETY: `frame` is non-null (checked above), aligned and exclusive per the caller contract.
     let frame = unsafe { &mut *frame };
     frame.parse(input, operation)
 }
@@ -257,6 +262,7 @@ pub unsafe extern "C" fn swr_v1_http_frame(
 /// Input is readable. No references, callbacks or allocation escape.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_http_expect(data: *const u8, length: usize) -> i32 {
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let input = match unsafe { bytes(data, length) } {
         Ok(v) => v,
         Err(e) => return e,
@@ -347,17 +353,21 @@ pub unsafe extern "C" fn swr_v1_http_header_value(
     if output.is_null() {
         return INVALID;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(HttpSpan::default());
     }
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let input = match unsafe { bytes(data, length) } {
         Ok(v) => v,
         Err(e) => return e,
     };
+    // SAFETY: the caller lends `name_length` initialized bytes at `name` (null only when empty).
     let name = match unsafe { bytes(name, name_length) } {
         Ok(v) => v,
         Err(e) => return e,
     };
+    // SAFETY: `output` is non-null (checked above), aligned and exclusive per the caller contract.
     header_value(input, start, end, name, unsafe { &mut *output })
 }
 #[cfg(test)]

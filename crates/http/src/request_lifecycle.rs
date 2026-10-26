@@ -96,6 +96,7 @@ pub unsafe extern "C" fn swr_v1_http_request_lifecycle(
     let Some(actions) = plan(kind, observed) else {
         return std::ptr::null();
     };
+    // SAFETY: `count` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { count.write(actions.len()) };
     actions.as_ptr()
 }

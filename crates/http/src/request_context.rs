@@ -253,6 +253,7 @@ pub(crate) fn try_boxed<T>(value: T) -> Option<Box<T>> {
     if size_of::<T>() == 0 {
         return Some(Box::new(value));
     }
+    // SAFETY: a non-zero-sized layout; null is handled below.
     let storage = unsafe { alloc(Layout::new::<T>()).cast::<T>() };
     if storage.is_null() {
         return None;
@@ -284,8 +285,11 @@ pub unsafe extern "C" fn swr_v2_http_request_observe(
     owner: *const HttpRequestContext,
     output: *mut HttpRequestObservation,
 ) -> i32 {
-    let (Some(owner), Some(output)) = (unsafe { owner.as_ref() }, unsafe { output.as_mut() })
-    else {
+    // SAFETY: `owner` is null or live and aligned for this call.
+    let owner = unsafe { owner.as_ref() };
+    // SAFETY: `output` is null or live, aligned and exclusively lent for this call.
+    let output = unsafe { output.as_mut() };
+    let (Some(owner), Some(output)) = (owner, output) else {
         return INVALID;
     };
     *output = owner.observe();
@@ -306,6 +310,7 @@ pub unsafe extern "C" fn swr_v2_http_request_control(
     value: u64,
     auxiliary: u64,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
@@ -323,7 +328,11 @@ pub unsafe extern "C" fn swr_v2_http_request_frame(
     offset: usize,
     next: *mut usize,
 ) -> i32 {
-    let (Some(owner), Some(next)) = (unsafe { owner.as_mut() }, unsafe { next.as_mut() }) else {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
+    let owner = unsafe { owner.as_mut() };
+    // SAFETY: `next` is null or live, aligned and exclusively lent for this call.
+    let next = unsafe { next.as_mut() };
+    let (Some(owner), Some(next)) = (owner, next) else {
         return INVALID;
     };
     let f = &owner.facts;
@@ -339,6 +348,7 @@ pub unsafe extern "C" fn swr_v2_http_request_frame(
         header_length: f.header_length,
         known_length: u32::from(f.flags & KNOWN != 0),
     };
+    // SAFETY: the caller lends `length` initialized bytes at `input` (null only when empty).
     let result = match unsafe { bytes(input, length) } {
         Ok(input) => frame.parse(input, operation),
         Err(error) => error,
@@ -375,8 +385,11 @@ pub unsafe extern "C" fn swr_v2_http_request_headers(
     length: usize,
     output: *mut HttpRequestHeaderResult,
 ) -> i32 {
-    let (Some(owner), Some(output)) = (unsafe { owner.as_mut() }, unsafe { output.as_mut() })
-    else {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
+    let owner = unsafe { owner.as_mut() };
+    // SAFETY: `output` is null or live, aligned and exclusively lent for this call.
+    let output = unsafe { output.as_mut() };
+    let (Some(owner), Some(output)) = (owner, output) else {
         return INVALID;
     };
     if operation == 0 {
@@ -391,6 +404,7 @@ pub unsafe extern "C" fn swr_v2_http_request_headers(
         number_errors: 0,
     };
     output.boundary = HttpSpan::default();
+    // SAFETY: the caller lends `length` initialized bytes at `input` (null only when empty).
     let result = match unsafe { bytes(input, length) } {
         Ok(input) => crate::headers::header_info(
             input,
@@ -419,7 +433,11 @@ pub unsafe extern "C" fn swr_v2_http_request_lifecycle(
     observed: u32,
     count: *mut usize,
 ) -> *const u32 {
-    let (Some(owner), Some(count)) = (unsafe { owner.as_ref() }, unsafe { count.as_mut() }) else {
+    // SAFETY: `owner` is null or live and aligned for this call.
+    let owner = unsafe { owner.as_ref() };
+    // SAFETY: `count` is null or live, aligned and exclusively lent for this call.
+    let count = unsafe { count.as_mut() };
+    let (Some(owner), Some(count)) = (owner, count) else {
         return std::ptr::null();
     };
     if observed > 1 {
@@ -454,6 +472,7 @@ pub unsafe extern "C" fn swr_v2_http_request_header(
     name_length: usize,
     output: *mut HttpSpan,
 ) -> i32 {
+    // SAFETY: `owner` is null or live and aligned for this call.
     let Some(owner) = (unsafe { owner.as_ref() }) else {
         return INVALID;
     };
@@ -465,13 +484,16 @@ pub unsafe extern "C" fn swr_v2_http_request_header(
     if output.is_null() {
         return INVALID;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(HttpSpan::default());
     }
+    // SAFETY: the caller lends `length` initialized bytes at `input` (null only when empty).
     let input = match unsafe { bytes(input, length) } {
         Ok(input) => input,
         Err(error) => return error,
     };
+    // SAFETY: the caller lends `name_length` initialized bytes at `name` (null only when empty).
     let name = match unsafe { bytes(name, name_length) } {
         Ok(name) => name,
         Err(error) => return error,
@@ -481,6 +503,7 @@ pub unsafe extern "C" fn swr_v2_http_request_header(
         start,
         owner.facts.header_length as usize,
         name,
+        // SAFETY: `output` is non-null (checked above), aligned and exclusive per the caller contract.
         unsafe { &mut *output },
     )
 }
@@ -495,9 +518,11 @@ pub unsafe extern "C" fn swr_v2_http_request_text_set(
     input: *const u8,
     length: usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
+    // SAFETY: the caller lends `length` initialized bytes at `input` (null only when empty).
     let input = match unsafe { bytes(input, length) } {
         Ok(input) => input,
         Err(error) => return error,
@@ -516,8 +541,11 @@ pub unsafe extern "C" fn swr_v2_http_request_text_copy(
     capacity: usize,
     written: *mut usize,
 ) -> i32 {
-    let (Some(owner), Some(written)) = (unsafe { owner.as_ref() }, unsafe { written.as_mut() })
-    else {
+    // SAFETY: `owner` is null or live and aligned for this call.
+    let owner = unsafe { owner.as_ref() };
+    // SAFETY: `written` is null or live, aligned and exclusively lent for this call.
+    let written = unsafe { written.as_mut() };
+    let (Some(owner), Some(written)) = (owner, written) else {
         return INVALID;
     };
     let text = match owner.text(kind) {
@@ -555,8 +583,11 @@ pub unsafe extern "C" fn swr_v2_http_request_text_snapshot_new(
     lease: *mut *mut HttpRequestTextSnapshot,
 ) -> i32 {
     let (Some(owner), Some(output), Some(lease)) = (
+        // SAFETY: `owner` is null or live and aligned for this call.
         unsafe { owner.as_ref() },
+        // SAFETY: `output` is null or live, aligned and exclusively lent for this call.
         unsafe { output.as_mut() },
+        // SAFETY: `lease` is null or live, aligned and exclusively lent for this call.
         unsafe { lease.as_mut() },
     ) else {
         return INVALID;
@@ -623,6 +654,7 @@ pub unsafe extern "C" fn swr_v2_http_request_upload_plan(
     observed: u32,
     count: *mut usize,
 ) -> *const u32 {
+    // SAFETY: `owner` is null or live and aligned for this call.
     let Some(owner) = (unsafe { owner.as_ref() }) else {
         return std::ptr::null();
     };
@@ -644,6 +676,7 @@ pub unsafe extern "C" fn swr_v2_http_request_upload_template(
     output: *mut u8,
     capacity: usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(form) = (unsafe { owner.as_mut() }).and_then(|owner| owner.form.as_mut()) else {
         return INVALID;
     };
@@ -671,6 +704,7 @@ pub unsafe extern "C" fn swr_v2_http_request_data(
     body_length: usize,
     written: i64,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
@@ -714,6 +748,7 @@ pub unsafe extern "C" fn swr_v2_http_request_chunk(
     offset: usize,
     output: *mut HttpChunkStep,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
@@ -726,6 +761,7 @@ pub unsafe extern "C" fn swr_v2_http_request_chunk(
     if output.is_null() {
         return INVALID;
     }
+    // SAFETY: the caller lends `length` initialized bytes at `input` (null only when empty).
     let (result, step) = match unsafe { bytes(input, length) } {
         Ok(input) => crate::framing::chunk_step(
             input,
@@ -735,6 +771,7 @@ pub unsafe extern "C" fn swr_v2_http_request_chunk(
         ),
         Err(error) => (error, HttpChunkStep::default()),
     };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(step);
     }
@@ -742,6 +779,7 @@ pub unsafe extern "C" fn swr_v2_http_request_chunk(
         owner.flag(EXCEPTED, true);
     }
     if result > 0 {
+        // SAFETY: `output` is non-null (checked above), aligned and initialized per the caller contract.
         let output = unsafe { &*output };
         if result == 2 {
             owner.flag(KNOWN, true);

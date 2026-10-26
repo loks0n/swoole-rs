@@ -33,6 +33,7 @@ pub unsafe extern "C" fn swr_v1_http_rewrite_rule(
     if span.is_null() || regex.is_null() {
         return INVALID;
     }
+    // SAFETY: the caller lends `length` initialized bytes at `pattern` (null only when empty).
     let input = match unsafe { bytes(pattern, length) } {
         Ok(value) => value,
         Err(error) => return error,
@@ -80,6 +81,7 @@ pub unsafe extern "C" fn swr_v1_http_rewrite_literal(
     if capacity > isize::MAX as usize {
         return OVERFLOW;
     }
+    // SAFETY: `request` is non-null (checked above), aligned and initialized per the caller contract.
     let request = unsafe { &*request };
     let inputs = unsafe {
         [
@@ -106,6 +108,7 @@ pub unsafe extern "C" fn swr_v1_http_rewrite_literal(
             ptr::copy_nonoverlapping(suffix.as_ptr(), output.add(replacement.len()), suffix.len());
         }
     }
+    // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(required) };
     1
 }
@@ -198,7 +201,11 @@ pub unsafe extern "C" fn swr_v2_http_rewrite_step(
     replacement: *const HttpProxyText,
     index: *mut usize,
 ) -> i32 {
-    let (Some(state), Some(index)) = (unsafe { state.as_mut() }, unsafe { index.as_mut() }) else {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
+    let state = unsafe { state.as_mut() };
+    // SAFETY: `index` is null or live, aligned and exclusively lent for this call.
+    let index = unsafe { index.as_mut() };
+    let (Some(state), Some(index)) = (state, index) else {
         return INVALID;
     };
     let observed = if observed == 6 {

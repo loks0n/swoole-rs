@@ -30,6 +30,7 @@ pub extern "C" fn swr_v1_http_proxy_auth_enabled(
 /// after return. No Rust borrow, callback or owner survives those effects.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_http_index_file(phase: *mut u32, facts: u32) -> i32 {
+    // SAFETY: `phase` is null or live, aligned and exclusively lent for this call.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return INVALID;
     };
@@ -73,6 +74,7 @@ pub unsafe extern "C" fn swr_v1_http_unknown_status(
     let buffer = if capacity == 0 {
         &mut []
     } else {
+        // SAFETY: non-null when `capacity != 0` (checked above), `capacity <= i32::MAX`, writable.
         unsafe { slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), capacity - 1) }
     };
     let mut sink = Prefix {
@@ -88,8 +90,10 @@ pub unsafe extern "C" fn swr_v1_http_unknown_status(
         sink.length.min(capacity - 1)
     };
     if capacity != 0 {
-        unsafe { output.add(count).write(0) };
+        // SAFETY: `count <= capacity - 1`, inside the writable output.
+        unsafe { output.wrapping_add(count).write(0) };
     }
+    // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(count) };
     0
 }
