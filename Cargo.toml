@@ -2,6 +2,13 @@
 members = ["crates/ffi", "crates/websocket", "crates/buffer", "crates/timer", "crates/base64", "crates/oracle", "crates/crc32", "crates/error", "crates/protocols", "crates/memory", "crates/http", "crates/utilities", "crates/locks", "crates/wrappers", "crates/reactor", "crates/corebase", "crates/framing", "crates/coroutine", "crates/hooks", "crates/ossupport", "crates/tls", "crates/process", "crates/clients", "crates/httpbindings", "crates/http2", "crates/ports", "crates/phphelpers", "crates/phpcollections", "crates/phpevents", "crates/phpcoroutines"]
 resolver = "3"
 
+# A Rust panic must never unwind into PHP; tests still unwind.
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
 # Lint levels live here only; see AGENTS.md "Rust lints".
 [workspace.lints.clippy]
 allow_attributes = "deny"
@@ -13,3 +20,6 @@ print_stdout = "deny"
 print_stderr = "deny"
 let_underscore_must_use = "deny"
 missing_assert_message = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"

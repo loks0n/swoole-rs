@@ -61,8 +61,7 @@ impl PacketPool {
                 }
                 std::collections::hash_map::Entry::Occupied(_) => {
                     // Capacity may grow, but membership/ownership roll back fully.
-                    while self.entries.len() > original {
-                        let (id, _) = self.entries.pop().expect("inserted entry");
+                    for (id, _) in self.entries.drain(original..) {
                         self.indices.remove(&id);
                     }
                     return false;
@@ -76,11 +75,10 @@ impl PacketPool {
             return 0;
         };
         let (_, token) = self.entries.swap_remove(index);
-        if let Some(&(moved_id, _)) = self.entries.get(index) {
-            self.indices
-                .get_mut(&moved_id)
-                .expect("indexed entry")
-                .index = index;
+        if let Some(&(moved_id, _)) = self.entries.get(index)
+            && let Some(location) = self.indices.get_mut(&moved_id)
+        {
+            location.index = index;
         }
         token
     }
@@ -324,8 +322,8 @@ pub unsafe extern "C" fn swr_v1_bus_pool_drain(
         pool.entries.clear();
         pool.indices.clear();
     } else {
-        for index in 0..count {
-            let (id, token) = pool.entries.pop().expect("bounded count");
+        let kept = pool.entries.len() - count;
+        for (index, (id, token)) in pool.entries.drain(kept..).rev().enumerate() {
             pool.indices.remove(&id);
             unsafe { output.add(index).write(token) };
         }

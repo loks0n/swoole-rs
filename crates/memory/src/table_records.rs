@@ -152,7 +152,10 @@ pub unsafe extern "C" fn swr_v1_memory_records_get(
     let Some(&ordinal) = owner.first.get(bytes) else {
         return 0;
     };
-    unsafe { output.write(owner.view(ordinal).unwrap()) };
+    let Some(view) = owner.view(ordinal) else {
+        return 0;
+    };
+    unsafe { output.write(view) };
     1
 }
 #[unsafe(no_mangle)]
