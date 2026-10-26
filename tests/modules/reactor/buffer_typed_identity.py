@@ -2,7 +2,6 @@
 import hashlib
 import re
 import owned_iov_identity as common
-KEY='buffer_typed_requested'
 MACRO='SWOOLE_RS_BUFFER_TYPED'
 SOURCES=('crates/buffer/src/lib.rs','crates/buffer/src/typed.rs')
 PATCHES=('migration/patches/buffer/0001-buffer-header.patch','migration/patches/buffer/0002-buffer-body.patch','migration/patches/reactor/0004-socket-output.patch')
@@ -11,9 +10,12 @@ CONSTRUCTOR='_ZN6swoole6BufferC1Ej'
 FRONT='_ZNK6swoole6Buffer11typed_frontEv'
 
 def requested(inputs,selected):
-    value=common.requested(inputs,selected,key=KEY,source=SOURCES[1])
-    if selected and not {'buffer','reactor'}<=set(inputs.get('modules',[])):
-        raise ValueError('Typed Buffer requires actual Buffer and Reactor modules')
+    # Configure enables typed Buffer exactly when both Rust Buffer and Rust reactor are built.
+    value={'buffer','reactor'}<=set(inputs.get('modules',[]))
+    if value is not selected:
+        raise ValueError('Typed Buffer requires actual Buffer and Reactor modules in the selected build only')
+    if selected and SOURCES[1] not in inputs.get('rust_sources_sha256',{}):
+        raise ValueError(SOURCES[1]+': implementation missing from attested source closure')
     return value
 
 def configured(text,selected):return common.configured(text,selected,macro=MACRO)

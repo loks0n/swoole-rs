@@ -69,6 +69,11 @@ def selected_modules(args):
     return sorted(set(chosen) | set(GRADUATED))
 
 
+def typed_buffer(args):
+    """Configure enables the typed Buffer queue whenever both Rust Buffer and Rust reactor are built."""
+    return {'buffer', 'reactor'} <= set(selected_modules(args))
+
+
 def build_variant(args):
     suffix = storage_suffix(args) + ('-halfclose' if getattr(args, 'fix_halfclose', False) else '') + profile_suffix(args)
     return build_alias('rust', selected_modules(args), suffix, dev=args.lane != 'integrate')
@@ -94,7 +99,6 @@ def verify_artifact_report(args):
         if (manifest['build_mode'] != 'immutable'
                 or ('--enable-swoole-stdext' in manifest['configure']) != args.stdext
                 or manifest['inputs'].get('php_sockets_requested', False) != getattr(args, 'php_sockets', False)
-                or manifest['inputs'].get('buffer_typed_requested', False) != (label == 'selected' and getattr(args, 'buffer_typed', False))
                 or ('--enable-sockets' in manifest['configure']) != getattr(args, 'php_sockets', False)
                 or any(manifest['inputs'].get('http_' + name.replace('-', '_') + '_requested', False)
                        != (label == 'selected' and name in http_storage_capabilities(args)) for name in HTTP_STORAGE_CAPABILITIES)
@@ -167,7 +171,7 @@ def plan(args, reports):
                *(['--ccache', args.ccache] if getattr(args, 'ccache', None) else ['--no-ccache']),
                *(['--native-build-root', args.native_build_root] if getattr(args, 'native_build_root', None) else []))
     selected_export = artifact_reports / 'selected-export'
-    script('build', 'tools/build_hybrid.py', *([] if integrate else ['--dev']), *flags, *repair, *['--http-' + name for name in http_storage_capabilities(args)], *(['--buffer-typed'] if getattr(args, 'buffer_typed', False) else []), *['--reactor-' + name + '-owned' for name in reactor_owned_capabilities(args)], *(['--stdext'] if getattr(args, 'stdext', False) else []), *(['--php-sockets'] if getattr(args, 'php_sockets', False) else []),
+    script('build', 'tools/build_hybrid.py', *([] if integrate else ['--dev']), *flags, *repair, *['--http-' + name for name in http_storage_capabilities(args)], *['--reactor-' + name + '-owned' for name in reactor_owned_capabilities(args)], *(['--stdext'] if getattr(args, 'stdext', False) else []), *(['--php-sockets'] if getattr(args, 'php_sockets', False) else []),
            *(['--export', selected_export] if captured_reference else []), '--jobs', args.jobs,
            *(['--native-build-root', args.native_build_root] if getattr(args, 'native_build_root', None) else []),
            *(['--ccache', args.ccache] if getattr(args, 'ccache', None) else ['--no-ccache']))
@@ -315,7 +319,7 @@ def plan(args, reports):
                        '--engine', f'upstream={native_export / "swoole.so"}', '--build-manifest', manifest,
                        '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                        '--selected-export', selected_export / 'export.json', '--native-export', native_export / 'export.json',
-                       '--require-batch', *(['--require-typed-buffer'] if getattr(args, 'buffer_typed', False) else []),
+                       '--require-batch', *(['--require-typed-buffer'] if typed_buffer(args) else []),
                        *extra, *report(phase))
         for name in ['registration', 'write_positive', 'write_arguments', 'output', 'wait', 'callbacks', 'initialize', 'handlers', 'builtins']:
             phase = 'reactor-' + name.replace('_', '-')
@@ -355,7 +359,7 @@ def plan(args, reports):
         script('reactor-compile', 'tests/modules/reactor/compile_gate.py', '--source', ROOT / 'target/upstream/src',
                *(['--sockets-owned'] if getattr(args, 'reactor_sockets_owned', False) else []),
                '--report', reports / 'reactor-compile.json')
-    if getattr(args, 'buffer_typed', False):
+    if typed_buffer(args):
         script('buffer-typed-layout', 'tests/modules/buffer/typed_layout.py',
                '--source', ROOT / 'target/upstream/src',
                '--report', reports / 'buffer-typed-layout.json')
@@ -978,8 +982,6 @@ def main():
     parser.add_argument('--php-sockets', action='store_true', help='Build matching Native/Rust PHP sockets-integration profiles')
     parser.add_argument('--external-network', action='store_true',
                         help='Also run original PHPTs that need internet access; without it they stay unmeasured')
-    parser.add_argument('--buffer-typed', action='store_true',
-                        help='Experimental sole Rust Buffer cursor; requires Buffer/Reactor, default off')
     for name in HTTP_STORAGE_CAPABILITIES:
         parser.add_argument('--http-' + name, action='store_true',
                             help='Experimental Rust HTTP ' + name + '; requires HTTP, default off')
@@ -1025,8 +1027,6 @@ def main():
     for name in http_storage_capabilities(args):
         if 'http' not in selected_modules(args):
             parser.error('--http-' + name + ' requires --module http or --all-modules')
-    if args.buffer_typed and not {'buffer', 'reactor'} <= set(selected_modules(args)):
-        parser.error('--buffer-typed requires --module buffer --module reactor or --all-modules')
     if args.jobs < 1 or args.test and args.lane != 'edit' or args.case and args.lane != 'candidate':
         parser.error('Positive --jobs required; --test is edit-only and --case is candidate-only')
     if args.redis_image and not args.redis_extension:

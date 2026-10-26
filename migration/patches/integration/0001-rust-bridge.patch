@@ -1,8 +1,8 @@
 diff --git a/config.m4 b/config.m4
-index 230b1c0..c1f123c 100644
+index 230b1c0..d36cb1d 100644
 --- a/config.m4
 +++ b/config.m4
-@@ -38,2 +38,177 @@ PHP_ARG_ENABLE([swoole],
+@@ -38,2 +38,172 @@ PHP_ARG_ENABLE([swoole],
  
 +PHP_ARG_WITH([swoole-rs],
 +  [Rust migration bridge prefix],
@@ -18,11 +18,6 @@ index 230b1c0..c1f123c 100644
 +  [Rust buffer queue],
 +  [AS_HELP_STRING([--enable-swoole-rs-buffer],
 +    [Use the Rust buffer queue (requires --with-swoole-rs)])], [no], [no])
-+
-+PHP_ARG_ENABLE([swoole-rs-buffer-typed],
-+  [Experimental sole Rust Buffer cursor and typed consumers],
-+  [AS_HELP_STRING([--enable-swoole-rs-buffer-typed],
-+    [Use typed Buffer consumers (requires Rust Buffer and Reactor)])], [no], [no])
 +
 +PHP_ARG_ENABLE([swoole-rs-timer],
 +  [Rust timer queue],
@@ -180,16 +175,13 @@ index 230b1c0..c1f123c 100644
 +    [Use Rust PHP Coroutine policy (requires --with-swoole-rs)])], [no], [no])
 +
  PHP_ARG_ENABLE([mysqlnd],
-@@ -1301,2 +1476,309 @@ EOF
+@@ -1301,2 +1471,304 @@ EOF
  
 +    if test "$PHP_SWOOLE_RS_WEBSOCKET" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust WebSocket kernel requires --with-swoole-rs=DIR])
 +    fi
 +    if test "$PHP_SWOOLE_RS_BUFFER" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust buffer queue requires --with-swoole-rs=DIR])
-+    fi
-+    if test "$PHP_SWOOLE_RS_BUFFER_TYPED" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
-+        AC_MSG_ERROR([Typed Buffer consumers require --with-swoole-rs and Rust Buffer/Reactor])
 +    fi
 +    if test "$PHP_SWOOLE_RS_TIMER" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust timer queue requires --with-swoole-rs=DIR])
@@ -300,10 +292,8 @@ index 230b1c0..c1f123c 100644
 +        if test "$PHP_SWOOLE_RS_BUFFER" != "no"; then
 +            AC_DEFINE(SWOOLE_RS_BUFFER, 1, [Use the Rust buffer queue])
 +        fi
-+        if test "$PHP_SWOOLE_RS_BUFFER_TYPED" != "no"; then
-+            if test "$PHP_SWOOLE_RS_BUFFER" = "no" || test "$PHP_SWOOLE_RS_REACTOR" = "no"; then
-+                AC_MSG_ERROR([Typed Buffer consumers require --enable-swoole-rs-buffer and --enable-swoole-rs-reactor])
-+            fi
++        dnl With both the Rust Buffer and the Rust reactor, server callers use the typed Buffer queue.
++        if test "$PHP_SWOOLE_RS_BUFFER" != "no" && test "$PHP_SWOOLE_RS_REACTOR" != "no"; then
 +            AC_LANG_PUSH([C++])
 +            swr_buffer_typed_CPPFLAGS="$CPPFLAGS"
 +            CPPFLAGS="$CPPFLAGS -I$PHP_SWOOLE_RS/include"
@@ -317,7 +307,7 @@ index 230b1c0..c1f123c 100644
 +            ]])], [AC_MSG_RESULT([yes])], [AC_MSG_FAILURE([Typed Buffer consumers require their concrete staged facade])])
 +            CPPFLAGS="$swr_buffer_typed_CPPFLAGS"
 +            AC_LANG_POP([C++])
-+            AC_DEFINE(SWOOLE_RS_BUFFER_TYPED, 1, [Use experimental typed Buffer consumers])
++            AC_DEFINE(SWOOLE_RS_BUFFER_TYPED, 1, [Server callers use the typed Rust Buffer queue])
 +        fi
 +        if test "$PHP_SWOOLE_RS_TIMER" != "no"; then
 +            AC_DEFINE(SWOOLE_RS_TIMER, 1, [Use the Rust timer queue])

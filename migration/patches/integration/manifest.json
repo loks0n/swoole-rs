@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-rust-bridge.patch",
-      "sha256": "6bad65ab1a0eeb9ae3b338e80960c25bb225d768582fa02e161fcdbdafad1a49",
+      "sha256": "0ad19d26172915d2e84b254b19c4038483da6db96e849f8a164b9071a56d2709",
       "upstream_paths": [
         "config.m4",
         "ext-src/php_swoole.cc"
