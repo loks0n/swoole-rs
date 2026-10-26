@@ -27,9 +27,7 @@ upstream sources; run it directly to rewrite `migration/patches/wrappers/`.
   16,392 Content-Length decimal comparisons). With `--core`, all four
   original/patched event/http translation units are syntax-checked against the
   configured SDK.
-- `upstream.py --source S --engine name=swoole.so ...` (`wrappers-originals`):
-  all pinned `tests/swoole_event` and `tests/swoole_timer` PHPTs through PHP's
-  official runner.
+- Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
 ## Other gates
 
@@ -86,11 +84,6 @@ python3 tests/modules/wrappers/response.py --source target/upstream/src \
   initialized.
 - `core.py` on macOS: the upstream HTTP test unit uses Linux `stat.st_mtim`
   and does not compile; only `--library-only` works there.
-- `upstream.py`: four timer cases (`bug_4794_3/5/6/7`) need external network
-  and are excluded unless `--external-network`, and the gate fails while any
-  case is excluded. `swoole_event/sockets.phpt` fails in both engines unless
-  the extension is built with `--enable-sockets` (see `sockets_build.py`); the
-  combined all-module build does not enable it.
 - On Linux Docker bind mounts, libtool's install copy can fail with
   `error deallocating ... Invalid argument`; a PATH `cp` shim passing
   `--sparse=never --reflink=never` works around it.

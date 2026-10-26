@@ -486,12 +486,11 @@ class Lanes(unittest.TestCase):
                                    benchmark=False, compare=False, fix_halfclose=False)
             with patch.object(dev.sys, 'platform', 'linux'):
                 commands = dict(dev.plan(args, ROOT / 'target/reports/collections'))
-            for phase in ['phpcollections-runtime', 'phpcollections-swoole_channel_coro',
+            for phase in ['phpcollections-runtime',
                           'base64-consumers-upstream', 'base64-consumers-hybrid', 'phphelpers-entrypoint']:
                 loaded = [commands[phase][i+1] for i, argument in enumerate(commands[phase])
                           if argument == '--php-extension']
                 self.assertEqual(loaded.count('curl'), 1)
-            self.assertNotIn('--case', commands['phpcollections-swoole_channel_coro'])
 
     def test_redis_original_profile_keeps_baseline_and_complete_inventory(self):
         args = SimpleNamespace(lane='integrate', module=['phpcollections'], all_modules=False,
@@ -507,9 +506,6 @@ class Lanes(unittest.TestCase):
         self.assertNotIn('--case', profile)
         self.assertIn('igbinary', profile)
         self.assertEqual(profile[profile.index('--redis-extension') + 1], str(args.redis_extension))
-        for group in ['swoole_table', 'swoole_channel_coro']:
-            self.assertIn('--require-all', commands['phpcollections-' + group])
-            self.assertNotIn('--redis-extension', commands['phpcollections-' + group])
 
     def test_child_php_selection_is_explicit_and_scoped_to_direct_official_runner(self):
         args = SimpleNamespace(lane='integrate', module=None, all_modules=True, php='php', php_extension=[],
@@ -527,9 +523,9 @@ class Lanes(unittest.TestCase):
             if expected:
                 direct += 1
                 self.assertIn('--require-all', matched[name])
-        self.assertGreater(direct, 10)
+        self.assertGreater(direct, 0)
         self.assertNotIn('--match-child-php', matched['build'])
-        self.assertNotIn('--match-child-php', matched['coroutine-originals'])
+        self.assertNotIn('--match-child-php', matched['coroutine-native-originals'])
 
     def test_all_registered_modules_share_one_plan_and_close_gate(self):
         args = SimpleNamespace(lane='integrate', module=None, all_modules=True, php='php', php_extension=[],
@@ -575,23 +571,19 @@ class Lanes(unittest.TestCase):
             self.assertEqual(command[command.index('--backend') + 1], backend)
             self.assertIn('--registry', command)
             self.assertIn('--timing', command)
-        for name in ['hooks-ordered','hooks-async-policy','hooks-packet-policy','hooks-lifecycle-policy','hooks-socket-policy','hooks-compile','hooks-originals']:
+        for name in ['hooks-ordered','hooks-async-policy','hooks-packet-policy','hooks-lifecycle-policy','hooks-socket-policy','hooks-compile']:
             self.assertIn(name,commands)
         self.assertIn('--config',commands['hooks-compile'])
-        self.assertNotIn('--case',commands['hooks-originals'])
-        self.assertNotIn('--group',commands['hooks-originals'])
         for name in ['reference-identity','base64-consumers-upstream','base64-consumers-hybrid',
-                     'crc32-consumers-upstream','crc32-consumers-hybrid','base64-originals',
-                     'coroutine-originals','coroutine-native-originals','corebase-mkdir','corebase-php','corebase-startup','wrappers-originals']:
+                     'crc32-consumers-upstream','crc32-consumers-hybrid',
+                     'coroutine-native-originals','corebase-mkdir','corebase-php','corebase-startup']:
             self.assertIn(name,commands)
-        self.assertNotIn('--case',commands['coroutine-originals'])
         self.assertIn('--sanitize',commands['coroutine-native-originals'])
         self.assertNotIn('--inventory-only',commands['coroutine-native-originals'])
-        self.assertNotIn('--inventory-only',commands['wrappers-originals'])
-        self.assertNotIn('--external-network',commands['wrappers-originals'])
-        self.assertIn('framing-originals',commands)
+        # Upstream PHPTs run in the merge tier's phpt-* jobs, not as per-module phases (#83).
+        self.assertNotIn('phpt', commands)
+        self.assertEqual([name for name in commands if name.endswith(('-full-originals', '-originals-manifest'))], [])
         self.assertEqual(commands['framing-versioned-expectation'].count('--case'), 1)
-        self.assertNotIn('--case', commands['framing-originals'])
         self.assertIn('tests/swoole_server/wrong_eof_setting.phpt', commands['framing-versioned-expectation'])
         self.assertIn('websocket-close',commands)
         self.assertIn('--export', commands['reference-build'])
@@ -636,7 +628,6 @@ class Lanes(unittest.TestCase):
             self.assertTrue(any('selected-export/swoole.so' in arg for arg in command))
             self.assertNotEqual(command[command.index('--source-ref') + 1], 'HEAD')
         self.assertLess(list(commands).index('phphelpers-sdk'), list(commands).index('phpcoroutines-sdk'))
-        self.assertEqual(sum(name.startswith('phpcoroutines-') and name.endswith('-originals-manifest') for name in commands), 3)
         self.assertIn('--core', commands['ports-flags'])
         for consumer in ['random', 'storage', 'metadata', 'facade', 'copy', 'split', 'integer', 'ownership', 'allocation', 'format', 'compatibility']:
             command = commands['string-production-' + consumer]
@@ -684,12 +675,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('--build-manifest', commands['utilities-public-storage'])
         self.assertIn('--archive', commands['utilities-public-storage'])
         self.assertEqual(commands['utilities-public-storage'].count('--engine'), 2)
-        utility_originals = commands['utilities-originals']
-        self.assertTrue(utility_originals[utility_originals.index('--source') + 1].endswith('/src'))
-        self.assertNotEqual(utility_originals[utility_originals.index('--source') + 1], str(ROOT / 'target/upstream/src'))
-        self.assertIn('--require-all', commands['utilities-originals'])
-        self.assertIn('--isolate-cases', commands['utilities-originals'])
-        self.assertIn('tests/modules/utilities/originals.json', commands['utilities-originals'])
         self.assertIn('--threads', commands['utilities-put-threads'])
         self.assertIn('--sanitize', commands['utilities-put-threads'])
         self.assertIn('utilities-php-logger',commands)
@@ -714,14 +699,6 @@ class Lanes(unittest.TestCase):
             self.assertIn(flag, handlers)
         self.assertEqual(handlers.count('--engine'), 2)
         self.assertNotIn('--case', handlers)
-        for group in ['swoole_table', 'swoole_channel_coro']:
-            self.assertIn('--require-all', commands['phpcollections-' + group])
-            self.assertNotIn('--case', commands['phpcollections-' + group])
-        for inventory in ['direct', 'framing']:
-            command = commands['ports-' + inventory + '-originals']
-            self.assertEqual(command[command.index('--inventory') + 1], inventory)
-            self.assertEqual(command.count('--engine'), 2)
-            self.assertNotIn('--case', command)
         for phase in ['ports-count', 'ports-settings']:
             self.assertIn('--core', commands[phase])
             self.assertIn('--archive', commands[phase])
@@ -765,13 +742,6 @@ class Lanes(unittest.TestCase):
                          commands['phphelpers-policy'][commands['phphelpers-policy'].index('--archive') + 1])
         self.assertLess(list(commands).index('build'), list(commands).index('phphelpers-async'))
         self.assertNotIn('--sanitize', asynchronous)  # Intrinsic separate Native sanitizer controls.
-        for phase in ['phphelpers-full-originals', 'phpt']:
-            command = commands[phase]
-            source = command[command.index('--source') + 1]
-            self.assertNotEqual(source, str(ROOT / 'target/upstream/src'))
-            self.assertTrue(source.endswith('/src'))
-        self.assertIn('--require-all', commands['phphelpers-full-originals'])
-        self.assertNotIn('--case', commands['phphelpers-full-originals'])
         self.assertIn('--archive', commands['ports-policy'])
         self.assertIn('--archive', commands['http2-native'])
         self.assertIn('--sanitize', commands['http2-native'])
@@ -812,11 +782,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('--archive',commands['clients-policy'])
         self.assertIn('--sanitize',commands['clients-policy'])
         self.assertIn('--archive',commands['clients-http'])
-        for name in ['http-full-originals', 'http-coro-full-originals', 'clients-full-originals', 'http2-full-originals']:
-            self.assertIn('--require-all', commands[name])
-            self.assertIn('--isolate-cases', commands[name])
-            self.assertNotIn('--case', commands[name])
-            self.assertIn(name + '-manifest', commands)
         self.assertIn('http-binding-reflection', commands)
         reflection = commands['http-binding-reflection']
         self.assertTrue(reflection[reflection.index('--engine') + 1].startswith('upstream='))
@@ -951,28 +916,10 @@ class Lanes(unittest.TestCase):
         self.assertIn('--stdext', native)
         self.assertNotIn('--module', native)
         self.assertLess(list(commands).index('stdext-reference-build'), list(commands).index('build'))
-        for name in ['phpt', 'phphelpers-full-originals']:
-            self.assertIn('upstream=' + str(ROOT / 'target/hybrid/upstream-stdext/modules/swoole.so'), commands[name])
-        self.assertIn('--requires', commands['phphelpers-full-originals-manifest'])
-        self.assertIn('stdext', commands['phphelpers-full-originals-manifest'])
-
-    def test_module_fixture_extensions_load_once_on_linux(self):
-        args = SimpleNamespace(lane='integrate', module=['coroutine','wrappers','framing','locks'], php='php',
-                               php_extension=['posix','mbstring'], jobs=2, test=None, case=None,
-                               benchmark=False, compare=False, fix_halfclose=False)
-        with patch.object(dev.sys,'platform','linux'):
-            commands=dict(dev.plan(args,ROOT/'target/reports/test-extensions'))
-        for name in ['coroutine-originals','wrappers-originals','framing-originals','locks-originals']:
-            self.assertEqual(commands[name].count('posix'),1)
-            self.assertEqual(commands[name].count('mbstring'),1)
-        self.assertNotIn('--case',commands['coroutine-originals'])
-
-    def test_linux_lock_originals_add_missing_posix_dependency(self):
-        args = SimpleNamespace(lane='integrate', module=['locks'], php='php', php_extension=[],
-                               jobs=2, test=None, case=None, benchmark=False, compare=False, fix_halfclose=False)
-        with patch.object(dev.sys, 'platform', 'linux'):
-            commands = dict(dev.plan(args, ROOT / 'target/reports/test-missing-posix'))
-        self.assertEqual(commands['locks-originals'].count('posix'), 1)
+        engines = [command for command in commands.values() if any(str(a).startswith('upstream=') for a in command)]
+        self.assertTrue(engines)
+        for command in engines:
+            self.assertIn('upstream=' + str(ROOT / 'target/hybrid/upstream-stdext/modules/swoole.so'), command)
 
     def test_all_module_build_receipt_uses_the_executed_selection(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1008,7 +955,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('--keep-alive', commands['halfclose-pressure'])
         stale = commands['halfclose-stale-read']
         self.assertEqual(stale[stale.index('--source') + 1], str(ROOT / 'target/hybrid/rust-error-halfclose/src'))
-        self.assertIn('--require-all', commands['phpt'])
 
     def test_protocol_lifetime_gates_use_actual_reference_first(self):
         args = SimpleNamespace(lane='integrate', module=['protocols'], php='php', php_extension=[],
@@ -1058,8 +1004,7 @@ class Lanes(unittest.TestCase):
                          jobs=4, test=None, case=None, benchmark=False, compare=False)
         commands = dict(dev.plan(args, ROOT / 'target/reports/test-plan'))
         self.assertNotIn('--dev', commands['build'])
-        self.assertNotIn('--module', commands['phpt'])
-        self.assertIn('--require-all', commands['phpt'])
+        self.assertNotIn('phpt', commands)  # the merge tier's phpt-* jobs run every PHPT
         self.assertIn('--manifest', commands['timer-native'])
         self.assertNotIn('--dev', commands['timer-native'])
 

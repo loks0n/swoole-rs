@@ -49,7 +49,6 @@ Each script writes a fresh report under `target/` and exits non-zero on failure.
     private-file pwrite/append/pread/EOF/EBADF checks.
   - `sendfile_fallback.py`: `!HAVE_SENDFILE` body, 2,520 sequences. On macOS the
     whole file is also syntax-checked with `HAVE_SENDFILE` undefined.
-  - `random_bytes.py`: `swoole_random_bytes` outer loop, 1,715 sequences.
   - `file_line.py`: `File::read_line`.
   - `read_content.py`: `File::read_content` with `String::grow`.
 

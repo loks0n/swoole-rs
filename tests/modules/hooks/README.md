@@ -49,15 +49,10 @@ reported UNSUPPORTED when the config does not enable `SW_USE_IOURING`.
 ## Original tests
 
 ```sh
-python3 tests/modules/hooks/upstream.py --source PINNED_SOURCE --engine upstream=CONTROL --engine hybrid=CANDIDATE --output REPORT
 python3 tests/modules/hooks/core.py --receipt upstream=NATIVE_CORE_RECEIPT --receipt hybrid=NATIVE_CORE_RECEIPT --output REPORT
 ```
 
-`upstream.py` runs 229 original PHPTs (147 runtime, 62 socket_coro, 18
-coroutine_system, 2 io_uring) through PHP's official runner with unchanged
-assertions, restoring the pinned helper and data files the tests need.
-`--group`/`--case` select subsets; a subset cannot pass the full gate.
-`--external-network` includes cases that need outside services.
+Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
 `core.py` runs the 100 primary native GoogleTest declarations listed in
 `originals.json` (plus the `accept` dependency) against completed

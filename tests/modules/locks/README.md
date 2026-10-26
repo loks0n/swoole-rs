@@ -15,9 +15,6 @@ directly to rewrite `migration/patches/locks/`.
 python3 tools/build_hybrid.py --module locks --dev --jobs 2
 python3 tests/modules/locks/gate.py --source target/upstream/src \
   --archive target/release/libswoole_rs_ffi.a --sanitize
-python3 tests/modules/locks/upstream.py --source target/upstream/src \
-  --engine upstream=target/upstream/src/modules/swoole.so \
-  --engine rust=target/hybrid/dev-rust-locks/modules/swoole.so
 ```
 
 ## Registered gates
@@ -36,11 +33,7 @@ python3 tests/modules/locks/upstream.py --source target/upstream/src \
     --crate-type staticlib
   ```
 
-- `upstream.py --source S --engine name=swoole.so ... [--php-extension E] [--case PATH] [--inventory-only]`
-  (`locks-originals`): the 18 pinned `swoole_lock`, `swoole_atomic`,
-  `swoole_coroutine_lock` and thread lock/atomic_ctor/barrier PHPTs through
-  PHP's official runner. Load the same PHP extensions in both engines (on Linux
-  `posix` is required). `--case` runs a subset, which leaves the gate failed.
+- Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
 ## Other gates
 
@@ -79,17 +72,6 @@ python3 tests/modules/locks/upstream.py --source target/upstream/src \
   try-lock contend with a held write lock, with no synchronisation. It fails
   intermittently in either engine (latest: reference failed, Rust passed).
   `gate.py` covers the same operations deterministically.
-- `upstream.py` `tests/swoole_coroutine_lock/lock.phpt`: expects replies
-  `value3, lock1, lock2` but nothing orders request arrival or lock
-  acquisition (the coroutine lock is a CAS loop with backoff, not FIFO).
-  Reference and Rust both produce `lock2, value3, lock1`, including on ZTS; the
-  runner's retry WARN counts as a failure. `order.py` shows both engines
-  produce that permutation with correct mutual exclusion.
-- `upstream.py` on ZTS: `swoole_thread/lock.phpt` and `atomic_ctor.phpt`
-  unlock a default pthread mutex from a non-owner thread, which POSIX does not
-  guarantee. They are recorded `unsupported` without running, so the gate fails.
-- `upstream.py` skips are not passes: macOS skips 4 and Linux NTS skips 3 of
-  the 18, so the gate fails on those hosts.
 - `constructor.py`: the native baseline leaks on failed construction and is
   reported as `native_baseline_passed: false`; the gate checks the Rust rows.
 - `owned.py` on macOS: SPINLOCK is unavailable and not exercised.

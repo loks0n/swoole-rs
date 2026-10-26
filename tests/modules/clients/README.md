@@ -87,20 +87,7 @@ only, not a configured build.
 
 ## Original PHPTs
 
-```sh
-python3 tests/modules/clients/full_originals.py --source /path/to/pinned-git \
-  --output target/clients-originals-manifest.json
-python3 corpus/upstream/run.py --source /path/to/pinned-git \
-  --manifest target/clients-originals-manifest.json --engine native=/path/native.so \
-  --engine hybrid=/path/selected.so --php-extension sockets --php-extension posix \
-  --php-extension mbstring --require-all --isolate-cases --timeout 90 \
-  --output target/clients-originals.json
-```
-
-`full_originals.py` builds the manifest from `inventory.json` (213 PHPTs) and
-checks each pinned blob against its recorded hash. Support files come from
-`tests/modules/http/full_originals.py`. These tests need external services and
-optional packages; they have not passed.
+Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
 ## Known gaps and differences
 

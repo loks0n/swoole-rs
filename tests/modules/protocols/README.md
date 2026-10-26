@@ -96,22 +96,7 @@ restarting the worker. No Rust frame is active during that allocation.
 
 ## Original PHPTs
 
-```sh
-python3 tests/modules/protocols/phpt.py --source /pinned/reference \
-  --engine upstream=/reference/swoole.so --engine hybrid=/candidate/swoole.so \
-  --composer-autoload /private/predis/vendor/autoload.php \
-  --php-extension /private/phpredis/modules/redis.so --require-all
-```
-
-Runs the 12 original MQTT/Redis/SOCKS5 PHPTs with the official runner. With both
-clients, all nine MQTT/Redis cases pass; the three SOCKS cases skip because they
-need an external proxy, so `--require-all` exits 1. Missing client classes are
-reported unsupported, never passed.
-
-For Predis, copy `fixtures/predis/composer.{json,lock}` into a private directory
-and run `composer install --no-dev --no-scripts --no-plugins` with private
-`COMPOSER_HOME`/`COMPOSER_CACHE_DIR`. PHPRedis 6.3.0 (df4fab2de7fc327c54c94a13af2b9542e4fbd720)
-builds privately with phpize/configure/make; 6.2.0 does not build against PHP 8.5.
+Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
 ## Original core GTests (Linux)
 

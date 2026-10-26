@@ -8,7 +8,7 @@ Default activation is not claimed.
 ## Gates
 
 `tools/dev.py` runs `gate.py` (framing-native), `trace.py` (framing-traces) and,
-when integrating, `upstream.py` (framing-originals).
+.
 
 ```sh
 mkdir -p target/reports
@@ -33,11 +33,7 @@ python3 tests/modules/framing/gate.py --archive target/libframing.a \
   GoogleTests for the reference and the framing overlay, and runs each test
   separately. Any error, skip or missing outcome fails. `--inventory-only`
   lists the tests without building.
-- `upstream.py --source S --engine NAME=SO ... --output R` runs the dedicated
-  framing and static-handler PHPTs with the shared support adapter and the
-  official PHP runner. `--tls` adds the DTLS framing original. `--case`
-  restricts the selection, and unselected cases are reported as unmeasured.
-  `--inventory-only` and `--external-network` are also available.
+- Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 - `expectation_diagnostic.py --source S --engine NAME=SO ... --output R` is an
   adapted diagnostic, not an original gate. It runs `wrong_eof_setting.phpt`
   with its version-specific expectation selected: EXPECTF on PHP 8.2,

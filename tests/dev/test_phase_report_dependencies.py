@@ -13,7 +13,6 @@ class PhaseReports(unittest.TestCase):
         for module, child, parent in [
             ('phphelpers','phphelpers-async-sqlite-sdk','phphelpers-sdk'),
             ('phphelpers','phphelpers-async-odbc-sdk','phphelpers-sdk'),
-            ('phpevents','phpevents-alias-original','phpevents-originals-manifest'),
             ('buffer','base64-consumers-upstream','reference-identity')]:  # base64 is graduated, so always selected
             with self.subTest(child=child):
                 command=[sys.executable,'tools/dev.py','integrate','--module',module,'--phase',child,'--plan']
@@ -35,8 +34,8 @@ class PhaseReports(unittest.TestCase):
 
 
 class ExternalNetwork(unittest.TestCase):
-    def test_flag_reaches_wrappers_originals(self):
-        result=subprocess.run([sys.executable,'tools/dev.py','integrate','--module','wrappers','--external-network',
-            '--phase','wrappers-originals','--plan'],cwd=ROOT,capture_output=True,text=True)
+    def test_flag_reaches_local_phpt(self):
+        result=subprocess.run([sys.executable,'tools/dev.py','candidate','--module','buffer','--external-network',
+            '--phase','phpt','--plan'],cwd=ROOT,capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertIn('--external-network',json.loads(result.stdout)[0]['command'])
