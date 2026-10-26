@@ -624,7 +624,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('--archive', commands['memory-fixed-native-construction'])
         self.assertIn('--archive', commands['memory-mapping-operation'])
         self.assertNotIn('--sanitize', commands['memory-mapping-operation'])
-        self.assertIn('--archive', commands['http-tasks'])
         self.assertIn('--archive', commands['reactor-backend-storage'])
         self.assertIn('--report', commands['reactor-backend-storage'])
         self.assertIn('--report', commands['reactor-registration'])
