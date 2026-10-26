@@ -80,37 +80,6 @@ const fn step(mut stage: u32, kind: u32, observation: u8, stack_limit: u8) -> (u
         let current = stage;
         stage = current.saturating_add(1);
         let action = match kind {
-            0 | 1 => match current {
-                0 => 1, // native VM fields, in their original order
-                1 => 2, // fresh in_silence
-                2 if observation != 0 => 3,
-                2 => continue,
-                3 if stack_limit != 0 => 4,
-                _ => 0,
-            },
-            2 | 3 => match current {
-                0 => 5, // fresh output-handler count or saved-output presence
-                1 if observation != 0 => 6,
-                1 if kind == 2 => 7, // save clears output_ptr on empty output
-                _ => 0,
-            },
-            4 | 5 => match current {
-                0 => 8,
-                1 if observation != 0 => 9,
-                1 => continue,
-                2 => 10,
-                3 if observation != 0 => 11,
-                3 => continue,
-                4 => 12,
-                5 if observation != 0 => 13,
-                _ => 0,
-            },
-            6 | 7 => match current {
-                0 => 14,
-                1 => 15,
-                2 => 16,
-                _ => 0,
-            },
             8 | 9 => match current {
                 0 => 17,              // native fiber observer handoff
                 1 => 18,              // save originating/current native context

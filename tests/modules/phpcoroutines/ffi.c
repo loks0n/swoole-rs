@@ -211,11 +211,6 @@ int main(void) {
     swr_v1_phpcoroutines_config(&config_state, SWR_CORO_CONFIG_SET_DEADLOCK, 0);
     assert(swr_v1_phpcoroutines_config(&config_state, SWR_CORO_CONFIG_GET_PREEMPTIVE, 0) == 1);
     assert(swr_v1_phpcoroutines_config(&config_state, SWR_CORO_CONFIG_GET_DEADLOCK, 0) == 0);
-    uint32_t transfer_stage = 0;
-    assert(swr_v1_phpcoroutines_transfer(&transfer_stage, SWR_CORO_TRANSFER_SAVE_CONTEXT, 0, 0) == SWR_CORO_TRANSFER_CALL_VM);
-    assert(swr_v1_phpcoroutines_transfer(&transfer_stage, SWR_CORO_TRANSFER_SAVE_CONTEXT, 0, 0) == SWR_CORO_TRANSFER_CALL_OUTPUT);
-    assert(swr_v1_phpcoroutines_transfer(&transfer_stage, SWR_CORO_TRANSFER_SAVE_CONTEXT, 0, 0) == SWR_CORO_TRANSFER_CALL_BASIC);
-    assert(swr_v1_phpcoroutines_transfer(&transfer_stage, SWR_CORO_TRANSFER_SAVE_CONTEXT, 0, 0) == SWR_CORO_TRANSFER_DONE);
     uint32_t resumed_stage = 0;
     const uint32_t resumed_order[] = {SWR_CORO_TRANSFER_FIBER, SWR_CORO_TRANSFER_SAVE,
         SWR_CORO_TRANSFER_RESTORE, SWR_CORO_TRANSFER_RECORD, SWR_CORO_TRANSFER_CALLBACK_PRESENCE,
