@@ -36,9 +36,12 @@ pub unsafe extern "C" fn swr_v1_phphelpers_init_next(
         _ => return 0,
     };
     let name = if action == 2 { FUNCTIONS[index] } else { &[] };
+    let Ok(index) = u32::try_from(index) else {
+        return 0;
+    };
     unsafe {
         step.write(SwrPhpInitStep {
-            index: index as u32,
+            index,
             name: if name.is_empty() {
                 std::ptr::null()
             } else {
