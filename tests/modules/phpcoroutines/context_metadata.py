@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 from tools.build_upstream import require_build_space
 from tools.harness import run_isolated, write_report
-from make_patches import body, header_selected, coroutine_selected
+from overlay import body, header_selected, coroutine_selected
 from gate import sha
 
 

@@ -1,7 +1,5 @@
 """Whole Rust method metadata with mandatory stable Native Zend ABI storage."""
 import re
-TABLES = {'swoole_coroutine_methods': 0, 'swoole_exit_exception_methods': 1,
-          'swoole_coroutine_scheduler_methods': 2, 'swoole_coroutine_system_methods': 3}
 BRIDGE = '''
 #ifdef SWOOLE_RS_PHPCOROUTINES
 struct PHPCoroutineMethodBinding {
@@ -78,38 +76,3 @@ def selected_table(table):
     return selected
 
 
-def replace_method_catalogue(source, result, body):
-    tables = declarations(source)
-    if not tables: raise ValueError('Pinned method catalogue absent')
-    for table in tables:
-        name = table[1]
-        kind = TABLES[name]
-        rows = bindings(table[2])
-        expected = [38, 2, 5, 12][kind]
-        if len(rows) != expected: raise ValueError('Pinned catalogue row count changed')
-        selected = selected_table(table)
-        if result.count(table[0]) != 1: raise ValueError('Method declaration changed')
-        result = result.replace(table[0], selected)
-    # One shared typed ABI projector per translation unit, before its first table.
-    index = result.index('#ifdef SWOOLE_RS_PHPCOROUTINES\nstatic constexpr PHPCoroutineMethodBinding ')
-    result = result[:index] + BRIDGE + result[index:]
-    signature = {'swoole_coroutine_methods':'void php_swoole_coroutine_minit(int module_number) {',
-                 'swoole_coroutine_scheduler_methods':'void php_swoole_coroutine_scheduler_minit(int module_number) {',
-                 'swoole_coroutine_system_methods':'void php_swoole_coroutine_system_minit(int module_number) {'}[tables[0][1]]
-    current = body(result, signature)
-    original = body(source, signature)
-    marker = '#else\n' + original
-    index = current.rindex(marker)
-    active, fallback = current[:index], current[index:]
-    for table in tables:
-        name = table[1]; kind = TABLES[name]
-        projection = f'php_coroutine_project_methods({kind}, {name}_bindings, {name}); '
-        if name in ('swoole_coroutine_methods', 'swoole_exit_exception_methods'):
-            old = 'methods = ' + name + ';'
-            if active.count(old) != 1: raise ValueError('MINIT methods publication changed')
-            active = active.replace(old, projection + old)
-        else:
-            old = '            swr_phpcoroutines_register_class(plan, slot, ' + name + ', nullptr);'
-            if active.count(old) != 1: raise ValueError('MINIT class registration changed')
-            active = active.replace(old, '            ' + projection.rstrip() + '\n' + old)
-    return result.replace(signature + current + '}', signature + active + fallback + '}')
