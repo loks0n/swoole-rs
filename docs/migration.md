@@ -24,6 +24,26 @@ demonstrated problem.
 See [migration modules](migration-modules.md), [ABI v1](abi-v1.md) and
 [hybrid build](hybrid-build.md).
 
+## Graduation
+
+A module graduates when:
+
+1. Every merge-tier phase tagged with it passes on two consecutive completed
+   merge-tier runs.
+2. Its original PHPTs pass wherever they pass on upstream, as far as the PHPT
+   manifest covers it.
+3. Its benchmarks, where it has any, are within the agreed threshold of upstream.
+4. It has no open `p0`/`p1` `kind:bug` issues.
+
+A graduated module is listed in `GRADUATED` in `tools/build_hybrid.py`. Every
+Rust build applies its patches, sets its feature bit and links its crate; there
+is no `--module` or `--enable-swoole-rs-` switch, no `SWOOLE_RS_` guard and no
+cargo feature. Reference builds (`tools/build_upstream.py`,
+`build_hybrid.py --backend upstream`) stay pristine: they are the oracle that
+differential tests compare against, not a fallback.
+
+Graduated: crc32.
+
 ## Roadmap
 
 Progress is measured by the upstream first-party lines (`src/`, `ext-src/`,

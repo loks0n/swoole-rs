@@ -44,7 +44,7 @@ Feature values come from `MODULES` in `tools/build_hybrid.py`.
 | M07 | `hooks` | 65536 | `src/coroutine/{hook,socket,system,file,file_lock,iouring,uring_socket}.cc`, `ext-src/swoole_runtime.cc`, `include/swoole_coroutine_socket.h` | Coroutine I/O and runtime hooks. [Boundary](hooks-abi-v1.md). |
 | M08 | `process` | 524288 | `src/server/{worker,task_worker,process,manager,reactor_process}.cc`, `src/os/{process_pool,pipe,signal,wait}.cc` | Workers, process pool, IPC, signals. [Boundary](process-abi-v1.md). |
 | M09 | `base64` | 8 | `src/core/base64.cc` | [Contract](core-abi-v1.md). |
-| M10 | `crc32` | 16 | `src/core/crc32.cc` | [Contract](core-abi-v1.md). |
+| M10 | `crc32` | 16 | `src/core/crc32.cc` | [Contract](core-abi-v1.md). Graduated: always on. |
 | M11 | `error` | 32 | `src/core/error.cc` | Known error strings and formatting. [Contract](core-abi-v1.md). |
 | M12 | `memory` | 64 | `src/memory/`, `src/core/{heap,channel}.cc` (+ headers) | Memory pools, shared storage, core collections. `native/memory/swoole_rs_memory.h`. |
 | M13 | `protocols` | 128 | `src/protocol/{mqtt,redis,socks5,message_bus}.cc`, `ext-src/swoole_redis_server.cc` (+ headers) | Packet protocol and proxy codecs. `native/protocols/swoole_rs_protocols.h`. |

@@ -75,6 +75,8 @@ python3 tools/build_hybrid.py --module buffer --module websocket
 
 `--backend rust` is the default; `--module` requires it. Module names and
 feature values are listed in [migration modules](migration-modules.md).
+[Graduated](migration.md#graduation) modules are in every Rust build and take
+no `--module`.
 Upstream keeps PHP objects, socket/reactor ownership, protocol dispatch and
 native callbacks unless a selected module replaces them.
 

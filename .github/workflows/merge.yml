@@ -90,7 +90,7 @@ jobs:
       - run: cargo fetch --locked
       - run: |
           python3 tools/build_hybrid.py --backend upstream --php-sockets | tee upstream.log
-          python3 tools/build_hybrid.py --php-sockets $(python3 -c 'from tools.build_hybrid import MODULES; print(*(f"--module {m}" for m in MODULES))') | tee hybrid.log
+          python3 tools/build_hybrid.py --php-sockets $(python3 -c 'from tools.build_hybrid import SELECTABLE; print(*(f"--module {m}" for m in SELECTABLE))') | tee hybrid.log
           mkdir -p target/phpt
           cp -L "$(sed -n 's/^\(Built\|Cached\) upstream: //p' upstream.log)" target/phpt/upstream.so
           cp -L "$(sed -n 's/^\(Built\|Cached\) rust: //p' hybrid.log)" target/phpt/hybrid.so
@@ -171,7 +171,7 @@ jobs:
       - run: .devcontainer/install-alpine.sh && echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - run: python3 tools/build_upstream.py --php-sockets
       - run: cargo fetch --locked
-      - run: python3 tools/build_hybrid.py --php-sockets $(python3 -c "from tools.build_hybrid import MODULES; print(' '.join('--module ' + m for m in sorted(MODULES)))")
+      - run: python3 tools/build_hybrid.py --php-sockets $(python3 -c "from tools.build_hybrid import SELECTABLE; print(' '.join('--module ' + m for m in SELECTABLE))")
       - run: python3 corpus/thirdparty/hyperf.py --prepare
       - run: >
           python3 corpus/run.py $PHP_EXTENSIONS --require-all
