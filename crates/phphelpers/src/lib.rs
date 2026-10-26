@@ -1,4 +1,11 @@
 //! Common PHP helper policy. Zend storage, calls, allocation and VM effects stay native.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 use std::ffi::c_char;
 mod asynchronous;
 mod facade;
@@ -181,22 +188,21 @@ pub unsafe extern "C" fn swr_v1_phphelpers_alias(
     if output.is_null() {
         return std::ptr::null();
     }
-    unsafe {
-        *output = 0;
-    }
+    // SAFETY: non-null (checked above); points to an independent, aligned usize.
+    unsafe { output.write(0) };
     if length > isize::MAX as usize || (length != 0 && name.is_null()) {
         return std::ptr::null();
     }
     let name = if length == 0 {
         &[]
     } else {
+        // SAFETY: non-null, `length <= isize::MAX` (checked above), initialized bytes.
         unsafe { std::slice::from_raw_parts(name, length) }
     };
     match alias(family, name) {
         Some(value) => {
-            unsafe {
-                *output = value.len() - 1;
-            }
+            // SAFETY: as for the first write above.
+            unsafe { output.write(value.len() - 1) };
             value.as_ptr().cast()
         }
         None => std::ptr::null(),
@@ -222,13 +228,15 @@ pub unsafe extern "C" fn swr_v1_phphelpers_arguments(
     if position < 0 || count <= position || output.is_null() {
         return 0;
     }
+    // SAFETY: non-null (checked above), aligned, writable storage; `write` doesn't
+    // read or drop whatever was there.
     unsafe {
-        *output = ArgumentPlan {
+        output.write(ArgumentPlan {
             head: position.cast_unsigned(),
             tail_begin: (position + 1).cast_unsigned(),
             tail_count: (count - position - 1).cast_unsigned(),
-        };
-    }
+        })
+    };
     1
 }
 
@@ -240,6 +248,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_merge(
     inserted: u8,
     existing_array: u8,
 ) -> u32 {
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return 0;
     };
@@ -269,6 +278,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_merge_keyed(
     existing_array: u8,
     numeric_key: u8,
 ) -> u32 {
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return 0;
     };
@@ -339,6 +349,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_call_plan(
     exception: u8,
 ) -> u32 {
     use CallAction::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return False as u32;
     };
@@ -367,6 +378,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_call_plan(
 /// Phase is native-owned aligned storage initialized to0, no retained pointer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phphelpers_callable(phase: *mut u32, truthy: u8, valid: u8) -> u32 {
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return 0;
     };
@@ -386,6 +398,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_callable(phase: *mut u32, truthy: u8,
 /// value-defined/name-present fact, with no borrowed Zend pointer retained.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phphelpers_release(phase: *mut u32, observation: u8) -> u32 {
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return 0;
     };
@@ -474,9 +487,11 @@ pub unsafe extern "C" fn swr_v1_phphelpers_type_equal(
     if a_len > isize::MAX as usize || a.is_null() || b.is_null() {
         return 0;
     }
-    u8::from(unsafe {
-        std::slice::from_raw_parts(a, a_len) == std::slice::from_raw_parts(b, b_len)
-    })
+    // SAFETY: non-null, `a_len <= isize::MAX` (checked above), initialized metadata.
+    let a = unsafe { std::slice::from_raw_parts(a, a_len) };
+    // SAFETY: as above; `b_len == a_len`.
+    let b = unsafe { std::slice::from_raw_parts(b, b_len) };
+    u8::from(a == b)
 }
 
 unsafe extern "C" {
@@ -487,6 +502,7 @@ unsafe extern "C" {
 fn kind(value: &[u8]) -> u32 {
     let equal = |literal: &[u8]| {
         value.len() == literal.len()
+            // SAFETY: both slices hold `value.len()` readable bytes.
             && unsafe {
                 strncasecmp(value.as_ptr().cast(), literal.as_ptr().cast(), value.len()) == 0
             }
@@ -518,9 +534,11 @@ pub unsafe extern "C" fn swr_v1_phphelpers_compact(data: *mut u8, length: usize)
     if length == 0 || data.is_null() || length > isize::MAX as usize {
         return 0;
     }
+    // SAFETY: non-null, `length <= isize::MAX` (checked above), writable initialized bytes.
     let bytes = unsafe { std::slice::from_raw_parts_mut(data, length) };
     let mut output = 0;
     for input in 0..bytes.len() {
+        // SAFETY: isspace receives an unsigned byte value, as C requires.
         if unsafe { isspace(i32::from(bytes[input])) } == 0 {
             bytes[output] = bytes[input];
             output += 1;
@@ -536,6 +554,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_envelope(data: *const u8, length: usi
     if length == 0 || data.is_null() || length > isize::MAX as usize {
         return 0;
     }
+    // SAFETY: non-null, `length <= isize::MAX` (checked above), initialized bytes.
     let bytes = unsafe { std::slice::from_raw_parts(data, length) };
     u8::from(bytes.first() == Some(&b'<') && bytes.last() == Some(&b'>'))
 }
@@ -576,6 +595,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_parse_definition(
     observation: u8,
 ) -> u32 {
     use DefinitionAction::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return False as u32;
     };
@@ -583,6 +603,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_parse_definition(
         0 if length >= 65535 => (TooLong, 5),
         0 => (Lowercase, 1),
         1 => (Normalize, 2),
+        // SAFETY: forwards the caller's `length` initialized bytes at `data`.
         2 if unsafe { swr_v1_phphelpers_envelope(data, length) } != 0 => (ParseSelf, 3),
         2 => (EnvelopeError, 5),
         3 if observation == 0 => (False, 5),
@@ -637,6 +658,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_builtin(
     observation: u8,
 ) -> u32 {
     use BuiltinAction::*;
+    // SAFETY: `state` is null or the caller's aligned, exclusively owned state storage.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return Done as u32;
     };
@@ -727,6 +749,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_mutation(
     observation: u32,
 ) -> u32 {
     use MutationAction::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
     };
@@ -801,6 +824,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_validate_value(
     observation: u8,
 ) -> u32 {
     use ValidationAction::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
     };
@@ -846,7 +870,9 @@ pub unsafe extern "C" fn swr_v1_phphelpers_type_layout(
     {
         return 0;
     }
+    // SAFETY: non-null, `backing <= isize::MAX` (checked above), initialized C-string prefix.
     let bytes = unsafe { std::slice::from_raw_parts(data, backing) };
+    // SAFETY: `output` is non-null, independent and aligned (checked above).
     unsafe { write_type_layout(bytes, backing, logical, output) }
 }
 
@@ -868,10 +894,12 @@ pub unsafe extern "C" fn swr_v1_phphelpers_type_span(
     {
         return 0;
     }
+    // SAFETY: non-null, `backing <= isize::MAX` (checked above), initialized span.
     let bytes = unsafe { std::slice::from_raw_parts(data, backing) };
     let Some(c_prefix) = bytes.iter().position(|byte| *byte == 0) else {
         return 0;
     };
+    // SAFETY: `output` is non-null, independent and aligned (checked above).
     unsafe { write_type_layout(bytes, c_prefix, logical, output) }
 }
 
@@ -894,14 +922,15 @@ unsafe fn write_type_layout(
         return 0;
     };
     if key != UNDEF && key != LONG && key != 5 {
+        // SAFETY: the caller passes non-null, aligned, writable output.
         unsafe {
-            *output = TypeLayout {
+            output.write(TypeLayout {
                 key,
                 value: UNDEF,
                 offset: offset16,
                 length: 0,
-            };
-        }
+            })
+        };
         return 2;
     }
     let Some(length) = usize::from(logical).checked_sub(offset + 1) else {
@@ -914,14 +943,15 @@ unsafe fn write_type_layout(
     let Ok(length) = u16::try_from(length) else {
         return 0;
     };
+    // SAFETY: the caller passes non-null, aligned, writable output.
     unsafe {
-        *output = TypeLayout {
+        output.write(TypeLayout {
             key,
             value,
             offset: offset16,
             length,
-        };
-    }
+        })
+    };
     1
 }
 
@@ -999,6 +1029,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_typed(
     string_key: u8,
 ) -> u32 {
     use TypedAction::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
     };
@@ -1078,6 +1109,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_invoke(
     observation: u8,
 ) -> u32 {
     use InvocationAction::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
     };
@@ -1138,6 +1170,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_method_frame(
     observation: u32,
 ) -> u32 {
     use MethodAction::*;
+    // SAFETY: `state` is null or the caller's aligned, exclusively owned state storage.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return Dispatch as u32;
     };
@@ -1205,6 +1238,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_vm(
     observation: u8,
 ) -> u32 {
     use VmAction::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Dispatch as u32;
     };
@@ -1273,6 +1307,7 @@ pub extern "C" fn swr_v1_phphelpers_opcode(operation: u32, typed: u8, list: u8) 
 /// after native PCRE cache lookup. No library/Zend pointer crosses this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phphelpers_regex(phase: *mut u32, compiled: u8) -> u32 {
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return 0;
     };
@@ -1333,15 +1368,22 @@ pub unsafe extern "C" fn swr_v1_phphelpers_definition(
     {
         return 0;
     }
-    unsafe {
-        std::ptr::copy_nonoverlapping(prefix.as_ptr(), output, prefix.len());
-        if value_length != 0 {
-            std::ptr::copy_nonoverlapping(value, output.add(prefix.len()), value_length);
-        }
-        *output.add(size - 2) = b'>';
-        *output.add(size - 1) = 0;
-        *length = size - 1;
+    // `size = prefix + value + 2 <= capacity` (checked above), so every write below lands
+    // inside the caller's writable output, which is disjoint from `value`.
+    // SAFETY: as above.
+    unsafe { std::ptr::copy_nonoverlapping(prefix.as_ptr(), output, prefix.len()) };
+    if value_length != 0 {
+        // SAFETY: as above; `value` lends `value_length` initialized bytes.
+        unsafe {
+            std::ptr::copy_nonoverlapping(value, output.wrapping_add(prefix.len()), value_length)
+        };
     }
+    // SAFETY: as above.
+    unsafe { output.wrapping_add(size - 2).write(b'>') };
+    // SAFETY: as above.
+    unsafe { output.wrapping_add(size - 1).write(0) };
+    // SAFETY: `length` is non-null (checked above) and points to an independent usize.
+    unsafe { length.write(size - 1) };
     1
 }
 

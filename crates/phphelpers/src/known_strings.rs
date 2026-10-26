@@ -86,16 +86,17 @@ pub unsafe extern "C" fn swr_v1_phphelpers_known_next(
     if cursor.is_null() || length.is_null() {
         return std::ptr::null();
     }
+    // SAFETY: non-null (checked above), aligned, initialized cursor storage.
     let index = unsafe { cursor.read() };
     let Some(bytes) = STRINGS.get(index) else {
         return std::ptr::null();
     };
     // The cursor is initialized input; length is write-only output and may be
     // uninitialized. Never form a typed reference to that output storage.
-    unsafe {
-        length.write(bytes.len() - 1);
-        cursor.write(index + 1);
-    }
+    // SAFETY: non-null (checked above), aligned, writable output.
+    unsafe { length.write(bytes.len() - 1) };
+    // SAFETY: as for the read above.
+    unsafe { cursor.write(index + 1) };
     bytes.as_ptr().cast()
 }
 

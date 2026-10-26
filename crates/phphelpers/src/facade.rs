@@ -23,6 +23,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_string_plan(
     observation: u8,
 ) -> u32 {
     use Action::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
     };
@@ -79,6 +80,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_value_plan(
     key_present: u8,
 ) -> u32 {
     use ValueAction::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
     };
@@ -114,6 +116,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_duplicate_plan(
     phase: *mut u32,
     name_present: u8,
 ) -> u32 {
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return 0;
     };
@@ -152,6 +155,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_factory_plan(
     allow_null: u8,
 ) -> u32 {
     use FactoryAction::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Null as u32;
     };
@@ -196,6 +200,7 @@ enum IteratorAction {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phphelpers_iterator_plan(phase: *mut u32, observation: u8) -> u32 {
     use IteratorAction::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
     };
