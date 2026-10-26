@@ -32,7 +32,10 @@ A module graduates when:
    merge-tier runs.
 2. Its original PHPTs pass wherever they pass on upstream, as far as the PHPT
    manifest covers it.
-3. Its benchmarks, where it has any, are within the agreed threshold of upstream.
+3. Callgrind instructions per request on the corpus workloads that exercise it
+   are at most 5% above upstream (the merge tier's `callgrind` job). A module
+   those workloads never reach passes with the measurement posted. Module
+   micro-benchmarks and timings are reported but don't gate.
 4. It has no open `p0`/`p1` `kind:bug` issues.
 
 A graduated module is listed in `GRADUATED` in `tools/build_hybrid.py`. Every

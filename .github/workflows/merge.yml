@@ -119,6 +119,41 @@ jobs:
           name: phpt-engines
           path: target/phpt/
 
+  # Graduation criterion 3 (docs/migration.md#graduation): instructions per request on the
+  # all-modules hybrid at most 5% above upstream. plaintext covers the bridge, echo-64k buffer.
+  # Counts barely vary between runs of the same binaries (#31), so no noise margin is needed.
+  callgrind:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/install
+        with:
+          packages: valgrind
+      - uses: actions/cache/restore@v4
+        with:
+          path: target/upstream
+          key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
+      - if: hashFiles('target/upstream/src/modules/swoole.so') == ''
+        run: python3 tools/build_upstream.py
+      - uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-
+      - run: cargo fetch --locked
+      - run: python3 tools/build_hybrid.py $(python3 -c 'from tools.build_hybrid import SELECTABLE; print(*(f"--module {m}" for m in SELECTABLE))') | tee hybrid.log
+      - run: >
+          python3 benchmarks/callgrind.py --requests 1000 --workload plaintext --workload echo-64k --max-ratio 1.05
+          --engine hybrid=$(sed -n 's/^\(Built\|Cached\) rust: //p' hybrid.log)
+          --engine upstream=target/upstream/src/modules/swoole.so
+          --output callgrind.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: callgrind
+          path: callgrind.json
+
   # swoole_stdext needs the experimental --stdext build, which changes PHP itself
   # (typed arrays, methods on scalars), so it gets its own engines and its own gate.
   phpt-stdext:

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Instructions per request for a benchmark workload, counted by callgrind.
+"""Instructions per request for benchmark workloads, counted by callgrind.
 
 Instruction counts barely vary between runs of the same binary, so hybrid/upstream
 ratios are stable on shared CI runners where timings are not. Only requests are
 counted: instrumentation is switched on after startup and warmup, and off before
 shutdown. Every process (master, manager, worker) is followed and summed.
+With two engines and --max-ratio, exits 1 if any workload's first/second ratio exceeds it.
 """
 import argparse
 import http.client
@@ -83,25 +84,34 @@ def instructions(engine, workload, requests, warmup, profiles=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--engine', action='append', required=True, help='NAME=/path/to/extension')
-    parser.add_argument('--workload', choices=list(WORKLOADS), default='plaintext')
+    parser.add_argument('--workload', choices=list(WORKLOADS), action='append')
     parser.add_argument('--requests', type=int, default=2000)
     parser.add_argument('--warmup', type=int, default=100)
     parser.add_argument('--php', default='php')
     parser.add_argument('--php-extension', action='append', default=[])
     parser.add_argument('--output', type=Path)
     parser.add_argument('--profiles', type=Path, help='Keep the callgrind profiles in DIR/<engine>/')
+    parser.add_argument('--max-ratio', type=float, help='Fail if first/second exceeds this for any workload')
     args = parser.parse_args()
-    results = {}
-    for engine in parse_engines(args.engine, args.php, args.php_extension):
-        results[engine.name] = instructions(engine, WORKLOADS[args.workload], args.requests, args.warmup, args.profiles)
-        print(f'{engine.name:10} {args.workload:15} {results[engine.name]:12.0f} instructions/request', flush=True)
-    if len(results) == 2:
-        first, second = results.values()
-        print(f'ratio {list(results)[0]}/{list(results)[1]}: {first / second:.4f}')
+    engines = parse_engines(args.engine, args.php, args.php_extension)
+    if args.max_ratio and len(engines) != 2:
+        parser.error('--max-ratio needs exactly two engines')
+    results, failed = {}, False
+    for workload in args.workload or ['plaintext']:
+        counts = results[workload] = {}
+        profiles = args.profiles / workload if args.profiles else None
+        for engine in engines:
+            counts[engine.name] = instructions(engine, WORKLOADS[workload], args.requests, args.warmup, profiles)
+            print(f'{engine.name:10} {workload:15} {counts[engine.name]:12.0f} instructions/request', flush=True)
+        if len(counts) == 2:
+            (first, a), (second, b) = counts.items()
+            over = args.max_ratio and a / b > args.max_ratio
+            failed |= bool(over)
+            print(f'ratio {first}/{second} {workload}: {a / b:.4f}' + (f' exceeds {args.max_ratio}' if over else ''))
     if args.output:
-        args.output.write_text(json.dumps({'workload': args.workload, 'requests': args.requests,
+        args.output.write_text(json.dumps({'requests': args.requests, 'max_ratio': args.max_ratio,
                                            'instructions_per_request': results}, indent=2) + '\n')
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == '__main__':
