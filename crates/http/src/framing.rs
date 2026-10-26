@@ -267,9 +267,12 @@ pub unsafe extern "C" fn swr_v1_http_expect(data: *const u8, length: usize) -> i
         Ok(v) => v,
         Err(e) => return e,
     };
+    // The native byte loop, jumping between CRs: with a body attached (echo-64k) the
+    // scan runs over the whole request, so per-byte cost dominates (#338).
     let mut at = 0;
-    while at < length {
-        if input[at] == b'\r' && length - at > 9 {
+    while let Some(cr) = memchr::memchr(b'\r', &input[at..]) {
+        at += cr;
+        if length - at > 9 {
             at += 2;
             if starts(&input[at..], b"Expect: ") {
                 return i32::from(starts(&input[at + 8..], b"100-continue"));
@@ -373,6 +376,60 @@ pub unsafe extern "C" fn swr_v1_http_header_value(
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// The native byte-at-a-time loop the memchr scan must match.
+    fn expect_reference(input: &[u8]) -> i32 {
+        let (length, mut at) = (input.len(), 0);
+        while at < length {
+            if input[at] == b'\r' && length - at > 9 {
+                at += 2;
+                if starts(&input[at..], b"Expect: ") {
+                    return i32::from(starts(&input[at + 8..], b"100-continue"));
+                }
+                at += 1;
+            }
+            at += 1;
+        }
+        0
+    }
+    fn expect(input: &[u8]) -> i32 {
+        // SAFETY: a live slice.
+        unsafe { swr_v1_http_expect(input.as_ptr(), input.len()) }
+    }
+    #[test]
+    fn expect_scan_matches_the_native_loop() {
+        // Every string over the bytes the loop branches on, up to six long.
+        let alphabet = b"\r\nEx";
+        let mut inputs = vec![Vec::new()];
+        for _ in 0..6 {
+            let longer: Vec<Vec<u8>> = inputs
+                .iter()
+                .flat_map(|s| alphabet.iter().map(move |&b| [s.as_slice(), &[b]].concat()))
+                .collect();
+            inputs.extend(longer);
+        }
+        for prefix in ["", "x", "\r", "\r\n", "GET / HTTP/1.1"] {
+            for header in [
+                "\r\nExpect: 100-continue",
+                "\r\nexpect: 100-CONTINUE",
+                "\r\nExpect: nope",
+                "\r\nExpect: 100",
+                "\r\nX: 1\r\nExpect: 100-continue",
+            ] {
+                for suffix in ["", "\r\n", "\r\n\r\nbody\r"] {
+                    inputs.push([prefix, header, suffix].concat().into_bytes());
+                }
+            }
+        }
+        for input in &inputs {
+            assert_eq!(
+                expect(input),
+                expect_reference(input),
+                "{:?}",
+                String::from_utf8_lossy(input)
+            );
+        }
+        assert_eq!(expect(b"GET / HTTP/1.1\r\nExpect: 100-continue\r\n\r\n"), 1);
+    }
     #[test]
     fn request_line_retains_permissive_prefix_matching_and_partial_mutations() {
         let mut f = HttpFrame::default();

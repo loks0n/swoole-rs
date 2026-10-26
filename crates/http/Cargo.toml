@@ -9,6 +9,7 @@ name = "swoole_rs_http"
 crate-type = ["rlib"]
 
 [dependencies]
+memchr = "2.8.3"
 swoole-rs-base64 = { path = "../base64" }
 
 [lints]
