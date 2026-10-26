@@ -40,10 +40,10 @@ class FrozenHeaders(unittest.TestCase):
             self.assertIn('older producers',json.loads(output.read_text())['error'])
 
     def test_compatibility_needs_new_source_and_exact_inventory(self):
-        for manifest in [{},dict(inputs={}),dict(inputs=dict(rust_sources_sha256={})),dict(inputs=dict(rust_sources_sha256={'crates/buffer/src/string/compatibility.rs':'bad'}))]:
+        for manifest in [{},dict(inputs={}),dict(inputs=dict(rust_sources_sha256={})),dict(inputs=dict(rust_sources_sha256={'crates/buffer/src/string/object.rs':'bad'}))]:
             with self.assertRaisesRegex(ValueError,'older producers'):
                 production.compatibility_inputs(manifest)
-        valid=dict(inputs=dict(rust_sources_sha256={'crates/buffer/src/string/compatibility.rs':'a'*64}))
+        valid=dict(inputs=dict(rust_sources_sha256={'crates/buffer/src/string/object.rs':'a'*64}))
         self.assertEqual(production.compatibility_inputs(valid)['sha256'],'a'*64)
         self.assertTrue(production.consumer_inventory('compatibility',dict(checks=44,selected_origin_checks=1),True))
         self.assertTrue(production.consumer_inventory('compatibility',dict(checks=44,selected_origin_checks=0),False))

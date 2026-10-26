@@ -48,7 +48,7 @@ def consumer_inventory(consumer, result, selected):
 
 def compatibility_inputs(manifest):
     """Reject older producer inputs before any PHP/DSO/addon execution."""
-    name='crates/buffer/src/string/compatibility.rs'
+    name='crates/buffer/src/string/object.rs'
     digest=manifest.get('inputs',{}).get('rust_sources_sha256',{}).get(name)
     if not isinstance(digest,str) or len(digest)!=64 or any(c not in '0123456789abcdef' for c in digest):
         raise ValueError('Compatibility requires concrete new continuation source; older producers are not qualified')

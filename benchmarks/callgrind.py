@@ -11,6 +11,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+import shutil
 import signal
 import socket
 import subprocess
@@ -48,7 +49,7 @@ def send(port, workload, count):
     conn.close()
 
 
-def instructions(engine, workload, requests, warmup):
+def instructions(engine, workload, requests, warmup, profiles=None):
     with socket.socket() as reservation:
         reservation.bind(('127.0.0.1', 0))
         port = reservation.getsockname()[1]
@@ -70,6 +71,8 @@ def instructions(engine, workload, requests, warmup):
             os.killpg(proc.pid, signal.SIGTERM)
             proc.wait(timeout=120)
         total = 0
+        if profiles:
+            shutil.copytree(out, profiles / engine.name, dirs_exist_ok=True)
         for path in Path(out).glob('cg.*'):
             for line in path.read_text(errors='replace').splitlines():
                 if line.startswith('totals:'):
@@ -86,10 +89,11 @@ def main():
     parser.add_argument('--php', default='php')
     parser.add_argument('--php-extension', action='append', default=[])
     parser.add_argument('--output', type=Path)
+    parser.add_argument('--profiles', type=Path, help='Keep the callgrind profiles in DIR/<engine>/')
     args = parser.parse_args()
     results = {}
     for engine in parse_engines(args.engine, args.php, args.php_extension):
-        results[engine.name] = instructions(engine, WORKLOADS[args.workload], args.requests, args.warmup)
+        results[engine.name] = instructions(engine, WORKLOADS[args.workload], args.requests, args.warmup, args.profiles)
         print(f'{engine.name:10} {args.workload:15} {results[engine.name]:12.0f} instructions/request', flush=True)
     if len(results) == 2:
         first, second = results.values()
