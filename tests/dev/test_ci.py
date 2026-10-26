@@ -31,6 +31,10 @@ elif args[:2] == ['pr', 'view']:
     print({'headRefOid': data['heads'][0], 'mergeCommit': 'm' * 40, 'headRefName': 'topic',
            'mergeable': data.get('mergeable', 'MERGEABLE')}[field])
 elif args[:2] == ['pr', 'merge']:
+    if data.get('merge_errors'):
+        print(data['merge_errors'].pop(0), file=sys.stderr)
+        save()
+        sys.exit(1)
     sys.exit(data.get('merge_exit', 0))
 elif args[:2] == ['run', 'list'] and '--commit' not in args:
     print(json.dumps(data.get('history', [])))
@@ -98,6 +102,12 @@ class Ci(unittest.TestCase):
     def test_cancelled_on_the_current_head_is_reported(self):
         code, result, _ = self.ci('merge', '12', runs={'a' * 40: ['cancelled']})
         self.assertEqual((code, result['state'], result['merged']), (3, 'cancelled', False))
+
+    def test_a_concurrent_merge_on_main_is_retried(self):
+        modified = 'GraphQL: Base branch was modified. Review and try the merge again. (mergePullRequest)'
+        code, result, _ = self.ci('merge', '12', runs={'a' * 40: ['success']}, merge_errors=[modified, modified])
+        self.assertEqual((code, result['merged']), (0, True))
+        self.assertEqual(sum(call.startswith('pr merge') for call in self.gh_calls), 3)
 
     def test_conflicts_are_named(self):
         code, result, _ = self.ci('merge', '12', runs={'a' * 40: ['success']}, merge_exit=1, mergeable='CONFLICTING')
