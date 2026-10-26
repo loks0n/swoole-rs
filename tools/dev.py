@@ -710,8 +710,9 @@ def plan(args, reports):
         script('utilities-put-threads', 'tests/modules/utilities/put.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', '--threads',
                *report('utilities-put-threads'))
-        script('utilities-wait', 'tests/modules/utilities/wait.py', '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report('utilities-wait'))
+        if sys.platform.startswith('linux'):  # Rust implements only the futex path; others run upstream's registry.
+            script('utilities-wait', 'tests/modules/utilities/wait.py', '--source', ROOT / 'target/upstream/src',
+                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report('utilities-wait'))
     if 'utilities' in modules and integrate:
         utility_source = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
         utility_engines = ['--engine', f'hybrid={selected_export / "swoole.so"}',

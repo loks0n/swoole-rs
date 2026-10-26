@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Actual misc.cc wait/wake bodies versus selected Rust facades and shared forks."""
+"""Actual misc.cc futex wait/wake bodies versus the Rust facades and shared forks (Linux only)."""
 import argparse
 import json
 from pathlib import Path
@@ -22,6 +22,8 @@ def main():
     args = p.parse_args()
     if args.rust_asan and not args.sanitize:
         p.error('--rust-asan requires --sanitize')
+    if not sys.platform.startswith('linux'):
+        p.error('Rust implements only the futex path; other platforms run upstream\'s wait registry')
     archive = args.archive.resolve(strict=True)
     original = subprocess.check_output(['git', '-C', str(args.source), 'show', f'{PIN}:src/core/misc.cc'], text=True)
     patch = ROOT/'migration/patches/utilities/0001-misc.patch'

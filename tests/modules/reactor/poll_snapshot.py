@@ -46,7 +46,7 @@ def main():
         fragments = []
         for label, source in [('Original', original), ('Selected', selected)]:
             name = 'Snapshot' + label
-            fields = ('swr_v1_reactor_poll_snapshot *snapshot_;\n' if label == 'Selected' else '') + 'pollfd *events_; int max_events_;'
+            fields = ('swr_v1_reactor_poll_snapshot *snapshot_;\n' if label == 'Selected' else '') + 'pollfd *events_; Socket **event_sockets_; int max_events_;'
             methods = []
             for signature in ['ReactorPoll::ReactorPoll(', 'ReactorPoll::~ReactorPoll(', 'int ReactorPoll::set_events() const']:
                 method, _ = block(source, source.index(signature))
