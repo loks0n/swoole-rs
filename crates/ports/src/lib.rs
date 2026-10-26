@@ -1,11 +1,5 @@
 //! Callback-free ListenPort decisions. All native effects and object custody stay native.
 #![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
-#![expect(
     clippy::missing_safety_doc,
     reason = "every export is covered by the module-local C contract"
 )]
@@ -42,6 +36,10 @@ pub struct PortsDefaults {
 
 /// Constructor scalar defaults; native literal bytes and server pointer stay native.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "native protocol-field narrowing, preserved deliberately"
+)]
 pub extern "C" fn swr_v1_ports_defaults(max_length: u32, eof_length: u32) -> PortsDefaults {
     PortsDefaults {
         object_id: 0,
@@ -91,6 +89,11 @@ pub struct PortsFramingSettings {
 
 /// EOF bounds/direction and native protocol-field narrowing, with no byte access.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "native protocol-field narrowing, preserved deliberately"
+)]
 pub extern "C" fn swr_v1_ports_framing_settings(input: PortsFramingInput) -> PortsFramingSettings {
     match input.kind {
         0 => PortsFramingSettings {
@@ -230,6 +233,7 @@ const fn binding(field: ProtocolField, value: u32) -> PortsProtocolAction {
 fn protocol_plan<const N: usize>(actions: [PortsProtocolAction; N]) -> PortsProtocolPlan {
     const { assert!(N <= 6, "a protocol plan holds at most 6 actions") };
     let mut plan = PortsProtocolPlan {
+        #[expect(clippy::cast_possible_truncation, reason = "N <= 6, asserted above")]
         count: N as u32,
         actions: [PortsProtocolAction { kind: 0, value: 0 }; 6],
     };
@@ -248,7 +252,8 @@ pub struct PortsBufferSetting {
 /// Preserve the original clamped store followed by its nonpositive fallback store.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_ports_buffer_setting(value: i64) -> PortsBufferSetting {
-    let first = swr_v1_ports_number(3, value) as i32;
+    // Kind 3 clamps to the i32 range.
+    let first = i32::try_from(swr_v1_ports_number(3, value)).unwrap_or(i32::MAX);
     PortsBufferSetting {
         count: if first <= 0 { 2 } else { 1 },
         first,
@@ -265,6 +270,10 @@ pub struct PortsPacketSetting {
 
 /// Keep native u8 publication/error priority, and reject an over-capacity copy.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "native protocol-field narrowing, preserved deliberately"
+)]
 pub extern "C" fn swr_v1_ports_packet_eof(length: usize, capacity: u32) -> PortsPacketSetting {
     let value = u32::from(length as u8);
     let status = if value == 0 {
@@ -283,6 +292,11 @@ pub extern "C" fn swr_v1_ports_packet_eof(length: usize, capacity: u32) -> Ports
 
 /// M19's callback-free width result is copied after the native type publication.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "native protocol-field narrowing, preserved deliberately"
+)]
 pub extern "C" fn swr_v1_ports_packet_width(width: i32) -> PortsPacketSetting {
     let value = u32::from(width as u8);
     PortsPacketSetting {
@@ -295,7 +309,8 @@ pub extern "C" fn swr_v1_ports_packet_width(width: i32) -> PortsPacketSetting {
 /// Offset narrowing and bound rejection; native publishes value before reporting.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_ports_packet_offset(value: i64, limit: u32) -> PortsPacketSetting {
-    let value = swr_v1_ports_number(0, value) as u32;
+    // Kind 0 clamps to the u16 range.
+    let value = u32::try_from(swr_v1_ports_number(0, value)).unwrap_or(0);
     PortsPacketSetting {
         value,
         status: u32::from(value > limit),
@@ -832,7 +847,7 @@ pub unsafe extern "C" fn swr_v1_ports_event(
             }
         {
             return PortsEvent {
-                index: index as i32,
+                index: i32::try_from(index).unwrap_or(-1),
                 property: PortsSpan {
                     data: property.as_ptr(),
                     len: property.len(),
