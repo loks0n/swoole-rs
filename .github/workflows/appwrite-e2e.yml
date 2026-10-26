@@ -153,4 +153,5 @@ jobs:
         with:
           pattern: junit-*
           path: junit
-      - run: python3 tools/appwrite_e2e.py junit | tee -a "$GITHUB_STEP_SUMMARY"
+      - shell: bash  # pipefail, so the comparison fails the job through tee
+        run: python3 tools/appwrite_e2e.py junit | tee -a "$GITHUB_STEP_SUMMARY"

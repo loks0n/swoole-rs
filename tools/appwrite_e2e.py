@@ -2,72 +2,68 @@
 """Compare Appwrite e2e JUnit reports: hybrid against stock (upstream) Swoole.
 
 Reads DIR/junit-<variant>-<service>/junit.xml as appwrite-e2e.yml uploads them.
-Fails when a test passes on upstream but fails, errors or is missing on the hybrid,
-or when a service has an upstream report and no hybrid one. Tests failing on
-upstream are listed as not gated. Prints a Markdown summary.
+Paratest's merged report keeps complete top-level totals but drops some per-worker
+testcases, so services are gated on totals: a service regresses when its hybrid
+report is missing, ran a different number of tests, or has more failures and
+errors than upstream's. Failing testcase names that the report kept are listed.
+Prints a Markdown summary.
 """
 import argparse
-from collections import defaultdict
 from pathlib import Path
 import sys
 import xml.etree.ElementTree as ET
 
 
-def outcomes(path):
-    """{test id: 'passed' | 'failed' | 'skipped'} for one JUnit file."""
-    result = {}
-    for case in ET.parse(path).iter('testcase'):
-        name = f"{case.get('class') or case.get('classname')}::{case.get('name')}"
-        if case.find('failure') is not None or case.find('error') is not None:
-            result[name] = 'failed'
-        elif case.find('skipped') is not None:
-            result[name] = 'skipped'
-        else:
-            result[name] = 'passed'
-    return result
+def report(path):
+    """(tests, failed, skipped, failing testcase names) for one JUnit file."""
+    root = ET.parse(path).getroot()
+    top = root.find('testsuite') if root.tag == 'testsuites' else root
+    failing = sorted(f"{case.get('class') or case.get('classname')}::{case.get('name')}"
+                     for case in root.iter('testcase')
+                     if case.find('failure') is not None or case.find('error') is not None)
+    total = {key: int(top.get(key, 0)) for key in ('tests', 'failures', 'errors', 'skipped')}
+    return total['tests'], total['failures'] + total['errors'], total['skipped'], failing
 
 
 def load(directory):
-    """{variant: {service: outcomes}}."""
-    reports = defaultdict(dict)
+    """{variant: {service: report}}."""
+    reports = {}
     for path in sorted(Path(directory).glob('junit-*/junit.xml')):
         _, variant, service = path.parent.name.split('-', 2)
-        reports[variant][service] = outcomes(path)
+        reports.setdefault(variant, {})[service] = report(path)
     return reports
 
 
 def compare(reports):
-    """(regressions, upstream failures, missing hybrid services, per-service counts)."""
-    regressions, flaky, missing, counts = [], [], [], {}
+    """(rows, regressions, upstream failures): rows are (service, upstream, hybrid)."""
+    rows, regressions, flaky = [], [], []
     hybrid = reports.get('hybrid', {})
     for service, stock in sorted(reports.get('upstream', {}).items()):
-        if service not in hybrid:
-            missing.append(service)
-            continue
-        ours = hybrid[service]
-        for test, outcome in sorted(stock.items()):
-            if outcome == 'failed':
-                flaky.append(f'{service}: {test}')
-            elif outcome == 'passed' and ours.get(test, 'missing') in ('failed', 'missing'):
-                regressions.append(f'{service}: {test} ({ours.get(test, "missing")})')
-        counts[service] = tuple(sum(1 for o in r.values() if o == 'passed') for r in (stock, ours))
-    return regressions, flaky, missing, counts
+        ours = hybrid.get(service)
+        rows.append((service, stock, ours))
+        if stock[1]:
+            flaky.append(f'{service}: {stock[1]} failing on upstream' + ''.join(f'\n  - {t}' for t in stock[3]))
+        if ours is None:
+            regressions.append(f'{service}: no hybrid report')
+        elif ours[0] != stock[0] or ours[1] > stock[1]:
+            new = [t for t in ours[3] if t not in stock[3]]
+            regressions.append(f'{service}: {ours[0]} tests, {ours[1]} failing (upstream {stock[0]}, {stock[1]})'
+                               + ''.join(f'\n  - {t}' for t in new))
+    return rows, regressions, flaky
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('directory', type=Path)
     args = parser.parse_args()
-    regressions, flaky, missing, counts = compare(load(args.directory))
-    print('| service | upstream passed | hybrid passed |\n| --- | --- | --- |')
-    for service, (stock, ours) in counts.items():
-        print(f'| {service} | {stock} | {ours} |')
-    for title, items in [('Regressions (pass on upstream, not on hybrid)', regressions),
-                         ('Services without a hybrid report', missing),
-                         ('Failing on upstream (not gated)', flaky)]:
+    rows, regressions, flaky = compare(load(args.directory))
+    print('| service | upstream tests / failing / skipped | hybrid tests / failing / skipped |\n| --- | --- | --- |')
+    for service, stock, ours in rows:
+        print(f"| {service} | {' / '.join(map(str, stock[:3]))} | {' / '.join(map(str, ours[:3])) if ours else 'missing'} |")
+    for title, items in [('Regressions', regressions), ('Failing on upstream (not gated)', flaky)]:
         print(f'\n### {title}: {len(items)}')
         print(''.join(f'- {item}\n' for item in items), end='')
-    return 1 if regressions or missing or not counts else 0
+    return 1 if regressions or not rows else 0
 
 
 if __name__ == '__main__':
