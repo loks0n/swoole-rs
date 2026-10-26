@@ -109,12 +109,6 @@ enum { SWR_CORO_INTERRUPT_DONE, SWR_CORO_INTERRUPT_VM_CAPTURE, SWR_CORO_INTERRUP
        SWR_CORO_INTERRUPT_THREAD_JOIN, SWR_CORO_INTERRUPT_VM_STORE, SWR_CORO_INTERRUPT_SLEEP,
        SWR_CORO_INTERRUPT_CLOCK };
 swr_phpcoroutines_interrupt_plan swr_v1_phpcoroutines_interrupt(swr_phpcoroutines_interrupt_state *, uint32_t *, uint32_t, uint8_t);
-typedef struct { uint32_t stage; uintptr_t reserve; } swr_phpcoroutines_bounds_state;
-typedef struct { uint32_t action; uintptr_t reserve; } swr_phpcoroutines_bounds_plan;
-enum { SWR_CORO_BOUNDS_LIMIT, SWR_CORO_BOUNDS_BASE };
-enum { SWR_CORO_BOUNDS_NULL = 1, SWR_CORO_BOUNDS_RESERVE, SWR_CORO_BOUNDS_HAS_CO,
-       SWR_CORO_BOUNDS_LIMIT_POINTER, SWR_CORO_BOUNDS_BASE_POINTER };
-swr_phpcoroutines_bounds_plan swr_v1_phpcoroutines_bounds(swr_phpcoroutines_bounds_state *, uint32_t, uint8_t, uintptr_t);
 typedef struct { int64_t count, index; uint8_t pending; } swr_phpcoroutines_repeat_state;
 uint8_t swr_v1_phpcoroutines_repeat(swr_phpcoroutines_repeat_state *);
 typedef struct swr_phpcoroutines_join_owner swr_phpcoroutines_join_owner;
@@ -130,27 +124,6 @@ void swr_v1_phpcoroutines_join_cancel(const swr_phpcoroutines_join_owner *);
 uint8_t swr_v1_phpcoroutines_join_can_resume(const swr_phpcoroutines_join_owner *);
 /* Kinds and actions keep their ABI v1 values; the save/restore of output, basic globals, context
    and the VM stack are upstream's inline code again (#366), so their kinds and actions are gone. */
-enum { SWR_CORO_TRANSFER_ON_YIELD = 8, SWR_CORO_TRANSFER_ON_RESUME,
-       SWR_CORO_TRANSFER_INTERRUPT_RESUME, SWR_CORO_TRANSFER_INTERRUPT_FUNCTION };
-enum { SWR_CORO_TRANSFER_DONE, SWR_CORO_TRANSFER_FIBER = 17, SWR_CORO_TRANSFER_SAVE, SWR_CORO_TRANSFER_RESTORE,
-       SWR_CORO_TRANSFER_RECORD, SWR_CORO_TRANSFER_CALLBACK_PRESENCE,
-       SWR_CORO_TRANSFER_CALLBACK, SWR_CORO_TRANSFER_TRACE,
-       SWR_CORO_TRANSFER_CO_PRESENCE, SWR_CORO_TRANSFER_CO_ENDED, SWR_CORO_TRANSFER_RESUME,
-       SWR_CORO_TRANSFER_TASK_PRESENCE, SWR_CORO_TRANSFER_TASK_CO_PRESENCE,
-       SWR_CORO_TRANSFER_SCHEDULABLE, SWR_CORO_TRANSFER_DEFER, SWR_CORO_TRANSFER_YIELD };
-uint32_t swr_v1_phpcoroutines_transfer(uint32_t *, uint32_t, uint8_t, uint8_t);
-/* Rust-built step table: native code steps with a load instead of a call. */
-typedef struct { uint8_t action, next; } swr_phpcoroutines_step;
-extern const swr_phpcoroutines_step swr_v1_phpcoroutines_transfer_table[12 * 8 * 2];
-static inline uint32_t swr_coro_transfer_next(uint32_t *stage, uint32_t kind, uint8_t observation) {
-    if (kind >= 12 || *stage >= 8) {
-        return SWR_CORO_TRANSFER_DONE;
-    }
-    const swr_phpcoroutines_step step =
-        swr_v1_phpcoroutines_transfer_table[(kind * 8 + *stage) * 2 + (observation != 0)];
-    *stage = step.next;
-    return step.action;
-}
 struct swr_phpcoroutines_scheduler_queue;
 typedef struct { uint8_t started; } swr_phpcoroutines_scheduler_phase;
 typedef swr_phpcoroutines_scheduler_phase swr_phpcoroutines_activation_state;

@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_coroutine.cc b/ext-src/swoole_coroutine.cc
-index daecf43..498f4dd 100644
+index daecf43..79a06fc 100644
 --- a/ext-src/swoole_coroutine.cc
 +++ b/ext-src/swoole_coroutine.cc
 @@ -35,3 +35,10 @@ END_EXTERN_C()
@@ -386,54 +386,7 @@ index daecf43..498f4dd 100644
      return ZEND_USER_OPCODE_DISPATCH;
 +#endif
  }
-@@ -287,2 +608,17 @@ static int coro_end_silence_handler(zend_execute_data *execute_data) {
- static void coro_interrupt_resume(void *data) {
-+#ifdef SWOOLE_RS_PHPCOROUTINES
-+
-+    auto *co = static_cast<Coroutine *>(data);
-+    uint32_t stage = 0;
-+    uint8_t observation = 0;
-+    for (;;) {
-+        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_INTERRUPT_RESUME, observation)) {
-+        case SWR_CORO_TRANSFER_DONE: return;
-+        case SWR_CORO_TRANSFER_CO_PRESENCE: observation = co != nullptr; break;
-+        case SWR_CORO_TRANSFER_CO_ENDED: observation = co->is_end(); break;
-+        case SWR_CORO_TRANSFER_TRACE: swoole_trace_log(SW_TRACE_COROUTINE, "interrupt_callback cid=%ld ", co->get_cid()); break;
-+        case SWR_CORO_TRANSFER_RESUME: co->resume(); break;
-+        }
-+    }
-+#else
-     auto *co = static_cast<Coroutine *>(data);
-@@ -292,2 +628,3 @@ static void coro_interrupt_resume(void *data) {
-     }
-+#endif
- }
-@@ -295,2 +632,20 @@ static void coro_interrupt_resume(void *data) {
- static void coro_interrupt_function(zend_execute_data *execute_data) {
-+#ifdef SWOOLE_RS_PHPCOROUTINES
-+
-+    PHPContext *task = PHPCoroutine::get_context();
-+    uint32_t stage = 0;
-+    uint8_t observation = 0;
-+    for (;;) {
-+        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_INTERRUPT_FUNCTION, observation)) {
-+        case SWR_CORO_TRANSFER_DONE: return;
-+        case SWR_CORO_TRANSFER_TASK_PRESENCE: observation = task != nullptr; break;
-+        case SWR_CORO_TRANSFER_TASK_CO_PRESENCE: observation = task->co != nullptr; break;
-+        case SWR_CORO_TRANSFER_SCHEDULABLE: observation = PHPCoroutine::is_schedulable(task); break;
-+        case SWR_CORO_TRANSFER_DEFER: swoole_event_defer(coro_interrupt_resume, (void *) task->co); break;
-+        case SWR_CORO_TRANSFER_YIELD: task->co->yield(); break;
-+        case SWR_CORO_TRANSFER_CALLBACK_PRESENCE: observation = orig_interrupt_function != nullptr; break;
-+        case SWR_CORO_TRANSFER_CALLBACK: orig_interrupt_function(execute_data); break;
-+        }
-+    }
-+#else
-     PHPContext *task = PHPCoroutine::get_context();
-@@ -303,2 +658,3 @@ static void coro_interrupt_function(zend_execute_data *execute_data) {
-     }
-+#endif
- }
-@@ -306,2 +662,79 @@ static void coro_interrupt_function(zend_execute_data *execute_data) {
+@@ -306,2 +627,79 @@ static void coro_interrupt_function(zend_execute_data *execute_data) {
  PHPContext *PHPCoroutine::create_context(const Args *args) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    auto *ctx = static_cast<PHPContext *>(emalloc(sizeof(PHPContext)));
@@ -513,11 +466,11 @@ index daecf43..498f4dd 100644
 +    return ctx;
 +#else
      auto *ctx = static_cast<PHPContext *>(emalloc(sizeof(PHPContext)));
-@@ -375,2 +808,3 @@ PHPContext *PHPCoroutine::create_context(const Args *args) {
+@@ -375,2 +773,3 @@ PHPContext *PHPCoroutine::create_context(const Args *args) {
      return ctx;
 +#endif
  }
-@@ -378,2 +812,18 @@ PHPContext *PHPCoroutine::create_context(const Args *args) {
+@@ -378,2 +777,18 @@ PHPContext *PHPCoroutine::create_context(const Args *args) {
  void PHPCoroutine::bailout() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -536,44 +489,11 @@ index daecf43..498f4dd 100644
 +    });
 +#else
      Coroutine::bailout([]() {
-@@ -385,2 +835,3 @@ void PHPCoroutine::bailout() {
+@@ -385,2 +800,3 @@ void PHPCoroutine::bailout() {
      });
 +#endif
  }
-@@ -388,2 +839,28 @@ void PHPCoroutine::bailout() {
- bool PHPCoroutine::catch_exception() {
-+#ifdef SWOOLE_RS_PHPCOROUTINES
-+
-+    uint32_t stage = 0;
-+    int64_t observation = 0;
-+#if SW_RECOVER_CANCELED_EXCEPTION
-+    constexpr uint32_t kind = SWR_CORO_CONTROL_CATCH_RECOVER;
-+#else
-+    constexpr uint32_t kind = SWR_CORO_CONTROL_CATCH;
-+#endif
-+    for (;;) {
-+        switch (swr_v1_phpcoroutines_control(&stage, kind, observation, 0).action) {
-+        case SWR_CORO_CONTROL_FALSE: return false;
-+        case SWR_CORO_CONTROL_TRUE: return true;
-+        case SWR_CORO_CONTROL_EXCEPTION: observation = EG(exception) != nullptr; break;
-+#if SW_RECOVER_CANCELED_EXCEPTION
-+        case SWR_CORO_CONTROL_CLASS: observation = EG(exception)->ce == swoole_coroutine_canceled_exception_ce; break;
-+        case SWR_CORO_CONTROL_RELEASE_EXCEPTION: OBJ_RELEASE(EG(exception)); break;
-+        case SWR_CORO_CONTROL_CLEAR_EXCEPTION: EG(exception) = nullptr; break;
-+#endif
-+        case SWR_CORO_CONTROL_FATAL_EXCEPTION:
-+            // the exception error messages MUST be output on the current coroutine stack
-+            zend_exception_error(EG(exception), E_ERROR);
-+            break;
-+        }
-+    }
-+#else
-     if (UNEXPECTED(EG(exception))) {
-@@ -403,2 +880,3 @@ bool PHPCoroutine::catch_exception() {
-     return false;
-+#endif
- }
-@@ -406,2 +884,41 @@ bool PHPCoroutine::catch_exception() {
+@@ -406,2 +822,41 @@ bool PHPCoroutine::catch_exception() {
  void PHPCoroutine::activate() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -615,11 +535,11 @@ index daecf43..498f4dd 100644
 +#else
 +
      if (sw_unlikely(activated)) {
-@@ -443,2 +960,3 @@ void PHPCoroutine::activate() {
+@@ -443,2 +898,3 @@ void PHPCoroutine::activate() {
      activated = true;
 +#endif
  }
-@@ -446,2 +964,26 @@ void PHPCoroutine::activate() {
+@@ -446,2 +902,26 @@ void PHPCoroutine::activate() {
  void PHPCoroutine::deactivate(void *ptr) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    if (sw_unlikely(!is_activated())) {
@@ -646,11 +566,11 @@ index daecf43..498f4dd 100644
 +    Coroutine::deactivate();
 +#else
      if (sw_unlikely(!activated)) {
-@@ -468,2 +1010,3 @@ void PHPCoroutine::deactivate(void *ptr) {
+@@ -468,2 +948,3 @@ void PHPCoroutine::deactivate(void *ptr) {
      Coroutine::deactivate();
 +#endif
  }
-@@ -471,2 +1014,12 @@ void PHPCoroutine::deactivate(void *ptr) {
+@@ -471,2 +952,12 @@ void PHPCoroutine::deactivate(void *ptr) {
  void PHPCoroutine::shutdown() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    if (is_activated()) {
@@ -663,11 +583,11 @@ index daecf43..498f4dd 100644
 +    free_main_context();
 +#else
      if (activated) {
-@@ -479,2 +1032,3 @@ void PHPCoroutine::shutdown() {
+@@ -479,2 +970,3 @@ void PHPCoroutine::shutdown() {
      free_main_context();
 +#endif
  }
-@@ -485,2 +1039,30 @@ void PHPCoroutine::shutdown() {
+@@ -485,2 +977,30 @@ void PHPCoroutine::shutdown() {
  void PHPCoroutine::deadlock_check() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -698,11 +618,11 @@ index daecf43..498f4dd 100644
 +    }
 +#else
      if (Coroutine::count() == 0) {
-@@ -500,2 +1082,3 @@ void PHPCoroutine::deadlock_check() {
+@@ -500,2 +1020,3 @@ void PHPCoroutine::deadlock_check() {
      }
 +#endif
  }
-@@ -503,2 +1086,13 @@ void PHPCoroutine::deadlock_check() {
+@@ -503,2 +1024,13 @@ void PHPCoroutine::deadlock_check() {
  void PHPCoroutine::interrupt_thread_stop() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -716,11 +636,11 @@ index daecf43..498f4dd 100644
 +    }
 +#else
      if (!interrupt_thread_running.load(std::memory_order_acquire)) {
-@@ -508,2 +1102,3 @@ void PHPCoroutine::interrupt_thread_stop() {
+@@ -508,2 +1040,3 @@ void PHPCoroutine::interrupt_thread_stop() {
      interrupt_thread.join();
 +#endif
  }
-@@ -511,2 +1106,33 @@ void PHPCoroutine::interrupt_thread_stop() {
+@@ -511,2 +1044,33 @@ void PHPCoroutine::interrupt_thread_stop() {
  void PHPCoroutine::interrupt_thread_start() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -754,11 +674,11 @@ index daecf43..498f4dd 100644
 +    }
 +#else
      if (interrupt_thread_running.load(std::memory_order_acquire)) {
-@@ -524,2 +1150,3 @@ void PHPCoroutine::interrupt_thread_start() {
+@@ -524,2 +1088,3 @@ void PHPCoroutine::interrupt_thread_start() {
      });
 +#endif
  }
-@@ -536,2 +1163,35 @@ void PHPCoroutine::interrupt_thread_start() {
+@@ -536,2 +1101,35 @@ void PHPCoroutine::interrupt_thread_start() {
  inline void PHPCoroutine::save_vm_stack(PHPContext *ctx) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    ctx->bailout = EG(bailout);
@@ -794,11 +714,11 @@ index daecf43..498f4dd 100644
 +#else
 +
      ctx->bailout = EG(bailout);
-@@ -555,2 +1215,3 @@ inline void PHPCoroutine::save_vm_stack(PHPContext *ctx) {
+@@ -555,2 +1153,3 @@ inline void PHPCoroutine::save_vm_stack(PHPContext *ctx) {
  #endif
 +#endif
  }
-@@ -558,2 +1219,35 @@ inline void PHPCoroutine::save_vm_stack(PHPContext *ctx) {
+@@ -558,2 +1157,35 @@ inline void PHPCoroutine::save_vm_stack(PHPContext *ctx) {
  inline void PHPCoroutine::restore_vm_stack(PHPContext *ctx) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    EG(bailout) = ctx->bailout;
@@ -834,13 +754,20 @@ index daecf43..498f4dd 100644
 +#else
 +
      EG(bailout) = ctx->bailout;
-@@ -576,2 +1270,3 @@ inline void PHPCoroutine::restore_vm_stack(PHPContext *ctx) {
+@@ -576,2 +1208,3 @@ inline void PHPCoroutine::restore_vm_stack(PHPContext *ctx) {
  #endif
 +#endif
  }
-@@ -624,2 +1319,16 @@ void PHPCoroutine::restore_bg(PHPContext *ctx) {
+@@ -624,2 +1257,3 @@ void PHPCoroutine::restore_bg(PHPContext *ctx) {
  void PHPCoroutine::set_hook_flags(uint32_t flags) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
+     zval zoptions;
+@@ -635,4 +1269,18 @@ void PHPCoroutine::set_hook_flags(uint32_t flags) {
+ 
+-    config.hook_flags = flags;
+-}
++    swr_v1_phpcoroutines_config(&config, SWR_CORO_CONFIG_SET_HOOKS, flags);
++#else
 +    zval zoptions;
 +    array_init(&zoptions);
 +    add_assoc_long(&zoptions, "hook_flags", flags);
@@ -852,67 +779,11 @@ index daecf43..498f4dd 100644
 +        options = Z_ARRVAL(zoptions);
 +    }
 +
-+    swr_v1_phpcoroutines_config(&config, SWR_CORO_CONFIG_SET_HOOKS, flags);
-+#else
-     zval zoptions;
-@@ -636,2 +1345,3 @@ void PHPCoroutine::set_hook_flags(uint32_t flags) {
-     config.hook_flags = flags;
++    config.hook_flags = flags;
 +#endif
- }
-@@ -651,2 +1361,21 @@ void PHPCoroutine::restore_context(PHPContext *ctx) {
- void PHPCoroutine::on_yield(void *arg) {
-+#ifdef SWOOLE_RS_PHPCOROUTINES
-+
-+    auto *ctx = static_cast<PHPContext *>(arg);
-+    auto *origin_ctx = get_origin_context(ctx);
-+
-+    uint32_t stage = 0;
-+    uint8_t observation = 0;
-+    for (;;) {
-+        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_ON_YIELD, observation)) {
-+        case SWR_CORO_TRANSFER_DONE: return;
-+        case SWR_CORO_TRANSFER_FIBER: fiber_context_switch_try_notify(ctx, origin_ctx); break;
-+        case SWR_CORO_TRANSFER_SAVE: save_context(ctx); break;
-+        case SWR_CORO_TRANSFER_RESTORE: restore_context(origin_ctx); break;
-+        case SWR_CORO_TRANSFER_CALLBACK_PRESENCE: observation = ctx->on_yield != nullptr; break;
-+        case SWR_CORO_TRANSFER_CALLBACK: (*ctx->on_yield)(ctx); break;
-+        case SWR_CORO_TRANSFER_TRACE: swoole_trace_log(SW_TRACE_COROUTINE, "from cid=%ld to cid=%ld", ctx->co->get_cid(), ctx->co->get_origin_cid()); break;
-+        }
-+    }
-+#else
-     auto *ctx = static_cast<PHPContext *>(arg);
-@@ -663,2 +1392,3 @@ void PHPCoroutine::on_yield(void *arg) {
-     swoole_trace_log(SW_TRACE_COROUTINE, "from cid=%ld to cid=%ld", ctx->co->get_cid(), ctx->co->get_origin_cid());
-+#endif
- }
-@@ -666,2 +1396,22 @@ void PHPCoroutine::on_yield(void *arg) {
- void PHPCoroutine::on_resume(void *arg) {
-+#ifdef SWOOLE_RS_PHPCOROUTINES
-+
-+    auto *ctx = static_cast<PHPContext *>(arg);
-+    auto *current_ctx = get_context();
-+
-+    uint32_t stage = 0;
-+    uint8_t observation = 0;
-+    for (;;) {
-+        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_ON_RESUME, observation)) {
-+        case SWR_CORO_TRANSFER_DONE: return;
-+        case SWR_CORO_TRANSFER_FIBER: fiber_context_switch_try_notify(current_ctx, ctx); break;
-+        case SWR_CORO_TRANSFER_SAVE: save_context(current_ctx); break;
-+        case SWR_CORO_TRANSFER_RESTORE: restore_context(ctx); break;
-+        case SWR_CORO_TRANSFER_RECORD: record_last_msec(ctx); break;
-+        case SWR_CORO_TRANSFER_CALLBACK_PRESENCE: observation = ctx->on_resume != nullptr; break;
-+        case SWR_CORO_TRANSFER_CALLBACK: (*ctx->on_resume)(ctx); break;
-+        case SWR_CORO_TRANSFER_TRACE: swoole_trace_log(SW_TRACE_COROUTINE, "from cid=%ld to cid=%ld", Coroutine::get_current_cid(), ctx->co->get_cid()); break;
-+        }
-+    }
-+#else
-     auto *ctx = static_cast<PHPContext *>(arg);
-@@ -679,2 +1429,3 @@ void PHPCoroutine::on_resume(void *arg) {
-     swoole_trace_log(SW_TRACE_COROUTINE, "from cid=%ld to cid=%ld", Coroutine::get_current_cid(), ctx->co->get_cid());
-+#endif
- }
-@@ -682,2 +1433,16 @@ void PHPCoroutine::on_resume(void *arg) {
++}
+ 
+@@ -682,2 +1330,16 @@ void PHPCoroutine::on_resume(void *arg) {
  void PHPCoroutine::on_close(void *arg) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -929,11 +800,11 @@ index daecf43..498f4dd 100644
 +    }
 +#else
      auto *ctx = static_cast<PHPContext *>(arg);
-@@ -687,2 +1452,3 @@ void PHPCoroutine::on_close(void *arg) {
+@@ -687,2 +1349,3 @@ void PHPCoroutine::on_close(void *arg) {
      efree(ctx);
 +#endif
  }
-@@ -690,2 +1456,69 @@ void PHPCoroutine::on_close(void *arg) {
+@@ -690,2 +1353,69 @@ void PHPCoroutine::on_close(void *arg) {
  void PHPCoroutine::destroy_context(PHPContext *ctx) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +#ifdef SW_LOG_TRACE_OPEN
@@ -1003,11 +874,11 @@ index daecf43..498f4dd 100644
 +    restore_context(get_origin_context(ctx));
 +#else
  #ifdef SW_LOG_TRACE_OPEN
-@@ -759,2 +1592,3 @@ void PHPCoroutine::destroy_context(PHPContext *ctx) {
+@@ -759,2 +1489,3 @@ void PHPCoroutine::destroy_context(PHPContext *ctx) {
      restore_context(get_origin_context(ctx));
 +#endif
  }
-@@ -762,2 +1596,62 @@ void PHPCoroutine::destroy_context(PHPContext *ctx) {
+@@ -762,2 +1493,62 @@ void PHPCoroutine::destroy_context(PHPContext *ctx) {
  void PHPCoroutine::main_func(void *_args) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    bool exception_caught = false;
@@ -1070,11 +941,11 @@ index daecf43..498f4dd 100644
 +    }
 +#else
      bool exception_caught = false;
-@@ -826,2 +1720,3 @@ void PHPCoroutine::main_func(void *_args) {
+@@ -826,2 +1617,3 @@ void PHPCoroutine::main_func(void *_args) {
      }
 +#endif
  }
-@@ -829,2 +1724,36 @@ void PHPCoroutine::main_func(void *_args) {
+@@ -829,2 +1621,36 @@ void PHPCoroutine::main_func(void *_args) {
  long PHPCoroutine::create(zend_fcall_info_cache *fci_cache, uint32_t argc, zval *argv, zval *callable) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1111,11 +982,11 @@ index daecf43..498f4dd 100644
 +#else
 +
      if (sw_unlikely(Coroutine::count() >= config.max_num)) {
-@@ -855,2 +1784,3 @@ long PHPCoroutine::create(zend_fcall_info_cache *fci_cache, uint32_t argc, zval
+@@ -855,2 +1681,3 @@ long PHPCoroutine::create(zend_fcall_info_cache *fci_cache, uint32_t argc, zval
      return Coroutine::create(main_func, (void *) &_args);
 +#endif
  }
-@@ -858,2 +1788,9 @@ long PHPCoroutine::create(zend_fcall_info_cache *fci_cache, uint32_t argc, zval
+@@ -858,2 +1685,9 @@ long PHPCoroutine::create(zend_fcall_info_cache *fci_cache, uint32_t argc, zval
  void PHPCoroutine::defer(zend::Function *fci) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    PHPContext *ctx = get_context();
@@ -1125,11 +996,11 @@ index daecf43..498f4dd 100644
 +    ctx->defer_tasks->push(fci);
 +#else
      PHPContext *ctx = get_context();
-@@ -863,2 +1800,3 @@ void PHPCoroutine::defer(zend::Function *fci) {
+@@ -863,2 +1697,3 @@ void PHPCoroutine::defer(zend::Function *fci) {
      ctx->defer_tasks->push(fci);
 +#endif
  }
-@@ -877,2 +1815,18 @@ void PHPCoroutine::fiber_context_init(PHPContext *ctx) {
+@@ -877,2 +1712,18 @@ void PHPCoroutine::fiber_context_init(PHPContext *ctx) {
  void PHPCoroutine::fiber_context_try_destroy(const PHPContext *ctx, PHPContext *origin_ctx) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1148,11 +1019,11 @@ index daecf43..498f4dd 100644
 +    }
 +#else
      if (UNEXPECTED(ctx->fiber_context)) {
-@@ -887,2 +1841,3 @@ void PHPCoroutine::fiber_context_try_destroy(const PHPContext *ctx, PHPContext *
+@@ -887,2 +1738,3 @@ void PHPCoroutine::fiber_context_try_destroy(const PHPContext *ctx, PHPContext *
      }
 +#endif
  }
-@@ -890,2 +1845,22 @@ void PHPCoroutine::fiber_context_try_destroy(const PHPContext *ctx, PHPContext *
+@@ -890,2 +1742,22 @@ void PHPCoroutine::fiber_context_try_destroy(const PHPContext *ctx, PHPContext *
  zend_fiber_status PHPCoroutine::fiber_get_status(const PHPContext *ctx) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1175,11 +1046,11 @@ index daecf43..498f4dd 100644
 +    }
 +#else
      // main_context
-@@ -908,2 +1883,3 @@ zend_fiber_status PHPCoroutine::fiber_get_status(const PHPContext *ctx) {
+@@ -908,2 +1780,3 @@ zend_fiber_status PHPCoroutine::fiber_get_status(const PHPContext *ctx) {
      }
 +#endif
  }
-@@ -911,2 +1887,20 @@ zend_fiber_status PHPCoroutine::fiber_get_status(const PHPContext *ctx) {
+@@ -911,2 +1784,20 @@ zend_fiber_status PHPCoroutine::fiber_get_status(const PHPContext *ctx) {
  void PHPCoroutine::fiber_context_switch_notify(const PHPContext *from, PHPContext *to) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1200,11 +1071,11 @@ index daecf43..498f4dd 100644
 +    }
 +#else
      zend_fiber_context *from_context = from->fiber_context;
-@@ -925,2 +1919,3 @@ void PHPCoroutine::fiber_context_switch_notify(const PHPContext *from, PHPContex
+@@ -925,2 +1816,3 @@ void PHPCoroutine::fiber_context_switch_notify(const PHPContext *from, PHPContex
      }
 +#endif
  }
-@@ -928,2 +1923,15 @@ void PHPCoroutine::fiber_context_switch_notify(const PHPContext *from, PHPContex
+@@ -928,2 +1820,15 @@ void PHPCoroutine::fiber_context_switch_notify(const PHPContext *from, PHPContex
  void PHPCoroutine::fiber_context_switch_try_notify(const PHPContext *from, PHPContext *to) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1220,69 +1091,11 @@ index daecf43..498f4dd 100644
 +    }
 +#else
      if (UNEXPECTED(from->fiber_context && to->fiber_context)) {
-@@ -931,2 +1939,3 @@ void PHPCoroutine::fiber_context_switch_try_notify(const PHPContext *from, PHPCo
+@@ -931,2 +1836,3 @@ void PHPCoroutine::fiber_context_switch_try_notify(const PHPContext *from, PHPCo
      }
 +#endif
  }
-@@ -935,2 +1944,25 @@ void PHPCoroutine::fiber_context_switch_try_notify(const PHPContext *from, PHPCo
- void *PHPCoroutine::stack_limit(PHPContext *ctx) {
-+#ifdef SWOOLE_RS_PHPCOROUTINES
-+
-+    swr_phpcoroutines_bounds_state state{0, 0};
-+    uintptr_t observation = 0;
-+    uint8_t caps = 0;
-+#ifdef SW_USE_THREAD_CONTEXT
-+    caps |= 1;
-+#endif
-+#ifdef __APPLE__
-+    caps |= 2;
-+#endif
-+    for (;;) {
-+        const auto plan = swr_v1_phpcoroutines_bounds(&state, SWR_CORO_BOUNDS_LIMIT, caps, observation);
-+        switch (plan.action) {
-+        case SWR_CORO_BOUNDS_NULL: return nullptr;
-+#ifndef SW_USE_THREAD_CONTEXT
-+        case SWR_CORO_BOUNDS_HAS_CO: observation = ctx->co != nullptr; break;
-+        case SWR_CORO_BOUNDS_RESERVE: static_assert(sizeof(zend_ulong) == sizeof(uintptr_t), "Native reserve width"); observation = EG(reserved_stack_size); break;
-+        case SWR_CORO_BOUNDS_LIMIT_POINTER: return (int8_t *) ctx->co->get_ctx().get_stack() + plan.reserve;
-+#endif
-+        }
-+    }
-+#else
- #ifdef SW_USE_THREAD_CONTEXT
-@@ -956,4 +1988,27 @@ void *PHPCoroutine::stack_limit(PHPContext *ctx) {
- #endif
-+#endif
- }
- void *PHPCoroutine::stack_base(PHPContext *ctx) {
-+#ifdef SWOOLE_RS_PHPCOROUTINES
-+
-+    swr_phpcoroutines_bounds_state state{0, 0};
-+    uintptr_t observation = 0;
-+    uint8_t caps = 0;
-+#ifdef SW_USE_THREAD_CONTEXT
-+    caps |= 1;
-+#endif
-+#ifdef __APPLE__
-+    caps |= 2;
-+#endif
-+    for (;;) {
-+        const auto plan = swr_v1_phpcoroutines_bounds(&state, SWR_CORO_BOUNDS_BASE, caps, observation);
-+        switch (plan.action) {
-+        case SWR_CORO_BOUNDS_NULL: return nullptr;
-+#ifndef SW_USE_THREAD_CONTEXT
-+        case SWR_CORO_BOUNDS_HAS_CO: observation = ctx->co != nullptr; break;
-+        case SWR_CORO_BOUNDS_BASE_POINTER: return (void *) ((uintptr_t) ctx->co->get_ctx().get_stack() + ctx->co->get_ctx().get_stack_size());
-+#endif
-+        }
-+    }
-+#else
- #ifdef SW_USE_THREAD_CONTEXT
-@@ -967,2 +2022,3 @@ void *PHPCoroutine::stack_base(PHPContext *ctx) {
- #endif
-+#endif
- }
-@@ -979,2 +2035,31 @@ struct AutoloadContext {
+@@ -979,2 +1885,31 @@ struct AutoloadContext {
  
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +class AutoloadContextQueue {
@@ -1314,7 +1127,7 @@ index daecf43..498f4dd 100644
 +};
 +#else
  struct AutoloadQueue {
-@@ -983,4 +2068,65 @@ struct AutoloadQueue {
+@@ -983,4 +1918,65 @@ struct AutoloadQueue {
  };
 +#endif
 +
@@ -1380,15 +1193,12 @@ index daecf43..498f4dd 100644
 +#else
 +
      auto current = Coroutine::get_current();
-@@ -1026,6 +2172,111 @@ static zend_class_entry *swoole_coroutine_autoload(zend_string *name, zend_strin
-     }
--    return ce;
--}
-+    return ce;
+@@ -1027,2 +2023,3 @@ static zend_class_entry *swoole_coroutine_autoload(zend_string *name, zend_strin
+     return ce;
 +#endif
-+}
-+
-+void php_swoole_coroutine_minit(int module_number) {
+ }
+@@ -1030,2 +2027,106 @@ static zend_class_entry *swoole_coroutine_autoload(zend_string *name, zend_strin
+ void php_swoole_coroutine_minit(int module_number) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
 +    (void) module_number;
@@ -1492,14 +1302,13 @@ index daecf43..498f4dd 100644
 +        }
 +    }
 +#else
- 
--void php_swoole_coroutine_minit(int module_number) {
++
      SW_INIT_CLASS_ENTRY_BASE(swoole_coroutine_util, "Swoole\\Coroutine", "Co", swoole_coroutine_methods, nullptr);
-@@ -1090,2 +2341,3 @@ void php_swoole_coroutine_minit(int module_number) {
+@@ -1090,2 +2191,3 @@ void php_swoole_coroutine_minit(int module_number) {
      swoole_coroutine_internal_function.common.type = ZEND_INTERNAL_FUNCTION;
 +#endif
  }
-@@ -1097,2 +2349,17 @@ void php_swoole_coroutine_rinit() {
+@@ -1097,2 +2199,17 @@ void php_swoole_coroutine_rinit() {
  void php_swoole_coroutine_rshutdown() {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1517,11 +1326,11 @@ index daecf43..498f4dd 100644
 +    }
 +#else
      if (SWOOLE_G(in_autoload)) {
-@@ -1104,2 +2371,3 @@ void php_swoole_coroutine_rshutdown() {
+@@ -1104,2 +2221,3 @@ void php_swoole_coroutine_rshutdown() {
      PHPCoroutine::shutdown();
 +#endif
  }
-@@ -1115,2 +2383,38 @@ static PHP_METHOD(swoole_exit_exception, getStatus) {
+@@ -1115,2 +2233,38 @@ static PHP_METHOD(swoole_exit_exception, getStatus) {
  PHP_FUNCTION(swoole_coroutine_create) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1560,11 +1369,11 @@ index daecf43..498f4dd 100644
 +    }
 +#else
      zend_fcall_info fci;
-@@ -1138,2 +2442,3 @@ PHP_FUNCTION(swoole_coroutine_create) {
+@@ -1138,2 +2292,3 @@ PHP_FUNCTION(swoole_coroutine_create) {
      }
 +#endif
  }
-@@ -1157,2 +2462,41 @@ PHP_FUNCTION(swoole_coroutine_defer) {
+@@ -1157,2 +2312,41 @@ PHP_FUNCTION(swoole_coroutine_defer) {
  static PHP_METHOD(swoole_coroutine, stats) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1606,11 +1415,11 @@ index daecf43..498f4dd 100644
 +#else
 +
      array_init(return_value);
-@@ -1185,2 +2529,3 @@ static PHP_METHOD(swoole_coroutine, stats) {
+@@ -1185,2 +2379,3 @@ static PHP_METHOD(swoole_coroutine, stats) {
  #endif
 +#endif
  }
-@@ -1192,2 +2537,18 @@ PHP_METHOD(swoole_coroutine, getCid) {
+@@ -1192,2 +2387,18 @@ PHP_METHOD(swoole_coroutine, getCid) {
  PHP_METHOD(swoole_coroutine, getPcid) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1629,11 +1438,11 @@ index daecf43..498f4dd 100644
 +#else
 +
      zend_long cid = 0;
-@@ -1204,2 +2565,3 @@ PHP_METHOD(swoole_coroutine, getPcid) {
+@@ -1204,2 +2415,3 @@ PHP_METHOD(swoole_coroutine, getPcid) {
      RETURN_LONG(ret);
 +#endif
  }
-@@ -1207,2 +2569,46 @@ PHP_METHOD(swoole_coroutine, getPcid) {
+@@ -1207,2 +2419,46 @@ PHP_METHOD(swoole_coroutine, getPcid) {
  static PHP_METHOD(swoole_coroutine, getContext) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1680,11 +1489,11 @@ index daecf43..498f4dd 100644
 +#else
 +
      zend_long cid = 0;
-@@ -1231,2 +2637,3 @@ static PHP_METHOD(swoole_coroutine, getContext) {
+@@ -1231,2 +2487,3 @@ static PHP_METHOD(swoole_coroutine, getContext) {
      RETURN_OBJ(ctx->context);
 +#endif
  }
-@@ -1245,2 +2652,18 @@ static PHP_METHOD(swoole_coroutine, getElapsed) {
+@@ -1245,2 +2502,18 @@ static PHP_METHOD(swoole_coroutine, getElapsed) {
  static PHP_METHOD(swoole_coroutine, getStackUsage) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1703,11 +1512,11 @@ index daecf43..498f4dd 100644
 +#else
 +
      zend_long cid = 0;
-@@ -1257,2 +2680,3 @@ static PHP_METHOD(swoole_coroutine, getStackUsage) {
+@@ -1257,2 +2530,3 @@ static PHP_METHOD(swoole_coroutine, getStackUsage) {
      RETURN_LONG(usage);
 +#endif
  }
-@@ -1270,2 +2694,22 @@ static PHP_METHOD(swoole_coroutine, exists) {
+@@ -1270,2 +2544,22 @@ static PHP_METHOD(swoole_coroutine, exists) {
  static PHP_METHOD(swoole_coroutine, resume) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1730,11 +1539,11 @@ index daecf43..498f4dd 100644
 +#else
 +
      zend_long cid;
-@@ -1287,2 +2731,3 @@ static PHP_METHOD(swoole_coroutine, resume) {
+@@ -1287,2 +2581,3 @@ static PHP_METHOD(swoole_coroutine, resume) {
      RETURN_TRUE;
 +#endif
  }
-@@ -1290,2 +2735,21 @@ static PHP_METHOD(swoole_coroutine, resume) {
+@@ -1290,2 +2585,21 @@ static PHP_METHOD(swoole_coroutine, resume) {
  static PHP_METHOD(swoole_coroutine, yield) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1756,7 +1565,7 @@ index daecf43..498f4dd 100644
 +#else
 +
      Coroutine *co = Coroutine::get_current_safe();
-@@ -1305,5 +2769,124 @@ static PHP_METHOD(swoole_coroutine, yield) {
+@@ -1305,5 +2619,124 @@ static PHP_METHOD(swoole_coroutine, yield) {
      RETURN_TRUE;
 +#endif
  }
@@ -1881,11 +1690,11 @@ index daecf43..498f4dd 100644
 +    RETURN_TRUE;
 +#else
      Coroutine *co = Coroutine::get_current_safe();
-@@ -1376,2 +2959,3 @@ static PHP_METHOD(swoole_coroutine, join) {
+@@ -1376,2 +2809,3 @@ static PHP_METHOD(swoole_coroutine, join) {
      RETURN_TRUE;
 +#endif
  }
-@@ -1379,2 +2963,87 @@ static PHP_METHOD(swoole_coroutine, join) {
+@@ -1379,2 +2813,87 @@ static PHP_METHOD(swoole_coroutine, join) {
  static bool php_swoole_coroutine_throw_exception(long cid, bool throw_exception, zend_class_entry *ce) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -1973,11 +1782,11 @@ index daecf43..498f4dd 100644
 +    }
 +#else
      if (throw_exception) {
-@@ -1446,2 +3115,3 @@ static bool php_swoole_coroutine_throw_exception(long cid, bool throw_exception,
+@@ -1446,2 +2965,3 @@ static bool php_swoole_coroutine_throw_exception(long cid, bool throw_exception,
      }
 +#endif
  }
-@@ -1462,2 +3132,53 @@ static PHP_METHOD(swoole_coroutine, cancel) {
+@@ -1462,2 +2982,53 @@ static PHP_METHOD(swoole_coroutine, cancel) {
  static PHP_METHOD(swoole_coroutine, setTimeLimit) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -2031,11 +1840,11 @@ index daecf43..498f4dd 100644
 +    }
 +#else
      double timeout = 0;
-@@ -1494,2 +3215,3 @@ static PHP_METHOD(swoole_coroutine, setTimeLimit) {
+@@ -1494,2 +3065,3 @@ static PHP_METHOD(swoole_coroutine, setTimeLimit) {
      RETURN_TRUE;
 +#endif
  }
-@@ -1502,2 +3224,23 @@ static PHP_METHOD(swoole_coroutine, isCanceled) {
+@@ -1502,2 +3074,23 @@ static PHP_METHOD(swoole_coroutine, isCanceled) {
  PHP_FUNCTION(swoole_test_kernel_coroutine) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +    if (!PHPCoroutine::is_activated()) {
@@ -2059,11 +1868,11 @@ index daecf43..498f4dd 100644
 +    });
 +#else
      if (!PHPCoroutine::is_activated()) {
-@@ -1520,2 +3263,3 @@ PHP_FUNCTION(swoole_test_kernel_coroutine) {
+@@ -1520,2 +3113,3 @@ PHP_FUNCTION(swoole_test_kernel_coroutine) {
      });
 +#endif
  }
-@@ -1523,2 +3267,47 @@ PHP_FUNCTION(swoole_test_kernel_coroutine) {
+@@ -1523,2 +3117,47 @@ PHP_FUNCTION(swoole_test_kernel_coroutine) {
  static PHP_METHOD(swoole_coroutine, getBackTrace) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -2111,11 +1920,11 @@ index daecf43..498f4dd 100644
 +#else
 +
      zend_long cid = 0;
-@@ -1547,2 +3336,3 @@ static PHP_METHOD(swoole_coroutine, getBackTrace) {
+@@ -1547,2 +3186,3 @@ static PHP_METHOD(swoole_coroutine, getBackTrace) {
      }
 +#endif
  }
-@@ -1561,2 +3351,35 @@ void sw_php_print_backtrace_impl(int skip_last, int options, int limit, bool inc
+@@ -1561,2 +3201,35 @@ void sw_php_print_backtrace_impl(int skip_last, int options, int limit, bool inc
  void sw_php_print_backtrace(zend_long cid, zend_long options, zend_long limit, zval *return_value) {
 +#ifdef SWOOLE_RS_PHPCOROUTINES
 +
@@ -2151,7 +1960,7 @@ index daecf43..498f4dd 100644
 +#else
 +
      if (!cid || cid == PHPCoroutine::get_cid()) {
-@@ -1577,2 +3400,3 @@ void sw_php_print_backtrace(zend_long cid, zend_long options, zend_long limit, z
+@@ -1577,2 +3250,3 @@ void sw_php_print_backtrace(zend_long cid, zend_long options, zend_long limit, z
      }
 +#endif
  }

@@ -67,7 +67,7 @@ def main():
             if destination.endswith('_scheduler.cc'):
                 exports |= {'swr_v1_phpcoroutines_callback_control'}
             if destination.endswith('swoole_coroutine.cc'):
-                exports |= {'swr_v1_phpcoroutines_context_route', 'swr_v1_phpcoroutines_context_query', 'swr_v1_phpcoroutines_trace', 'swr_v1_phpcoroutines_transfer_table', 'swr_v1_phpcoroutines_interrupt', 'swr_v1_phpcoroutines_stack_step', 'swr_v1_phpcoroutines_fiber', 'swr_v1_phpcoroutines_scheduler_phase', 'swr_v1_phpcoroutines_exit', 'swr_v1_phpcoroutines_metadata', 'swr_v1_phpcoroutines_control', 'swr_v1_phpcoroutines_create_destructor', 'swr_v1_phpcoroutines_repeat'} | {'swr_v1_phpcoroutines_join_' + suffix for suffix in ('try_new', 'clone', 'drop', 'try_insert', 'erase_empty', 'empty', 'next', 'release_membership', 'cancel', 'can_resume')}
+                exports |= {'swr_v1_phpcoroutines_context_route', 'swr_v1_phpcoroutines_context_query', 'swr_v1_phpcoroutines_trace', 'swr_v1_phpcoroutines_interrupt', 'swr_v1_phpcoroutines_stack_step', 'swr_v1_phpcoroutines_fiber', 'swr_v1_phpcoroutines_scheduler_phase', 'swr_v1_phpcoroutines_exit', 'swr_v1_phpcoroutines_metadata', 'swr_v1_phpcoroutines_control', 'swr_v1_phpcoroutines_create_destructor', 'swr_v1_phpcoroutines_repeat'} | {'swr_v1_phpcoroutines_join_' + suffix for suffix in ('try_new', 'clone', 'drop', 'try_insert', 'erase_empty', 'empty', 'next', 'release_membership', 'cancel', 'can_resume')}
             for feature in ('native', 'phpcoroutines-only', 'combined'):
                 profile = work / Path(destination).stem / feature
                 profile.mkdir(parents=True)
@@ -176,19 +176,13 @@ static_assert(offsetof(AutoloadQueue, queue) == offsetof(OriginalAutoloadQueueLa
                         write_report(output, report)
                         if observed.returncode: raise ValueError('Native capability preprocessing failed')
                         macros = {line.split()[1] for line in observed.stdout.splitlines() if line.startswith('#define ')}
-                        capabilities = dict(stack_bounds='ZEND_CHECK_STACK_LIMIT' in macros,
-                                            native_thread_context='SW_USE_THREAD_CONTEXT' in macros,
+                        capabilities = dict(native_thread_context='SW_USE_THREAD_CONTEXT' in macros,
                                             coroutine_time='SW_CORO_TIME' in macros,
                                             apple='__APPLE__' in macros)
                         report.setdefault('conditional_method_registration', []).append(dict(
                             feature=feature, standard=standard, method='getExecuteTime',
                             outcome='COMPILED' if capabilities['coroutine_time'] else 'UNSUPPORTED',
                             reason='Actual Native SW_CORO_TIME macro presence; never forced for SDK qualification'))
-                        if capabilities['stack_bounds']: unit_exports.add('swr_v1_phpcoroutines_bounds')
-                        else:
-                            report.setdefault('unsupported_new_callers', []).append(dict(
-                                feature=feature, standard=standard, caller='stack_limit/stack_base',
-                                outcome='UNSUPPORTED', reason='Actual Native profile lacks ZEND_CHECK_STACK_LIMIT'))
                     require_build_space(ROOT)
                     result = run_isolated(command, timeout=120)
                     entry = dict(unit=destination, feature=feature, standard=standard, command=command, exit=result.returncode,

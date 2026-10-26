@@ -157,19 +157,6 @@ int main(void) {
         while (swr_v1_phpcoroutines_repeat(&repeat)) { ++selected_count; }
         assert(selected_count == native_count);
     }
-    const uintptr_t reserves[] = {0, 1, 1024, UINTPTR_MAX / 2 + 1, UINTPTR_MAX};
-    for (uint8_t caps = 0; caps < 4; ++caps) {
-        for (size_t r = 0; r < sizeof(reserves) / sizeof(reserves[0]); ++r) {
-            swr_phpcoroutines_bounds_state bounds = {0, 0};
-            swr_phpcoroutines_bounds_plan plan = swr_v1_phpcoroutines_bounds(&bounds, SWR_CORO_BOUNDS_LIMIT, caps, 0);
-            if (caps & 1) { assert(plan.action == SWR_CORO_BOUNDS_NULL); continue; }
-            assert(plan.action == SWR_CORO_BOUNDS_RESERVE);
-            plan = swr_v1_phpcoroutines_bounds(&bounds, SWR_CORO_BOUNDS_LIMIT, caps, reserves[r]);
-            assert(plan.action == SWR_CORO_BOUNDS_HAS_CO);
-            assert(plan.reserve == (uintptr_t) (reserves[r] * ((caps & 2) ? 2 : 1)));
-            assert(swr_v1_phpcoroutines_bounds(&bounds, SWR_CORO_BOUNDS_LIMIT, caps, 1).action == SWR_CORO_BOUNDS_LIMIT_POINTER);
-        }
-    }
     uint32_t create_stage = 0;
     assert(swr_v1_phpcoroutines_control(&create_stage, SWR_CORO_CONTROL_CREATE_FRONTEND, 0, 0).action == SWR_CORO_CONTROL_REQUEST_SHUTDOWN);
     assert(swr_v1_phpcoroutines_control(&create_stage, SWR_CORO_CONTROL_CREATE_FRONTEND, 0, 0).action == SWR_CORO_CONTROL_CREATE_EFFECT);
@@ -206,13 +193,6 @@ int main(void) {
     swr_v1_phpcoroutines_config(&config_state, SWR_CORO_CONFIG_SET_DEADLOCK, 0);
     assert(swr_v1_phpcoroutines_config(&config_state, SWR_CORO_CONFIG_GET_PREEMPTIVE, 0) == 1);
     assert(swr_v1_phpcoroutines_config(&config_state, SWR_CORO_CONFIG_GET_DEADLOCK, 0) == 0);
-    uint32_t resumed_stage = 0;
-    const uint32_t resumed_order[] = {SWR_CORO_TRANSFER_FIBER, SWR_CORO_TRANSFER_SAVE,
-        SWR_CORO_TRANSFER_RESTORE, SWR_CORO_TRANSFER_RECORD, SWR_CORO_TRANSFER_CALLBACK_PRESENCE,
-        SWR_CORO_TRANSFER_CALLBACK, SWR_CORO_TRANSFER_TRACE, SWR_CORO_TRANSFER_DONE};
-    for (size_t i = 0; i < sizeof(resumed_order)/sizeof(resumed_order[0]); ++i) {
-        assert(swr_v1_phpcoroutines_transfer(&resumed_stage, SWR_CORO_TRANSFER_ON_RESUME, 1, 0) == resumed_order[i]);
-    }
     uint32_t trace_stage = 0;
     swr_phpcoroutines_trace_plan self_trace = swr_v1_phpcoroutines_trace(&trace_stage, 0, 0, 1);
     assert(self_trace.action == SWR_CORO_TRACE_SELF && self_trace.skip_last == 1);
