@@ -19,6 +19,7 @@ pub unsafe extern "C" fn swr_v1_reactor_flush_step(
     kind: u32,
     result: i32,
 ) -> i32 {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return -1;
     };
@@ -77,6 +78,7 @@ pub unsafe extern "C" fn swr_v1_reactor_drain_step(
     flags: u32,
     result: i32,
 ) -> i32 {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return -1;
     };
@@ -115,6 +117,7 @@ pub unsafe extern "C" fn swr_v1_reactor_flush_workflow(
     state: *mut FlushState,
     observed: i32,
 ) -> i32 {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return -1;
     };
@@ -153,6 +156,7 @@ pub unsafe extern "C" fn swr_v1_reactor_drain_workflow(
     state: *mut FlushState,
     observed: i32,
 ) -> i32 {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return -1;
     };

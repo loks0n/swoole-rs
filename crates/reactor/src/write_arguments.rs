@@ -26,7 +26,8 @@ pub unsafe extern "C" fn swr_v1_reactor_write_prepare(
     let mut length = 0usize;
     for index in 0..count {
         // The target libc binding is the actual POSIX C ABI, not a copied POD.
-        length = length.wrapping_add(unsafe { (*vectors.add(index)).iov_len });
+        // SAFETY: `index < count`, and `vectors` names `count` initialized iovecs.
+        length = length.wrapping_add(unsafe { (*vectors.wrapping_add(index)).iov_len });
     }
     ReactorWriteArguments {
         length,

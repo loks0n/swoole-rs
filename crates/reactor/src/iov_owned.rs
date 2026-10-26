@@ -50,23 +50,28 @@ pub unsafe extern "C" fn swr_v1_reactor_iov_owned_new(
     let Some((layout, offset)) = allocation_layout(count) else {
         return refused(-2);
     };
+    // SAFETY: `allocation_layout` returns a non-zero-sized layout; null is handled below.
     let allocation = unsafe { alloc(layout) };
     if allocation.is_null() {
         return refused(-2);
     }
-    unsafe {
-        allocation.cast::<Header>().write(Header { layout });
-        let original = allocation.add(offset).cast::<libc::iovec>();
-        let iterator = original.add(count);
-        if count != 0 {
-            ptr::copy_nonoverlapping(source, original, count);
-            ptr::copy_nonoverlapping(source, iterator, count);
-        }
-        ReactorIovAllocation {
-            original,
-            iterator,
-            status: 0,
-        }
+    // `layout` holds the header, then two arrays of `count` iovecs starting at `offset`,
+    // each suitably aligned.
+    let original = allocation.wrapping_add(offset).cast::<libc::iovec>();
+    let iterator = original.wrapping_add(count);
+    // SAFETY: the header slot at the start of the fresh allocation is aligned and writable.
+    unsafe { allocation.cast::<Header>().write(Header { layout }) };
+    if count != 0 {
+        // SAFETY: for `count > 0` the caller lends `count` readable, initialized iovecs at
+        // `source`, disjoint from this fresh allocation; `original` has room for `count`.
+        unsafe { ptr::copy_nonoverlapping(source, original, count) };
+        // SAFETY: as above, for the second array.
+        unsafe { ptr::copy_nonoverlapping(source, iterator, count) };
+    }
+    ReactorIovAllocation {
+        original,
+        iterator,
+        status: 0,
     }
 }
 /// Release only descriptor storage and allocation-local metadata. No payload,
@@ -79,8 +84,12 @@ pub unsafe extern "C" fn swr_v1_reactor_iov_owned_free(original: *mut libc::iove
     if original.is_null() {
         return;
     }
-    let allocation = unsafe { original.cast::<u8>().sub(descriptor_offset()) };
+    // `original` is the unmodified base from `owned_new`, so the allocation (and its header)
+    // starts `descriptor_offset()` bytes before it.
+    let allocation = original.cast::<u8>().wrapping_sub(descriptor_offset());
+    // SAFETY: as above; the header was written at allocation time.
     let header = unsafe { allocation.cast::<Header>().read() };
+    // SAFETY: allocated with `header.layout`; exclusively owned and released once.
     unsafe { dealloc(allocation, header.layout) };
 }
 /// Sum the live original descriptor span with C size_t wrapping semantics.
@@ -93,7 +102,8 @@ pub unsafe extern "C" fn swr_v1_reactor_iov_owned_length(
     count: i32,
 ) -> usize {
     (0..count).fold(0usize, |total, i| {
-        total.wrapping_add(unsafe { (*original.add(i as usize)).iov_len })
+        // SAFETY: `i < count`, and `original` names `count` readable initialized iovecs.
+        total.wrapping_add(unsafe { (*original.wrapping_add(i as usize)).iov_len })
     })
 }
 /// Compute the existing progress policy and mutate the actual owned iterator
@@ -112,14 +122,17 @@ pub unsafe extern "C" fn swr_v1_reactor_iov_owned_progress(
     offset: usize,
 ) -> ReactorIovProgress {
     let reply = progress(
-        (0..remaining).map(|i| unsafe { (*iterator.add(i as usize)).iov_len }),
+        // SAFETY: `i < remaining`, and `iterator` names `remaining` initialized iovecs.
+        (0..remaining).map(|i| unsafe { (*iterator.wrapping_add(i as usize)).iov_len }),
         n,
         remaining,
         index,
         offset,
     );
     if reply.action == 1 {
-        let current = unsafe { &mut *iterator.add(reply.advance) };
+        // SAFETY: `progress` returns `advance < remaining`; the iterator entries are
+        // writable and nothing else borrows them during this call.
+        let current = unsafe { &mut *iterator.wrapping_add(reply.advance) };
         current.iov_base = current
             .iov_base
             .cast::<u8>()

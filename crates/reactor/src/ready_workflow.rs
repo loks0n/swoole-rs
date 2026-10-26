@@ -13,6 +13,7 @@ pub struct ReadyWorkflow {
 }
 
 fn resolve(state: &mut ReadyWorkflow, backend: u32, removed: u32, known: u32) -> i32 {
+    // SAFETY: `state.ready` is a live, exclusive local field; the step takes it for this call only.
     let action = unsafe {
         swr_v1_reactor_ready_step(
             &mut state.ready,
@@ -51,6 +52,7 @@ pub unsafe extern "C" fn swr_v1_reactor_ready_workflow(
     backend: u32,
     observed: i32,
 ) -> i32 {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return -1;
     };

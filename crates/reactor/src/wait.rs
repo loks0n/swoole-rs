@@ -20,6 +20,7 @@ pub unsafe extern "C" fn swr_v1_reactor_wait_step(
     result: i32,
     caught: u32,
 ) -> i32 {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return -1;
     };
@@ -96,6 +97,7 @@ pub unsafe extern "C" fn swr_v1_reactor_wait_workflow(
     backend: u32,
     observed: i32,
 ) -> i32 {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return -1;
     };
@@ -169,10 +171,12 @@ pub unsafe extern "C" fn swr_v1_reactor_ready_step(
     once_known: u32,
     once: u32,
 ) -> i32 {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return -1;
     };
     let mut trial = super::ReadyState { phase: state.phase };
+    // SAFETY: `trial` is a live local; the step reads and writes it for this call only.
     let action = unsafe {
         super::swr_v1_reactor_ready(
             &mut trial,
