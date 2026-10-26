@@ -17,6 +17,10 @@ class TransferFallback(unittest.TestCase):
         selected = coroutine_selected(original)
         for signature in SIGNATURES:
             before, after = body(original, signature), body(selected, signature)
+            if '#else' not in after:
+                # Hot paths that are a few stores upstream stay inline (#366).
+                self.assertEqual(after, before)
+                continue
             fallback = after.rsplit('#else\n', 1)[1].rsplit('#endif', 1)[0]
             self.assertEqual(fallback, before)
             self.assertIn('swr_coro_transfer_next(', after)
