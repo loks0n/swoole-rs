@@ -796,7 +796,12 @@ def plan(args, reports):
         script('http-binding-reflection', 'tests/modules/http/binding_reflection.py',
                *php, *reference_first, *report('http-binding-reflection'))
     if integrate:
-        script('applications', 'corpus/run.py', *php, *engines, '--require-all', *report('applications'))
+        # 11-buffer-lifecycle hits upstream's half-close truncation, which only --fix-halfclose
+        # repairs, so it fails on both engines otherwise. The PR tier runs it on a repaired build.
+        projects = [] if getattr(args, 'fix_halfclose', False) else [
+            arg for project in json.loads((ROOT / 'corpus/manifest.json').read_text())
+            if project['id'] != '11-buffer-lifecycle' for arg in ['--project', project['id']]]
+        script('applications', 'corpus/run.py', *php, *engines, *projects, '--require-all', *report('applications'))
     phpt = []
     if not integrate:
         if 'websocket' in modules:
