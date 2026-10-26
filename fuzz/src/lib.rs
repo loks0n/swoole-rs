@@ -12,8 +12,9 @@ use swoole_rs_http::{
 use swoole_rs_oracle::{
     base64 as upstream, framing as upstream_framing, http as upstream_http,
     http_frame::{self, CANDIDATE, Engine, UPSTREAM},
-    websocket as upstream_ws,
+    protocols, websocket as upstream_ws,
 };
+use swoole_rs_protocols as _;
 use swoole_rs_websocket::{DecodedFrame, swr_v1_ws_decode, swr_v1_ws_frame_length, swr_v1_ws_mask};
 
 const RED_ZONE: usize = 17;
@@ -421,4 +422,124 @@ pub fn http_header(bytes: &[u8]) {
         }
     });
     assert_eq!(got, want, "expect/header for {bytes:?}");
+}
+
+/// Upstream `mqtt::get_package_length` and the candidate over the same received
+/// bytes. With nothing received upstream's size - 1 wraps and it reads past the
+/// buffer, so only the candidate runs there.
+pub fn mqtt_length(bytes: &[u8]) {
+    let data: Vec<c_char> = bytes.iter().map(|&byte| byte as c_char).collect();
+    let size = data.len().min(u32::MAX as usize) as u32;
+    // SAFETY: both read at most `size` bytes of `data`.
+    let got = unsafe { (protocols::CANDIDATE.mqtt_length)(data.as_ptr(), size) };
+    if size == 0 {
+        return;
+    }
+    let want = unsafe { (protocols::UPSTREAM.mqtt_length)(data.as_ptr(), size) };
+    assert_eq!(got, want, "mqtt length for {bytes:?}");
+}
+
+/// Walks upstream `redis::parse` over `data` (and the NUL after it) without
+/// reading it: false where upstream dereferences the null `get_number` returns
+/// for a malformed number, copies a string of negative length or past the input
+/// (#224), or finds a byte other than `*`, `$` or `:` where a type belongs. There
+/// it emits an empty or stale-length string; parse only sees packets recv_packet
+/// accepted (upstream calls it from core-tests alone), so that is not compared.
+fn resp_parse_in_bounds(data: &[u8]) -> bool {
+    let at = |index: usize| data.get(index).copied().unwrap_or(0);
+    // get_number: strtol after the type byte, then CRLF; Some((ret, next)).
+    let number = |p: usize| {
+        let start = p + 1;
+        let mut q = start;
+        while matches!(at(q), b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r') {
+            q += 1;
+        }
+        let negative = at(q) == b'-';
+        if matches!(at(q), b'+' | b'-') {
+            q += 1;
+        }
+        let digits = q;
+        let mut value: i128 = 0;
+        while at(q).is_ascii_digit() {
+            value = (value * 10 + i128::from(at(q) - b'0')).min(1 << 70);
+            q += 1;
+        }
+        let end = if q == digits { start } else { q };
+        let value = if negative { -value } else { value };
+        // strtol clamps to long; the int conversion keeps the low 32 bits.
+        let value = value.clamp(i64::MIN.into(), i64::MAX.into()) as i64 as i32;
+        (at(end) == b'\r' && at(end + 1) == b'\n').then_some((value, end + 2))
+    };
+    // One pass is one run of upstream's switch: `case` is where it enters, and a
+    // case that doesn't break falls through to the next.
+    let (mut state, mut p, mut length) = (0, 0usize, 0i32);
+    loop {
+        let mut case = state;
+        if case == 0 {
+            if at(p) == b'*' {
+                let Some((_, next)) = number(p) else {
+                    return false;
+                };
+                (p, state) = (next, 1);
+            } else {
+                case = 1;
+            }
+        }
+        if case == 1 {
+            if at(p) == b'$' {
+                let Some((ret, next)) = number(p) else {
+                    return false;
+                };
+                p = next;
+                if ret != -1 {
+                    (length, state) = (ret, 2);
+                }
+            } else if at(p) == b':' {
+                let Some((_, next)) = number(p) else {
+                    return false;
+                };
+                p = next;
+            } else {
+                return false;
+            }
+        }
+        if case == 2 {
+            if length < 0 || p + length as usize > data.len() {
+                return false;
+            }
+            (p, state) = (p + length as usize + 2, 1);
+        }
+        if p >= data.len() {
+            return true;
+        }
+    }
+}
+
+/// The strings and, on glibc, whether errno is ERANGE. macOS strtol also sets
+/// EINVAL when it converts nothing, which can overwrite an earlier ERANGE; glibc
+/// leaves errno alone there, and callers only test ERANGE.
+fn resp_parse_on(engine: &protocols::Engine, data: &[u8]) -> (Vec<u8>, bool) {
+    let buffer = terminated(data);
+    let (mut size, mut error) = (0, 0);
+    // SAFETY: the buffer holds data.len() bytes and a NUL; the result is malloc'd.
+    unsafe {
+        let output = (engine.resp_parse)(buffer.as_ptr(), data.len(), &mut size, &mut error);
+        let items = std::slice::from_raw_parts(output as *const u8, size).to_vec();
+        protocols::free(output);
+        (items, cfg!(target_os = "linux") && error == 34)
+    }
+}
+
+/// Upstream `redis::parse` and the candidate over the same bytes: every string,
+/// in order, and ERANGE. The candidate runs on every input.
+pub fn resp_parse(bytes: &[u8]) {
+    let got = resp_parse_on(&protocols::CANDIDATE, bytes);
+    if !resp_parse_in_bounds(bytes) {
+        return;
+    }
+    assert_eq!(
+        got,
+        resp_parse_on(&protocols::UPSTREAM, bytes),
+        "resp parse for {bytes:?}"
+    );
 }

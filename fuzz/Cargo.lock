@@ -98,6 +98,7 @@ dependencies = [
  "swoole-rs-framing",
  "swoole-rs-http",
  "swoole-rs-oracle",
+ "swoole-rs-protocols",
  "swoole-rs-websocket",
 ]
 
@@ -114,6 +115,10 @@ version = "0.1.0"
 dependencies = [
  "cc",
 ]
+
+[[package]]
+name = "swoole-rs-protocols"
+version = "0.1.0"
 
 [[package]]
 name = "swoole-rs-websocket"

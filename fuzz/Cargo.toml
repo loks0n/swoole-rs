@@ -14,6 +14,7 @@ swoole-rs-base64 = { path = "../crates/base64" }
 swoole-rs-framing = { path = "../crates/framing" }
 swoole-rs-http = { path = "../crates/http" }
 swoole-rs-oracle = { path = "../crates/oracle" }
+swoole-rs-protocols = { path = "../crates/protocols" }
 swoole-rs-websocket = { path = "../crates/websocket" }
 
 [[bin]]
@@ -96,6 +97,20 @@ bench = false
 [[bin]]
 name = "http_header"
 path = "fuzz_targets/http_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mqtt_length"
+path = "fuzz_targets/mqtt_length.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "resp_parse"
+path = "fuzz_targets/resp_parse.rs"
 test = false
 doc = false
 bench = false
