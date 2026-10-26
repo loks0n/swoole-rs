@@ -160,8 +160,8 @@ them regularly for waste and duplicate steps; slow or flaky CI is a ticket.
 The merge tier runs one at a time, latest wins: while a run is in progress, each
 push to `main` replaces the pending run, so the next run covers `main`'s head.
 Its result therefore describes the commit it names, which may be several merges
-old. How recent that is depends on run length, which #7 is
-reducing.
+old: at most one run (about 15-30 minutes) behind `main`. Every job has a
+`timeout-minutes` cap, so a hung run can't stall the queue.
 
 ### Red main
 
