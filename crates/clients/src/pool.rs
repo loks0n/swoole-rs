@@ -60,6 +60,10 @@ pub extern "C" fn swr_v1_clients_pool_create() -> *mut c_void {
     if !allocation_allowed() {
         return std::ptr::null_mut();
     }
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<Pool>()"
+    )]
     let memory = unsafe { alloc(Layout::new::<Pool>()) }.cast::<Pool>();
     if !memory.is_null() {
         unsafe {

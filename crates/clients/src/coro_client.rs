@@ -39,7 +39,7 @@ pub extern "C" fn swr_v1_clients_coro_next(
         (2, 0) if length == 0 => (23, 0),
         (2, 0) => (0, 0),
         (2, 1) if result < 0 => (3, 0),
-        (2, 1) if (result as usize) < length && facts != 0 => (4, 0),
+        (2, 1) if result.unsigned_abs() < length && facts != 0 => (4, 0),
         (2, 1) => (5, 0),
         (3, 0) if facts != 0 => (8, 0), // framed receive
         (3, 0) => (9, 0),

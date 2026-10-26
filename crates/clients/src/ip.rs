@@ -24,7 +24,7 @@ fn ipv4(text: &str, allow_zeroes: bool) -> Option<Ipv4Addr> {
                 return None;
             }
         }
-        *octet = value as u8;
+        *octet = u8::try_from(value).ok()?;
     }
     if parts.next().is_some() {
         return None;
@@ -183,6 +183,8 @@ pub unsafe extern "C" fn swr_v1_clients_ip_text(version: u8, address: *const u8)
             end += 2;
         }
     }
-    output.length = end as u32;
+    #[expect(clippy::cast_possible_truncation, reason = "end <= output.bytes.len()")]
+    let length = end as u32;
+    output.length = length;
     output
 }

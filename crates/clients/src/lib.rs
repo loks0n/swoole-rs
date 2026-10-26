@@ -1,11 +1,4 @@
 //! Client policy and private persistent-pool storage; native Client/Zend effects stay native.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_ptr_alignment,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
 
 pub mod async_client;
 pub mod coro_client;
@@ -272,7 +265,13 @@ pub unsafe extern "C" fn swr_v1_clients_domain_encode(
     {
         if byte == b'.' {
             let label_length = index - position;
-            output[position] = label_length as u8;
+            // Upstream's (char) length byte: a label over 255 bytes wraps, as in C.
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "upstream's (char) label length"
+            )]
+            let length_byte = label_length as u8;
+            output[position] = length_byte;
             position += label_length + 1;
         }
     }
@@ -302,7 +301,7 @@ pub unsafe extern "C" fn swr_v1_clients_domain_decode(
             break;
         }
         let length = if signed_char != 0 {
-            (bytes[index] as i8 as i32) as u32
+            i32::from(bytes[index].cast_signed()).cast_unsigned()
         } else {
             u32::from(bytes[index])
         };

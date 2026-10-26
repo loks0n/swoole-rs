@@ -62,7 +62,7 @@ pub unsafe extern "C" fn swr_v1_clients_async_event(
     {
         let count = original_length.min(name.len());
         if bytes.get(..count) == Some(&name[..count]) {
-            return index as u32 + 1;
+            return u32::try_from(index).map_or(0, |index| index + 1);
         }
     }
     0

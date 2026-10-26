@@ -37,7 +37,7 @@ impl Writer {
         let mut offset = digits.len();
         loop {
             offset -= 1;
-            digits[offset] = b'0' + (number % 10) as u8;
+            digits[offset] = b"0123456789"[number % 10];
             number /= 10;
             if number == 0 {
                 break;
@@ -87,11 +87,16 @@ fn c_string(bytes: &[u8]) -> &[u8] {
 fn precision_string(bytes: &[u8]) -> &[u8] {
     // Both supported native hosts use32-bit int precision. Preserve their
     // explicit C++ size_t->int narrowing, including negative precision.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "the C++ size_t->int narrowing described above"
+    )]
     let precision = bytes.len() as i32;
     c_string(if precision < 0 {
         bytes
     } else {
-        &bytes[..precision as usize]
+        &bytes[..precision.unsigned_abs() as usize]
     })
 }
 /// # Safety
