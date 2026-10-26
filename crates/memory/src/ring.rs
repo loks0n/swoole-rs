@@ -67,6 +67,10 @@ impl Ring {
             if unsafe { AtomicU16::from_ptr(item.cast()) }.load(Ordering::Acquire) != 0 {
                 break;
             }
+            #[expect(
+                clippy::cast_ptr_alignment,
+                reason = "records start 8-aligned (see Ring)"
+            )]
             // SAFETY: as above; the acquire load published this record's header.
             let length = unsafe { item.wrapping_add(4).cast::<u32>().read() };
             let Some(next) = length
@@ -138,7 +142,12 @@ pub unsafe extern "C" fn swr_v1_memory_ring_construct(
     let header = unsafe { &mut *storage };
     header.memory = storage.cast::<u8>().wrapping_add(32);
     header.size = total - 32;
-    header.shared = shared as u8;
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "a native uint8_t flag field"
+    )]
+    let flag = shared as u8;
+    header.shared = flag;
     0
 }
 #[unsafe(no_mangle)]
@@ -175,8 +184,14 @@ unsafe fn allocate(state: *mut Ring, requested: u32) -> *mut c_void {
             if skip >= 8 {
                 // `alloc_offset + 8 <= size` (`skip >= 8`), so a whole header fits here.
                 let item = c.memory.wrapping_add(c.alloc_offset as usize);
+                #[expect(
+                    clippy::cast_ptr_alignment,
+                    reason = "records start 8-aligned (see Ring)"
+                )]
                 // SAFETY: as above; only the producer writes this unpublished header.
-                unsafe { item.wrapping_add(4).cast::<u32>().write(skip - 8) };
+                unsafe {
+                    item.wrapping_add(4).cast::<u32>().write(skip - 8)
+                };
                 // SAFETY: as above; the aligned lock is only accessed atomically.
                 unsafe { AtomicU16::from_ptr(item.cast()) }.store(0, Ordering::Release);
                 count.fetch_add(1, Ordering::SeqCst);
@@ -198,14 +213,25 @@ unsafe fn allocate(state: *mut Ring, requested: u32) -> *mut c_void {
     }
     // `capacity >= total` bytes are free at `alloc_offset`, so the header and payload fit.
     let item = c.memory.wrapping_add(c.alloc_offset as usize);
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_ptr_alignment,
+        reason = "records start 8-aligned (see Ring); the native uint16_t alloc count"
+    )]
     // SAFETY: as above; only the producer writes this unpublished header.
     unsafe {
         item.wrapping_add(2)
             .cast::<u16>()
             .write(c.alloc_count as u16)
     };
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "records start 8-aligned (see Ring)"
+    )]
     // SAFETY: as above.
-    unsafe { item.wrapping_add(4).cast::<u32>().write(size) };
+    unsafe {
+        item.wrapping_add(4).cast::<u32>().write(size)
+    };
     // SAFETY: as above; the aligned lock is only accessed atomically.
     unsafe { AtomicU16::from_ptr(item.cast()) }.store(1, Ordering::Release);
     c.alloc_offset += total;
@@ -310,4 +336,9 @@ pub unsafe extern "C" fn swr_v1_memory_ring_free(
 
 #[cfg(test)]
 #[path = "../../../tests/modules/memory/ring.rs"]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_ptr_alignment,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests;

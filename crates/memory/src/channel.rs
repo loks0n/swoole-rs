@@ -18,21 +18,37 @@ pub struct Channel {
     maxlen: i32,
     mem: *mut u8,
 }
+/// A cursor `valid` has bounded to `0..size`, with `size <= isize::MAX`.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "valid() bounds cursors to 0..size <= isize::MAX"
+)]
+const fn offset(cursor: i64) -> usize {
+    cursor as usize
+}
+/// A size or packet length `valid` has bounded to `isize::MAX`.
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "valid() bounds sizes to isize::MAX"
+)]
+const fn signed(size: usize) -> i64 {
+    size as i64
+}
 fn valid(c: &Channel) -> bool {
     // These predicates only read scalar POD fields. Combine them eagerly so
     // native callers do not pay a dependent branch for every invariant. Keep
     // pointer dereferences and queue writes behind the combined result.
     (!c.mem.is_null())
         & (c.size > 0)
-        & (c.size <= (isize::MAX as usize).saturating_sub(c.maxlen.max(0) as usize + 4))
-        // The bounded size above is <= isize::MAX, so unsigned cursor
-        // comparisons reject negative cursors and the upper bound together.
-        & ((c.head as usize) < c.size)
-        & ((c.tail as usize) < c.size)
+        & (c.size <= (isize::MAX as usize).saturating_sub(c.maxlen.max(0).unsigned_abs() as usize + 4))
+        // A negative cursor fails the conversion, so these check both bounds.
+        & usize::try_from(c.head).is_ok_and(|head| head < c.size)
+        & usize::try_from(c.tail).is_ok_and(|tail| tail < c.size)
         & ((c.head_tag | c.tail_tag) <= 1)
         & (c.num >= 0)
         & (c.maxlen >= 0)
-        & (c.maxlen as usize <= c.size)
+        & (c.maxlen.unsigned_abs() as usize <= c.size)
 }
 // Short channel records should not need a dynamic libc memcpy dispatch. Copy
 // fixed-width endpoints, which may overlap each other but stay inside both
@@ -92,7 +108,7 @@ pub unsafe extern "C" fn swr_v1_memory_channel_in(
     if !valid(c) || length > c.maxlen || c.num == i32::MAX {
         return -1;
     }
-    let Some(used) = (c.num as usize)
+    let Some(used) = (c.num.unsigned_abs() as usize)
         .checked_mul(4)
         .and_then(|n| c.bytes.checked_add(n))
     else {
@@ -101,22 +117,28 @@ pub unsafe extern "C" fn swr_v1_memory_channel_in(
     if c.head == c.tail && c.tail_tag != c.head_tag || used == c.size {
         return -1;
     }
-    let packet = length as usize + 4;
-    if c.tail < c.head && (c.head - c.tail) < packet as i64 {
+    let packet = length.unsigned_abs() as usize + 4;
+    if c.tail < c.head && (c.head - c.tail) < signed(packet) {
         return -1;
     }
-    let Some(bytes) = c.bytes.checked_add(length as usize) else {
+    let Some(bytes) = c.bytes.checked_add(length.unsigned_abs() as usize) else {
         return -1;
     };
     // `tail < size` and `length <= maxlen` (validated), so the header and record fit in
     // `mem` (see `Channel`); the room check above keeps them clear of unread records.
-    let item = c.mem.wrapping_add(c.tail as usize);
+    let item = c.mem.wrapping_add(offset(c.tail));
     // SAFETY: as above.
     unsafe { item.cast::<i32>().write_unaligned(length) };
     // SAFETY: as above; `input` lends `length` readable bytes, disjoint from `mem`.
-    unsafe { copy_record(input.cast::<u8>(), item.wrapping_add(4), length as usize) };
-    c.tail += packet as i64;
-    if c.tail >= c.size as i64 {
+    unsafe {
+        copy_record(
+            input.cast::<u8>(),
+            item.wrapping_add(4),
+            length.unsigned_abs() as usize,
+        )
+    };
+    c.tail += signed(packet);
+    if c.tail >= signed(c.size) {
         c.tail = 0;
         c.tail_tag = 1 - c.tail_tag;
     }
@@ -142,12 +164,12 @@ pub unsafe extern "C" fn swr_v1_memory_channel_out(
         // SAFETY: `channel` is non-null (checked above), aligned and exclusive per the caller contract.
         let c = unsafe { &mut *channel };
         c.head += length as i64 + 4;
-        if c.head >= c.size as i64 {
+        if c.head >= signed(c.size) {
             c.head = 0;
             c.head_tag = 1 - c.head_tag;
         }
         c.num -= 1;
-        c.bytes -= length as usize;
+        c.bytes -= length.unsigned_abs() as usize;
     }
     length
 }
@@ -156,20 +178,26 @@ unsafe fn read_record(c: &Channel, output: *mut c_void, capacity: i32) -> i32 {
         return -1;
     }
     // `head < size` (validated), so the 4-byte header is inside `mem` (see `Channel`).
-    let item = c.mem.wrapping_add(c.head as usize);
+    let item = c.mem.wrapping_add(offset(c.head));
     // SAFETY: as above; `num > 0` means a record header was written there.
     let length = unsafe { item.cast::<i32>().read_unaligned() };
     if length < 0
         || length > c.maxlen
         || length > capacity
-        || length as usize > c.bytes
+        || length.unsigned_abs() as usize > c.bytes
         || length > 0 && output.is_null()
     {
         return -1;
     }
     // SAFETY: `length <= maxlen` record bytes follow the header inside `mem`; `output` has
     // `capacity >= length` writable, disjoint bytes.
-    unsafe { copy_record(item.wrapping_add(4), output.cast::<u8>(), length as usize) };
+    unsafe {
+        copy_record(
+            item.wrapping_add(4),
+            output.cast::<u8>(),
+            length.unsigned_abs() as usize,
+        )
+    };
     length
 }
 /// Independent descriptor, not a C++ object or prefix. Its disjoint typed targets
@@ -270,13 +298,13 @@ pub struct StoragePlan {
     flags: i32,
 }
 impl StoragePlan {
-    fn new(size: usize, maxlen: usize, flags: i32, header_size: usize) -> Option<Self> {
-        let maxlen = i32::try_from(maxlen).ok()?;
-        if size < maxlen as usize || header_size == 0 {
+    fn new(size: usize, length: usize, flags: i32, header_size: usize) -> Option<Self> {
+        let maxlen = i32::try_from(length).ok()?;
+        if size < length || header_size == 0 {
             return None;
         }
         let total = size
-            .checked_add(maxlen as usize)?
+            .checked_add(length)?
             .checked_add(4)?
             .checked_add(header_size)?;
         (total <= isize::MAX as usize).then_some(Self {
@@ -326,12 +354,11 @@ pub unsafe extern "C" fn swr_v1_memory_channel_storage_init(
     // SAFETY: `plan` is non-null (checked above), aligned and initialized per the caller contract.
     let plan = unsafe { plan.read() };
     if !fields.valid()
-        || StoragePlan::new(
-            plan.size,
-            plan.maxlen as usize,
-            plan.flags,
-            plan.header_size,
-        ) != Some(plan)
+        // A negative maxlen fails the conversion and is refused like any other mismatch.
+        || usize::try_from(plan.maxlen)
+            .ok()
+            .and_then(|maxlen| StoragePlan::new(plan.size, maxlen, plan.flags, plan.header_size))
+            != Some(plan)
         || memory
             .addr()
             .checked_add(plan.total - plan.header_size)
@@ -431,6 +458,10 @@ pub unsafe extern "C" fn swr_v1_memory_channel_full(state: *const CapacityState)
     }
     // SAFETY: `state` is non-null (checked above), aligned and initialized per the caller contract.
     let state = unsafe { &*state };
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "native size_t arithmetic on the int record count"
+    )]
     let occupied = state
         .bytes
         .wrapping_add((state.num as usize).wrapping_mul(4));
@@ -494,4 +525,10 @@ pub unsafe extern "C" fn swr_v1_memory_channel_lifecycle(
 
 #[cfg(test)]
 #[path = "../../../tests/modules/memory/channel.rs"]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests;

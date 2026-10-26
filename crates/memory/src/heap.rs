@@ -59,8 +59,14 @@ impl Heap {
     }
     fn place(&mut self, index: usize, node: NonNull<Node>) {
         self.nodes[index] = node;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "native uint32_t positions; insert refuses len >= u32::MAX - 1"
+        )]
         // SAFETY: a node owned by this heap (see `Heap`).
-        unsafe { (*node.as_ptr()).position = index as u32 + 1 };
+        unsafe {
+            (*node.as_ptr()).position = index as u32 + 1
+        };
     }
     fn up(&mut self, index: usize) {
         if self.max {
@@ -207,6 +213,10 @@ pub unsafe extern "C" fn swr_v1_memory_heap_create(
     if heap.nodes.try_reserve_exact(capacity).is_err() {
         return -1;
     }
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<Heap>()"
+    )]
     // SAFETY: `Heap` is not zero-sized; null is handled below.
     let result = unsafe { alloc(Layout::new::<Heap>()).cast::<Heap>() };
     if result.is_null() {
@@ -270,6 +280,10 @@ pub unsafe extern "C" fn swr_v1_memory_heap_push(
     if heap.nodes.len() >= u32::MAX as usize - 1 || heap.nodes.try_reserve(1).is_err() {
         return ptr::null_mut();
     }
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<Node>()"
+    )]
     let Some(node) = heap
         .spare
         .take()
@@ -283,6 +297,10 @@ pub unsafe extern "C" fn swr_v1_memory_heap_push(
     unsafe {
         node.as_ptr().write(Node {
             priority,
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "native uint32_t positions; insert refuses len >= u32::MAX - 1"
+            )]
             position: index as u32 + 1,
             data,
         })
@@ -347,4 +365,8 @@ pub unsafe extern "C" fn swr_v1_memory_heap_pop(heap: *mut c_void) -> *mut c_voi
 
 #[cfg(test)]
 #[path = "../../../tests/modules/memory/heap.rs"]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests;

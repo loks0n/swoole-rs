@@ -50,6 +50,10 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_open(output: *mut *mut OwnedCo
     }
     // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(ptr::null_mut()) };
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<OwnedColumns>()"
+    )]
     // SAFETY: a non-zero-sized layout; null is handled below.
     let owner = unsafe { alloc(Layout::new::<OwnedColumns>()).cast::<OwnedColumns>() };
     if owner.is_null() {
