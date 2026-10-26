@@ -32,12 +32,22 @@ def apply_http_patch(tree, patch, report):
     return proof
 
 def body(source, signature):
-    start = source.index(signature); brace = source.index('{', start); end = brace + 1; depth = 1
-    while depth:
-        if source[end] == '{': depth += 1
-        if source[end] == '}': depth -= 1
-        end += 1
-    return source[start:end]
+    """The definition starting at signature. Braces count only in the first branch of
+    each #if/#else, so alternatives such as `#if A switch (x) { #else switch (y) { #endif`
+    are counted once."""
+    start = source.index(signature); position = source.index('{', start); depth = 0; branches = []
+    for line in source[position:].splitlines(keepends=True):
+        directive = line.strip()
+        if directive.startswith('#if'): branches.append(False)
+        elif directive.startswith(('#else', '#elif')) and branches: branches[-1] = True
+        elif directive.startswith('#endif') and branches: branches.pop()
+        elif not any(branches):
+            for offset, char in enumerate(line):
+                depth += (char == '{') - (char == '}')
+                if depth == 0 and char == '}':
+                    return source[start:position + offset + 1]
+        position += len(line)
+    raise ValueError('Unterminated definition: ' + signature)
 def extract(source, namespace):
     parts = ['static thread_local char http_status_message[128];']
     if 'static const char *method_strings[]' in source:
