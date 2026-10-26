@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -912,6 +913,18 @@ def shard_spec(value):
     return int(index), int(count)
 
 
+def execute(command, *, timeout, **options):
+    """subprocess.run in its own process group; on timeout the whole group (servers a phase
+    started included) is killed and returncode is None."""
+    process = subprocess.Popen(command, start_new_session=True, **options)
+    try:
+        return subprocess.CompletedProcess(command, process.wait(timeout=timeout))
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+        return subprocess.CompletedProcess(command, None)
+
+
 def schedule(commands, dependencies):
     """Plan order, except that serial phases nothing reads from move to the end of their
     barrier segment, so they don't drain the pipeline in the middle of parallel work."""
@@ -962,6 +975,8 @@ def main():
     parser.add_argument('--benchmark', action='store_true', help='Run isolated benchmarks after all correctness phases pass')
     parser.add_argument('--compare', action='store_true', help='Also rerun upstream controls in the candidate lane (integration always does)')
     parser.add_argument('--phase', action='append', help='Run named canonical phases only; omitted gates remain explicitly not run and cannot qualify full integration')
+    parser.add_argument('--phase-timeout', type=int, default=1200, metavar='SECONDS',
+                        help='Kill a phase (and the processes it started) after this long; it fails')
     parser.add_argument('--shard', type=shard_spec, metavar='I/N',
                         help='Run slice I of N of the integrate plan; every slice builds and runs the barriers')
     parser.add_argument('--artifacts-from', type=Path, help='Reuse verified exports from an existing same-source report for explicit correctness phases; never reuse test outcomes')
@@ -1043,9 +1058,14 @@ def main():
         print(f'[{name}] {shlex.join(command)}', flush=True)
         phase_started = time.monotonic()
         with (reports / (name + '.log')).open('w') as log:
-            result = subprocess.run(command, cwd=ROOT, env=environment, stdout=log, stderr=subprocess.STDOUT)
+            result = execute(command, timeout=args.phase_timeout, cwd=ROOT, env=environment, stdout=log,
+                             stderr=subprocess.STDOUT)
+            if result.returncode is None:
+                log.write(f'\ndev.py: phase timed out after {args.phase_timeout}s and was killed\n')
         row = {'phase': name, 'command': command, 'seconds': round(time.monotonic() - phase_started, 4),
                'returncode': result.returncode, 'failed': result.returncode != 0, 'log': str(reports / (name + '.log'))}
+        if result.returncode is None:
+            row['timed_out'] = True
         outcome_flag = next((flag for flag in ('--output', '--report') if flag in command), None)
         if outcome_flag:
             path = Path(command[command.index(outcome_flag) + 1])
@@ -1103,7 +1123,11 @@ def main():
         return bool(row['failed'] and args.lane != 'integrate')
 
     def worker(name, command):
-        row = run_phase(name, command)
+        try:
+            row = run_phase(name, command)
+        except Exception as error:  # a dead worker would leave the scheduler waiting forever
+            row = {'phase': name, 'command': command, 'seconds': 0, 'returncode': None, 'failed': True,
+                   'log': str(reports / (name + '.log')), 'outcome_error': f'dev.py: {type(error).__name__}: {error}'}
         with lock:
             running.discard(name)
             finished.add(name)

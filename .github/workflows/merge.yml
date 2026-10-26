@@ -16,6 +16,7 @@ jobs:
   # by tools/phase_weights.json (dev.py --shard).
   full-gates:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -79,6 +80,7 @@ jobs:
   # on upstream must pass on the hybrid (corpus/upstream/gate.py).
   phpt-build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/install
@@ -112,6 +114,7 @@ jobs:
   # (typed arrays, methods on scalars), so it gets its own engines and its own gate.
   phpt-stdext:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/install
@@ -152,7 +155,7 @@ jobs:
   phpt:
     needs: phpt-build
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -240,6 +243,7 @@ jobs:
   # against both. Project 11 needs --fix-halfclose and is covered by the PR tier.
   alpine:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     container: php:8.5-alpine
     env:
       PHP_EXTENSIONS: --php-extension sockets --php-extension pcntl

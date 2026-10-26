@@ -934,7 +934,7 @@ class Lanes(unittest.TestCase):
             def run(command, *args, **kwargs):
                 return SimpleNamespace(returncode=0) if command == ['fixture-build'] else actual_run(command, *args, **kwargs)
             with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=[('build',['fixture-build'])]), \
-                 patch.object(dev, 'require_build_space'), patch.object(dev.subprocess, 'run', side_effect=run), \
+                 patch.object(dev, 'require_build_space'), patch.object(dev, 'execute', side_effect=run), \
                  patch('sys.argv',['dev.py','integrate','--all-modules','--fix-halfclose']):
                 self.assertEqual(dev.main(),0)
             reports = list(root.glob('target/reports/dev/*/loop.json'))
@@ -1030,7 +1030,7 @@ class FocusedPhases(unittest.TestCase):
                 root = Path(directory)
                 planned = [('ownership', ['check-ownership']), ('api', ['check-api']), ('originals', ['check-originals'])]
                 with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
-                     patch.object(dev.subprocess, 'run', side_effect=[SimpleNamespace(returncode=code) for code in codes]) as run, \
+                     patch.object(dev, 'execute', side_effect=[SimpleNamespace(returncode=code) for code in codes]) as run, \
                      patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer', '--phase', 'api', '--phase', 'ownership', '--phase', 'api']):
                     self.assertEqual(dev.main(), exit_code)
                 report = json.loads(next(root.glob('target/reports/dev/*/loop.json')).read_text())
@@ -1049,7 +1049,7 @@ class FocusedPhases(unittest.TestCase):
                 planned = [(phase, ['failed-prerequisite']), ('api', ['stale-alias']), ('originals', ['old-engine'])]
                 with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
                      patch.object(dev, 'require_build_space'), \
-                     patch.object(dev.subprocess, 'run', return_value=SimpleNamespace(returncode=2)) as run, \
+                     patch.object(dev, 'execute', return_value=SimpleNamespace(returncode=2)) as run, \
                      patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer']):
                     self.assertEqual(dev.main(), 1)
                 run.assert_called_once()
@@ -1068,7 +1068,7 @@ class FocusedPhases(unittest.TestCase):
             planned = [('first', ['fixture']), ('second', ['fixture']), ('third', ['fixture'])]
             results = iter([1, 0, 2])
             with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
-                 patch.object(dev.subprocess, 'run', side_effect=lambda *a, **k: SimpleNamespace(returncode=next(results))), \
+                 patch.object(dev, 'execute', side_effect=lambda *a, **k: SimpleNamespace(returncode=next(results))), \
                  patch.dict(os.environ, {'GITHUB_STEP_SUMMARY': str(summary)}), \
                  patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer', '--jobs', '1']), \
                  patch('sys.stdout', new_callable=__import__('io').StringIO) as stdout:
@@ -1096,7 +1096,7 @@ class FocusedPhases(unittest.TestCase):
                 output.write_text(json.dumps(dict(passed=False, error=error, **details)))
                 planned = [('module-sdk', ['fixture', '--report', str(output)]), ('originals', ['later'])]
                 with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
-                     patch.object(dev.subprocess, 'run', return_value=SimpleNamespace(returncode=1)) as run, \
+                     patch.object(dev, 'execute', return_value=SimpleNamespace(returncode=1)) as run, \
                      patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer', '--jobs', '1']):
                     self.assertEqual(dev.main(), 1)
                 report = json.loads(next(root.glob('target/reports/dev/*/loop.json')).read_text())
@@ -1126,7 +1126,7 @@ class FocusedPhases(unittest.TestCase):
                     output.write_text(payload if isinstance(payload, str) else json.dumps(payload))
                 planned = [('ownership', ['fixture', flag, str(output)]), ('originals', ['later'])]
                 with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
-                     patch.object(dev.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), \
+                     patch.object(dev, 'execute', return_value=SimpleNamespace(returncode=0)), \
                      patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer', '--phase', 'ownership']):
                     self.assertEqual(dev.main(), int(failed))
                 report = json.loads(next(root.glob('target/reports/dev/*/loop.json')).read_text())
@@ -1146,7 +1146,7 @@ class FocusedPhases(unittest.TestCase):
             with self.subTest(extra=extra), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory)
                 with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=[('ownership', ['fixture'])]), \
-                     patch.object(dev.subprocess, 'run') as run, patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer', *extra]), \
+                     patch.object(dev, 'execute') as run, patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer', *extra]), \
                      contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                     dev.main()
                 run.assert_not_called()
@@ -1156,7 +1156,7 @@ class FocusedPhases(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=[('ownership', ['fixture'])]), \
-                 patch.object(dev.subprocess, 'run', return_value=SimpleNamespace(returncode=0)), \
+                 patch.object(dev, 'execute', return_value=SimpleNamespace(returncode=0)), \
                  patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer', '--phase', 'ownership']):
                 self.assertEqual(dev.main(), 0)
             report = json.loads(next(root.glob('target/reports/dev/*/loop.json')).read_text())
