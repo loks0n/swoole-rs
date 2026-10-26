@@ -1,5 +1,18 @@
 # swoole-rs
 
+[![Merge tier](https://github.com/loks0n/swoole-rs/actions/workflows/merge.yml/badge.svg?branch=main)](https://github.com/loks0n/swoole-rs/actions/workflows/merge.yml?query=branch%3Amain)
+[![Upstream C++ replaced](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Floks0n%2Fswoole-rs%2Fbadges%2Freplaced.json)](https://github.com/loks0n/swoole-rs/issues/125)
+[![Graduated leaf modules](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Floks0n%2Fswoole-rs%2Fbadges%2Fgraduated.json)](https://github.com/loks0n/swoole-rs/issues/125)
+[![Upstream PHPTs passing](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Floks0n%2Fswoole-rs%2Fbadges%2Fphpt.json)](https://github.com/loks0n/swoole-rs/issues/58)
+
+Progress: [Phase 1, green baseline](https://github.com/loks0n/swoole-rs/issues/20) ·
+[Phase 2, wider oracle](https://github.com/loks0n/swoole-rs/issues/58) · [Phase 3, graduate and delete](https://github.com/loks0n/swoole-rs/issues/125) ·
+[Appwrite on swoole-rs](https://github.com/loks0n/swoole-rs/issues/90) · [differential fuzzing](https://github.com/loks0n/swoole-rs/issues/100) ·
+[lint-enforced Rust](https://github.com/loks0n/swoole-rs/issues/160). The badges come from `tools/badges.py`
+(`.github/workflows/badges.yml`): upstream C++ replaced counts upstream first-party
+lines the all-modules patch set deletes, and the PHPT badge names the commit its
+merge-tier run measured.
+
 A gradual C/C++ to Rust migration of the [Swoole](https://github.com/swoole/swoole-src)
 PHP extension. Upstream Swoole v6.2.4 (pinned at `c7e51450`) keeps its PHP runtime;
 bounded subsystems are replaced with Rust linked into the upstream extension through
