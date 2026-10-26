@@ -327,6 +327,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     container: php:8.5-alpine
+    # The image has no bash, so this job can't use the workflow's bash default.
+    defaults:
+      run:
+        shell: sh
     env:
       PHP_EXTENSIONS: --php-extension sockets --php-extension pcntl
     steps:
