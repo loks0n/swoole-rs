@@ -43,7 +43,7 @@ pub unsafe extern "C" fn swr_v1_os_file_content_next(
         }
         2 => {
             state.phase = 3;
-            if crate::swr_v1_os_content(state.size as u64, maximum) == 2 {
+            if crate::swr_v1_os_content(state.size.cast_unsigned(), maximum) == 2 {
                 5
             } else {
                 6
@@ -78,7 +78,7 @@ mod tests {
                         vec![1, 0]
                     } else if size == 0 {
                         vec![1, 4]
-                    } else if size as u64 > maximum {
+                    } else if size.cast_unsigned() > maximum {
                         vec![1, 2, 5]
                     } else {
                         vec![1, 2, 6]

@@ -1,11 +1,4 @@
 //! OS support policy. All storage, syscalls, threads and callbacks remain native.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_ptr_alignment,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
 mod read_content;
 pub use read_content::{ReadContentState, swr_v1_os_read_content_next};
 mod file_content;
@@ -18,6 +11,25 @@ mod file_line;
 pub use file_line::{FileLineResult, swr_v1_os_file_line_result};
 mod file_io;
 pub use file_io::{FileIoState, swr_v1_os_file_io_next};
+
+/// C's `(size_t)` of an `ssize_t`, as the native policy computes it.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "size_t and ssize_t are both 64-bit on the LP64 targets Swoole supports"
+)]
+const fn size_t(value: i64) -> usize {
+    value as usize
+}
+
+/// C's `(ssize_t)` of a `size_t`, as the native policy computes it.
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "size_t and ssize_t are both 64-bit on the LP64 targets Swoole supports"
+)]
+const fn ssize_t(value: usize) -> i64 {
+    value as i64
+}
 #[repr(C)]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PoolConfig {
@@ -280,6 +292,10 @@ pub struct QueueItem {
 /// Fallible handle allocation; no Box allocation failure handler or native callback.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_os_queue_create() -> *mut OsQueue {
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<OsQueue>()"
+    )]
     let memory =
         unsafe { std::alloc::alloc(std::alloc::Layout::new::<OsQueue>()) }.cast::<OsQueue>();
     if !memory.is_null() {
