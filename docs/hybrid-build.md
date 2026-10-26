@@ -124,9 +124,6 @@ All default off and get their own alias suffix and manifest input.
 | Switch | Requires | Effect |
 | --- | --- | --- |
 | `--fix-halfclose` | — | M15 native patches: drain queued output before close. No Rust feature bit. Changes behavior relative to the reference; does not make general TCP half-close work. |
-| `--http-rewrite-store` | `--module http` | Rust-owned HTTP rewrite-rule storage (`--enable-swoole-rs-http-rewrite-store`). |
-| `--http-static-config` | `--module http` | Rust-owned `StaticConfig` and static consumers. Changes the public Server configuration fields and layout; rebuild SDK consumers. |
-| `--http-legacy-directory-store` | `--module http` | Rust-owned legacy StaticHandler directory catalog. Old compiled `std::set` callers are not compatible; rebuild consumers. |
 | `--buffer-typed` | `--module buffer --module reactor` | Rust Buffer cursor with converted Socket/reactor/server callers. Legacy mutable DATA front/allocation is refused in this mode, so unconverted consumers break. |
 | `--reactor-{iov,defer,sockets}-owned` | `--module reactor` | Rust-owned iov/defer/sockets storage. |
 

@@ -3,8 +3,7 @@
 `StaticHandlerV2`, chosen by `Server::select_static_handler`, keeps directory
 names in one opaque Rust owner. There is no native copy of the collection, no
 side table and no exported Rust name pointer. The legacy `StaticHandler` keeps its
-native `std::set` unless the Legacy directory store is enabled (see
-[legacy-directory.md](legacy-directory.md)). V2 cannot be copied.
+native `std::set`. V2 cannot be copied.
 
 ## Exports
 

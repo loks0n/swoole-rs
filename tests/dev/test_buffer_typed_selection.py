@@ -16,13 +16,13 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class TypedBufferSelection(unittest.TestCase):
-    def test_typed_and_http_capabilities_remain_independent(self):
+    def test_typed_buffer_selection_stays_independent(self):
         variants = set()
-        for typed, static, rewrite in product([False, True], repeat=3):
+        for typed in [False, True]:
             args = SimpleNamespace(lane='integrate', module=['buffer', 'reactor', 'http'], all_modules=False,
                                    php='php', php_extension=[], jobs=2, test=None, case=None,
                                    benchmark=False, compare=False, fix_halfclose=False,
-                                   buffer_typed=typed, http_static_config=static, http_rewrite_store=rewrite)
+                                   buffer_typed=typed)
             commands = dict(dev.plan(args, ROOT/'target/reports/typed-unit'))
             self.assertEqual('--buffer-typed' in commands['build'], typed)
             self.assertNotIn('--buffer-typed', commands['reference-build'])
@@ -42,7 +42,7 @@ class TypedBufferSelection(unittest.TestCase):
             for phase in ['reactor-ordered', 'http-full-originals']:
                 self.assertIn(phase, commands)
             variants.add(dev.build_variant(args))
-        self.assertEqual(len(variants), 8)
+        self.assertEqual(len(variants), 2)
 
     def test_reuse_requires_exact_native_and_selected_configuration(self):
         for capability in ['buffer_typed']:
