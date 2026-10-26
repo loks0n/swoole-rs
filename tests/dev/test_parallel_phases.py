@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 import tempfile
 import threading
-import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -13,16 +12,18 @@ from tools import dev
 
 class ParallelPhases(unittest.TestCase):
     def run_plan(self, planned, jobs):
-        """Run `planned` with each phase sleeping briefly; return the overlap seen and the report."""
-        lock, running, overlaps = threading.Lock(), set(), []
+        """Run `planned`, each phase holding until another starts (or briefly); return the overlap seen and the report."""
+        started, running, overlaps = threading.Condition(), set(), []
 
         def fake(command, **_):
             name = command[0]
-            with lock:
+            with started:
                 overlaps.append((name, frozenset(running)))
                 running.add(name)
-            time.sleep(0.05)
-            with lock:
+                count = len(overlaps)
+                started.notify_all()
+                # Hold until a later phase starts, so overlap doesn't depend on thread timing.
+                started.wait_for(lambda: len(overlaps) > count, timeout=0.3 if jobs > 1 else 0)
                 running.discard(name)
             return SimpleNamespace(returncode=0)
 
@@ -39,7 +40,7 @@ class ParallelPhases(unittest.TestCase):
         planned = [('a', ['a']), ('b', ['b']), ('ownership', ['ownership']), ('c', ['c']), ('d', ['d']),
                    ('e-originals', ['e-originals']), ('f', ['f'])]
         overlaps, report = self.run_plan(planned, 4)
-        self.assertEqual(overlaps['b'], {'a'})
+        self.assertTrue('a' in overlaps['b'] or 'b' in overlaps['a'], 'a and b should overlap')
         self.assertEqual(overlaps['ownership'], set())
         self.assertEqual(overlaps['e-originals'], set())
         self.assertNotIn('ownership', overlaps['c'] | overlaps['d'] | overlaps['f'])
