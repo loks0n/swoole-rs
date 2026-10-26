@@ -14,7 +14,7 @@ import re
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tools.build_hybrid import MODULES
+from tools.build_hybrid import SELECTABLE
 
 STAGE = re.compile(r'^FROM compile AS swoole\n.*?strip /artifacts/swoole\.so\n', re.M | re.S)
 
@@ -27,7 +27,7 @@ def rewrite(dockerfile, variant):
     configure = ' '.join(f'--configure={flag}' for flag in flags if flag != '--enable-sockets')
     build = 'python3 tools/build_upstream.py --no-ccache --php-sockets ' + configure
     if variant == 'hybrid':
-        modules = ' '.join(f'--module {name}' for name in sorted(MODULES))
+        modules = ' '.join(f'--module {name}' for name in SELECTABLE)
         build += f' && \\\n  cargo fetch --locked && \\\n  python3 tools/build_hybrid.py --no-ccache --php-sockets {configure} {modules}'
         output = 'target/hybrid/rust-*/modules/swoole.so'
     else:
