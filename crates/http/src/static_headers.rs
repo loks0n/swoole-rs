@@ -115,6 +115,11 @@ pub unsafe extern "C" fn swr_v1_http_static_headers(
             sink.append(b"\r\n")?;
             if header.variant == 3 {
                 if header.range_kind == 1 {
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        clippy::cast_sign_loss,
+                        reason = "native size_t arithmetic on the off_t range offset"
+                    )]
                     let end = header
                         .range_length
                         .wrapping_add(header.range_offset as usize)

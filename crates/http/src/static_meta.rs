@@ -85,7 +85,12 @@ pub unsafe extern "C" fn swr_v1_http_static_path_check(
         bytes(
             filename,
             if kind == 0 {
-                length as u32 as usize
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "the native uint32_t filename length"
+                )]
+                let native = length as u32 as usize;
+                native
             } else {
                 length
             },

@@ -111,7 +111,7 @@ pub unsafe extern "C" fn swr_v1_http_method(data: *const u8, length: usize) -> i
     METHODS
         .iter()
         .position(|name| super::case_equal(name.to_bytes(), input))
-        .map_or(-1, |index| index as i32 + 1)
+        .map_or(-1, |index| i32::try_from(index + 1).unwrap_or(-1))
 }
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_http_method_string(method: i32) -> *const c_char {
@@ -130,9 +130,12 @@ mod tests {
             let lower = name.to_bytes().to_ascii_lowercase();
             assert_eq!(
                 unsafe { swr_v1_http_method(lower.as_ptr(), lower.len()) },
-                index as i32 + 1
+                i32::try_from(index + 1).unwrap()
             );
-            assert_eq!(swr_v1_http_method_string(index as i32 + 1), name.as_ptr());
+            assert_eq!(
+                swr_v1_http_method_string(i32::try_from(index + 1).unwrap()),
+                name.as_ptr()
+            );
         }
         assert!(swr_v1_http_method_string(0).is_null());
         assert!(swr_v1_http_method_string(28).is_null());

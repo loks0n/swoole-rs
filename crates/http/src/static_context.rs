@@ -198,6 +198,10 @@ pub unsafe extern "C" fn swr_v2_http_context_new(
         return std::ptr::null_mut();
     }
     filename.resize(capacity, 0);
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<HttpStaticContext>()"
+    )]
     let context = unsafe { alloc(Layout::new::<HttpStaticContext>()).cast::<HttpStaticContext>() };
     if !context.is_null() {
         unsafe {

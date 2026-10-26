@@ -1,11 +1,4 @@
 //! HTTP policy and private directory storage. Native effects run after Rust returns.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_ptr_alignment,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
 use std::{mem::MaybeUninit, slice};
 const INVALID: i32 = -1;
 const OVERFLOW: i32 = -2;

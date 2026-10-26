@@ -29,6 +29,14 @@ fn c_space(byte: u8) -> bool {
 fn starts(input: &[u8], needle: &[u8]) -> bool {
     super::case_prefix(input, needle)
 }
+/// A request-buffer position stored in one of upstream's `uint32_t` Request fields.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "request buffers are capped by package_max_length, a uint32_t"
+)]
+fn field(position: usize) -> u32 {
+    position as u32
+}
 fn request_line(input: &[u8], frame: &mut HttpFrame) -> i32 {
     if input.len() < 16 {
         return INVALID;
@@ -39,10 +47,10 @@ fn request_line(input: &[u8], frame: &mut HttpFrame) -> i32 {
         .iter()
         .position(|m| input.starts_with(m.to_bytes()))
     {
-        frame.method = index as u32 + 1;
+        frame.method = u32::try_from(index + 1).unwrap_or(0);
         METHODS[index].to_bytes().len()
     } else if input.starts_with(b"PRI") {
-        frame.method = METHODS.len() as u32;
+        frame.method = u32::try_from(METHODS.len()).unwrap_or(0);
         if input.starts_with(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n") {
             frame.offset = 24;
             return 0;
@@ -58,13 +66,13 @@ fn request_line(input: &[u8], frame: &mut HttpFrame) -> i32 {
         match state {
             0 => {
                 if input[at] != b' ' {
-                    frame.url_offset = at as u32;
+                    frame.url_offset = field(at);
                     state = 1;
                 }
             }
             1 => match input[at] {
                 b' ' => {
-                    frame.url_length = (at as u32).wrapping_sub(frame.url_offset);
+                    frame.url_length = field(at).wrapping_sub(frame.url_offset);
                     state = 2;
                 }
                 b'\r' | b'\n' => {
@@ -87,7 +95,7 @@ fn request_line(input: &[u8], frame: &mut HttpFrame) -> i32 {
                         }
                     };
                     frame.offset = at + 8;
-                    frame.line_length = frame.offset as u32;
+                    frame.line_length = field(frame.offset);
                     return 0;
                 }
             }
@@ -108,7 +116,7 @@ fn header_end(input: &[u8], frame: &mut HttpFrame) -> i32 {
         .position(|s| s == b"\r\n\r\n")
     {
         frame.offset += at + 4;
-        frame.header_length = frame.offset as u32;
+        frame.header_length = field(frame.offset);
         return 0;
     }
     frame.offset = frame.offset.max(input.len().saturating_sub(3));

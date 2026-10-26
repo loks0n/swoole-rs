@@ -42,7 +42,7 @@ impl HttpMultipartData {
                 }
             }
             1 => {
-                if self.written == self.length as i64 {
+                if i64::try_from(self.length).is_ok_and(|length| self.written == length) {
                     0
                 } else {
                     self.phase = 2;
@@ -82,7 +82,7 @@ pub extern "C" fn swr_v1_http_multipart_result(
 ) -> i32 {
     if processed < 0 {
         -1
-    } else if processed as usize != length {
+    } else if usize::try_from(processed) != Ok(length) {
         i32::from(excepted != 0)
     } else {
         2
