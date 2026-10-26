@@ -49,7 +49,10 @@ environments to one shared machine. Each executor loops:
    merge `origin/main`, push and run it again.
 5. The merge tier runs on `main`: everything above plus every gate, application
    and original PHPT for all modules. Watch it with the command `ci.py merge`
-   prints, `python3 tools/ci.py wait --commit <merge sha>`.
+   prints, `python3 tools/ci.py wait --commit <merge sha>`. If that run was
+   cancelled (exit 3), a later run covers your commit; nothing to do. If it
+   failed, handle its **new failures** as described under *Red main* (CI), and
+   move on.
 6. Validate the change where it lands, comment what was checked on the issue,
    and close it. If it delivers only part of what an issue it blocks needs,
    make the follow-up block that issue too.
@@ -135,3 +138,17 @@ push to `main` replaces the pending run, so the next run covers `main`'s head.
 Its result therefore describes the commit it names, which may be several merges
 old. How recent that is depends on run length, which #7 is
 reducing.
+
+### Red main
+
+`main` is often red, and that's tolerable; never stop other work because of it.
+What must not slip through is a **new** failure: a phase that passed in the
+previous completed merge-tier run, or one that didn't exist then. `ci.py status`
+and `wait` list them as `new failures` for merge-tier runs.
+
+For each new failure, search open issues for the phase name. If none mentions
+it, file a `p0` `kind:bug` issue with the run link, the phase and its log path,
+and the commit range since the previous run (group phases of one module into one
+issue), as a sub-issue of the Phase 1 goal. Then carry on with your own ticket.
+`p0` sorts first, so the next free executor picks it up. Failures that already
+have an issue keep that issue's priority.
