@@ -14,6 +14,16 @@ mkdir -p corpus/base64_decode
 cargo +nightly fuzz run base64_decode corpus/base64_decode seeds/base64_decode -- -dict=base64.dict -max_total_time=60
 ```
 
+Targets: `base64_decode`, `base64_encode`, and for the WebSocket codec
+`ws_decode` (any bytes as one frame: verdict, fields and in-place unmasking),
+`ws_frame_length` (total and header length of any prefix) and `ws_mask` (first
+four bytes as the key; masking twice restores the data). The WebSocket oracle
+compiles upstream's `get_package_length_impl`, `mask` and `decode` bodies
+unchanged, copied by `crates/oracle/build.rs`. Two upstream behaviours are
+excluded: `decode` reads two bytes even from shorter input, and a payload
+within a header of `isize::MAX` overflows its signed length sum (Rust returns
+-1).
+
 libFuzzer writes new inputs to the first corpus directory, so keep `corpus/`
 (ignored) first and the committed `seeds/` second. A failure leaves its input in
 `artifacts/<target>/`; replay it with `cargo +nightly fuzz run <target> <file>`.

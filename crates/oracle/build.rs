@@ -61,6 +61,42 @@ fn original_test(file: &str, test: &str, name: &str) -> PathBuf {
     path
 }
 
+/// The pinned WebSocket length query, mask and decoder with the header definitions
+/// they use, copied unchanged for shim/websocket.cc to compile.
+fn websocket() {
+    let source =
+        fs::read_to_string("upstream/src/protocol/websocket.cc").expect("vendored websocket.cc");
+    let header =
+        fs::read_to_string("upstream/include/swoole_websocket.h").expect("vendored header");
+    let slice = |text: &str, start: &str, end: &str| {
+        let from = text.find(start).expect(start);
+        text[from..from + text[from..].find(end).expect(end)].to_string()
+    };
+    let constants: String = header
+        .lines()
+        .filter(|line| line.starts_with("#define SW_WEBSOCKET_"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    let text = [
+        constants,
+        slice(&header, "enum Flag {", "#define WEBSOCKET_VERSION"),
+        slice(&header, "enum Opcode {", "enum CloseReason {"),
+        slice(
+            &header,
+            "static inline bool is_control_frame",
+            "static inline uint16_t get_ext_flags",
+        ),
+        slice(
+            &source,
+            "static ssize_t get_package_length_impl",
+            "bool encode(",
+        ),
+        slice(&source, "bool decode(", "bool pack_close_frame("),
+    ]
+    .concat();
+    fs::write(out("websocket.inc"), text).unwrap();
+}
+
 /// A C++ build that matches the Rust side's sanitizer, so `cargo fuzz`'s ASan
 /// also checks the upstream code.
 fn cpp() -> cc::Build {
@@ -84,6 +120,7 @@ fn main() {
 
     // The original code: base64 under `oracle::`, crc32 renamed, so both can sit
     // beside the Rust-backed `swoole::` and `swoole_crc32`.
+    websocket();
     cpp()
         .define("swoole", "oracle")
         .define("swoole_crc32", "oracle_swoole_crc32")
@@ -92,6 +129,8 @@ fn main() {
         .file("upstream/src/core/base64.cc")
         .file("upstream/src/core/crc32.cc")
         .file("shim/oracle.cc")
+        .include(env::var("OUT_DIR").unwrap())
+        .file("shim/websocket.cc")
         .compile("swoole_oracle");
 
     // The original core-test assertions, run against the adapters that forward

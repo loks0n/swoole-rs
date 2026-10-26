@@ -92,6 +92,7 @@ dependencies = [
  "libfuzzer-sys",
  "swoole-rs-base64",
  "swoole-rs-oracle",
+ "swoole-rs-websocket",
 ]
 
 [[package]]
@@ -100,3 +101,7 @@ version = "0.1.0"
 dependencies = [
  "cc",
 ]
+
+[[package]]
+name = "swoole-rs-websocket"
+version = "0.1.0"
