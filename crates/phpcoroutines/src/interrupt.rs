@@ -13,20 +13,21 @@ pub struct InterruptPlan {
 }
 
 unsafe fn load(state: *mut InterruptState) -> u8 {
-    unsafe { AtomicU8::from_ptr((*state).running.get()).load(Ordering::Relaxed) }
+    unsafe { AtomicU8::from_ptr((*state).running.get()).load(Ordering::Acquire) }
 }
 unsafe fn store(state: *mut InterruptState, value: u8) {
-    unsafe { AtomicU8::from_ptr((*state).running.get()).store(value, Ordering::Relaxed) };
+    unsafe { AtomicU8::from_ptr((*state).running.get()).store(value, Ordering::Release) };
 }
 
 /// # Safety
 /// State is the live, constant-zero-seeded Native TLS/global one-byte cell; all
 /// runtime access uses this atomic API. Stage is distinct exclusive local POD,
-/// initially zero. Kind/max_exec are fixed. The child passes its OWN Native TLS
-/// lookup, not a captured parent's address. No Rust frame/borrow spans Native
-/// threads, VM stores, signal masking, clock reads, sleeps or joins. Relaxed
-/// accesses do not assert additional Native synchronization or undefined-race
-/// parity. No Rust Send/Sync promise is added for the surrounding Native state.
+/// initially zero. Kind/max_exec are fixed. The helper thread passes the cell of
+/// the thread that started it, captured at start (upstream 7e6a4397a), so it
+/// outlives the helper until stop joins it. Acquire loads and release stores
+/// match upstream's std::atomic_bool. No Rust frame/borrow spans Native threads,
+/// VM stores, signal masking, clock reads, sleeps or joins. No Rust Send/Sync
+/// promise is added for the surrounding Native state.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_interrupt(
     state: *mut InterruptState,

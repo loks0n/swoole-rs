@@ -1,5 +1,5 @@
 diff --git a/include/swoole_reactor.h b/include/swoole_reactor.h
-index 238c0e6d1..908796e44 100644
+index 238c0e6d1..2c594d612 100644
 --- a/include/swoole_reactor.h
 +++ b/include/swoole_reactor.h
 @@ -20,2 +20,9 @@
@@ -121,7 +121,7 @@ index 238c0e6d1..908796e44 100644
      network::Socket *get_socket(const int fd) const {
 +#if defined(SWOOLE_RS_REACTOR_SOCKETS_OWNED) && SWOOLE_RS_REACTOR_SOCKETS_OWNED
 +        // Missing lookups stay read-only: get() would publish a null entry.
-+        return sockets_.contains(fd) ? const_cast<ReactorSocketRegistry &>(sockets_).get(fd) : nullptr;
++        return sockets_.get(fd);
 +#else
          auto i = sockets_.find(fd);
 @@ -297,2 +299,3 @@ class Reactor {

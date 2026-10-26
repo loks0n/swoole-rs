@@ -31,7 +31,7 @@ the Rust symbols in the linked binary and runs the consumer.
 ## Compatibility step: `compatibility.py`
 
 ```sh
-python3 tests/modules/buffer/string/compatibility.py --source S --archive A --sanitize --output R
+python3 -m pytest tests/modules/buffer/string/test_compatibility.py --archive A --sanitize   # reads target/upstream/src
 ```
 
 Ordinary append/write/i32/repeat/copy/termination/reduce, 44 checks per engine,

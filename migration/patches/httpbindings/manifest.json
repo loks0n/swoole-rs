@@ -10,7 +10,7 @@
     },
     {
       "path": "0002-request-policy.patch",
-      "sha256": "0b95a88b5c5905d2bc1e2505579621f0cb5db1506ba3a912fb527ff8c459e2a7",
+      "sha256": "a0f36ae70a618f5d786d9c81336337dd2b13af676f0e9ebf154849250284f64b",
       "upstream_paths": [
         "ext-src/swoole_http_request.cc"
       ]

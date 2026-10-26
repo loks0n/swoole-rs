@@ -763,27 +763,17 @@ pub unsafe extern "C" fn swr_v1_reactor_sockets_put(
     };
     unsafe { publish(slot, fd, token) }
 }
-/// Original operator[] semantics: missing key publishes null and changes count.
+/// Token for fd, or 0 when absent. A miss never inserts (upstream 5c1018b49).
 /// # Safety
-/// Same exclusive owner/slot contract as put; output is writable/disjoint.
+/// Owner is null/live/readable, no concurrent mutation. Rust never reads a Socket.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_reactor_sockets_get(
-    slot: *mut *mut ReactorSockets,
+    owner: *const ReactorSockets,
     fd: i32,
-    output: *mut usize,
-) -> i32 {
-    let (Some(slot), Some(output)) = ((unsafe { slot.as_mut() }), (unsafe { output.as_mut() }))
-    else {
-        return -1;
-    };
-    *output = 0;
-    if let Some(owner) = unsafe { slot.as_ref() }
-        && let Some(id) = owner.find(fd)
-    {
-        *output = owner.nodes[id].token;
-        return 0;
-    }
-    unsafe { publish(slot, fd, 0) }
+) -> usize {
+    unsafe { owner.as_ref() }
+        .and_then(|owner| owner.find(fd).map(|id| owner.nodes[id].token))
+        .unwrap_or(0)
 }
 /// # Safety
 /// Owner is null/live/readable, no concurrent mutation. Rust never reads a Socket.
@@ -980,11 +970,11 @@ mod tests {
     #[test]
     fn membership_null_miss_replace_delete_reuse_and_bounded_metadata() {
         let mut owner = ptr::null_mut();
-        let mut token = 99;
         unsafe {
             assert_eq!(swr_v1_reactor_sockets_len(owner), 0);
-            assert_eq!(swr_v1_reactor_sockets_get(&mut owner, -7, &mut token), 0);
-            assert_eq!(token, 0);
+            assert_eq!(swr_v1_reactor_sockets_get(owner, -7), 0);
+            assert_eq!(swr_v1_reactor_sockets_put(&mut owner, -7, 0), 0);
+            assert_eq!(swr_v1_reactor_sockets_get(owner, 8), 0);
             assert_eq!(swr_v1_reactor_sockets_len(owner), 1);
             assert_eq!(swr_v1_reactor_sockets_contains(owner, -7), 1);
             for key in 0..65 {
@@ -994,8 +984,7 @@ mod tests {
                 );
             }
             assert_eq!(swr_v1_reactor_sockets_put(&mut owner, 1, 777), 0);
-            assert_eq!(swr_v1_reactor_sockets_get(&mut owner, 1, &mut token), 0);
-            assert_eq!(token, 777);
+            assert_eq!(swr_v1_reactor_sockets_get(owner, 1), 777);
             for _ in 0..256 {
                 swr_v1_reactor_sockets_erase(owner, 1);
                 assert_eq!(swr_v1_reactor_sockets_put(&mut owner, 1, 777), 0);

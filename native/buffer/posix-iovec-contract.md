@@ -20,5 +20,4 @@ caller can compare them. On macOS arm64 and Linux/glibc aarch64, size is 16,
 alignment 8, base offset 0 and length offset 8. Other platforms have not been
 tested.
 
-Test: `python3 tests/modules/buffer/iovec.py --source SRC --archive ARCHIVE
---sanitize --output JSON`.
+Test: `python3 -m pytest tests/modules/buffer/test_iovec.py --archive ARCHIVE --sanitize`.

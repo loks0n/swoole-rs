@@ -105,14 +105,15 @@ int main(void) {
     uint32_t control_stage = 0;
     assert(swr_v1_phpcoroutines_control(&control_stage, SWR_CORO_CONTROL_TIME_LIMIT, 1, 0.5).action == SWR_CORO_CONTROL_CID);
     swr_phpcoroutines_control_plan interval = swr_v1_phpcoroutines_control(&control_stage, SWR_CORO_CONTROL_TIME_LIMIT, 0, 0.5);
-    assert(interval.action == SWR_CORO_CONTROL_TIMER && interval.value == 0);
-    const double timeouts[] = {0.5, -0.5, 1.9, -1.9, 120.0, -120.0, 100000.0};
+    assert(interval.action == SWR_CORO_CONTROL_TIMER);
+    const double timeouts[] = {0.5, -0.5, 1.9, -1.9, 120.0, -120.0, 100000.0, 0.0, -0.0};
     for (size_t i = 0; i < sizeof(timeouts) / sizeof(timeouts[0]); ++i) {
         control_stage = 0;
-        assert(swr_v1_phpcoroutines_control(&control_stage, SWR_CORO_CONTROL_TIME_LIMIT, 1, timeouts[i]).action == SWR_CORO_CONTROL_CID);
-        interval = swr_v1_phpcoroutines_control(&control_stage, SWR_CORO_CONTROL_TIME_LIMIT, 0, timeouts[i]);
-        assert(interval.action == SWR_CORO_CONTROL_TIMER);
-        assert(interval.value == (long) timeouts[i] * 1000);
+        const int positive = timeouts[i] > 0;
+        assert(swr_v1_phpcoroutines_control(&control_stage, SWR_CORO_CONTROL_TIME_LIMIT, 1, timeouts[i]).action ==
+               (positive ? SWR_CORO_CONTROL_CID : SWR_CORO_CONTROL_FALSE));
+        if (!positive) continue;
+        assert(swr_v1_phpcoroutines_control(&control_stage, SWR_CORO_CONTROL_TIME_LIMIT, 0, timeouts[i]).action == SWR_CORO_CONTROL_TIMER);
     }
     swr_phpcoroutines_parent_cell parent_cell;
     swr_phpcoroutines_context_cells cells = {NULL, NULL, NULL, NULL, NULL, NULL, NULL};

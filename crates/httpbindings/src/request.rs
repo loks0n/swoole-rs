@@ -47,7 +47,8 @@ pub unsafe extern "C" fn swr_v1_httpbindings_request_header(
     if case_equal(name, b"upgrade") {
         return 2;
     }
-    if matches!(method, 0 | 3 | 4 | 28) && case_equal(name, b"content-type") {
+    // DELETE, POST, PUT, PATCH and QUERY (llhttp 46, upstream cf66ff7e8) carry form bodies.
+    if matches!(method, 0 | 3 | 4 | 28 | 46) && case_equal(name, b"content-type") {
         if case_prefix(value, b"application/x-www-form-urlencoded") {
             return 3;
         }
@@ -56,8 +57,6 @@ pub unsafe extern "C" fn swr_v1_httpbindings_request_header(
         }
     } else if flags & 2 != 0 && case_equal(name, b"accept-encoding") {
         return 5;
-    } else if case_equal(name, b"transfer-encoding") && case_prefix(value, b"chunked") {
-        return 6;
     }
     0
 }

@@ -35,7 +35,9 @@ def orphans():
             return False
         script = str(Path(path).with_suffix('.py'))
         return script == path or script not in seen or orphan(script)
-    return [path for path in files if path.startswith('tests/modules/') and not path.endswith('.md') and orphan(path)]
+    # pytest loads conftest.py files implicitly; nothing names them.
+    return [path for path in files if path.startswith('tests/modules/') and not path.endswith('.md')
+            and Path(path).name != 'conftest.py' and orphan(path)]
 
 
 class Orphans(unittest.TestCase):

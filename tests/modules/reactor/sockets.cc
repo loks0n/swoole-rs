@@ -38,7 +38,8 @@ int main() {
     CHECK(registry.get_event_num()==0);
     const auto &early_view=LIVE(registry);
     CHECK(registry.get_socket(-7)==nullptr);
-    CHECK(registry.exists(-7));CHECK(registry.get_event_num()==1);CHECK(early_view.size()==1);
+    // Since v6.2.4 (5c1018b49) a missed lookup no longer inserts a null entry.
+    CHECK(!registry.exists(-7));CHECK(registry.get_event_num()==0);CHECK(early_view.size()==0);
     Socket missing{-7};registry._del(&missing);CHECK(!registry.exists(-7));CHECK(missing.events==0&&missing.removed==1);
     Socket values[67];
     for (int i=0;i<65;++i) {values[i].fd=3*i+1;registry._add(&values[i],i+1);CHECK(registry.get_socket(values[i].fd)==&values[i]);CHECK(values[i].events==i+1&&values[i].removed==0);}
