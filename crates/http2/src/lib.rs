@@ -1,4 +1,11 @@
 //! HTTP/2 policy and one externally native-owned send queue; native code executes effects.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 #[cfg(test)]
 mod queue_faults;
 mod receive;

@@ -1,5 +1,12 @@
 //! Allocation-free WebSocket codec and message/control policy. Native callers
 //! retain storage, connection ownership, PHP dispatch and socket I/O.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 
 mod codec;
 pub use codec::*;
@@ -31,6 +38,7 @@ pub unsafe extern "C" fn swr_v1_ws_frame_length(
     } else if payload == 127 {
         header = 10;
     }
+    // SAFETY: the caller lends an aligned, writable `header_length`.
     unsafe { header_length.write(header as u32) };
     if length < header {
         return 0;
@@ -44,6 +52,7 @@ pub unsafe extern "C" fn swr_v1_ws_frame_length(
     }
     if bytes[1] & 0x80 != 0 {
         header += 4;
+        // SAFETY: as above.
         unsafe { header_length.write(header as u32) };
         if length < header {
             return 0;
@@ -119,6 +128,8 @@ pub unsafe extern "C" fn swr_v1_ws_mask(data: *mut u8, length: usize, key: *cons
     // overlap is valid. read_unaligned preserves byte-aligned key support.
     let key_word = unsafe { key.cast::<u32>().read_unaligned() };
     let mask = key_word.to_ne_bytes();
+    // SAFETY: non-null, `length <= isize::MAX`; the caller lends `length` writable bytes and
+    // the key was copied out first, so an overlapping key is fine.
     let payload = unsafe { std::slice::from_raw_parts_mut(data, length) };
     let word_mask = u64::from(key_word) | (u64::from(key_word) << 32);
     let (words, tail) = payload.as_chunks_mut::<8>();
