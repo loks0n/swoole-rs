@@ -33,7 +33,7 @@ python3 corpus/run.py \
 
 The upstream build needs Git, a C/C++ compiler, make, autoconf, phpize, php-config,
 pkg-config, PCRE2 and OpenSSL development files. On Ubuntu:
-`sudo apt-get install php-dev php-sqlite3 libclang-dev libpcre2-dev libssl-dev pkg-config`.
+`sudo apt-get install php-dev php-sqlite3 libpcre2-dev libssl-dev pkg-config`.
 On macOS the script discovers Homebrew OpenSSL and PCRE2 headers. Override
 `--phpize`, `--php-config`, and `--openssl-dir` for another toolchain. The runner's
 `--php` must match the PHP version used to compile both extensions.
