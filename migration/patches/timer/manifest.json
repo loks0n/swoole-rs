@@ -10,7 +10,7 @@
     },
     {
       "path": "0002-timer-body.patch",
-      "sha256": "b6192376b5ad906121eefb95f86ca43734d79c85e1558dc917f4b5038221be6e",
+      "sha256": "32ee150c5ad5b8ae38ee36385374f4c0c9ed1fd9bf4d31959b37ae3e8a19796b",
       "upstream_paths": [
         "src/core/timer.cc"
       ]
