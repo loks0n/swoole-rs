@@ -94,6 +94,10 @@ pub extern "C" fn swr_v1_bus_pool_create_capacity(capacity: usize) -> *mut Packe
     if pool.indices.try_reserve(capacity).is_err() || pool.entries.try_reserve(capacity).is_err() {
         return std::ptr::null_mut();
     }
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<PacketPool>()"
+    )]
     // SAFETY: `PacketPool` is not zero-sized; null is handled below.
     let pointer = unsafe { alloc(Layout::new::<PacketPool>()).cast::<PacketPool>() };
     if !pointer.is_null() {
@@ -352,6 +356,10 @@ pub unsafe extern "C" fn swr_v1_bus_pool_drain(
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests {
     use super::*;
     use std::collections::BTreeMap;

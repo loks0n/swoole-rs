@@ -98,12 +98,19 @@ pub unsafe extern "C" fn swr_v1_socks_auth(
     let Some(output) = (unsafe { crate::output(output, capacity, size) }) else {
         return -1;
     };
+    // Upstream's Socks5Proxy::create refuses credentials over 250 bytes; a longer one
+    // would wrap its one-byte length, so refuse it here too.
+    let (Ok(user_byte), Ok(password_byte)) =
+        (u8::try_from(user_length), u8::try_from(password_length))
+    else {
+        return -1;
+    };
     output[0] = 1;
-    output[1] = user_length as u8;
+    output[1] = user_byte;
     output[2..2 + user_length].copy_from_slice(user);
-    output[2 + user_length] = password_length as u8;
+    output[2 + user_length] = password_byte;
     output[3 + user_length..].copy_from_slice(password);
-    size as i64
+    i64::try_from(size).unwrap_or(-1)
 }
 
 /// Encode CONNECT with a borrowed domain (type 3), or already validated native
@@ -141,11 +148,15 @@ pub unsafe extern "C" fn swr_v1_socks_connect(
     };
     output[..4].copy_from_slice(&[5, 1, 0, address_type]);
     if address_type == 3 {
-        output[4] = length as u8;
+        // At most u8::MAX, refused with -2 above.
+        let Ok(length) = u8::try_from(length) else {
+            return -2;
+        };
+        output[4] = length;
     }
     output[offset..offset + length].copy_from_slice(address);
     output[offset + length..].copy_from_slice(&port.to_be_bytes());
-    size as i64
+    i64::try_from(size).unwrap_or(-1)
 }
 
 /// # Safety

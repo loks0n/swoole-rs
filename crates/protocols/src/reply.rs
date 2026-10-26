@@ -13,7 +13,12 @@ impl ReplyParts {
     fn bytes(&mut self, bytes: &[u8]) {
         let start = self.prefix_length as usize;
         self.prefix[start..start + bytes.len()].copy_from_slice(bytes);
-        self.prefix_length += bytes.len() as u32;
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "bytes fit the fixed prefix buffer, indexed above"
+        )]
+        let length = bytes.len() as u32;
+        self.prefix_length += length;
     }
     fn number(&mut self, value: u64) {
         let mut buffer = [0; 20];
@@ -47,7 +52,7 @@ pub fn reply_parts(kind: u8, present: bool, number: u64, value: &[u8]) -> Option
             result.suffix_length = 2;
         }
         3 => {
-            let integer = number as i64;
+            let integer = number.cast_signed();
             result.bytes(if integer < 0 { b":-" } else { b":" });
             result.number(integer.unsigned_abs());
             result.bytes(b"\r\n");
@@ -67,6 +72,11 @@ pub fn reply_parts(kind: u8, present: bool, number: u64, value: &[u8]) -> Option
         5 | 6 => {
             // Native printf receives an unsigned32 count as signed32, including
             // map count multiplication wrapping before the signed conversion.
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_possible_wrap,
+                reason = "native printf of an unsigned32 count as signed32, described above"
+            )]
             let count = (number as u32).wrapping_mul(if kind == 6 { 2 } else { 1 }) as i32;
             result.bytes(if count < 0 { b"*-" } else { b"*" });
             result.number(u64::from(count.unsigned_abs()));
@@ -113,6 +123,10 @@ pub unsafe extern "C" fn swr_v1_resp_reply_parts(
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests {
     use super::*;
     fn encode(kind: u8, present: bool, number: u64, data: &[u8]) -> Vec<u8> {

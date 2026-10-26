@@ -1,12 +1,5 @@
 //! Packet codecs and protocol decisions. All native I/O, allocation callbacks,
 //! connection storage and PHP execution happen after these calls return.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_ptr_alignment,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
 #![cfg_attr(
     not(test),
     deny(
