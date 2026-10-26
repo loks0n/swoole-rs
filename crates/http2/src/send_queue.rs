@@ -28,6 +28,7 @@ pub extern "C" fn sw_rs_http2_send_queue_new() -> *mut c_void {
     #[cfg(test)]
     let _scope = crate::queue_faults::Scope::enter(1);
     // Internal allocation has no PHP callbacks; no native payload is constructed here.
+    // SAFETY: `alloc` is the global allocator and `allocate_queue` handles its null result.
     unsafe { allocate_queue(alloc) }
 }
 

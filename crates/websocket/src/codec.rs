@@ -56,7 +56,11 @@ pub unsafe extern "C" fn swr_v1_ws_decode(
     };
     if length >= 2 {
         // SAFETY: The caller supplies at least two readable bytes.
-        let (first, second) = unsafe { (data.read(), data.add(1).read()) };
+        let first = unsafe { data.read() };
+        // SAFETY: as above, offset 1 is inside those bytes.
+        let second_byte = unsafe { data.add(1) };
+        // SAFETY: as above.
+        let second = unsafe { second_byte.read() };
         frame.opcode = first & 15;
         frame.flags = flags(first, second);
         frame.length_code = second & 127;
@@ -69,17 +73,17 @@ pub unsafe extern "C" fn swr_v1_ws_decode(
             return INVALID_CONTROL;
         }
         if length >= total as usize && frame.payload_length != 0 {
-            // SAFETY: A positive complete header bounds the payload and key.
+            // A positive complete header bounds the payload and key inside `length`.
             if frame.flags & MASK != 0 {
-                frame.mask_key =
-                    unsafe { data.add(frame.header_length - 4).cast::<[u8; 4]>().read() };
-                unsafe {
-                    swr_v1_ws_mask(
-                        data.add(frame.header_length),
-                        frame.payload_length,
-                        frame.mask_key.as_ptr(),
-                    )
-                };
+                // SAFETY: the 4-byte key ends at `header_length <= total <= length`.
+                let key = unsafe { data.add(frame.header_length - 4) };
+                // SAFETY: as above, 4 readable bytes; `[u8; 4]` has alignment 1.
+                frame.mask_key = unsafe { key.cast::<[u8; 4]>().read() };
+                // SAFETY: the payload starts at `header_length`, inside the input.
+                let payload = unsafe { data.add(frame.header_length) };
+                // SAFETY: `payload_length` bytes from `payload` end at `total <= length`, the
+                // caller lends them writable, and the key is a local copy.
+                unsafe { swr_v1_ws_mask(payload, frame.payload_length, frame.mask_key.as_ptr()) };
             }
         }
     }
@@ -143,14 +147,22 @@ pub unsafe extern "C" fn swr_v1_ws_encode(
     // SAFETY: All ranges/capacities validated before the first write.
     let mut position =
         unsafe { swr_v1_ws_write_header(length as u64, opcode, flags, output, capacity) };
+    // `capacity >= size` (checked above), and `size` covers header, key and payload.
     if flags & MASK != 0 {
-        unsafe { std::ptr::copy_nonoverlapping(MASK_KEY.as_ptr(), output.add(position), 4) };
+        // SAFETY: the key's 4 bytes follow the header, inside `size`.
+        let key = unsafe { output.add(position) };
+        // SAFETY: `MASK_KEY` is a 4-byte static, disjoint from the caller's output.
+        unsafe { std::ptr::copy_nonoverlapping(MASK_KEY.as_ptr(), key, 4) };
         position += 4;
     }
     if flags & HEADER_ONLY == 0 && length != 0 {
-        unsafe { std::ptr::copy_nonoverlapping(data, output.add(position), length) };
+        // SAFETY: the payload's `length` bytes follow the header and key, inside `size`.
+        let payload = unsafe { output.add(position) };
+        // SAFETY: `data` lends `length` readable bytes, disjoint from the output.
+        unsafe { std::ptr::copy_nonoverlapping(data, payload, length) };
         if flags & MASK != 0 {
-            unsafe { swr_v1_ws_mask(output.add(position), length, MASK_KEY.as_ptr()) };
+            // SAFETY: `payload` holds `length` writable bytes just copied; the key is static.
+            unsafe { swr_v1_ws_mask(payload, length, MASK_KEY.as_ptr()) };
         }
     }
     size
@@ -180,6 +192,8 @@ pub unsafe extern "C" fn swr_v1_ws_encode_close(
         payload[2..2 + length]
             .copy_from_slice(unsafe { std::slice::from_raw_parts(reason, length) });
     }
+    // SAFETY: `payload` is a local holding `length + 2 <= 127` bytes; the caller lends
+    // `capacity` writable output bytes, disjoint from it.
     unsafe {
         swr_v1_ws_encode(
             payload.as_ptr(),
@@ -304,6 +318,7 @@ pub unsafe extern "C" fn swr_v1_ws_decide(
     if frame.is_null() || context.is_null() || output.is_null() {
         return -1;
     }
+    // SAFETY: non-null (checked above); the caller lends a valid, aligned frame.
     let frame = unsafe { frame.read() };
     if frame.header_length < if frame.flags & MASK != 0 { 6 } else { 2 }
         || frame.header_length > wire_length
@@ -311,7 +326,9 @@ pub unsafe extern "C" fn swr_v1_ws_decide(
     {
         return -1;
     }
+    // SAFETY: non-null (checked above); the caller lends a valid, aligned context.
     let context = unsafe { context.read() };
+    // SAFETY: non-null (checked above); the caller lends an aligned, exclusive output.
     unsafe { output.write(decide(frame, wire_length, context)) };
     0
 }
