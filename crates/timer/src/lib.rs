@@ -1,14 +1,4 @@
 //! Thread-confined indexed timer queue; native code retains callbacks and tokens.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_ptr_alignment,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
-#![cfg_attr(
-    test,
-    expect(clippy::cast_possible_wrap, reason = "#157: casts not yet checked")
-)]
 mod runtime;
 pub use runtime::*;
 use std::alloc::{Layout, alloc, dealloc};
@@ -79,7 +69,7 @@ impl Hasher for TimerIdHasher {
         }
     }
     fn write_i64(&mut self, id: i64) {
-        self.0 = id as u64;
+        self.0 = id.cast_unsigned();
     }
     fn finish(&self) -> u64 {
         self.0.wrapping_mul(0x9e37_79b9_7f4a_7c15)
@@ -182,6 +172,10 @@ pub unsafe extern "C" fn swr_v1_timer_create(out: *mut *mut Timer) -> i32 {
     unsafe {
         out.write(ptr::null_mut());
     }
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<Timer>()"
+    )]
     let queue = unsafe { alloc(Layout::new::<Timer>()) }.cast::<Timer>();
     if queue.is_null() {
         return NOMEM;
@@ -929,14 +923,21 @@ mod tests {
             seed ^= seed >> 7;
             seed ^= seed << 17;
             if step % 3 == 0 || q.stats().count == 0 {
-                q.add(0, (seed % 100 + 1) as i64, false, step + 1);
+                q.add(0, i64::try_from(seed % 100 + 1).unwrap(), false, step + 1);
             } else {
                 let ids: Vec<i64> = unsafe { &*q.0 }.positions.keys().copied().collect();
-                let id = ids[seed as usize % ids.len()];
+                let id = ids[usize::try_from(seed % ids.len() as u64).unwrap()];
                 let mut out = TimerView::default();
                 if step % 3 == 1 {
                     assert_eq!(
-                        unsafe { swr_v1_timer_update(q.0, id, (seed % 100) as i64, &mut out) },
+                        unsafe {
+                            swr_v1_timer_update(
+                                q.0,
+                                id,
+                                i64::try_from(seed % 100).unwrap(),
+                                &mut out,
+                            )
+                        },
                         OK
                     );
                 } else {
@@ -976,7 +977,9 @@ mod tests {
         let q = Owned::new();
         let first = q.add(0, 1, false, 1);
         while unsafe { (*q.0).positions.len() < (*q.0).positions.capacity() } {
-            q.add(0, 2, false, unsafe { (*q.0).last_id as usize + 1 });
+            q.add(0, 2, false, unsafe {
+                usize::try_from((*q.0).last_id).unwrap() + 1
+            });
         }
         unsafe {
             (*q.0).heap.try_reserve(1).unwrap();
@@ -1002,7 +1005,9 @@ mod tests {
         let q = Owned::new();
         q.add(0, 10, false, 1);
         while unsafe { (*q.0).positions.len() < (*q.0).positions.capacity() } {
-            q.add(0, 20, false, unsafe { (*q.0).last_id as usize + 1 });
+            q.add(0, 20, false, unsafe {
+                usize::try_from((*q.0).last_id).unwrap() + 1
+            });
         }
         let last = unsafe { (*q.0).last_id };
         let mut out = TimerView::default();
@@ -1030,19 +1035,22 @@ mod tests {
             let mut out = TimerView::default();
             match seed % 4 {
                 0 => {
-                    let delay = (seed % 47 + 1) as i64;
+                    let delay = i64::try_from(seed % 47 + 1).unwrap();
                     let view = q.add(now, delay, seed & 16 != 0, step + 1);
                     assert_eq!(view.deadline, now + delay);
                     assert_eq!(view.birth_round, round);
                     model.insert(view.id, view);
                 }
                 1 | 2 if !model.is_empty() => {
-                    let id = *model.keys().nth(seed as usize % model.len()).unwrap();
+                    let id = *model
+                        .keys()
+                        .nth(usize::try_from(seed % model.len() as u64).unwrap())
+                        .unwrap();
                     if seed % 4 == 1 {
                         assert_eq!(unsafe { swr_v1_timer_remove(q.0, id, &mut out) }, RELEASE);
                         assert_eq!(out, model.remove(&id).unwrap());
                     } else {
-                        let deadline = now + (seed % 53) as i64;
+                        let deadline = now + i64::try_from(seed % 53).unwrap();
                         assert_eq!(
                             unsafe { swr_v1_timer_update(q.0, id, deadline, &mut out) },
                             OK
@@ -1052,7 +1060,7 @@ mod tests {
                     }
                 }
                 _ => {
-                    now += (seed % 7) as i64;
+                    now += i64::try_from(seed % 7).unwrap();
                     assert_eq!(unsafe { swr_v1_timer_begin(q.0, now) }, OK);
                     loop {
                         let status = unsafe { swr_v1_timer_next(q.0, &mut out) };
