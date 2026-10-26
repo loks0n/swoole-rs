@@ -115,6 +115,13 @@ foreach ([1, 123, 125] as $length) {
                         else $input->data = $payload;
                     }
                     $packed = Frame::pack($input, $opcode, $flags);
+                    // Since v6.2.4 (c3e746b09) the encoder rejects control payloads over
+                    // 125 bytes; a close frame adds a 2-byte code to its reason.
+                    if ($opcode === 8 && $length > 123) {
+                        if ($packed !== '') throw new RuntimeException('Oversized close frame was packed');
+                        $cases[$id] = ['rejected' => true];
+                        continue;
+                    }
                     if (ord($packed[0]) !== (0xc0 | $opcode) ||
                         (bool) (ord($packed[1]) & 128) !== (bool) ($flags & 32)) {
                         throw new RuntimeException('Pinned control RSV1/mask/FIN policy changed');
