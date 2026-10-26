@@ -1,12 +1,9 @@
 diff --git a/src/core/error.cc b/src/core/error.cc
-index 18f4b5b62..b37f1919c 100644
+index 18f4b5b..5210c89 100644
 --- a/src/core/error.cc
 +++ b/src/core/error.cc
-@@ -17,6 +17,14 @@
+@@ -17,6 +17,11 @@
  #include "swoole.h"
-+#ifndef SWOOLE_RS_ERROR
-+#error "Error overlay requires --enable-swoole-rs-error"
-+#endif
 +#include "swoole_rs_error_resolver.h"
  
 -#include <unordered_set>
@@ -19,7 +16,7 @@ index 18f4b5b62..b37f1919c 100644
 +    ~IgnoredErrors() { swr_v1_error_ignored_release(handle); }
 +} ignored_errors;
  
-@@ -28,278 +36,8 @@ Exception::Exception(const int code) noexcept : code(code) {
+@@ -28,278 +33,8 @@ Exception::Exception(const int code) noexcept : code(code) {
  
 +static const char *swr_system_error(int32_t code) {
 +    return strerror(code);
@@ -303,14 +300,14 @@ index 18f4b5b62..b37f1919c 100644
 -    /*}}}*/
 +    return swr_v1_error_strerror(code, swr_system_error);
  }
-@@ -311,3 +49,5 @@ void swoole_throw_error(int code) {
+@@ -311,3 +46,5 @@ void swoole_throw_error(int code) {
  void swoole_ignore_error(int code) {
 -    ignored_errors.insert(code);
 +    if (swr_v1_error_ignore(&ignored_errors.handle, code) != 0) {
 +        throw std::bad_alloc();
 +    }
  }
-@@ -315,3 +55,3 @@ void swoole_ignore_error(int code) {
+@@ -315,3 +52,3 @@ void swoole_ignore_error(int code) {
  bool swoole_is_ignored_error(const int code) {
 -    return ignored_errors.find(code) != ignored_errors.end();
 +    return swr_v1_error_is_ignored(ignored_errors.handle, code) != 0;

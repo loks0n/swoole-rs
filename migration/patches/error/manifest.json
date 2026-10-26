@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-rust-known-messages.patch",
-      "sha256": "8ab2867c6990a3df1445bb38904bcbb3751a4c5c779533b3edc550007ac9f3d2",
+      "sha256": "4dd7d49e22f8355c8d481895c17ab8634b3e4129d4abfe6788f38ed2c7f590ad",
       "upstream_paths": [
         "src/core/error.cc"
       ]

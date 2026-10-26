@@ -40,7 +40,7 @@ def main():
                        'No PHP/extension/build activation or performance claim.'}
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
-    def run(command, cwd=None, expect_failure=False):
+    def run(command, cwd=None):
         # Bound every compiler/probe; terminate its whole private group on timeout/interruption.
         process = subprocess.Popen([str(x) for x in command], cwd=cwd, stdout=subprocess.PIPE,
                                    stderr=subprocess.PIPE, text=True, start_new_session=True)
@@ -58,8 +58,8 @@ def main():
             raise
         result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
         report['commands'].append({'argv': [str(x) for x in command], 'returncode': result.returncode,
-                                   'stdout': result.stdout, 'stderr': result.stderr, 'expected_failure': expect_failure})
-        if bool(result.returncode) != expect_failure:
+                                   'stdout': result.stdout, 'stderr': result.stderr})
+        if result.returncode:
             raise RuntimeError(f'Command failed: {command}')
         return result.stdout
 
@@ -130,11 +130,9 @@ extern char sw_error[1024];
             flags = ['-std=c++17', '-O2', '-I', work]
             if args.sanitize:
                 flags += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer']
-            run(['c++', *flags, '-fsyntax-only', work / 'src/core/error.cc'], expect_failure=True)
-            assert 'Error overlay requires --enable-swoole-rs-error' in report['commands'][-1]['stderr']
             run(['c++', *flags, '-Dswoole=reference_swoole',
                  *[f'-D{name}=reference_{name}' for name in rename], '-c', work / 'original.cc', '-o', work / 'original.o'])
-            run(['c++', *flags, '-DSWOOLE_RS_ERROR', '-c', work / 'src/core/error.cc', '-o', work / 'patched.o'])
+            run(['c++', *flags, '-c', work / 'src/core/error.cc', '-o', work / 'patched.o'])
             if args.allocator_faults:
                 run(['c++', *flags, ROOT / 'tests/modules/error/allocator.cc', work / 'patched.o',
                      archive, '-o', work / 'allocator-probe'])
