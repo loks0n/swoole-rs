@@ -13,10 +13,9 @@ from tools.build_hybrid import apply_patch_verified
 from tools.harness import ROOT, run_compiler, run_isolated
 
 LAYOUT = '''#include "swoole_rs_string.h"
-_Static_assert(sizeof(swr_v1_string_compat_cursor)==80,"cursor");
-_Static_assert(offsetof(swr_v1_string_compat_cursor,digits)==68,"digits");
-_Static_assert(sizeof(swr_v1_string_compat_step_result)==56,"step");
-_Static_assert(offsetof(swr_v1_string_compat_step_result,mask)==52,"mask");
+_Static_assert(sizeof(swr_v1_string_allocator)==32,"allocator");
+_Static_assert(sizeof(swr_v1_string_object)==40,"object");
+_Static_assert(offsetof(swr_v1_string_object,data)==24,"object data");
 '''
 SOURCES = ['src/core/string.cc', 'src/core/base.cc', 'src/os/base.cc', 'src/core/base64.cc']
 
@@ -54,7 +53,7 @@ def test_compatibility(pinned, request, pytestconfig, variant):
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout.splitlines()[-1]) == {'checks': 44, 'profile': 'ordinary-no-custom-no-pop'}
     if variant == 'selected':
-        assert 'swr_v1_string_compat_step' in subprocess.check_output(['nm', '-g', str(binary)], text=True)
+        assert 'swr_v1_string_edit_object' in subprocess.check_output(['nm', '-g', str(binary)], text=True)
         for standard in ['c++14', 'c++17', 'c++20']:
             syntax = run_isolated(['c++', '-std=' + standard, '-fsyntax-only', '-I' + str(work / 'include'),
                                    '-I' + str(ROOT / 'native/buffer'),

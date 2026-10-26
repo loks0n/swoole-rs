@@ -37,21 +37,22 @@ typedef struct {
     size_t source_offset;
     uint32_t allocation; /* 0: none, 1: native malloc, 2: native realloc */
 } swr_v1_string_plan;
-/* Additive public-operation continuation; existing prepare/apply stays frozen. */
+/* Layouts of swoole::Allocator and swoole::String. */
 typedef struct {
-    uint8_t *old;
-    size_t old_capacity, captured_length, requested, end, iteration, source_offset;
-    uint32_t input_internal, phase, digits_length;
-    uint8_t digits[12];
-} swr_v1_string_compat_cursor;
+    void *(*malloc)(size_t);
+    void *(*calloc)(size_t, size_t);
+    void *(*realloc)(void *, size_t);
+    void (*free)(void *);
+} swr_v1_string_allocator;
 typedef struct {
-    swr_v1_string_state state;
-    uint8_t *result;
-    size_t requested;
-    uint32_t action, mask;
-} swr_v1_string_compat_step_result;
-int32_t swr_v1_string_compat_step(swr_v1_string_compat_cursor *, const swr_v1_string_state *,
-    const swr_v1_string_state *, const swr_v1_string_edit *, uint32_t, uint8_t *, swr_v1_string_compat_step_result *);
+    size_t length, capacity;
+    int64_t offset;
+    uint8_t *data;
+    const swr_v1_string_allocator *allocator;
+} swr_v1_string_object;
+/* One whole public String operation; existing prepare/apply stays frozen. */
+int32_t swr_v1_string_edit_object(swr_v1_string_object *, const swr_v1_string_object *,
+    const swr_v1_string_edit *, const swr_v1_string_allocator *, uint8_t **);
 int32_t swr_v1_string_prepare(const swr_v1_string_state *, const swr_v1_string_edit *, swr_v1_string_plan *);
 int32_t swr_v1_string_apply(swr_v1_string_state *, const swr_v1_string_edit *, const swr_v1_string_plan *, uint8_t *, uint8_t **);
 int32_t swr_v1_string_edit_in_place(swr_v1_string_state *, const swr_v1_string_edit *, swr_v1_string_plan *, uint8_t **);

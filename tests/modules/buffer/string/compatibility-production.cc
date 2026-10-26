@@ -21,7 +21,7 @@ PHP_FUNCTION(swr_compatibility_production) {
 #endif
     const char *names[]={"_ZN6swoole6String6appendEPKcm","_ZN6swoole6String6repeatEPKcmm",write_symbol,
         "_ZN6swoole6String4copyERKS0_","_ZN6swoole6String6appendEi","_ZN6swoole6String6reduceEx",
-        "swr_v1_string_compat_step"};
+        "swr_v1_string_edit_object"};
 #ifndef __APPLE__
     names[5]="_ZN6swoole6String6reduceEl";
 #endif

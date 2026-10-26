@@ -545,8 +545,8 @@ pub unsafe extern "C" fn swr_v1_string_append_in_place(
     OK
 }
 
-mod compatibility;
-pub use compatibility::*;
+mod object;
+pub use object::*;
 mod random;
 pub use random::*;
 mod formatting;

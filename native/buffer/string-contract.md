@@ -77,7 +77,7 @@ fail before mutation; direct-v1 REPEAT reserves once and doubles the copied pref
 that all four allocator functions are the standard
 malloc/calloc/realloc/free. Allocator table identity is not enough, because the
 table is mutable. A null allocation returns -3 with state unchanged. Public String
-callers use the compatibility step below instead.
+callers use `swr_v1_string_edit_object` instead.
 
 ## Queries and plans
 
@@ -126,14 +126,17 @@ observations back in:
 - `swr_v1_string_random_step`: RESERVE, ENTROPY, OWNER, ENCODE, COPY, PUBLISH,
   FALSE, TRUE, FREE. A short read returns false before any encoder work. The length
   is published after the encoder's temporary is released.
-- `swr_v1_string_compat_step`: drives public APPEND (bytes and String), WRITE,
-  APPEND_I32, REPEAT, COPY, POP and termination. One stack cursor holds the phase,
-  repeat index, captured POP owner/suffix length and integer scratch. After each
-  native effect, fresh destination/source facts go back to Rust, and masks publish
-  only the fields the original wrote at that phase. Multi-byte REPEAT runs one
-  append per element (original allocation cadence). POP captures owner and suffix
-  length, mallocs, publishes pointer/capacity/length, copies at the fresh offset,
-  then resets the offset.
+
+## Whole public operations
+
+`swr_v1_string_edit_object` runs public APPEND (bytes and String), WRITE,
+APPEND_I32, REPEAT, COPY, POP and termination in one call. Native passes the
+String's fields and allocator; Rust calls the allocator itself and edits the
+fields, which native copies back even on error. First allocations use `initial`:
+the source's allocator for COPY, else the standard one. Fields are published in
+the original order, so a failed allocation leaves what the original left.
+Multi-byte REPEAT appends once per element (original allocation cadence). POP
+returns the old storage, or null without changes when malloc fails.
 
 ## Performance
 
@@ -160,6 +163,6 @@ tests against both engines. Focused positive profiles: `--transition-only`,
 `--copy-only`, `--split-only`, `--integer-only`, `--ownership-only`,
 `--allocation-only`, `--format-only`, `--random-only`. The gate needs the pinned
 native core/base, os/base and base64 sources and `pkg-config openssl`. ASan/UBSan
-covers the C++ side only. `tests/modules/buffer/string/test_compatibility.py` checks the
-compatibility step; `production.py --consumer compatibility` loads it into a PHP
+covers the C++ side only. `tests/modules/buffer/string/test_compatibility.py` checks
+`swr_v1_string_edit_object`; `production.py --consumer compatibility` loads it into a PHP
 build. See `tests/modules/buffer/string/profiles.md`.
