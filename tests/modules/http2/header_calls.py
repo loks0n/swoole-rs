@@ -40,6 +40,22 @@ def main():
 #include <cstdarg>
 #include <clocale>
 #include <stdexcept>
+#include <cctype>
+#include <strings.h>
+// ASan's strcasecmp interceptors fold ASCII only; glibc folds through the current
+// locale, which upstream's comparisons and the Rust side's fold both rely on (the
+// tr_TR case). Define them here with glibc's semantics so sanitized runs agree.
+#ifndef __THROW
+#define __THROW
+#endif
+extern "C" int strncasecmp(const char *a, const char *b, size_t n) __THROW {
+    for (; n; --n, ++a, ++b) {
+        int d = std::tolower((unsigned char) *a) - std::tolower((unsigned char) *b);
+        if (d || !*a) return d;
+    }
+    return 0;
+}
+extern "C" int strcasecmp(const char *a, const char *b) __THROW { return strncasecmp(a, b, (size_t) -1); }
 using namespace swoole;
 namespace Http2=swoole::http2;
 #undef SW_HAVE_ZLIB

@@ -175,7 +175,8 @@ pub extern "C" fn sw_rs_http2_queue_action(bound: u32, queued: usize, limit: u32
 
 #[no_mangle]
 pub extern "C" fn sw_rs_http2_send_complete(sent: isize, wanted: usize) -> u32 {
-    u32::from(isize::try_from(wanted).is_ok_and(|wanted| sent == wanted))
+    // Native compares `send_all(...) != (ssize_t) len`: the cast wraps.
+    u32::from(sent == wanted.cast_signed())
 }
 
 /// Match locale-folded native header bytes; Rust selects role-specific effects.
@@ -692,6 +693,24 @@ pub extern "C" fn sw_rs_http2_color_group(kind: i32) -> u32 {
 )]
 mod tests {
     use super::*;
+    #[test]
+    fn send_complete_matches_the_wrapping_native_cast() {
+        for wanted in [
+            0,
+            1,
+            isize::MAX as usize,
+            isize::MAX as usize + 1,
+            usize::MAX,
+        ] {
+            for sent in [-1, 0, 1, isize::MIN, isize::MAX] {
+                assert_eq!(
+                    sw_rs_http2_send_complete(sent, wanted),
+                    u32::from(sent == wanted as isize)
+                );
+            }
+        }
+        assert_eq!(sw_rs_http2_send_complete(-1, usize::MAX), 1);
+    }
     #[test]
     fn codec_and_unknown_settings() {
         for id in 0..=8 {
