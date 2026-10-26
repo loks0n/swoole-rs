@@ -2,6 +2,13 @@
 //!
 //! These queries accept no pointers, invoke no callbacks, and cannot panic.
 //! PHP/Zend values and all runtime ownership remain with upstream Swoole.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 
 /// Return the supported C ABI version.
 #[unsafe(no_mangle)]
