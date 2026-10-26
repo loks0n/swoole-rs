@@ -642,11 +642,13 @@ class Lanes(unittest.TestCase):
             command = commands['string-production-' + consumer]
             self.assertEqual(command[command.index('--consumer') + 1], consumer)
             self.assertIn('--borrow-immutable-exports', command)
-            self.assertTrue(any('selected-export/swoole.so' in arg for arg in command))
+            export = 'legacy-buffer-export' if consumer in ('facade', 'storage') else 'selected-export'
+            self.assertTrue(any(export + '/swoole.so' in arg for arg in command))
             self.assertTrue(any('native-export/swoole.so' in arg for arg in command))
             self.assertIn('--selected-export', command)
             self.assertIn('--native-export', command)
             self.assertEqual(command.count('--engine'), 2)
+        self.assertLess(list(commands).index('buffer-legacy-build'), list(commands).index('string-production-facade'))
         self.assertLess(list(commands).index('phphelpers-sdk'), list(commands).index('phphelpers-facade-runtime'))
         self.assertNotIn('--prepare-only', commands['phphelpers-facade-runtime'])
         self.assertEqual(commands['phphelpers-facade-runtime'].count('--engine'), 2)
