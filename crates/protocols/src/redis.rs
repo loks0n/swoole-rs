@@ -435,7 +435,8 @@ pub fn resp_receive(
 }
 /// Size to extend a RESP receive buffer to after action 1 (upstream 0c954199e):
 /// 0 unless it is full and below the maximum; the maximum once it is half way;
-/// otherwise double, page-aligned and capped.
+/// otherwise double, then swoole_size_align (which always adds up to a whole
+/// page, even to an aligned value) and cap.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_resp_extend_size(
     length: usize,
@@ -452,7 +453,7 @@ pub extern "C" fn swr_v1_resp_extend_size(
         let aligned = if page == 0 {
             doubled
         } else {
-            doubled.div_ceil(page).saturating_mul(page)
+            doubled.saturating_add(page - doubled % page)
         };
         aligned.min(maximum)
     }
@@ -623,7 +624,21 @@ mod tests {
     fn extend_size_follows_upstream_growth() {
         assert_eq!(swr_v1_resp_extend_size(10, 64, 1 << 20, 4096), 0);
         assert_eq!(swr_v1_resp_extend_size(1 << 20, 1 << 20, 1 << 20, 4096), 0);
-        assert_eq!(swr_v1_resp_extend_size(4096, 4096, 1 << 20, 4096), 8192);
+        assert_eq!(swr_v1_resp_extend_size(4096, 4096, 1 << 20, 4096), 12288);
+        // Upstream's growth sequence from 8192 with an 8 MiB maximum.
+        let mut size = 8192;
+        let mut sizes = vec![size];
+        while size < 8 << 20 {
+            size = swr_v1_resp_extend_size(size, size, 8 << 20, 4096);
+            sizes.push(size);
+        }
+        assert_eq!(
+            sizes,
+            [
+                8192, 20480, 45056, 94208, 192512, 389120, 782336, 1568768, 3141632, 6287360,
+                8388608
+            ]
+        );
         assert_eq!(swr_v1_resp_extend_size(5000, 5000, 1 << 20, 4096), 12288);
         assert_eq!(
             swr_v1_resp_extend_size(600_000, 600_000, 1 << 20, 4096),
