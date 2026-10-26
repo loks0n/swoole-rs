@@ -3,6 +3,9 @@ use std::alloc::{Layout, alloc, dealloc};
 use std::ffi::c_void;
 use std::ptr::{self, NonNull};
 
+/// Page invariant: every entry of `pages` is a fresh, disjoint, 8-aligned `page_size`-byte
+/// arena the native facade handed over once (`add_page`), and `offset <= page_size`
+/// counts the bytes already allocated in the last page.
 struct Global {
     pages: Vec<NonNull<u8>>,
     page_size: usize,
@@ -37,6 +40,7 @@ pub unsafe extern "C" fn swr_v1_memory_global_page_size(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(0);
     }
@@ -49,6 +53,7 @@ pub unsafe extern "C" fn swr_v1_memory_global_page_size(
     else {
         return -1;
     };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(aligned);
     }
@@ -63,18 +68,21 @@ pub unsafe extern "C" fn swr_v1_memory_global_request_valid(
     if aligned.is_null() {
         return -1;
     }
+    // SAFETY: `aligned` is non-null (checked above), aligned and writable.
     unsafe {
         aligned.write(0);
     }
     let Some(size) = requested.checked_add(7).map(|n| n & !7) else {
         return -1;
     };
+    // SAFETY: `aligned` is non-null (checked above), aligned and writable.
     unsafe {
         aligned.write(size);
     }
     if state.is_null() {
         return -1;
     }
+    // SAFETY: `state` is non-null (checked above), aligned and initialized per the caller contract.
     if unsafe { &*state.cast::<Global>() }
         .allocation_size(requested)
         .is_some()
@@ -92,16 +100,19 @@ pub unsafe extern "C" fn swr_v1_memory_global_create(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(ptr::null_mut());
     }
     if page_size < 8 || !page_size.is_multiple_of(8) {
         return -1;
     }
+    // SAFETY: `Global` is not zero-sized; null is handled below.
     let state = unsafe { alloc(Layout::new::<Global>()).cast::<Global>() };
     if state.is_null() {
         return -1;
     }
+    // SAFETY: a fresh, non-null allocation with `Global`'s layout.
     unsafe {
         state.write(Global {
             pages: Vec::new(),
@@ -110,9 +121,10 @@ pub unsafe extern "C" fn swr_v1_memory_global_create(
             drained: None,
             shared: false,
             creator: 0,
-        });
-        output.write(state.cast());
-    }
+        })
+    };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
+    unsafe { output.write(state.cast()) };
     0
 }
 /// Independent effect descriptor. Native executes its action only after return.
@@ -138,17 +150,23 @@ pub unsafe extern "C" fn swr_v1_memory_global_open(
     if output.is_null() {
         return -2;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(ptr::null_mut()) };
     let mut page_size = 0;
     if shared > 1
+        // SAFETY: `page_size` is a writable local.
         || unsafe { swr_v1_memory_global_page_size(requested, system_page, &mut page_size) } != 0
     {
         return -2;
     }
+    // SAFETY: `output` is non-null, aligned and writable.
     if unsafe { swr_v1_memory_global_create(page_size, output) } != 0 {
         return -1;
     }
-    let state = unsafe { &mut *(*output).cast::<Global>() };
+    // SAFETY: as above; create succeeded, so it holds a fresh `Global`.
+    let created = unsafe { *output };
+    // SAFETY: as above, exclusively ours until we return it.
+    let state = unsafe { &mut *created.cast::<Global>() };
     state.shared = shared != 0;
     state.creator = creator;
     0
@@ -167,10 +185,12 @@ pub unsafe extern "C" fn swr_v1_memory_global_step(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(GlobalEffect::default()) };
     if state.is_null() {
         return -1;
     }
+    // SAFETY: `state` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *state.cast::<Global>() };
     let mut effect = GlobalEffect {
         page_size: state.page_size as u32,
@@ -201,6 +221,7 @@ pub unsafe extern "C" fn swr_v1_memory_global_step(
         }
         _ => -1,
     };
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(effect) };
     status
 }
@@ -213,6 +234,7 @@ pub unsafe extern "C" fn swr_v1_memory_global_add_page(
     if state.is_null() || page.is_null() || !page.addr().is_multiple_of(8) {
         return -1;
     }
+    // SAFETY: `state` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *state.cast::<Global>() };
     if state.drained.is_some() || state.pages.try_reserve(1).is_err() {
         return -1;
@@ -233,12 +255,14 @@ pub unsafe extern "C" fn swr_v1_memory_global_alloc(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(ptr::null_mut());
     }
     if state.is_null() {
         return -1;
     }
+    // SAFETY: `state` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *state.cast::<Global>() };
     let Some((size, total)) = state.allocation_size(size) else {
         return -1;
@@ -251,12 +275,15 @@ pub unsafe extern "C" fn swr_v1_memory_global_alloc(
     else {
         return 1;
     };
-    let block = unsafe { page.as_ptr().add(state.offset) };
-    unsafe {
-        block.cast::<u32>().write(size as u32);
-        ptr::write_bytes(block.add(8), 0, size);
-        output.write(block.add(8).cast());
-    }
+    // `offset + total <= page_size` (filtered above), so the 8-byte header and `size` payload
+    // bytes fit in the last page (see `Global`); `offset` stays 8-aligned.
+    let block = page.as_ptr().wrapping_add(state.offset);
+    // SAFETY: as above.
+    unsafe { block.cast::<u32>().write(size as u32) };
+    // SAFETY: as above.
+    unsafe { ptr::write_bytes(block.wrapping_add(8), 0, size) };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
+    unsafe { output.write(block.wrapping_add(8).cast()) };
     state.offset += total;
     0
 }
@@ -265,6 +292,7 @@ pub unsafe extern "C" fn swr_v1_memory_global_capacity(state: *const c_void) -> 
     if state.is_null() {
         return 0;
     }
+    // SAFETY: `state` is non-null (checked above), aligned and initialized per the caller contract.
     let state = unsafe { &*state.cast::<Global>() };
     state.page_size - state.offset
 }
@@ -273,6 +301,7 @@ pub unsafe extern "C" fn swr_v1_memory_global_memory_size(state: *const c_void) 
     if state.is_null() {
         return 0;
     }
+    // SAFETY: `state` is non-null (checked above), aligned and initialized per the caller contract.
     let state = unsafe { &*state.cast::<Global>() };
     state.pages.len().saturating_mul(state.page_size)
 }
@@ -281,6 +310,7 @@ pub unsafe extern "C" fn swr_v1_memory_global_pop_page(state: *mut c_void) -> *m
     if state.is_null() {
         return ptr::null_mut();
     }
+    // SAFETY: `state` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *state.cast::<Global>() };
     state
         .pop_page()
@@ -291,14 +321,15 @@ pub unsafe extern "C" fn swr_v1_memory_global_release(state: *mut c_void) -> i32
     if state.is_null() {
         return -1;
     }
+    // SAFETY: `state` is non-null (checked above), aligned and initialized per the caller contract.
     let value = unsafe { &*state.cast::<Global>() };
     if value.drained.unwrap_or(0) != value.pages.len() {
         return -1;
     }
-    unsafe {
-        ptr::drop_in_place(state.cast::<Global>());
-        dealloc(state.cast(), Layout::new::<Global>());
-    }
+    // SAFETY: a live, fully drained `Global` from create, released exactly once.
+    unsafe { ptr::drop_in_place(state.cast::<Global>()) };
+    // SAFETY: allocated with this layout by create; its value was just dropped.
+    unsafe { dealloc(state.cast(), Layout::new::<Global>()) };
     0
 }
 

@@ -48,11 +48,14 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_open(output: *mut *mut OwnedCo
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(ptr::null_mut()) };
+    // SAFETY: a non-zero-sized layout; null is handled below.
     let owner = unsafe { alloc(Layout::new::<OwnedColumns>()).cast::<OwnedColumns>() };
     if owner.is_null() {
         return -1;
     }
+    // SAFETY: a fresh, non-null allocation with its type's layout.
     unsafe {
         owner.write(OwnedColumns {
             index: Columns::default(),
@@ -60,9 +63,10 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_open(output: *mut *mut OwnedCo
             generation: 0,
             position: 0,
             closing: false,
-        });
-        output.write(owner);
-    }
+        })
+    };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
+    unsafe { output.write(owner) };
     0
 }
 
@@ -74,6 +78,7 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_declare_step(cursor: *mut Decl
     if cursor.is_null() {
         return -1;
     }
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *cursor };
     if state.phase > 1 {
         return -1;
@@ -85,14 +90,18 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_declare_step(cursor: *mut Decl
             .item_size
             .addr()
             .is_multiple_of(mem::align_of::<usize>())
+        // SAFETY: `created` is non-null (checked above) and a live native flag.
         || unsafe { state.created.read() } != 0
     {
         return -1;
     }
+    // SAFETY: `state.owner` is non-null (checked above): the live owner from `v2_open`,
+    // exclusive for this step.
     let owner = unsafe { &mut *state.owner };
     if owner.closing || owner.generation == u64::MAX {
         return -1;
     }
+    // SAFETY: the caller lends `state.length` initialized name bytes at `state.name` (null only when empty).
     let Some(bytes) = (unsafe { name(state.name, state.length) }) else {
         return -1;
     };
@@ -101,10 +110,12 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_declare_step(cursor: *mut Decl
             return -2;
         }
         let mut width = 0;
+        // SAFETY: `width` is a writable local.
         if unsafe { swr_v1_memory_table_column_size(state.kind, state.requested, &mut width) } != 0
         {
             return -1;
         }
+        // SAFETY: `item_size` is non-null and aligned (checked above), live native storage.
         let base = unsafe { state.item_size.read() };
         let Some(next) = base
             .checked_add(width as usize)
@@ -133,7 +144,9 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_declare_step(cursor: *mut Decl
             .column_width
             .addr()
             .is_multiple_of(mem::align_of::<u32>())
+        // SAFETY: `column_width` is non-null and aligned (checked above), live native storage.
         || unsafe { state.column_width.read() } != state.width
+        // SAFETY: `item_size` was checked non-null and aligned in phase 0.
         || unsafe { state.item_size.read() } != state.base
     {
         return -1;
@@ -153,10 +166,10 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_declare_step(cursor: *mut Decl
     }
     owner.order.push(column.as_ptr());
     owner.generation += 1;
-    unsafe {
-        state.column_index.write(state.base);
-        state.item_size.write(state.next);
-    }
+    // SAFETY: `column_index` is non-null and aligned (checked above), live native storage.
+    unsafe { state.column_index.write(state.base) };
+    // SAFETY: `item_size` is non-null and aligned (checked in phase 0), live native storage.
+    unsafe { state.item_size.write(state.next) };
     0
 }
 
@@ -169,7 +182,9 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_get(
     if owner.is_null() {
         return ptr::null_mut();
     }
+    // SAFETY: `owner` is non-null (checked above), aligned and initialized per the caller contract.
     let owner = unsafe { &*owner };
+    // SAFETY: the caller lends `length` initialized name bytes at `bytes` (null only when empty).
     let Some(bytes) = (unsafe { name(bytes, length) }) else {
         return ptr::null_mut();
     };
@@ -191,14 +206,17 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_cursor_open(
     if cursor.is_null() {
         return -1;
     }
+    // SAFETY: `cursor` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { cursor.write(Cursor::default()) };
     if owner.is_null() {
         return -1;
     }
+    // SAFETY: `owner` is non-null (checked above), aligned and initialized per the caller contract.
     let owner = unsafe { &*owner };
     if owner.closing {
         return -1;
     }
+    // SAFETY: `cursor` is non-null (checked above), aligned and writable.
     unsafe {
         cursor.write(Cursor {
             count: owner.order.len(),
@@ -219,7 +237,9 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_cursor_next(
     if owner.is_null() || cursor.is_null() {
         return -1;
     }
+    // SAFETY: `owner` is non-null (checked above), aligned and initialized per the caller contract.
     let owner = unsafe { &*owner };
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *cursor };
     state.column = ptr::null_mut();
     if owner.closing
@@ -245,10 +265,12 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_clear_step(
     if owner.is_null() {
         return -1;
     }
+    // SAFETY: `owner` is non-null (checked above), aligned and initialized per the caller contract.
     let owner = unsafe { &*owner };
     if owner.closing {
         return -1;
     }
+    // SAFETY: forwards the caller's cursor; the order is this owner's live token list.
     unsafe { crate::table::clear_owned(cursor, &owner.order) }
 }
 
@@ -262,11 +284,14 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_close_step(
     if owner_field.is_null() || output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(ptr::null_mut()) };
+    // SAFETY: `owner_field` is non-null (checked above), aligned and initialized per the caller contract.
     let owner = unsafe { owner_field.read() };
     if owner.is_null() {
         return 0;
     }
+    // SAFETY: `owner` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *owner };
     if !state.closing {
         state.closing = true;
@@ -275,14 +300,16 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_close_step(
     if let Some(token) = state.order.get_mut(state.position) {
         let column = mem::replace(token, ptr::null_mut());
         state.position += 1;
+        // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
         unsafe { output.write(column) };
         return 1;
     }
-    unsafe {
-        owner_field.write(ptr::null_mut());
-        ptr::drop_in_place(owner);
-        dealloc(owner.cast(), Layout::new::<OwnedColumns>());
-    }
+    // SAFETY: the owner field is the caller's live, exclusive slot.
+    unsafe { owner_field.write(ptr::null_mut()) };
+    // SAFETY: the owner from `v2_open`, now unpublished and fully drained, freed once.
+    unsafe { ptr::drop_in_place(owner) };
+    // SAFETY: allocated with this layout by `v2_open`; its value was just dropped.
+    unsafe { dealloc(owner.cast(), Layout::new::<OwnedColumns>()) };
     0
 }
 

@@ -1,6 +1,9 @@
 use std::ffi::c_void;
 use std::ptr;
 
+/// Layout invariant: `mem` holds `size + maxlen + 4` bytes (see `StoragePlan`), so a
+/// 4-byte length header plus up to `maxlen` record bytes starting at any cursor below
+/// `size` stays inside it. `valid` checks every cursor and bound this relies on.
 #[repr(C)]
 pub struct Channel {
     head: i64,
@@ -37,29 +40,42 @@ fn valid(c: &Channel) -> bool {
 // one-byte record at the end of a mapping needs only one readable byte.
 #[inline(always)]
 unsafe fn copy_record(input: *const u8, output: *mut u8, length: usize) {
+    // Callers pass `length` readable input bytes and `length` writable, disjoint output
+    // bytes; every copy below stays inside both.
     #[inline]
     unsafe fn endpoints<const N: usize>(input: *const u8, output: *mut u8, length: usize) {
+        // SAFETY: as above, with `N <= length`.
+        unsafe { ptr::copy_nonoverlapping(input, output, N) };
+        // SAFETY: as above; the last `N` bytes start at `length - N`.
         unsafe {
-            ptr::copy_nonoverlapping(input, output, N);
-            ptr::copy_nonoverlapping(input.add(length - N), output.add(length - N), N);
-        }
+            ptr::copy_nonoverlapping(
+                input.wrapping_add(length - N),
+                output.wrapping_add(length - N),
+                N,
+            )
+        };
     }
-    unsafe {
-        if length > 64 {
-            ptr::copy_nonoverlapping(input, output, length);
-        } else if length >= 32 {
-            endpoints::<32>(input, output, length);
-        } else if length >= 16 {
-            endpoints::<16>(input, output, length);
-        } else if length >= 8 {
-            endpoints::<8>(input, output, length);
-        } else if length >= 4 {
-            endpoints::<4>(input, output, length);
-        } else if length >= 2 {
-            endpoints::<2>(input, output, length);
-        } else if length == 1 {
-            ptr::copy_nonoverlapping(input, output, 1);
-        }
+    if length > 64 {
+        // SAFETY: as above.
+        unsafe { ptr::copy_nonoverlapping(input, output, length) };
+    } else if length >= 32 {
+        // SAFETY: as above.
+        unsafe { endpoints::<32>(input, output, length) };
+    } else if length >= 16 {
+        // SAFETY: as above.
+        unsafe { endpoints::<16>(input, output, length) };
+    } else if length >= 8 {
+        // SAFETY: as above.
+        unsafe { endpoints::<8>(input, output, length) };
+    } else if length >= 4 {
+        // SAFETY: as above.
+        unsafe { endpoints::<4>(input, output, length) };
+    } else if length >= 2 {
+        // SAFETY: as above.
+        unsafe { endpoints::<2>(input, output, length) };
+    } else if length == 1 {
+        // SAFETY: as above.
+        unsafe { ptr::copy_nonoverlapping(input, output, 1) };
     }
 }
 #[unsafe(no_mangle)]
@@ -71,6 +87,7 @@ pub unsafe extern "C" fn swr_v1_memory_channel_in(
     if channel.is_null() || length < 0 || length > 0 && input.is_null() {
         return -1;
     }
+    // SAFETY: `channel` is non-null (checked above), aligned and exclusive per the caller contract.
     let c = unsafe { &mut *channel };
     if !valid(c) || length > c.maxlen || c.num == i32::MAX {
         return -1;
@@ -91,11 +108,13 @@ pub unsafe extern "C" fn swr_v1_memory_channel_in(
     let Some(bytes) = c.bytes.checked_add(length as usize) else {
         return -1;
     };
-    unsafe {
-        let item = c.mem.add(c.tail as usize);
-        item.cast::<i32>().write_unaligned(length);
-        copy_record(input.cast::<u8>(), item.add(4), length as usize);
-    }
+    // `tail < size` and `length <= maxlen` (validated), so the header and record fit in
+    // `mem` (see `Channel`); the room check above keeps them clear of unread records.
+    let item = c.mem.wrapping_add(c.tail as usize);
+    // SAFETY: as above.
+    unsafe { item.cast::<i32>().write_unaligned(length) };
+    // SAFETY: as above; `input` lends `length` readable bytes, disjoint from `mem`.
+    unsafe { copy_record(input.cast::<u8>(), item.wrapping_add(4), length as usize) };
     c.tail += packet as i64;
     if c.tail >= c.size as i64 {
         c.tail = 0;
@@ -115,8 +134,12 @@ pub unsafe extern "C" fn swr_v1_memory_channel_out(
     if channel.is_null() || capacity < 0 || consume > 1 {
         return -1;
     }
-    let length = unsafe { read_record(&*channel, output, capacity) };
+    // SAFETY: `channel` is non-null (checked above), aligned and initialized.
+    let state = unsafe { &*channel };
+    // SAFETY: `output` lends `capacity` writable bytes, disjoint from the channel memory.
+    let length = unsafe { read_record(state, output, capacity) };
     if length >= 0 && consume != 0 {
+        // SAFETY: `channel` is non-null (checked above), aligned and exclusive per the caller contract.
         let c = unsafe { &mut *channel };
         c.head += length as i64 + 4;
         if c.head >= c.size as i64 {
@@ -132,7 +155,9 @@ unsafe fn read_record(c: &Channel, output: *mut c_void, capacity: i32) -> i32 {
     if capacity < 0 || !valid(c) || c.num == 0 {
         return -1;
     }
-    let item = unsafe { c.mem.add(c.head as usize) };
+    // `head < size` (validated), so the 4-byte header is inside `mem` (see `Channel`).
+    let item = c.mem.wrapping_add(c.head as usize);
+    // SAFETY: as above; `num > 0` means a record header was written there.
     let length = unsafe { item.cast::<i32>().read_unaligned() };
     if length < 0
         || length > c.maxlen
@@ -142,9 +167,9 @@ unsafe fn read_record(c: &Channel, output: *mut c_void, capacity: i32) -> i32 {
     {
         return -1;
     }
-    unsafe {
-        copy_record(item.add(4), output.cast::<u8>(), length as usize);
-    }
+    // SAFETY: `length <= maxlen` record bytes follow the header inside `mem`; `output` has
+    // `capacity >= length` writable, disjoint bytes.
+    unsafe { copy_record(item.wrapping_add(4), output.cast::<u8>(), length as usize) };
     length
 }
 /// Independent descriptor, not a C++ object or prefix. Its disjoint typed targets
@@ -188,33 +213,51 @@ impl Fields {
             && !self.mem.is_null()
             && self.mem.is_aligned()
     }
+    // Callers check `valid` first: every target is non-null, aligned, live and serialized
+    // for the call.
     unsafe fn load(&self) -> Channel {
         Channel {
+            // SAFETY: as above.
             head: unsafe { self.head.read() },
+            // SAFETY: as above.
             tail: unsafe { self.tail.read() },
+            // SAFETY: as above.
             size: unsafe { self.size.read() },
+            // SAFETY: as above.
             head_tag: unsafe { self.head_tag.read() },
+            // SAFETY: as above.
             tail_tag: unsafe { self.tail_tag.read() },
+            // SAFETY: as above.
             num: unsafe { self.num.read() },
+            // SAFETY: as above.
             max_num: unsafe { self.max_num.read() },
+            // SAFETY: as above.
             bytes: unsafe { self.bytes.read() },
+            // SAFETY: as above.
             flags: unsafe { self.flags.read() },
+            // SAFETY: as above.
             maxlen: unsafe { self.maxlen.read() },
+            // SAFETY: as above.
             mem: unsafe { self.mem.read() },
         }
     }
+    // Same precondition as `load`.
     unsafe fn publish(&self, state: &Channel, producer: bool) {
-        unsafe {
-            if producer {
-                self.tail.write(state.tail);
-                self.tail_tag.write(state.tail_tag);
-            } else {
-                self.head.write(state.head);
-                self.head_tag.write(state.head_tag);
-            }
-            self.num.write(state.num);
-            self.bytes.write(state.bytes);
+        if producer {
+            // SAFETY: as above.
+            unsafe { self.tail.write(state.tail) };
+            // SAFETY: as above.
+            unsafe { self.tail_tag.write(state.tail_tag) };
+        } else {
+            // SAFETY: as above.
+            unsafe { self.head.write(state.head) };
+            // SAFETY: as above.
+            unsafe { self.head_tag.write(state.head_tag) };
         }
+        // SAFETY: as above.
+        unsafe { self.num.write(state.num) };
+        // SAFETY: as above.
+        unsafe { self.bytes.write(state.bytes) };
     }
 }
 #[repr(C)]
@@ -256,12 +299,14 @@ pub unsafe extern "C" fn swr_v1_memory_channel_storage_plan(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(StoragePlan::default());
     }
     let Some(plan) = StoragePlan::new(size, maxlen, flags, header_size) else {
         return -1;
     };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(plan);
     }
@@ -276,7 +321,9 @@ pub unsafe extern "C" fn swr_v1_memory_channel_storage_init(
     if fields.is_null() || plan.is_null() || memory.is_null() {
         return -1;
     }
+    // SAFETY: `fields` is non-null (checked above), aligned and initialized per the caller contract.
     let fields = unsafe { &*fields };
+    // SAFETY: `plan` is non-null (checked above), aligned and initialized per the caller contract.
     let plan = unsafe { plan.read() };
     if !fields.valid()
         || StoragePlan::new(
@@ -292,19 +339,29 @@ pub unsafe extern "C" fn swr_v1_memory_channel_storage_init(
     {
         return -1;
     }
-    unsafe {
-        fields.head.write(0);
-        fields.tail.write(0);
-        fields.size.write(plan.size);
-        fields.head_tag.write(0);
-        fields.tail_tag.write(0);
-        fields.num.write(0);
-        fields.max_num.write(0);
-        fields.bytes.write(0);
-        fields.flags.write(plan.flags);
-        fields.maxlen.write(plan.maxlen);
-        fields.mem.write(memory.cast());
-    }
+    // Every field target passed `valid` (above): non-null, aligned, live, serialized.
+    // SAFETY: as above.
+    unsafe { fields.head.write(0) };
+    // SAFETY: as above.
+    unsafe { fields.tail.write(0) };
+    // SAFETY: as above.
+    unsafe { fields.size.write(plan.size) };
+    // SAFETY: as above.
+    unsafe { fields.head_tag.write(0) };
+    // SAFETY: as above.
+    unsafe { fields.tail_tag.write(0) };
+    // SAFETY: as above.
+    unsafe { fields.num.write(0) };
+    // SAFETY: as above.
+    unsafe { fields.max_num.write(0) };
+    // SAFETY: as above.
+    unsafe { fields.bytes.write(0) };
+    // SAFETY: as above.
+    unsafe { fields.flags.write(plan.flags) };
+    // SAFETY: as above.
+    unsafe { fields.maxlen.write(plan.maxlen) };
+    // SAFETY: as above.
+    unsafe { fields.mem.write(memory.cast()) };
     0
 }
 #[unsafe(no_mangle)]
@@ -316,16 +373,18 @@ pub unsafe extern "C" fn swr_v1_memory_channel_storage_in(
     if fields.is_null() {
         return -1;
     }
+    // SAFETY: `fields` is non-null (checked above), aligned and initialized per the caller contract.
     let fields = unsafe { &*fields };
     if !fields.valid() {
         return -1;
     }
+    // SAFETY: `fields` passed `valid` (above).
     let mut state = unsafe { fields.load() };
+    // SAFETY: `state` is a local snapshot; the caller's buffer follows swr_v1_memory_channel_in's contract.
     let result = unsafe { swr_v1_memory_channel_in(&mut state, input, length) };
     if result == 0 {
-        unsafe {
-            fields.publish(&state, true);
-        }
+        // SAFETY: `fields` passed `valid` (above).
+        unsafe { fields.publish(&state, true) };
     }
     result
 }
@@ -338,16 +397,18 @@ pub unsafe extern "C" fn swr_v1_memory_channel_storage_out(
     if fields.is_null() {
         return -1;
     }
+    // SAFETY: `fields` is non-null (checked above), aligned and initialized per the caller contract.
     let fields = unsafe { &*fields };
     if !fields.valid() {
         return -1;
     }
+    // SAFETY: `fields` passed `valid` (above).
     let mut state = unsafe { fields.load() };
+    // SAFETY: `state` is a local snapshot; the caller's buffer follows swr_v1_memory_channel_out's contract.
     let result = unsafe { swr_v1_memory_channel_out(&mut state, output, capacity, 1) };
     if result >= 0 {
-        unsafe {
-            fields.publish(&state, false);
-        }
+        // SAFETY: `fields` passed `valid` (above).
+        unsafe { fields.publish(&state, false) };
     }
     result
 }
@@ -368,6 +429,7 @@ pub unsafe extern "C" fn swr_v1_memory_channel_full(state: *const CapacityState)
     if state.is_null() {
         return -1;
     }
+    // SAFETY: `state` is non-null (checked above), aligned and initialized per the caller contract.
     let state = unsafe { &*state };
     let occupied = state
         .bytes
@@ -393,6 +455,7 @@ pub unsafe extern "C" fn swr_v1_memory_channel_lifecycle(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(Lifecycle::default());
     }
@@ -422,6 +485,7 @@ pub unsafe extern "C" fn swr_v1_memory_channel_lifecycle(
         } // close/delete native pipe
         push(if flags & 8 == 0 { 8 } else { 9 }); // release heap/shared
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(plan);
     }

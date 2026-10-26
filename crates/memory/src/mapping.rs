@@ -4,6 +4,7 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_size(requested: usize, total: *mu
     if total.is_null() {
         return -1;
     }
+    // SAFETY: `total` is non-null (checked above), aligned and writable.
     unsafe {
         total.write(0);
     }
@@ -15,6 +16,7 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_size(requested: usize, total: *mu
     else {
         return -1;
     };
+    // SAFETY: `total` is non-null (checked above), aligned and writable.
     unsafe {
         total.write(size);
     }
@@ -29,6 +31,7 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_product(
     if requested.is_null() {
         return -1;
     }
+    // SAFETY: `requested` is non-null (checked above), aligned and writable.
     unsafe {
         requested.write(0);
     }
@@ -36,9 +39,11 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_product(
         return -1;
     };
     let mut total = 0;
+    // SAFETY: `total` is a writable local.
     if unsafe { swr_v1_memory_mapping_size(size, &mut total) } != 0 {
         return -1;
     }
+    // SAFETY: `requested` is non-null (checked above), aligned and writable.
     unsafe {
         requested.write(size);
     }
@@ -53,6 +58,7 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_copy(
     if bytes.is_null() {
         return -1;
     }
+    // SAFETY: `bytes` is non-null (checked above), aligned and writable.
     unsafe {
         bytes.write(0);
     }
@@ -62,6 +68,7 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_copy(
     if old_total > isize::MAX as usize || new_total > isize::MAX as usize {
         return -1;
     }
+    // SAFETY: `bytes` is non-null (checked above), aligned and writable.
     unsafe {
         bytes.write(old.min(new));
     }
@@ -80,7 +87,8 @@ unsafe fn extent(payload: *const u8) -> Option<Extent> {
         return None;
     }
     // Caller supplies a live initialized mapping header immediately before payload.
-    let base = unsafe { payload.sub(8) };
+    let base = payload.wrapping_sub(8);
+    // SAFETY: as above; the header is 8-aligned (checked above).
     let total = unsafe { base.cast::<usize>().read() };
     if total < 8
         || !total.is_multiple_of(8)
@@ -106,10 +114,9 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_initialize(base: *mut u8, total: 
     {
         return std::ptr::null_mut();
     }
-    unsafe {
-        base.cast::<usize>().write(total);
-        base.add(8)
-    }
+    // SAFETY: non-null, 8-aligned and covering `total >= 8` bytes (checked above).
+    unsafe { base.cast::<usize>().write(total) };
+    base.wrapping_add(8)
 }
 /// Decode actual header storage for native unmap/protect, without retaining it.
 #[unsafe(no_mangle)]
@@ -120,12 +127,15 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_extent(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(Extent::default());
     }
+    // SAFETY: the caller passes a live mapping payload (or null).
     let Some(value) = (unsafe { extent(payload) }) else {
         return -1;
     };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(value);
     }
@@ -134,7 +144,11 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_extent(
 /// Relocate bounded payload bytes between disjoint initialized live mappings.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_memory_mapping_relocate(old: *const u8, new: *mut u8) -> i32 {
-    let (Some(source), Some(destination)) = (unsafe { extent(old) }, unsafe { extent(new) }) else {
+    // SAFETY: the caller passes live, initialized mapping payloads.
+    let source = unsafe { extent(old) };
+    // SAFETY: as above.
+    let destination = unsafe { extent(new) };
+    let (Some(source), Some(destination)) = (source, destination) else {
         return -1;
     };
     let source_end = source.base.addr() + source.total;
@@ -142,9 +156,9 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_relocate(old: *const u8, new: *mu
     if source.base.addr() < destination_end && destination.base.addr() < source_end {
         return -1;
     }
-    unsafe {
-        std::ptr::copy_nonoverlapping(old, new, source.total.min(destination.total) - 8);
-    }
+    // SAFETY: the mappings don't overlap (checked above), and each payload holds `total - 8`
+    // bytes.
+    unsafe { std::ptr::copy_nonoverlapping(old, new, source.total.min(destination.total) - 8) };
     0
 }
 
