@@ -7,6 +7,10 @@ use std::ptr;
 type SendQueue = VecDeque<*mut c_void>;
 
 unsafe fn allocate_queue(allocator: unsafe fn(Layout) -> *mut u8) -> *mut c_void {
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "the allocator honours Layout::new::<SendQueue>()"
+    )]
     let memory = allocator(Layout::new::<SendQueue>()).cast::<SendQueue>();
     if !memory.is_null() {
         ptr::write(memory, SendQueue::new());

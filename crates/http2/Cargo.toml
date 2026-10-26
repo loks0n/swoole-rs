@@ -6,3 +6,6 @@ license = "Apache-2.0"
 
 [lib]
 crate-type = ["rlib", "staticlib"]
+
+[lints]
+workspace = true
