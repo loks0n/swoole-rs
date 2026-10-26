@@ -26,7 +26,9 @@ pub unsafe extern "C" fn swr_v1_phphelpers_init_next(
     cursor: *mut usize,
     step: *mut SwrPhpInitStep,
 ) -> u32 {
-    let (Some(cursor), false) = (unsafe { cursor.as_mut() }, step.is_null()) else {
+    // SAFETY: `cursor` is null or aligned, initialized storage disjoint from `step`.
+    let cursor = unsafe { cursor.as_mut() };
+    let (Some(cursor), false) = (cursor, step.is_null()) else {
         return 0;
     };
     let (action, index) = match *cursor {
@@ -39,6 +41,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_init_next(
     let Ok(index) = u32::try_from(index) else {
         return 0;
     };
+    // SAFETY: non-null (checked above), aligned, writable and disjoint from `cursor`.
     unsafe {
         step.write(SwrPhpInitStep {
             index,
@@ -83,6 +86,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_wrapper(index: u32, output: *mut SwrP
         10 => (b"str_ireplace\0", 2),
         _ => return 0,
     };
+    // SAFETY: non-null (checked above), aligned, writable native storage.
     unsafe {
         output.write(SwrPhpWrapper {
             name: name.as_ptr().cast(),
