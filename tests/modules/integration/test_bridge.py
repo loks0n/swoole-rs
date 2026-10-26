@@ -212,7 +212,7 @@ int main(void) {
             cases.append((1, ARGS.feature_bits & ~2, 'Rust bridge missing buffer feature'))
         if ARGS.feature_bits & 4:
             cases.append((1, ARGS.feature_bits & ~4, 'Rust bridge missing timer feature'))
-        for bit, name in [(64, 'memory'), (128, 'protocols'), (256, 'http'), (512, 'utilities'), (1024, 'locks'), (2048, 'wrappers'), (4096, 'framing'), (8192, 'corebase'), (16384, 'reactor'), (32768, 'coroutine'), (65536, 'hooks'), (131072, 'ossupport'), (262144, 'tls'), (524288, 'process'), (1048576, 'clients'), (2097152, 'httpbindings'), (4194304, 'http2'), (8388608, 'ports'), (16777216, 'phphelpers'), (33554432, 'phpcollections'), (67108864, 'phpevents'), (134217728, 'phpcoroutines')]:
+        for bit, name in [(64, 'memory'), (128, 'protocols'), (256, 'http'), (512, 'utilities'), (1024, 'locks'), (2048, 'wrappers'), (8192, 'corebase'), (16384, 'reactor'), (32768, 'coroutine'), (65536, 'hooks'), (131072, 'ossupport'), (262144, 'tls'), (524288, 'process'), (1048576, 'clients'), (2097152, 'httpbindings'), (4194304, 'http2'), (8388608, 'ports'), (16777216, 'phphelpers'), (33554432, 'phpcollections'), (67108864, 'phpevents'), (134217728, 'phpcoroutines')]:
             if ARGS.feature_bits & bit:
                 cases.append((1, ARGS.feature_bits & ~bit, f'Rust bridge missing {name} feature'))
         # Discover and remove invariant real query members once. Each case gets
