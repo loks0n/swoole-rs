@@ -89,6 +89,12 @@ pub struct Timer {
     closing: bool,
 }
 impl Timer {
+    /// Records where the timer at `index` now sits in the heap.
+    fn place(&mut self, index: usize) {
+        if let Some(position) = self.positions.get_mut(&self.heap[index].id) {
+            *position = index;
+        }
+    }
     fn up(&mut self, mut index: usize) {
         let entry = self.heap[index];
         while index > 0 {
@@ -97,17 +103,11 @@ impl Timer {
                 break;
             }
             self.heap[index] = self.heap[parent];
-            *self
-                .positions
-                .get_mut(&self.heap[index].id)
-                .expect("retained timer index") = index;
+            self.place(index);
             index = parent;
         }
         self.heap[index] = entry;
-        *self
-            .positions
-            .get_mut(&entry.id)
-            .expect("retained timer index") = index;
+        self.place(index);
     }
     fn down(&mut self, mut index: usize) {
         let entry = self.heap[index];
@@ -127,17 +127,11 @@ impl Timer {
                 break;
             }
             self.heap[index] = self.heap[child];
-            *self
-                .positions
-                .get_mut(&self.heap[index].id)
-                .expect("retained timer index") = index;
+            self.place(index);
             index = child;
         }
         self.heap[index] = entry;
-        *self
-            .positions
-            .get_mut(&entry.id)
-            .expect("retained timer index") = index;
+        self.place(index);
     }
     fn repair(&mut self, index: usize) {
         if index > 0 && self.heap[index].deadline < self.heap[(index - 1) / 2].deadline {

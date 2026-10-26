@@ -1,4 +1,10 @@
 // upstream/ holds unmodified files from Swoole v6.2.4 (c7e51450); see src/lib.rs.
+#![expect(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    reason = "a build script reports failure by panicking"
+)]
 use std::{env, fs, path::PathBuf};
 
 fn out(name: &str) -> PathBuf {
