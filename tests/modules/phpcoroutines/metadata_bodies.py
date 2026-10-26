@@ -69,6 +69,12 @@ static inline swr_phpcoroutines_context_cells php_coroutine_metadata_cells(PHPCo
         return static_cast<long>(''' + call('PARENT') + '''.value);
 ''',
         'static inline bool is_schedulable(PHPContext *ctx) {': '''
+        // Coroutine timestamps are maintained only while the preemption thread runs.
+        uint32_t interrupt_stage = 0;
+        if (swr_v1_phpcoroutines_interrupt(&interrupt_thread_running, &interrupt_stage, SWR_CORO_INTERRUPT_RECORD,
+                                           MAX_EXEC_MSEC).action != SWR_CORO_INTERRUPT_CLOCK) {
+            return false;
+        }
         const auto cells = php_coroutine_metadata_cells(ctx);
         uint32_t stage = 0;
         int64_t observation = 0;

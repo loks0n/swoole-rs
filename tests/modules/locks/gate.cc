@@ -105,21 +105,28 @@ static void coroutine_policy() {
 }
 
 static void wait_wake() {
+    // Rust implements only the futex path; non-futex builds run upstream's registry.
 #ifdef HAVE_FUTEX
+#define WAIT(w,t) (rust?swr_v1_locks_wait(w,t):sw_atomic_futex_wait(w,t))
+#define WAKE(w,n) (rust?swr_v1_locks_wakeup(w,n):sw_atomic_futex_wakeup(w,n))
     for(int rust: {0,1}) {
 #else
+#define WAIT(w,t) sw_atomic_futex_wait(w,t)
+#define WAKE(w,n) sw_atomic_futex_wakeup(w,n)
     sw_atomic_wait_init();
-    for(int rust: {0}) {
+    {
 #endif
         auto *word=(uint32_t*)mmap(nullptr,4096,PROT_READ|PROT_WRITE,MAP_SHARED|MAP_ANON,-1,0);CHECK(word!=MAP_FAILED);
         *word=1;
-        CHECK((rust?swr_v1_locks_wait(word,0.01):sw_atomic_futex_wait(word,0.01))==0);CHECK(*word==0);
-        CHECK((rust?swr_v1_locks_wait(word,0.002):sw_atomic_futex_wait(word,0.002))==-1);CHECK(*word==0);
+        CHECK(WAIT(word,0.01)==0);CHECK(*word==0);
+        CHECK(WAIT(word,0.002)==-1);CHECK(*word==0);
         pid_t pid=fork();CHECK(pid>=0);
-        if(!pid){int r=rust?swr_v1_locks_wait(word,1):sw_atomic_futex_wait(word,1);_exit(r==0?0:21);}
-        usleep(10000);int r=rust?swr_v1_locks_wakeup(word,1):sw_atomic_futex_wakeup(word,1);CHECK(r>=0);
+        if(!pid){int r=WAIT(word,1);_exit(r==0?0:21);}
+        usleep(10000);int r=WAKE(word,1);CHECK(r>=0);
         int status;CHECK(waitpid(pid,&status,0)==pid);CHECK(WIFEXITED(status)&&WEXITSTATUS(status)==0);munmap(word,4096);
     }
+#undef WAIT
+#undef WAKE
 }
 
 int main() {

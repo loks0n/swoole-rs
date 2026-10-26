@@ -80,6 +80,7 @@ static int native_kevent(int,const NativeKevent*,int,NativeKevent *events,int co
 struct WaitBase {
     Reactor *reactor_; int epfd_=3,event_max_=1;
     pollfd poll_events[1]{};
+    Socket *poll_sockets[1]{};
 #ifdef __APPLE__
     NativeKevent kqueue_events[1]{};
 #endif
@@ -87,7 +88,7 @@ struct WaitBase {
     epoll_event epoll_events[1]{};
 #endif
     explicit WaitBase(Reactor *r):reactor_(r) {}
-    int set_events() { poll_events[0].fd=current->fd;return 1; }
+    int set_events() { poll_events[0].fd=current->fd;poll_sockets[0]=current;return 1; }
     int del(Socket *s) { reactor_->_del(s);return 0; }
 
 };

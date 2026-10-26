@@ -13,7 +13,7 @@ class InterruptOwnerBoundary(unittest.TestCase):
         source = (pin / 'ext-src/swoole_coroutine.cc').read_text()
         header = (pin / 'ext-src/php_swoole_coroutine.h').read_text()
         selected = coroutine_selected(source); selected_header = header_selected(header)
-        seed = 'SW_THREAD_LOCAL bool PHPCoroutine::interrupt_thread_running = false;'
+        seed = 'SW_THREAD_LOCAL std::atomic_bool PHPCoroutine::interrupt_thread_running{false};'
         self.assertEqual(source.count(seed), 1)
         self.assertIn('SW_THREAD_LOCAL swr_phpcoroutines_interrupt_state PHPCoroutine::interrupt_thread_running{0};', selected)
         self.assertIn(SELECTED_DECL, selected_header)
@@ -35,22 +35,25 @@ class InterruptOwnerBoundary(unittest.TestCase):
         self.assertIn('swr_v1_phpcoroutines_interrupt(&interrupt_thread_running, &interrupt_stage, SWR_CORO_INTERRUPT_RECORD', current)
         self.assertLess(current.index('swr_v1_phpcoroutines_interrupt('), current.index('Timer::get_absolute_msec();'))
         self.assertLess(current.index('Timer::get_absolute_msec();'), current.index('SWR_CORO_METADATA_RECORD'))
-        header_remainder = header.replace(DECL, '').replace(record + before + '}', '')
+        schedulable = 'static inline bool is_schedulable(PHPContext *ctx) {'
+        native_schedulable, selected_schedulable = body(header, schedulable), body(selected_header, schedulable)
+        self.assertTrue(selected_schedulable.endswith('#else' + native_schedulable + '#endif\n    '))
+        current = selected_schedulable.split('#else', 1)[0]
+        self.assertLess(current.index('SWR_CORO_INTERRUPT_RECORD'), current.index('Timer::get_absolute_msec();'))
+        header_remainder = header.replace(DECL, '').replace(record + before + '}', '').replace(schedulable + native_schedulable + '}', '')
         self.assertNotIn('interrupt_thread_running', header_remainder)
         start, stop = active
-        for effect in ['zend_vm_interrupt = &EG(vm_interrupt);', 'swoole_signal_block_all();',
-                       'zend_atomic_bool_store(zend_vm_interrupt, 1);']:
+        for effect in ['&EG(vm_interrupt);', 'swoole_signal_block_all();', 'zend_atomic_bool_store(vm_interrupt, 1);']:
             self.assertEqual(start.count(effect), body(source, SIGNATURES[0]).count(effect))
-        self.assertIn('interrupt_thread = std::thread([]() {', start)
-        child = body(start, 'std::thread([]() {')
-        self.assertIn('swr_v1_phpcoroutines_interrupt(&interrupt_thread_running, &child_stage, SWR_CORO_INTERRUPT_CHILD', child)
-        self.assertLess(child.index('swoole_signal_block_all();'), child.index('&interrupt_thread_running'))
+        # The helper gets the owner thread's cells, never its own thread-local copies.
+        self.assertIn('interrupt_thread = std::thread([running, vm_interrupt]() {', start)
+        child = body(start, 'std::thread([running, vm_interrupt]() {')
+        self.assertIn('swr_v1_phpcoroutines_interrupt(running, &child_stage, SWR_CORO_INTERRUPT_CHILD', child)
+        self.assertNotIn('interrupt_thread_running', child)
+        self.assertLess(child.index('swoole_signal_block_all();'), child.index('swr_v1_phpcoroutines_interrupt('))
         self.assertIn('std::this_thread::sleep_for(std::chrono::milliseconds(child.value));', child)
         self.assertEqual(stop.count('interrupt_thread.join();'), 1)
-        # VM pointer/thread storage declarations remain exact Native effects.
-        for declaration in ['SW_THREAD_LOCAL std::thread PHPCoroutine::interrupt_thread;',
-                            'static SW_THREAD_LOCAL zend_atomic_bool *zend_vm_interrupt = nullptr;']:
-            self.assertIn(declaration, selected)
-
+        self.assertIn('SW_THREAD_LOCAL std::thread PHPCoroutine::interrupt_thread;', selected)
+        self.assertNotIn('zend_vm_interrupt', selected)
 
 if __name__ == '__main__': unittest.main()

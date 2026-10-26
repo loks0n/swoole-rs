@@ -16,7 +16,7 @@
 #define swoole_trace_log(tag,fmt,...) trace_call(__VA_ARGS__)
 // DECLARATIONS
 namespace BODY_NAMESPACE {
-constexpr int HTTP_RESPONSE=1,HPE_OK=0,SW_TIMEOUT_READ=1,SW_ERROR_HTTP_INVALID_PROTOCOL=700,SW_LOG_TRACE=1,SW_WEBSOCKET_HEADER_LEN=2,HTTP_ESTATUS_REQUEST_TIMEOUT=-2,HTTP_ESTATUS_SERVER_RESET=-3;
+constexpr int HTTP_RESPONSE=1,HPE_OK=0,SW_TIMEOUT_READ=1,SW_ERROR_HTTP_INVALID_PROTOCOL=700,SW_LOG_TRACE=1,SW_WEBSOCKET_HEADER_LEN=2,HTTP_ESTATUS_REQUEST_TIMEOUT=-2,HTTP_ESTATUS_SERVER_RESET=-3,SW_ERROR_WEBSOCKET_HANDSHAKE_FAILED=8504;
 struct Client;static Client *active;static unsigned bits,scenario,mutation;static int fail_at,event_count;static unsigned receive_count,parse_count,ticks;
 static std::ostringstream trace;static void event(const std::string&,bool throwing=true);static void change(unsigned);
 struct String {
@@ -42,6 +42,7 @@ struct Client {
  bool recv_response(double timeout);
  bool close(){event("close");change(8);socket=nullptr;return true;}
  void reset(){event("reset");change(9);wait_response=false;completed=false;event_stream=false;}
+ void set_error(int error,const char*,int code) const{event("set-error-properties:"+std::to_string(error)+":"+std::to_string(code));active->property_error=error;active->status=code;}
 };
 static void event(const std::string &name,bool throwing){trace<<name<<':'<<(active->socket?active->socket->id:-1)<<','<<active->wait_response<<active->completed<<active->event_stream<<active->websocket<<active->keep_alive<<active->connection_close<<';';if(event_count++==fail_at&&throwing)throw std::runtime_error(name);}
 static void change(unsigned point){if(mutation!=point)return;active->event_stream=!active->event_stream;active->websocket=!active->websocket;active->keep_alive=!active->keep_alive;active->connection_close=!active->connection_close;active->response_timeout=2.25;if(point==2)active->socket=&sockets[1];if(point==5)active->socket->close_wait=!active->socket->close_wait;if(point==7)active->socket->errCode=ETIMEDOUT;}
@@ -67,6 +68,7 @@ static size_t swoole_llhttp_parser_execute(Parser*p,int*,const char*data,size_t 
 static void trace_call(size_t parsed,ssize_t received,size_t total,bool complete){event("trace:"+std::to_string(parsed)+":"+std::to_string(received)+":"+std::to_string(total)+":"+std::to_string(complete));}
 static void swoole_error_log(int,int,const char*){event("header-too-large");}
 static void php_swoole_socket_set_error_properties(void*,Socket*s){event("error-properties:"+std::to_string(s->id));active->property_error=s->errCode;change(7);}
+static bool websocket_verify_server_handshake(void*){event("verify-handshake");return !(bits&16384);}
 namespace zend {static void object_set(void*,const char*,size_t,int n){event("status:"+std::to_string(n));active->status=n;}}
 // ACTUAL_BODY
 static std::string run(unsigned input,unsigned sc,unsigned mut,int failure){

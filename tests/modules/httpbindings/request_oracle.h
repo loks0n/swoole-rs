@@ -37,6 +37,7 @@
 #define SW_ZEND_STR_QUERY_STRING "query_string"
 #define SW_ZEND_STR_GET "get"
 #define PARSE_STRING 1
+#define SW_STACK_BUFFER_SIZE 65536
 struct Exit {};
 struct Oracle {
     std::vector<std::string> trace;
@@ -64,7 +65,7 @@ inline void log_format(const char*kind,const char*fmt,va_list args){char s[512];
 inline void swoole_error_log(int,int,const char*fmt,...){va_list args;va_start(args,fmt);log_format("error:",fmt,args);va_end(args);}
 inline void swoole_trace_log(int,const char*fmt,...){va_list args;va_start(args,fmt);log_format("trace:",fmt,args);va_end(args);}
 inline char *php_strtok_r(char*p,const char*d,char**save){return strtok_r(p,d,save);}
-struct Scratch {char str[4096];};
+struct Scratch {char str[4096];size_t size=sizeof(str);};
 extern thread_local Scratch scratch;
 inline Scratch *sw_tg_buffer(){return &scratch;}
 namespace swoole {namespace websocket {static constexpr int STATUS_CONNECTION=1;} }
@@ -81,7 +82,7 @@ struct HttpContext {
         zval*zheader=&header,*zcookie=&cookie,*zserver=&server,*zget=&get,*zobject=&object;
         bool post_form_urlencoded=false;char*path=nullptr;size_t path_len=0;
     } request;
-    const char*current_header_name=nullptr;size_t current_header_name_len=0;
+    const char*current_header_name=nullptr;size_t current_header_name_len=0,current_header_value_len=0;
     bool parse_cookie=false,enable_compression=false,websocket=false,recv_chunked=false,co=false,boundary=true;
     int compression=0,initializations=0;long fd=42;Server server;
     bool is_co_socket(){oracle->event("is-co");return co;}
@@ -91,11 +92,12 @@ struct HttpContext {
     void set_compression_method(const char*p,size_t n){oracle->event("compression:"+std::string(p,n));compression++;}
 };
 struct llhttp_t {void*data=nullptr;uint32_t method=0;};
-static constexpr int HTTP_DELETE=0,HTTP_POST=3,HTTP_PUT=4,HTTP_PATCH=28;
+static constexpr int HTTP_DELETE=0,HTTP_POST=3,HTTP_PUT=4,HTTP_PATCH=28,HTTP_QUERY=46,HPE_USER=24;
+inline void llhttp_set_error_reason(llhttp_t*,const char*reason){oracle->event("error-reason:"+std::string(reason));}
 static constexpr int swoole_http_request_ce=0;
 #define REQUEST_DECL(namespace_name) namespace namespace_name { \
 int call_header(llhttp_t*,const char*,size_t);int call_url(llhttp_t*,const char*,size_t); \
-bool swoole_http_token_list_contains_value(const char*,size_t,const char*); \
+int swoole_http_token_list_contains_value(const char*,size_t,const char*); \
 char *call_trim(char*,size_t*);void call_key(char*,int); }
 REQUEST_DECL(upstream_request)
 REQUEST_DECL(candidate_request)

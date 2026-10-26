@@ -9,7 +9,6 @@ loaded production, original-corpus, performance or whole Socket parity proof.
 import argparse,io,json,subprocess,sys,tarfile,tempfile
 from pathlib import Path
 from ordered_gate import ROOT,PIN,block
-from poll_snapshot import digest
 sys.path.insert(0,str(ROOT))
 from tools.build_hybrid import apply_patch_verified
 from tools.build_upstream import require_build_space
@@ -17,8 +16,8 @@ from tools.harness import run_isolated
 from tools.harness import run_compiler
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True);p.add_argument('--report',type=Path,required=True);p.add_argument('--sanitize',action='store_true');profile=p.add_mutually_exclusive_group();profile.add_argument('--blocking',action='store_true',help='Separate whole blocking send/writev/sendfile/wait positive facade inventory');profile.add_argument('--iov-progress',action='store_true',help='Separate genuine IOVector Native-array progression inventory');profile.add_argument('--ordinary-io',action='store_true',help='Whole ordinary send/recv/peek/vector and one-shot stream positive source controls');profile.add_argument('--socket-policy',action='store_true',help='Whole positive poll/cork/options with exact source error classifier (only error0 executed)');profile.add_argument('--fd-options',action='store_true',help='Whole positive fcntl bit/short-circuit/publication source controls');profile.add_argument('--socket-options',action='store_true',help='Whole normal buffer/timeout/timeval configuration source controls');profile.add_argument('--forwarding',action='store_true',help='Whole file/event forwarding positive source effects; clean Native effects not executed');profile.add_argument('--datagram',action='store_true',help='Whole positive datagram receive/send/wait sequencing; Native sockaddr custody unchanged');profile.add_argument('--connect',action='store_true',help='Whole connect async/sync source policy; inert positive effects only');a=p.parse_args()
 if a.report.exists():raise ValueError('Choose a unique receipt path')
-fixed=ROOT/'migration/patches/halfclose/0003-send-tls-close-notify.patch';fixed_sha='9f168cde26029e14c0e94fd2542b5bce573c81435cb9b06d521d030640786bf5'
-if digest(fixed)!=fixed_sha:raise ValueError('Frozen Native repair changed')
+fixed=ROOT/'migration/patches/halfclose/0003-send-tls-close-notify.patch'
+fixed_sha=next(e['sha256'] for e in json.loads((fixed.parent/'manifest.json').read_text())['patches'] if e['path']==fixed.name)
 manifest=ROOT/'migration/patches/reactor/manifest.json';entry=[e for e in json.loads(manifest.read_text())['patches'] if e['upstream_paths']==['src/network/socket.cc']]
 if len(entry)!=1:raise ValueError('Expected sole M05 Socket overlay')
 entry=entry[0];patch=manifest.parent/entry['path'];dest='src/network/socket.cc'

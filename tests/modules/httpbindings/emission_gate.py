@@ -30,7 +30,8 @@ struct HttpContext {
  void build_header(String*b,const char*,size_t){oracle->event("header");b->value="HTTP-header\r\n";b->update();send_header_=true;}
  bool send(HttpContext*,const char*p,size_t n){oracle->event("send:"+std::string(p?p:"",n));return ++oracle->sends!=oracle->failed_send;}
  void close(HttpContext*){oracle->event(end_?"close:ended":"close:pending");}
- int build_trailer(String*b){oracle->event("trailer");if(empty_trailer)return 0;b->value="x-trailer: value\r\n\r\n";b->update();return b->length;}
+ // Pinned build_trailer always appends the terminating CRLF and returns only the trailer field bytes.
+ int build_trailer(String*b){oracle->event("trailer");b->value=empty_trailer?"\r\n":"x-trailer: value\r\n\r\n";b->update();return b->length-2;}
  void send_trailer(zval*);
  void write(zend_string*,zval*);
  void end(zend_string*,zval*);

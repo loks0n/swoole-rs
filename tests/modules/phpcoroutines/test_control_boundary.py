@@ -24,24 +24,26 @@ class ControlBoundary(unittest.TestCase):
             self.assertNotIn('swr_v1_phpcoroutines_control(co', current)
             active.append(current)
         cancellation, timer = active
-        effects = ['previous = task->exception;', 'task->exception_class = ce;',
-                   'task->exception = zend_objects_new(task->exception_class);',
-                   'object_properties_init(task->exception, task->exception_class);',
-                   'zend_exception_set_previous(task->exception, previous);',
+        effects = ['exception = zend_objects_new(ce);', 'object_properties_init(exception, ce);',
+                   'zend_throw_exception_object(&zexception);',
+                   'previous = task->exception;', 'task->exception_class = ce;', 'task->exception = exception;',
+                   'zend_exception_set_previous(exception, previous);',
                    'ex_backup = EG(current_execute_data);', 'EG(current_execute_data) = task->execute_data;',
-                   'zend::object_set(task->exception, ZSTR_KNOWN(ZEND_STR_FILE), zend_get_executed_filename_ex());',
-                   'zend::object_set(task->exception, ZSTR_KNOWN(ZEND_STR_LINE), zend_get_executed_lineno());',
-                   'EG(current_execute_data) = ex_backup;', 'task->co->cancel();']
+                   'EG(current_execute_data) = ex_backup;',
+                   'task->opline_before_exception = task->execute_data->opline;',
+                   'task->execute_data->opline = EG(exception_op);', 'task->co->cancel();']
         positions = [cancellation.index(statement) for statement in effects]
         self.assertEqual(positions, sorted(positions))
         for statement in effects:
             self.assertEqual(cancellation.count(statement), 1)
         before = body(source, SIGNATURES[1])
-        self.assertIn(before[:before.index('    if (timeout == 0 || co == nullptr) {')], timer)
-        self.assertIn('swoole_timer_add(static_cast<long>(plan.value), false, [cid]', timer)
-        self.assertLess(timer.index('swoole_timer_del(tnode);'), timer.index('PHPCoroutine::get_context_by_cid(cid) != nullptr'))
+        self.assertIn(before[:before.index('    if (sw_unlikely(timeout <= 0 || co == nullptr)) {')], timer)
+        self.assertIn('swoole_timer_add(timeout, false, [cid]', timer)
+        self.assertLess(timer.index('PHPCoroutine::get_context_by_cid(cid);'), timer.index('ctx->timer_limit = nullptr;'))
+        self.assertLess(timer.index('ctx->timer_limit = nullptr;'),
+                        timer.index('php_swoole_coroutine_throw_exception(cid, true, swoole_coroutine_timeout_exception_ce);'))
         self.assertEqual(timer.count('php_swoole_coroutine_throw_exception(cid, true, swoole_coroutine_timeout_exception_ce);'), 1)
-        self.assertNotIn('(long) timeout * 1000', timer)
+        self.assertLess(timer.index('ctx->timer_limit = timer;'), timer.index('swoole_timer_del(old);'))
         # Core registry iteration remains Native, rather than a duplicate list.
         signature = 'static PHP_METHOD(swoole_coroutine, list) {'
         self.assertEqual(body(source, signature), body(selected, signature))

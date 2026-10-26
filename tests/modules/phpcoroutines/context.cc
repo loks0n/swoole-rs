@@ -1,4 +1,5 @@
 // Exact pinned/selected header bodies over inert copied-fact controls, not Zend VM execution.
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <iostream>
@@ -62,7 +63,7 @@ struct PHPCoroutine {
 #ifdef SWOOLE_RS_PHPCOROUTINES
     static swr_phpcoroutines_interrupt_state interrupt_thread_running;
 #else
-    static bool interrupt_thread_running;
+    static std::atomic_bool interrupt_thread_running;
 #endif
 #ifdef SWOOLE_RS_PHPCOROUTINES
     static swr_phpcoroutines_activation_state activated;
@@ -76,7 +77,7 @@ struct PHPCoroutine {
 #ifdef SWOOLE_RS_PHPCOROUTINES
 swr_phpcoroutines_interrupt_state PHPCoroutine::interrupt_thread_running{0};
 #else
-bool PHPCoroutine::interrupt_thread_running;
+std::atomic_bool PHPCoroutine::interrupt_thread_running{false};
 #endif
 #ifdef SWOOLE_RS_PHPCOROUTINES
 swr_phpcoroutines_activation_state PHPCoroutine::activated{0};
@@ -125,11 +126,12 @@ int main() {
         std::cout << "toggle:" << present << enabled << enable << disable << bool(PHASE(ctx.enable_scheduler)) << '\n';
         for (const auto &value : trace) std::cout << value << '\n';
     }
-    for (bool enabled : {false, true}) for (int64_t now : {0, 10, 11, 100}) for (int64_t last : {0, 5, 100}) {
-        trace.clear(); PHASE(ctx.enable_scheduler) = enabled; SCALAR(ctx.last_msec) = last; Timer::now = now;
+    for (bool running : {false, true}) for (bool enabled : {false, true}) for (int64_t now : {0, 10, 11, 100}) for (int64_t last : {0, 5, 100}) {
+        trace.clear(); RUNNING(PHPCoroutine::interrupt_thread_running) = running;
+        PHASE(ctx.enable_scheduler) = enabled; SCALAR(ctx.last_msec) = last; Timer::now = now;
         bool admitted = PHPCoroutine::is_schedulable(&ctx);
-        std::cout << "schedule:" << enabled << ':' << now << ':' << last << ':' << admitted << ':' << trace.size() << '\n';
-        assert(trace.size() == (enabled ? 1u : 0u));
+        std::cout << "schedule:" << running << ':' << enabled << ':' << now << ':' << last << ':' << admitted << ':' << trace.size() << '\n';
+        assert(trace.size() == (running && enabled ? 1u : 0u));
     }
     for (bool running : {false, true}) {
         trace.clear(); RUNNING(PHPCoroutine::interrupt_thread_running) = running; SCALAR(ctx.last_msec) = -5; Timer::now = 123;

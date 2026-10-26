@@ -57,7 +57,7 @@ def main():
                     if label=='Selected':
                         signal=block(text,text.index('static void swr_reactor_dispatch_signal('))[0]
                         fragments.append(signal)
-                array={'poll':'pollfd *events_=poll_events;', 'kqueue':'NativeKevent *events_=kqueue_events;', 'epoll':'epoll_event *events_=epoll_events;'}[backend]
+                array={'poll':'pollfd *events_=poll_events; Socket **event_sockets_=poll_sockets;', 'kqueue':'NativeKevent *events_=kqueue_events;', 'epoll':'epoll_event *events_=epoll_events;'}[backend]
                 fragments.append('struct '+name+' : WaitBase { using WaitBase::WaitBase;'+array+'\n'+body+'\n};')
         (tree/'wait.inc').write_text('\n'.join(fragments))
         binary=tree/'wait'

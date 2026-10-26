@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from corpus.upstream.run import COMMIT, prepare, record_result, run_cases, save_report
 from tools.harness import ROOT, parse_engines
 
-GROUPS = {'swoole_runtime': 147, 'swoole_socket_coro': 62, 'swoole_coroutine_system': 18, 'swoole_iouring': 2}
+GROUPS = {'swoole_runtime': 152, 'swoole_socket_coro': 65, 'swoole_coroutine_system': 20, 'swoole_iouring': 3}
 
 
 def selection(source, groups=(), names=()):

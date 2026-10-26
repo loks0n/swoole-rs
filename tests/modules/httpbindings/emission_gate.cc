@@ -28,8 +28,9 @@ int main(){
  auto bodyfail=upstream_emission::run(16,16385,false,true,2,0,SIZE_MAX);
  if(headerfail.returned!=0||(headerfail.flags&2)||(headerfail.flags&256))++errors;
  if(bodyfail.returned!=0||!(bodyfail.flags&256)||bodyfail.trace.back()!="close:ended")++errors;
+ // A failed trailer send ends and closes the response; end() returns false before clearing send_chunked.
  auto trailerfail=upstream_emission::run(4|8|16,0,false,true,2,0,SIZE_MAX);
- if(trailerfail.returned!=1||!(trailerfail.flags&256)||trailerfail.flags&(4|8))++errors;
+ if(trailerfail.returned!=0||trailerfail.trace.back()!="close:ended"||!(trailerfail.flags&256)||!(trailerfail.flags&4)||trailerfail.flags&8)++errors;
  std::cout<<"{\"emission_states\":"<<states<<",\"native_effect_exits\":"<<faults<<",\"native_false_returns\":"<<false_returns<<",\"failed_send_prefixes\":"<<partial_failures<<",\"errors\":"<<errors<<"}\n";
  return errors?1:0;
 }

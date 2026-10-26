@@ -1,5 +1,6 @@
 #include "swoole_rs.h"
 #include "swoole_rs_phpcoroutines.h"
+#include <atomic>
 #include <cassert>
 #include <cstdio>
 #include <initializer_list>
@@ -14,6 +15,7 @@ static PHPContext *current;
 static int error_mask;
 static int64_t now;
 static unsigned clock_reads;
+static std::atomic_bool interrupt_thread_running{false};
 struct Timer { static int64_t get_absolute_msec() { ++clock_reads; return now; } };
 struct Coroutine { static void *get_current_task() { return current; } };
 struct PHPCoroutine {
@@ -29,6 +31,7 @@ static PHPContext *current;
 static int error_mask;
 static int64_t now;
 static unsigned clock_reads;
+static swr_phpcoroutines_interrupt_state interrupt_thread_running{};
 struct Timer { static int64_t get_absolute_msec() { ++clock_reads; return now; } };
 struct Coroutine { static void *get_current_task() { return current; } };
 struct PHPCoroutine {
@@ -54,15 +57,18 @@ int main() {
             assert(n.enable_scheduler == bool(s.enable_scheduler.started));
         }
     }
-    for (bool enabled : {false, true}) {
-        n.enable_scheduler = enabled; s.enable_scheduler.started = enabled;
-        for (int64_t elapsed : {-1, 0, 10, 11, 100}) {
-            n.last_msec = 37; s.last_msec.value = 37;
-            native::now = selected::now = 37 + elapsed;
-            native::clock_reads = selected::clock_reads = 0;
-            assert(native::PHPCoroutine::is_schedulable(&n) == selected::PHPCoroutine::is_schedulable(&s));
-            assert(native::clock_reads == selected::clock_reads);
-            assert(native::clock_reads == unsigned(enabled));
+    for (bool running : {false, true}) {
+        native::interrupt_thread_running = running; selected::interrupt_thread_running.running = running;
+        for (bool enabled : {false, true}) {
+            n.enable_scheduler = enabled; s.enable_scheduler.started = enabled;
+            for (int64_t elapsed : {-1, 0, 10, 11, 100}) {
+                n.last_msec = 37; s.last_msec.value = 37;
+                native::now = selected::now = 37 + elapsed;
+                native::clock_reads = selected::clock_reads = 0;
+                assert(native::PHPCoroutine::is_schedulable(&n) == selected::PHPCoroutine::is_schedulable(&s));
+                assert(native::clock_reads == selected::clock_reads);
+                assert(native::clock_reads == unsigned(running && enabled));
+            }
         }
     }
     native::current = &n; selected::current = &s;

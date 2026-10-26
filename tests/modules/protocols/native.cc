@@ -266,7 +266,7 @@ int main() {
         original.dns_tunnel=actual.dns_tunnel=1;original.target_host=actual.target_host=std::string(length,'d');
         original.target_port=actual.target_port=-1;
         auto before=original.pack_connect_request(),after=actual.pack_connect_request();
-        assert(before==after && std::memcmp(original.buf,actual.buf,before)==0);++socks;
+        assert(before==after && std::memcmp(original.buf,actual.buf,before<0?sizeof(original.buf):size_t(before))==0);++socks; // Failure: prefix and untouched tail.
         if(length<=250) {
             original.username=actual.username=std::string(length,'u');original.password=actual.password=std::string(length,'p');
             before=original.pack_auth_request();after=actual.pack_auth_request();assert(before==after && std::memcmp(original.buf,actual.buf,before)==0);++socks;
