@@ -1,4 +1,14 @@
 //! Thread-confined indexed timer queue; native code retains callbacks and tokens.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_ptr_alignment,
+    clippy::cast_sign_loss,
+    reason = "#157: casts not yet checked"
+)]
+#![cfg_attr(
+    test,
+    expect(clippy::cast_possible_wrap, reason = "#157: casts not yet checked")
+)]
 mod runtime;
 pub use runtime::*;
 use std::alloc::{Layout, alloc, dealloc};

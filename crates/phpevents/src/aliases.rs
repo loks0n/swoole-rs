@@ -48,7 +48,7 @@ fn record(index: usize, legacy_alias: bool) -> Option<PhpEventMethod> {
             function: function.as_ptr().cast(),
             function_length: function.len() - 1,
         },
-        handler: handler as u32,
+        handler: u32::try_from(handler).ok()?,
         flags: 0,
     })
 }

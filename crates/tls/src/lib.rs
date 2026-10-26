@@ -32,14 +32,17 @@ pub unsafe extern "C" fn swr_v1_tls_password(
     if nonempty == 0 || length < 0 || i64::from(length) >= i64::from(capacity) - 1 {
         return 0;
     }
+    let Ok(count) = usize::try_from(length) else {
+        return 0;
+    };
     // No slice, allocation, callback, panic, destructor or retained native borrow.
     if length != 0 {
         // SAFETY: an accepted copy has `length` initialized source bytes and at least
         // `length + 1` writable, non-overlapping destination bytes.
-        unsafe { core::ptr::copy_nonoverlapping(source, destination, length as usize) };
+        unsafe { core::ptr::copy_nonoverlapping(source, destination, count) };
     }
     // SAFETY: the terminator lands at offset `length`, inside those `length + 1` bytes.
-    let terminator = unsafe { destination.add(length as usize) };
+    let terminator = unsafe { destination.add(count) };
     // SAFETY: as above, `terminator` is writable.
     unsafe { terminator.write(0) };
     length

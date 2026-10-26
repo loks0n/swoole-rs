@@ -1,3 +1,9 @@
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "#157: casts not yet checked"
+)]
 // SPDX-License-Identifier: Apache-2.0
 // Compatibility derived from Swoole v6.2.2 src/core/base.cc (Swoole contributors).
 //! Core numeric and byte helpers; native code retains allocation and effect custody.

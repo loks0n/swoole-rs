@@ -20,6 +20,7 @@ mod portable {
         let mut entries = [[0; 256]; 8];
         let mut index = 0;
         while index < 256 {
+            #[expect(clippy::cast_possible_truncation, reason = "index < 256")]
             let mut value = index as u32;
             let mut bit = 0;
             while bit < 8 {
@@ -128,7 +129,7 @@ mod tests {
     fn every_table_row_matches_independent_polynomial_division() {
         for (row, entries) in TABLES.iter().enumerate() {
             for (byte, &actual) in entries.iter().enumerate() {
-                let mut expected = byte as u32;
+                let mut expected = u32::try_from(byte).expect("a table index is a byte");
                 for _ in 0..8 * (row + 1) {
                     expected = if expected & 1 == 0 {
                         expected >> 1
@@ -192,7 +193,7 @@ mod tests {
             seed ^= seed << 13;
             seed ^= seed >> 17;
             seed ^= seed << 5;
-            *byte = seed as u8;
+            *byte = seed.to_le_bytes()[0];
         }
         for offset in 0..16 {
             for length in

@@ -22,6 +22,10 @@ pub unsafe extern "C" fn swr_v1_error_ignore(state: *mut *mut IgnoredErrors, cod
             return -2;
         }
         values.insert(code);
+        #[expect(
+            clippy::cast_ptr_alignment,
+            reason = "alloc honours Layout::new::<IgnoredErrors>()"
+        )]
         // SAFETY: `IgnoredErrors` is not zero-sized; null is handled below.
         let handle = unsafe { alloc(Layout::new::<IgnoredErrors>()) }.cast::<IgnoredErrors>();
         if handle.is_null() {
@@ -126,7 +130,7 @@ mod tests {
             assert_eq!(swr_v1_error_ignore(&mut state, 1), 0);
             // Fill the actual allocation so the next distinct value must reserve.
             let capacity = (*state).0.capacity();
-            for code in 2..=capacity as i32 {
+            for code in 2..=i32::try_from(capacity).expect("capacity fits an error code") {
                 assert_eq!(swr_v1_error_ignore(&mut state, code), 0);
             }
             FAIL.with(|flag| flag.set(1));

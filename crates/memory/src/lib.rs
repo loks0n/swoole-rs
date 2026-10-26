@@ -1,5 +1,12 @@
 //! Callback-free memory/collection policies. Native facades own locks and syscalls.
 #![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_ptr_alignment,
+    clippy::cast_sign_loss,
+    reason = "#157: casts not yet checked"
+)]
+#![expect(
     clippy::missing_safety_doc,
     reason = "every export is covered by the module-local C contract"
 )]

@@ -1,5 +1,11 @@
 //! Coroutine I/O policy over copied scalars. No native callbacks, storage,
 //! syscalls, errno, allocation, retained borrows or context switching.
+#![expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "#157: casts not yet checked"
+)]
 
 /// The original per-hook guard. Some DNS hooks intentionally do not use it.
 #[unsafe(no_mangle)]
