@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from corpus.upstream.gate import category, compare, markdown, rows, skip_reason
+from corpus.upstream.gate import category, compare, flagged, markdown, recheck, rows, skip_reason
 from corpus.upstream.inventory import shard
 
 
@@ -45,6 +45,24 @@ class PhptGate(unittest.TestCase):
         self.assertEqual(compare(results), (['absent (hybrid: missing)', 'lost (hybrid: failed)'], ['both']))
         self.assertEqual(compare([row('only', 'upstream', 'failed')]), ([], []))
         self.assertIn('2 passing on upstream but not here', markdown(results))
+
+    def test_reruns_separate_regressions_from_flakes(self):
+        def row(test, engine, status):
+            return {'test': test, 'family': 'a', 'engine': engine, 'status': status, 'category': 'other'}
+        results = [row(t, 'upstream', 'passed') for t in ['real', 'upstream-flake', 'hybrid-blip', 'unrun', 'kept']]
+        results += [row(t, 'hybrid', 'failed') for t in ['real', 'upstream-flake', 'hybrid-blip', 'unrun']]
+        results += [row('kept', 'hybrid', 'passed')]
+        self.assertEqual(flagged(results), ['hybrid-blip', 'real', 'unrun', 'upstream-flake'])
+        rechecked = [row('real', 'upstream', 'passed')] * 3 + [row('real', 'hybrid', 'passed'), row('real', 'hybrid', 'failed')]
+        rechecked += [row('upstream-flake', 'upstream', 'failed'), row('upstream-flake', 'hybrid', 'failed')]
+        rechecked += [row('hybrid-blip', 'upstream', 'passed'), row('hybrid-blip', 'hybrid', 'passed')]
+        # 'unrun' has no re-runs, so it stays a regression.
+        self.assertEqual(recheck(flagged(results), rechecked),
+                         (['real', 'unrun'], ['upstream-flake'], ['hybrid-blip']))
+        summary = markdown(results, rechecked)
+        self.assertIn('2 regressions: pass on upstream, fail on a re-run here', summary)
+        self.assertIn('1 flaky on upstream', summary)
+        self.assertIn('1 passed on re-run on both engines', summary)
 
     def test_incomplete_shards_are_refused(self):
         with tempfile.TemporaryDirectory() as temp:

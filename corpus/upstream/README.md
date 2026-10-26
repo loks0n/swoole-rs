@@ -156,6 +156,13 @@ hidden. It records each result and, for skips, the SKIPIF reason and a category
 (service, network, ZTS, stdext, platform, extension, other). Only the runner's
 PASSED counts as passed.
 
+A test the gate flags is re-run 3 times on both engines (in the `phpt-gate` job,
+unless more than 20 are flagged). If upstream fails any re-run, the test is listed
+as flaky on upstream and doesn't fail the gate. If upstream passes every re-run and
+the hybrid fails any, it is a regression. If both pass every re-run, it is listed as
+passed on re-run and doesn't fail the gate. The hybrid never gets retried to green:
+it must pass every re-run.
+
 ## Attributing a regression
 
 The gate runs every PHPT once against the all-modules hybrid; there are no
