@@ -39,7 +39,7 @@ def main():
         (tree/'src/core').mkdir(parents=True)
         product = tree/'src/core/misc.cc'
         product.write_text(original)
-        subprocess.run(['patch', '-p1', '-i', str(patch)], cwd=tree, check=True, capture_output=True)
+        subprocess.run(['git', 'apply', str(patch)], cwd=tree, check=True, capture_output=True)
         candidate = product.read_text()
         oracle = original[original.index('#ifdef HAVE_FUTEX'):original.index('/* {{{ DJBX33A')]
         oracle = oracle.replace('#include <linux/futex.h>\n', '').replace('#include <sys/syscall.h>\n', '')
