@@ -13,7 +13,6 @@ mod bootstrap;
 mod config_state;
 mod configure;
 mod context;
-mod context_lifecycle;
 mod context_metadata;
 mod control;
 mod create;

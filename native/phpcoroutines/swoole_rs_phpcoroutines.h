@@ -117,65 +117,6 @@ enum { SWR_CORO_BOUNDS_NULL = 1, SWR_CORO_BOUNDS_RESERVE, SWR_CORO_BOUNDS_HAS_CO
 swr_phpcoroutines_bounds_plan swr_v1_phpcoroutines_bounds(swr_phpcoroutines_bounds_state *, uint32_t, uint8_t, uintptr_t);
 typedef struct { int64_t count, index; uint8_t pending; } swr_phpcoroutines_repeat_state;
 uint8_t swr_v1_phpcoroutines_repeat(swr_phpcoroutines_repeat_state *);
-enum { SWR_CORO_LIFECYCLE_DONE,
-       SWR_CORO_LIFECYCLE_CTOR_INIT,
-       SWR_CORO_LIFECYCLE_CTOR_FIBER,
-       SWR_CORO_LIFECYCLE_CTOR_FIBER_INIT,
-       SWR_CORO_LIFECYCLE_CTOR_FIBER_NONE,
-       SWR_CORO_LIFECYCLE_CTOR_VM,
-       SWR_CORO_LIFECYCLE_CTOR_CALLABLE,
-       SWR_CORO_LIFECYCLE_CTOR_CALLABLE_COPY,
-       SWR_CORO_LIFECYCLE_CTOR_CALLABLE_UNDEF,
-       SWR_CORO_LIFECYCLE_CTOR_PERSIST,
-       SWR_CORO_LIFECYCLE_CTOR_RETURN,
-       SWR_CORO_LIFECYCLE_MAIN_TRACE,
-       SWR_CORO_LIFECYCLE_MAIN_HOOK,
-       SWR_CORO_LIFECYCLE_MAIN_HOOK_CALL,
-       SWR_CORO_LIFECYCLE_MAIN_FIBER,
-       SWR_CORO_LIFECYCLE_MAIN_USER_FUNCTION,
-       SWR_CORO_LIFECYCLE_MAIN_NOTIFY,
-       SWR_CORO_LIFECYCLE_MAIN_INVOKE,
-       SWR_CORO_LIFECYCLE_MAIN_DEFER,
-       SWR_CORO_LIFECYCLE_MAIN_DEFER_DRAIN,
-       SWR_CORO_LIFECYCLE_DEFER_VALUE,
-       SWR_CORO_LIFECYCLE_DEFER_PARAMS,
-       SWR_CORO_LIFECYCLE_DEFER_INVOKE,
-       SWR_CORO_LIFECYCLE_DEFER_WARN,
-       SWR_CORO_LIFECYCLE_DEFER_EXCEPTION,
-       SWR_CORO_LIFECYCLE_DEFER_BAILOUT,
-       SWR_CORO_LIFECYCLE_DEFER_CLEAN,
-       SWR_CORO_LIFECYCLE_DESTROY_HOOK,
-       SWR_CORO_LIFECYCLE_DESTROY_HOOK_CALL,
-       SWR_CORO_LIFECYCLE_DESTROY_OUTPUT,
-       SWR_CORO_LIFECYCLE_DESTROY_SAVE_HEADERS,
-       SWR_CORO_LIFECYCLE_DESTROY_ACTIVE,
-       SWR_CORO_LIFECYCLE_DESTROY_END_OUTPUT,
-       SWR_CORO_LIFECYCLE_DESTROY_RESTART_OUTPUT,
-       SWR_CORO_LIFECYCLE_DESTROY_DEFER,
-       SWR_CORO_LIFECYCLE_DESTROY_DEFER_DRAIN,
-       SWR_CORO_LIFECYCLE_DESTROY_OBJECT,
-       SWR_CORO_LIFECYCLE_DESTROY_OBJECT_RELEASE,
-       SWR_CORO_LIFECYCLE_DESTROY_RESOURCES,
-       SWR_CORO_LIFECYCLE_POST_DESTROY,
-       SWR_CORO_LIFECYCLE_POST_EXCEPTION,
-       SWR_CORO_LIFECYCLE_POST_BAILOUT,
-       SWR_CORO_LIFECYCLE_REGISTER_CONTEXT,
-       SWR_CORO_LIFECYCLE_REGISTER_OWNER,
-       SWR_CORO_LIFECYCLE_REGISTER_ALLOCATE,
-       SWR_CORO_LIFECYCLE_REGISTER_PUSH };
-enum { SWR_CORO_LIFECYCLE_CTOR, SWR_CORO_LIFECYCLE_MAIN, SWR_CORO_LIFECYCLE_DEFER, SWR_CORO_LIFECYCLE_DESTROY, SWR_CORO_LIFECYCLE_POST, SWR_CORO_LIFECYCLE_REGISTER };
-uint32_t swr_v1_phpcoroutines_lifecycle(uint32_t *, uint32_t, int64_t);
-/* Rust-built step tables: native code steps with a load instead of a call. */
-typedef struct { uint8_t action, next; } swr_phpcoroutines_step;
-extern const swr_phpcoroutines_step swr_v1_phpcoroutines_lifecycle_table[6 * 16 * 2];
-static inline uint32_t swr_coro_lifecycle_next(uint32_t *stage, uint32_t kind, int64_t observation) {
-    if (kind >= 6 || *stage >= 16) {
-        return SWR_CORO_LIFECYCLE_DONE;
-    }
-    const swr_phpcoroutines_step step = swr_v1_phpcoroutines_lifecycle_table[(kind * 16 + *stage) * 2 + (observation != 0)];
-    *stage = step.next;
-    return step.action;
-}
 typedef struct swr_phpcoroutines_join_owner swr_phpcoroutines_join_owner;
 swr_phpcoroutines_join_owner *swr_v1_phpcoroutines_join_try_new(void);
 uint8_t swr_v1_phpcoroutines_join_clone(const swr_phpcoroutines_join_owner *);
@@ -198,6 +139,8 @@ enum { SWR_CORO_TRANSFER_DONE, SWR_CORO_TRANSFER_FIBER = 17, SWR_CORO_TRANSFER_S
        SWR_CORO_TRANSFER_TASK_PRESENCE, SWR_CORO_TRANSFER_TASK_CO_PRESENCE,
        SWR_CORO_TRANSFER_SCHEDULABLE, SWR_CORO_TRANSFER_DEFER, SWR_CORO_TRANSFER_YIELD };
 uint32_t swr_v1_phpcoroutines_transfer(uint32_t *, uint32_t, uint8_t, uint8_t);
+/* Rust-built step table: native code steps with a load instead of a call. */
+typedef struct { uint8_t action, next; } swr_phpcoroutines_step;
 extern const swr_phpcoroutines_step swr_v1_phpcoroutines_transfer_table[12 * 8 * 2];
 static inline uint32_t swr_coro_transfer_next(uint32_t *stage, uint32_t kind, uint8_t observation) {
     if (kind >= 12 || *stage >= 8) {

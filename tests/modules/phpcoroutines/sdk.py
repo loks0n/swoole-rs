@@ -67,7 +67,7 @@ def main():
             if destination.endswith('_scheduler.cc'):
                 exports |= {'swr_v1_phpcoroutines_callback_control'}
             if destination.endswith('swoole_coroutine.cc'):
-                exports |= {'swr_v1_phpcoroutines_context_route', 'swr_v1_phpcoroutines_context_query', 'swr_v1_phpcoroutines_trace', 'swr_v1_phpcoroutines_transfer_table', 'swr_v1_phpcoroutines_interrupt', 'swr_v1_phpcoroutines_stack_step', 'swr_v1_phpcoroutines_fiber', 'swr_v1_phpcoroutines_scheduler_phase', 'swr_v1_phpcoroutines_exit', 'swr_v1_phpcoroutines_metadata', 'swr_v1_phpcoroutines_control', 'swr_v1_phpcoroutines_create_destructor', 'swr_v1_phpcoroutines_repeat', 'swr_v1_phpcoroutines_lifecycle_table'} | {'swr_v1_phpcoroutines_join_' + suffix for suffix in ('try_new', 'clone', 'drop', 'try_insert', 'erase_empty', 'empty', 'next', 'release_membership', 'cancel', 'can_resume')}
+                exports |= {'swr_v1_phpcoroutines_context_route', 'swr_v1_phpcoroutines_context_query', 'swr_v1_phpcoroutines_trace', 'swr_v1_phpcoroutines_transfer_table', 'swr_v1_phpcoroutines_interrupt', 'swr_v1_phpcoroutines_stack_step', 'swr_v1_phpcoroutines_fiber', 'swr_v1_phpcoroutines_scheduler_phase', 'swr_v1_phpcoroutines_exit', 'swr_v1_phpcoroutines_metadata', 'swr_v1_phpcoroutines_control', 'swr_v1_phpcoroutines_create_destructor', 'swr_v1_phpcoroutines_repeat'} | {'swr_v1_phpcoroutines_join_' + suffix for suffix in ('try_new', 'clone', 'drop', 'try_insert', 'erase_empty', 'empty', 'next', 'release_membership', 'cancel', 'can_resume')}
             for feature in ('native', 'phpcoroutines-only', 'combined'):
                 profile = work / Path(destination).stem / feature
                 profile.mkdir(parents=True)

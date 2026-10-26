@@ -99,7 +99,6 @@ tests/modules/phpcoroutines/test_autoload_owner.py
 tests/modules/phpcoroutines/test_bootstrap_fallback.py
 tests/modules/phpcoroutines/test_config_boundary.py
 tests/modules/phpcoroutines/test_config_identity.py
-tests/modules/phpcoroutines/test_context_lifecycle_boundary.py
 tests/modules/phpcoroutines/test_control_boundary.py
 tests/modules/phpcoroutines/test_exit_boundary.py
 tests/modules/phpcoroutines/test_fiber_boundary.py

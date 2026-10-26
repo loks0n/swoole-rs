@@ -10,7 +10,7 @@
     },
     {
       "path": "0002-user-yield-registry.patch",
-      "sha256": "a534d473226bd9f49d2d93edc2e085d003daee5d4dba1edd1e2a53f897d68f93",
+      "sha256": "8d92b0ca8916aed440b9b7d67ce77275f731c7b9495fa537fdbca648c26c7f77",
       "upstream_paths": [
         "ext-src/swoole_coroutine.cc"
       ]
