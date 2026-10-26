@@ -3,6 +3,13 @@
     clippy::missing_safety_doc,
     reason = "every export is covered by the module-local C contract"
 )]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 use std::slice;
 mod mime;
 
@@ -66,13 +73,18 @@ unsafe fn bytes<'a>(p: *const u8, n: usize) -> Option<&'a [u8]> {
     } else if p.is_null() || n > isize::MAX as usize {
         None
     } else {
+        // SAFETY: `p` is non-null and the caller lends `n <= isize::MAX` initialized bytes.
         Some(unsafe { slice::from_raw_parts(p, n) })
     }
 }
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Snapshot) -> Action {
-    let (Some(s), Some(i)) = (unsafe { state.as_mut() }, unsafe { input.as_ref() }) else {
+    // SAFETY: the caller passes null or its live, exclusive framing state.
+    let state = unsafe { state.as_mut() };
+    // SAFETY: the caller passes null or an initialized snapshot for this step.
+    let input = unsafe { input.as_ref() };
+    let (Some(s), Some(i)) = (state, input) else {
         return done(-1);
     };
     if i.len > i.cap {
@@ -209,9 +221,11 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                 if i.flags & SPLIT != 0 {
                     return emit(s, 4, 11, 0);
                 }
-                let (Some(data), Some(eof)) = (unsafe { bytes(i.data, i.len) }, unsafe {
-                    bytes(i.eof, i.eof_len as usize)
-                }) else {
+                // SAFETY: the snapshot lends `len` initialized bytes at `data`.
+                let data = unsafe { bytes(i.data, i.len) };
+                // SAFETY: the snapshot lends `eof_len` initialized bytes at `eof`.
+                let eof = unsafe { bytes(i.eof, i.eof_len as usize) };
+                let (Some(data), Some(eof)) = (data, eof) else {
                     return done(-1);
                 };
                 if data.ends_with(eof) {
@@ -324,7 +338,11 @@ pub unsafe extern "C" fn swr_v1_framing_unpack(
     if width == 0 {
         return -1;
     }
-    let (Some(v), Some(out)) = (unsafe { bytes(data, len) }, unsafe { out.as_mut() }) else {
+    // SAFETY: the caller lends `len` initialized bytes at `data`.
+    let v = unsafe { bytes(data, len) };
+    // SAFETY: the caller passes null or a writable i64.
+    let out = unsafe { out.as_mut() };
+    let (Some(v), Some(out)) = (v, out) else {
         return -2;
     };
     if v.len() < width {
@@ -367,6 +385,7 @@ pub unsafe extern "C" fn swr_v1_framing_default(
     if size == 0 {
         return -1;
     }
+    // SAFETY: the caller passes null or a writable i64.
     let Some(out) = (unsafe { out.as_mut() }) else {
         return -1;
     };
@@ -375,6 +394,7 @@ pub unsafe extern "C" fn swr_v1_framing_default(
         *out = need as i64;
         return 0;
     }
+    // SAFETY: the caller lends `len` initialized bytes at `data`.
     let Some(v) = (unsafe { bytes(data, len) }) else {
         return -1;
     };
@@ -386,6 +406,7 @@ pub unsafe extern "C" fn swr_v1_framing_default(
         return -1;
     }
     let mut value = 0;
+    // SAFETY: `width <= len - offset`, so `width` bytes from `offset` lie inside `v`.
     let result =
         unsafe { swr_v1_framing_unpack(format, v[offset as usize..].as_ptr(), width, &mut value) };
     if result != 0 || value < 0 {
@@ -420,11 +441,11 @@ pub unsafe extern "C" fn swr_v1_framing_mime_entry(
     key: *mut Span,
     value: *mut Span,
 ) -> u8 {
-    let (Some(&(k, v)), Some(key), Some(value)) =
-        (mime::CATALOG.get(index), unsafe { key.as_mut() }, unsafe {
-            value.as_mut()
-        })
-    else {
+    // SAFETY: the caller passes null or a writable Span for each output.
+    let key = unsafe { key.as_mut() };
+    // SAFETY: as above.
+    let value = unsafe { value.as_mut() };
+    let (Some(&(k, v)), Some(key), Some(value)) = (mime::CATALOG.get(index), key, value) else {
         return 0;
     };
     *key = span(k);
@@ -442,6 +463,7 @@ unsafe extern "C" {
 /// or borrow survives return; usize::MAX rejects an inaccessible input extent.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_framing_mime_suffix_offset(data: *const u8, len: usize) -> usize {
+    // SAFETY: the caller lends `len` initialized bytes at `data` for this call.
     unsafe { bytes(data, len) }.map_or(usize::MAX, |input| {
         input
             .iter()
@@ -457,6 +479,7 @@ pub unsafe extern "C" fn swr_v1_framing_mime_suffix(
     cap: usize,
     native_signed: u8,
 ) -> usize {
+    // SAFETY: the caller lends `len` initialized bytes at `data` for this call.
     let Some(data) = (unsafe { bytes(data, len) }) else {
         return usize::MAX;
     };
@@ -473,7 +496,12 @@ pub unsafe extern "C" fn swr_v1_framing_mime_suffix(
         } else {
             c as i32
         };
-        unsafe { out.add(n).write(tolower(input) as u8) };
+        // SAFETY: `input` is EOF or an unsigned char value, as tolower requires.
+        let lower = unsafe { tolower(input) } as u8;
+        // SAFETY: `n < suffix.len() <= cap`, and the caller lends `cap` writable bytes at `out`.
+        let slot = unsafe { out.add(n) };
+        // SAFETY: as above, `slot` is writable.
+        unsafe { slot.write(lower) };
     }
     suffix.len()
 }

@@ -12,6 +12,7 @@ pub struct IgnoredErrors(HashSet<i32>);
 /// must be serialized; the original native set also forbids concurrent mutation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_error_ignore(state: *mut *mut IgnoredErrors, code: i32) -> i32 {
+    // SAFETY: the caller passes null or a writable slot, and serializes access.
     let Some(slot) = (unsafe { state.as_mut() }) else {
         return -1;
     };
@@ -21,13 +22,16 @@ pub unsafe extern "C" fn swr_v1_error_ignore(state: *mut *mut IgnoredErrors, cod
             return -2;
         }
         values.insert(code);
+        // SAFETY: `IgnoredErrors` is not zero-sized; null is handled below.
         let handle = unsafe { alloc(Layout::new::<IgnoredErrors>()) }.cast::<IgnoredErrors>();
         if handle.is_null() {
             return -2;
         }
+        // SAFETY: `handle` is a fresh, non-null allocation with this type's layout.
         unsafe { handle.write(IgnoredErrors(values)) };
         *slot = handle;
     } else {
+        // SAFETY: a non-null slot holds this API's live handle, and access is serialized.
         let values = &mut unsafe { &mut **slot }.0;
         if !values.contains(&code) {
             if values.try_reserve(1).is_err() {
@@ -43,6 +47,7 @@ pub unsafe extern "C" fn swr_v1_error_ignore(state: *mut *mut IgnoredErrors, cod
 /// A nonnull handle must be live. Concurrent mutation is forbidden.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_error_is_ignored(state: *const IgnoredErrors, code: i32) -> i32 {
+    // SAFETY: the caller passes null or a live handle with no concurrent mutation.
     i32::from(unsafe { state.as_ref() }.is_some_and(|values| values.0.contains(&code)))
 }
 
@@ -51,10 +56,10 @@ pub unsafe extern "C" fn swr_v1_error_is_ignored(state: *const IgnoredErrors, co
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_error_ignored_release(state: *mut IgnoredErrors) {
     if !state.is_null() {
-        unsafe {
-            state.drop_in_place();
-            dealloc(state.cast(), Layout::new::<IgnoredErrors>());
-        }
+        // SAFETY: the caller owns this live handle uniquely and releases it once.
+        unsafe { state.drop_in_place() };
+        // SAFETY: `state` came from `alloc` with this layout and its value was just dropped.
+        unsafe { dealloc(state.cast(), Layout::new::<IgnoredErrors>()) };
     }
 }
 

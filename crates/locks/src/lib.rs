@@ -1,5 +1,12 @@
 //! Native-compatible synchronization. Callers allocate/free storage outside Rust.
 #![deny(unsafe_op_in_unsafe_fn)]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 #![expect(
     clippy::missing_safety_doc,
     reason = "every export is covered by the module-local C contract"
@@ -9,8 +16,7 @@ compile_error!("Rust locks require validated macOS or Linux platform contracts")
 
 use libc::*;
 use std::{
-    mem::{align_of, size_of},
-    ptr,
+    mem::{align_of, offset_of, size_of},
     sync::atomic::{AtomicI64, AtomicU32, Ordering},
 };
 
@@ -56,90 +62,115 @@ fn valid(storage: *mut c_void, kind: i32) -> bool {
     let align = swr_v1_locks_align(kind);
     !storage.is_null() && align != 0 && (storage as usize).is_multiple_of(align)
 }
+// Field addresses inside borrowed storage, computed without dereferencing it.
+fn mutex(storage: *mut c_void) -> (*mut pthread_mutex_t, *mut pthread_mutexattr_t) {
+    let s = storage.cast::<Mutex>();
+    (
+        s.cast(),
+        s.wrapping_byte_add(offset_of!(Mutex, attr)).cast(),
+    )
+}
+fn rwlock(storage: *mut c_void) -> (*mut pthread_rwlock_t, *mut pthread_rwlockattr_t) {
+    let s = storage.cast::<RwLock>();
+    (
+        s.cast(),
+        s.wrapping_byte_add(offset_of!(RwLock, attr)).cast(),
+    )
+}
+// The thread's errno slot.
+fn errno() -> *mut c_int {
+    #[cfg(target_os = "linux")]
+    // SAFETY: always callable; returns this thread's errno location.
+    let error = unsafe { __errno_location() };
+    #[cfg(target_os = "macos")]
+    // SAFETY: always callable; returns this thread's errno location.
+    let error = unsafe { __error() };
+    error
+}
 // Failed lock initialization owns an initialized attribute, but not a live lock.
 fn init_result(result: c_int, destroy_attr: impl FnOnce()) -> c_int {
     if result != 0 {
-        unsafe {
-            #[cfg(target_os = "linux")]
-            let error = __errno_location();
-            #[cfg(target_os = "macos")]
-            let error = __error();
-            let saved = *error;
-            destroy_attr();
-            *error = saved;
-        }
+        let error = errno();
+        // SAFETY: `errno()` is this thread's live errno slot.
+        let saved = unsafe { *error };
+        destroy_attr();
+        // SAFETY: as above.
+        unsafe { *error = saved };
     }
     result
 }
+// Lock storage below passed `valid`: non-null and aligned for its kind, and the caller
+// lends `swr_v1_locks_size(kind)` bytes of it for the call. Native code serializes
+// init and destroy against every other use.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_locks_init(storage: *mut c_void, kind: i32, shared: i32) -> i32 {
     if !valid(storage, kind) {
         return EINVAL;
     }
-    unsafe {
-        match kind {
-            3 => {
-                let s = storage.cast::<Mutex>();
-                let result = pthread_mutexattr_init(ptr::addr_of_mut!((*s).attr));
-                if result != 0 {
-                    return result;
-                }
-                let attributes = if shared != 0 {
-                    pthread_mutexattr_setpshared(
-                        ptr::addr_of_mut!((*s).attr),
-                        PTHREAD_PROCESS_SHARED,
-                    )
-                } else {
-                    0
-                };
-                let result = if attributes != 0 {
-                    attributes
-                } else {
-                    pthread_mutex_init(ptr::addr_of_mut!((*s).lock), ptr::addr_of!((*s).attr))
-                };
-                init_result(result, || {
-                    pthread_mutexattr_destroy(ptr::addr_of_mut!((*s).attr));
-                })
+    match kind {
+        3 => {
+            let (lock, attr) = mutex(storage);
+            // SAFETY: `attr` addresses writable attribute storage inside the lent lock.
+            let result = unsafe { pthread_mutexattr_init(attr) };
+            if result != 0 {
+                return result;
             }
-            1 => {
-                let s = storage.cast::<RwLock>();
-                let result = pthread_rwlockattr_init(ptr::addr_of_mut!((*s).attr));
-                if result != 0 {
-                    return result;
-                }
-                let attributes = if shared != 0 {
-                    pthread_rwlockattr_setpshared(
-                        ptr::addr_of_mut!((*s).attr),
-                        PTHREAD_PROCESS_SHARED,
-                    )
-                } else {
-                    0
-                };
-                let result = if attributes != 0 {
-                    attributes
-                } else {
-                    pthread_rwlock_init(ptr::addr_of_mut!((*s).lock), ptr::addr_of!((*s).attr))
-                };
-                init_result(result, || {
-                    pthread_rwlockattr_destroy(ptr::addr_of_mut!((*s).attr));
-                })
-            }
-            #[cfg(target_os = "linux")]
-            5 => pthread_spin_init(storage.cast(), shared),
-            _ => EINVAL,
+            let attributes = if shared != 0 {
+                // SAFETY: `attr` was initialized above.
+                unsafe { pthread_mutexattr_setpshared(attr, PTHREAD_PROCESS_SHARED) }
+            } else {
+                0
+            };
+            let result = if attributes != 0 {
+                attributes
+            } else {
+                // SAFETY: `lock` addresses writable, unused mutex storage; `attr` is initialized.
+                unsafe { pthread_mutex_init(lock, attr) }
+            };
+            init_result(result, || {
+                // SAFETY: `attr` is initialized and no lock was created from it.
+                unsafe { pthread_mutexattr_destroy(attr) };
+            })
         }
+        1 => {
+            let (lock, attr) = rwlock(storage);
+            // SAFETY: `attr` addresses writable attribute storage inside the lent lock.
+            let result = unsafe { pthread_rwlockattr_init(attr) };
+            if result != 0 {
+                return result;
+            }
+            let attributes = if shared != 0 {
+                // SAFETY: `attr` was initialized above.
+                unsafe { pthread_rwlockattr_setpshared(attr, PTHREAD_PROCESS_SHARED) }
+            } else {
+                0
+            };
+            let result = if attributes != 0 {
+                attributes
+            } else {
+                // SAFETY: `lock` addresses writable, unused rwlock storage; `attr` is initialized.
+                unsafe { pthread_rwlock_init(lock, attr) }
+            };
+            init_result(result, || {
+                // SAFETY: `attr` is initialized and no lock was created from it.
+                unsafe { pthread_rwlockattr_destroy(attr) };
+            })
+        }
+        #[cfg(target_os = "linux")]
+        // SAFETY: `storage` is writable, unused spinlock storage.
+        5 => unsafe { pthread_spin_init(storage.cast(), shared) },
+        _ => EINVAL,
     }
 }
 // Match sw_wait_for's exact attempt/sleep/backoff order, including its final attempt.
-unsafe fn poll(mut timeout: i32, mut attempt: impl FnMut() -> i32) -> i32 {
+fn poll(mut timeout: i32, mut attempt: impl FnMut() -> i32) -> i32 {
     let mut sleep: i32 = 1;
     while timeout >= 0 {
         if attempt() == 0 {
             return 0;
         }
-        unsafe {
-            usleep(sleep.wrapping_mul(1000) as u32);
-        }
+        // SAFETY: usleep has no memory preconditions.
+        unsafe { usleep(sleep.wrapping_mul(1000) as u32) };
         sleep = sleep.wrapping_mul(2);
         if timeout > 0 && timeout.wrapping_sub(sleep) < 0 {
             sleep = timeout;
@@ -151,14 +182,13 @@ unsafe fn poll(mut timeout: i32, mut attempt: impl FnMut() -> i32) -> i32 {
     ETIMEDOUT
 }
 #[cfg(target_os = "linux")]
-unsafe fn deadline(millis: i32) -> timespec {
+fn deadline(millis: i32) -> timespec {
     let mut now = timespec {
         tv_sec: 0,
         tv_nsec: 0,
     };
-    unsafe {
-        clock_gettime(CLOCK_REALTIME, &mut now);
-    }
+    // SAFETY: `now` is a live, writable timespec.
+    unsafe { clock_gettime(CLOCK_REALTIME, &mut now) };
     now.tv_sec += (millis / 1000) as time_t;
     now.tv_nsec += (millis % 1000) as c_long * 1_000_000;
     now.tv_sec += (now.tv_nsec / 1_000_000_000) as time_t;
@@ -166,6 +196,7 @@ unsafe fn deadline(millis: i32) -> timespec {
     now
 }
 // capabilities: bit0 mutex timedlock; bit1 rwlock timed{rd,wr}lock. From native configure.
+// Every call below takes a lock that `valid` checked and the caller initialized.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_locks_lock(
     storage: *mut c_void,
@@ -179,67 +210,77 @@ pub unsafe extern "C" fn swr_v1_locks_lock(
     }
     #[cfg(not(target_os = "linux"))]
     let _ = capabilities;
-    unsafe {
-        match kind {
-            3 => {
-                let lock = ptr::addr_of_mut!((*storage.cast::<Mutex>()).lock);
-                if operation & LOCK_NB != 0 {
-                    return pthread_mutex_trylock(lock);
-                }
-                if timeout > 0 {
-                    #[cfg(target_os = "linux")]
-                    if capabilities & 1 != 0 {
-                        return pthread_mutex_timedlock(lock, &deadline(timeout));
-                    }
-                    return poll(timeout, || pthread_mutex_trylock(lock));
-                }
-                pthread_mutex_lock(lock)
+    match kind {
+        3 => {
+            let (lock, _) = mutex(storage);
+            if operation & LOCK_NB != 0 {
+                // SAFETY: `lock` is an initialized mutex.
+                return unsafe { pthread_mutex_trylock(lock) };
             }
-            1 => {
-                let lock = ptr::addr_of_mut!((*storage.cast::<RwLock>()).lock);
-                let read = operation & LOCK_SH != 0;
-                if operation & LOCK_NB != 0 {
+            if timeout > 0 {
+                #[cfg(target_os = "linux")]
+                if capabilities & 1 != 0 {
+                    // SAFETY: `lock` is an initialized mutex; the deadline is a live timespec.
+                    return unsafe { pthread_mutex_timedlock(lock, &deadline(timeout)) };
+                }
+                // SAFETY: `lock` is an initialized mutex.
+                return poll(timeout, || unsafe { pthread_mutex_trylock(lock) });
+            }
+            // SAFETY: `lock` is an initialized mutex.
+            unsafe { pthread_mutex_lock(lock) }
+        }
+        1 => {
+            let (lock, _) = rwlock(storage);
+            let read = operation & LOCK_SH != 0;
+            let try_lock = || {
+                if read {
+                    // SAFETY: `lock` is an initialized rwlock.
+                    unsafe { pthread_rwlock_tryrdlock(lock) }
+                } else {
+                    // SAFETY: `lock` is an initialized rwlock.
+                    unsafe { pthread_rwlock_trywrlock(lock) }
+                }
+            };
+            if operation & LOCK_NB != 0 {
+                return try_lock();
+            }
+            if timeout > 0 {
+                #[cfg(target_os = "linux")]
+                if capabilities & 2 != 0 {
+                    let deadline = deadline(timeout);
                     return if read {
-                        pthread_rwlock_tryrdlock(lock)
+                        // SAFETY: `lock` is an initialized rwlock; `deadline` is live.
+                        unsafe { pthread_rwlock_timedrdlock(lock, &deadline) }
                     } else {
-                        pthread_rwlock_trywrlock(lock)
+                        // SAFETY: as above.
+                        unsafe { pthread_rwlock_timedwrlock(lock, &deadline) }
                     };
                 }
-                if timeout > 0 {
-                    #[cfg(target_os = "linux")]
-                    if capabilities & 2 != 0 {
-                        return if read {
-                            pthread_rwlock_timedrdlock(lock, &deadline(timeout))
-                        } else {
-                            pthread_rwlock_timedwrlock(lock, &deadline(timeout))
-                        };
-                    }
-                    return poll(timeout, || {
-                        if read {
-                            pthread_rwlock_tryrdlock(lock)
-                        } else {
-                            pthread_rwlock_trywrlock(lock)
-                        }
-                    });
-                }
-                if read {
-                    pthread_rwlock_rdlock(lock)
-                } else {
-                    pthread_rwlock_wrlock(lock)
-                }
+                return poll(timeout, try_lock);
             }
-            #[cfg(target_os = "linux")]
-            5 => {
-                if operation & LOCK_NB != 0 {
-                    return pthread_spin_trylock(storage.cast());
-                }
-                if timeout > 0 {
-                    return poll(timeout, || pthread_spin_trylock(storage.cast()));
-                }
-                pthread_spin_lock(storage.cast())
+            if read {
+                // SAFETY: `lock` is an initialized rwlock.
+                unsafe { pthread_rwlock_rdlock(lock) }
+            } else {
+                // SAFETY: `lock` is an initialized rwlock.
+                unsafe { pthread_rwlock_wrlock(lock) }
             }
-            _ => EINVAL,
         }
+        #[cfg(target_os = "linux")]
+        5 => {
+            let lock = storage.cast();
+            if operation & LOCK_NB != 0 {
+                // SAFETY: `lock` is an initialized spinlock.
+                return unsafe { pthread_spin_trylock(lock) };
+            }
+            if timeout > 0 {
+                // SAFETY: `lock` is an initialized spinlock.
+                return poll(timeout, || unsafe { pthread_spin_trylock(lock) });
+            }
+            // SAFETY: `lock` is an initialized spinlock.
+            unsafe { pthread_spin_lock(lock) }
+        }
+        _ => EINVAL,
     }
 }
 #[unsafe(no_mangle)]
@@ -247,14 +288,15 @@ pub unsafe extern "C" fn swr_v1_locks_unlock(storage: *mut c_void, kind: i32) ->
     if !valid(storage, kind) {
         return EINVAL;
     }
-    unsafe {
-        match kind {
-            3 => pthread_mutex_unlock(ptr::addr_of_mut!((*storage.cast::<Mutex>()).lock)),
-            1 => pthread_rwlock_unlock(ptr::addr_of_mut!((*storage.cast::<RwLock>()).lock)),
-            #[cfg(target_os = "linux")]
-            5 => pthread_spin_unlock(storage.cast()),
-            _ => EINVAL,
-        }
+    match kind {
+        // SAFETY: an initialized mutex that this thread holds.
+        3 => unsafe { pthread_mutex_unlock(mutex(storage).0) },
+        // SAFETY: an initialized rwlock that this thread holds.
+        1 => unsafe { pthread_rwlock_unlock(rwlock(storage).0) },
+        #[cfg(target_os = "linux")]
+        // SAFETY: an initialized spinlock that this thread holds.
+        5 => unsafe { pthread_spin_unlock(storage.cast()) },
+        _ => EINVAL,
     }
 }
 #[unsafe(no_mangle)]
@@ -262,24 +304,27 @@ pub unsafe extern "C" fn swr_v1_locks_destroy(storage: *mut c_void, kind: i32) {
     if !valid(storage, kind) {
         return;
     }
-    unsafe {
-        match kind {
-            3 => {
-                let s = storage.cast::<Mutex>();
-                pthread_mutexattr_destroy(ptr::addr_of_mut!((*s).attr));
-                pthread_mutex_destroy(ptr::addr_of_mut!((*s).lock));
-            }
-            1 => {
-                let s = storage.cast::<RwLock>();
-                pthread_rwlockattr_destroy(ptr::addr_of_mut!((*s).attr));
-                pthread_rwlock_destroy(ptr::addr_of_mut!((*s).lock));
-            }
-            #[cfg(target_os = "linux")]
-            5 => {
-                pthread_spin_destroy(storage.cast());
-            }
-            _ => (),
+    match kind {
+        3 => {
+            let (lock, attr) = mutex(storage);
+            // SAFETY: `attr` was initialized by `swr_v1_locks_init` and is destroyed once.
+            unsafe { pthread_mutexattr_destroy(attr) };
+            // SAFETY: `lock` is initialized, unlocked and destroyed once.
+            unsafe { pthread_mutex_destroy(lock) };
         }
+        1 => {
+            let (lock, attr) = rwlock(storage);
+            // SAFETY: `attr` was initialized by `swr_v1_locks_init` and is destroyed once.
+            unsafe { pthread_rwlockattr_destroy(attr) };
+            // SAFETY: `lock` is initialized, unlocked and destroyed once.
+            unsafe { pthread_rwlock_destroy(lock) };
+        }
+        #[cfg(target_os = "linux")]
+        5 => {
+            // SAFETY: an initialized, unlocked spinlock, destroyed once.
+            unsafe { pthread_spin_destroy(storage.cast()) };
+        }
+        _ => (),
     }
 }
 
@@ -297,6 +342,8 @@ macro_rules! atomic_api {
             if storage.is_null() || !(storage as usize).is_multiple_of(align_of::<$atomic>()) {
                 return 0;
             }
+            // SAFETY: non-null and aligned (checked above); the caller lends a live word
+            // that is only accessed atomically.
             let a = unsafe { <$atomic>::from_ptr(storage) };
             match op {
                 0 => a.load(Ordering::Relaxed),
@@ -317,28 +364,33 @@ macro_rules! atomic_api {
 atomic_api!(swr_v1_locks_atomic32, AtomicU32, u32);
 atomic_api!(swr_v1_locks_atomic64, AtomicI64, i64);
 
+// Barrier words follow the atomic API's contract; it rejects null and misaligned ones.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_locks_barrier_init(
     count: *mut u32,
     arrived: *mut u32,
     parties: u32,
 ) {
-    unsafe {
-        swr_v1_locks_atomic32(count, 1, parties, 0);
-        swr_v1_locks_atomic32(arrived, 1, 0, 0);
-    }
+    // SAFETY: `count` is null or a live, atomically accessed word.
+    unsafe { swr_v1_locks_atomic32(count, 1, parties, 0) };
+    // SAFETY: `arrived` is null or a live, atomically accessed word.
+    unsafe { swr_v1_locks_atomic32(arrived, 1, 0, 0) };
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_locks_barrier_wait(count: *mut u32, arrived: *mut u32) {
     if count.is_null() || arrived.is_null() {
         return;
     }
-    unsafe {
-        swr_v1_locks_atomic32(arrived, 2, 1, 0);
-        while swr_v1_locks_atomic32(arrived, 0, 0, 0) != swr_v1_locks_atomic32(count, 0, 0, 0) {
-            usleep(10_000);
-            std::sync::atomic::fence(Ordering::SeqCst);
-        }
+    let load = |word| {
+        // SAFETY: `word` is one of the caller's live, atomically accessed barrier words.
+        unsafe { swr_v1_locks_atomic32(word, 0, 0, 0) }
+    };
+    // SAFETY: as above.
+    unsafe { swr_v1_locks_atomic32(arrived, 2, 1, 0) };
+    while load(arrived) != load(count) {
+        // SAFETY: usleep has no memory preconditions.
+        unsafe { usleep(10_000) };
+        std::sync::atomic::fence(Ordering::SeqCst);
     }
 }
 
@@ -354,7 +406,7 @@ pub unsafe extern "C" fn swr_v1_locks_pthread_barrier(
     parties: u32,
 ) -> i32 {
     #[cfg(target_os = "linux")]
-    unsafe {
+    {
         if storage.is_null()
             || storage_len != size_of::<pthread_barrier_t>()
             || !(storage as usize).is_multiple_of(align_of::<pthread_barrier_t>())
@@ -364,27 +416,29 @@ pub unsafe extern "C" fn swr_v1_locks_pthread_barrier(
         {
             return EINVAL;
         }
+        // Both regions are non-null, exactly sized and aligned (checked above) and lent
+        // by the caller, which serializes init and destroy against waits.
+        let (barrier, attr) = (storage.cast(), attr.cast());
         match operation {
             0 => {
                 if shared != 0 {
-                    pthread_barrierattr_init(attr.cast());
-                    pthread_barrierattr_setpshared(attr.cast(), PTHREAD_PROCESS_SHARED);
+                    // SAFETY: `attr` is writable attribute storage.
+                    unsafe { pthread_barrierattr_init(attr) };
+                    // SAFETY: `attr` was initialized above.
+                    unsafe { pthread_barrierattr_setpshared(attr, PTHREAD_PROCESS_SHARED) };
                 }
-                pthread_barrier_init(
-                    storage.cast(),
-                    if shared != 0 {
-                        attr.cast()
-                    } else {
-                        ptr::null()
-                    },
-                    parties,
-                )
+                let attr = if shared != 0 { attr } else { std::ptr::null() };
+                // SAFETY: `barrier` is writable, unused storage; `attr` is null or initialized.
+                unsafe { pthread_barrier_init(barrier, attr, parties) }
             }
-            1 => pthread_barrier_wait(storage.cast()),
+            // SAFETY: `barrier` was initialized by operation 0.
+            1 => unsafe { pthread_barrier_wait(barrier) },
             2 => {
-                let result = pthread_barrier_destroy(storage.cast());
+                // SAFETY: `barrier` is initialized, has no waiters and is destroyed once.
+                let result = unsafe { pthread_barrier_destroy(barrier) };
                 if shared != 0 {
-                    pthread_barrierattr_destroy(attr.cast());
+                    // SAFETY: `attr` was initialized by operation 0 and is destroyed once.
+                    unsafe { pthread_barrierattr_destroy(attr) };
                 }
                 result
             }
@@ -406,6 +460,17 @@ pub unsafe extern "C" fn swr_v1_locks_pthread_barrier(
     }
 }
 
+// The word functions below take null or a pointer to live u32 storage that is only
+// accessed atomically (process-shared for the futex pair); they reject misalignment.
+unsafe fn word<'a>(word: *mut u32) -> Option<&'a AtomicU32> {
+    if word.is_null() || !(word as usize).is_multiple_of(align_of::<AtomicU32>()) {
+        return None;
+    }
+    // SAFETY: non-null and aligned (checked above); live and atomic-only per this
+    // function's callers, for as long as they use the reference.
+    Some(unsafe { AtomicU32::from_ptr(word) })
+}
+
 /// Futex wait on a native atomic word: consume a ready token, otherwise one
 /// FUTEX_WAIT syscall. Non-futex builds use upstream's C++ wait registry.
 /// # Safety
@@ -413,10 +478,10 @@ pub unsafe extern "C" fn swr_v1_locks_pthread_barrier(
 #[cfg(target_os = "linux")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_locks_wait(word: *mut u32, timeout: f64) -> i32 {
-    if word.is_null() || !(word as usize).is_multiple_of(align_of::<AtomicU32>()) {
+    // SAFETY: the caller lends null or a live, atomic-only word for this call.
+    let Some(a) = (unsafe { self::word(word) }) else {
         return -1;
-    }
-    let a = unsafe { AtomicU32::from_ptr(word) };
+    };
     if a.compare_exchange(1, 0, Ordering::SeqCst, Ordering::SeqCst)
         .is_ok()
     {
@@ -426,6 +491,7 @@ pub unsafe extern "C" fn swr_v1_locks_wait(word: *mut u32, timeout: f64) -> i32 
         tv_sec: timeout as time_t,
         tv_nsec: ((timeout - (timeout as time_t) as f64) * 1000.0 * 1000.0 * 1000.0) as c_long,
     };
+    // SAFETY: `word` is a live futex word; the timeout is null or the live `duration`.
     let result = unsafe {
         syscall(
             SYS_futex,
@@ -435,9 +501,9 @@ pub unsafe extern "C" fn swr_v1_locks_wait(word: *mut u32, timeout: f64) -> i32 
             if timeout > 0.0 {
                 &duration as *const timespec
             } else {
-                ptr::null()
+                std::ptr::null()
             },
-            ptr::null::<c_void>(),
+            std::ptr::null::<c_void>(),
             0,
         )
     };
@@ -455,21 +521,22 @@ pub unsafe extern "C" fn swr_v1_locks_wait(word: *mut u32, timeout: f64) -> i32 
 #[cfg(target_os = "linux")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_locks_wakeup(word: *mut u32, n: i32) -> i32 {
-    if word.is_null() || !(word as usize).is_multiple_of(align_of::<AtomicU32>()) {
+    // SAFETY: the caller lends null or a live, atomic-only word for this call.
+    let Some(a) = (unsafe { self::word(word) }) else {
         return -1;
-    }
-    let a = unsafe { AtomicU32::from_ptr(word) };
+    };
     if a.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
         .is_ok()
     {
+        // SAFETY: `word` is a live futex word; FUTEX_WAKE reads no other pointer.
         unsafe {
             syscall(
                 SYS_futex,
                 word,
                 FUTEX_WAKE,
                 n,
-                ptr::null::<c_void>(),
-                ptr::null::<c_void>(),
+                std::ptr::null::<c_void>(),
+                std::ptr::null::<c_void>(),
                 0,
             ) as i32
         }
@@ -488,13 +555,13 @@ pub unsafe extern "C" fn swr_v1_locks_coroutine_try(
     current_cid: i64,
     blocking: u8,
 ) -> i32 {
-    if word.is_null() || !(word as usize).is_multiple_of(align_of::<AtomicU32>()) {
+    // SAFETY: the caller lends null or a live, atomic-only word for this call.
+    let Some(a) = (unsafe { self::word(word) }) else {
         return -1;
-    }
+    };
     if current_cookie == held_cookie && current_cid == held_cid {
         return 0;
     }
-    let a = unsafe { AtomicU32::from_ptr(word) };
     if a.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
         .is_ok()
     {
@@ -507,10 +574,10 @@ pub unsafe extern "C" fn swr_v1_locks_coroutine_try(
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_locks_coroutine_release(word: *mut u32) -> i32 {
-    if word.is_null() || !(word as usize).is_multiple_of(align_of::<AtomicU32>()) {
+    // SAFETY: the caller lends null or a live, atomic-only word for this call.
+    let Some(a) = (unsafe { self::word(word) }) else {
         return -1;
-    }
-    let a = unsafe { AtomicU32::from_ptr(word) };
+    };
     if a.load(Ordering::Relaxed) == 0 {
         return 0;
     }
