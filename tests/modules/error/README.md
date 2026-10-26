@@ -45,8 +45,7 @@ only dependency declarations and external buffer storage are stubbed. It checks
 all 130 messages, 10414 numeric inputs, the original exception/state
 assertions, concurrent lookups and reads, 20000 state operations, duplicates,
 signed values, fork isolation and child destruction, plus full callback and
-32-byte unknown-buffer assertions. It also confirms the overlay refuses to
-compile without `SWOOLE_RS_ERROR`.
+32-byte unknown-buffer assertions.
 
 `--allocator-faults` links the unchanged Rust module with a test global
 allocator against the native facade: bucket, handle and growth allocation

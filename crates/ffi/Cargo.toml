@@ -12,7 +12,6 @@ default = []
 websocket = ["dep:swoole-rs-websocket"]
 buffer = ["dep:swoole-rs-buffer"]
 timer = ["dep:swoole-rs-timer"]
-error = ["dep:swoole-rs-error"]
 
 protocols = ["dep:swoole-rs-protocols"]
 
@@ -50,7 +49,7 @@ swoole-rs-buffer = { path = "../buffer", optional = true }
 swoole-rs-timer = { path = "../timer", optional = true }
 swoole-rs-base64 = { path = "../base64" }
 swoole-rs-crc32 = { path = "../crc32" }
-swoole-rs-error = { path = "../error", optional = true }
+swoole-rs-error = { path = "../error" }
 swoole-rs-protocols = { path = "../protocols", optional = true }
 swoole-rs-memory = { path = "../memory", optional = true }
 swoole-rs-http = { path = "../http", optional = true }
