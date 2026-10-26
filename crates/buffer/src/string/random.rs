@@ -101,6 +101,7 @@ pub unsafe extern "C" fn swr_v1_string_random_step(
         Ok(result) => (OK, result),
         Err(status) => (status, StringRandomStep::default()),
     };
+    // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
     unsafe { output.write(result) };
     status
 }

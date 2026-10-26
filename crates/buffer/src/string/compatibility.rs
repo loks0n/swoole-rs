@@ -83,9 +83,9 @@ pub(super) unsafe fn step(
             return Err(INVALID);
         }
         if source.length != 0 {
-            unsafe {
-                ptr::copy(source.data, state.data, source.length);
-            }
+            // SAFETY: both states validated and `source.length <= state.capacity`; the
+            // caller supplies live spans (readable source, writable destination).
+            unsafe { ptr::copy(source.data, state.data, source.length) };
         }
         out.state.length = source.length;
         out.state.offset = source.offset;
@@ -132,9 +132,16 @@ pub(super) unsafe fn step(
                     if cursor.old.is_null() || state.data.is_null() {
                         return Err(INVALID);
                     }
+                    // SAFETY: both non-null (checked above); `offset + captured_length` lies in
+                    // the captured old span, which the caller keeps live, and `captured_length`
+                    // fits the new capacity.
                     unsafe {
-                        ptr::copy(cursor.old.add(offset), state.data, cursor.captured_length);
-                    }
+                        ptr::copy(
+                            cursor.old.wrapping_add(offset),
+                            state.data,
+                            cursor.captured_length,
+                        )
+                    };
                 }
                 out.state.offset = 0;
                 out.mask = OFFSET;
@@ -211,6 +218,7 @@ pub(super) unsafe fn step(
         }
         // No Native effect: finish the existing operation locally, without
         // re-entering our exported raw ABI or adding a roundtrip for fit edits.
+        // SAFETY: forwards this step's own byte-span contract unchanged.
         return unsafe { step(cursor, state, source, edit, source_object, replacement) };
     }
     if cursor.phase != 1 {
@@ -220,9 +228,8 @@ pub(super) unsafe fn step(
         if state.length >= state.capacity || state.data.is_null() {
             return Err(INVALID);
         }
-        unsafe {
-            state.data.add(state.length).write(0);
-        }
+        // SAFETY: non-null and `length < capacity` (checked above), inside writable storage.
+        unsafe { state.data.wrapping_add(state.length).write(0) };
         cursor.phase = 3;
         return Ok(out);
     }
@@ -247,21 +254,24 @@ pub(super) unsafe fn step(
             {
                 return Err(INVALID);
             }
-            unsafe { state.data.add(cursor.source_offset) }.cast_const()
+            // In range: `source_offset + edit.length <= capacity` (checked above).
+            state.data.wrapping_add(cursor.source_offset).cast_const()
         } else {
             edit.data
         };
         if data.is_null() || state.data.is_null() {
             return Err(INVALID);
         }
+        // Both non-null (checked above); `at + count <= capacity` inside writable storage,
+        // and the input span is live and readable for `count` bytes.
         if edit.operation == REPEAT && edit.length == 1 {
-            unsafe {
-                ptr::write_bytes(state.data.add(at), *data, count);
-            }
+            // SAFETY: as above.
+            let byte = unsafe { *data };
+            // SAFETY: as above.
+            unsafe { ptr::write_bytes(state.data.wrapping_add(at), byte, count) };
         } else {
-            unsafe {
-                ptr::copy(data, state.data.add(at), count);
-            }
+            // SAFETY: as above; `ptr::copy` allows the internal alias.
+            unsafe { ptr::copy(data, state.data.wrapping_add(at), count) };
         }
     }
     // Original WRITE publishes length only when its captured end extends the
@@ -311,21 +321,21 @@ pub unsafe extern "C" fn swr_v1_string_compat_step(
     {
         return INVALID;
     }
-    let value = unsafe {
-        step(
-            &mut *cursor,
-            *state,
-            *source,
-            &*edit,
-            source_object == 1,
-            replacement,
-        )
-    };
+    // All five are non-null (checked above), initialized, aligned and disjoint PODs.
+    // SAFETY: as above.
+    let cursor = unsafe { &mut *cursor };
+    // SAFETY: as above.
+    let state = unsafe { *state };
+    // SAFETY: as above.
+    let source = unsafe { *source };
+    // SAFETY: as above.
+    let edit = unsafe { &*edit };
+    // SAFETY: the caller supplies live byte spans per this export's contract.
+    let value = unsafe { step(cursor, state, source, edit, source_object == 1, replacement) };
     match value {
         Ok(value) => {
-            unsafe {
-                result.write(value);
-            }
+            // SAFETY: as above.
+            unsafe { result.write(value) };
             OK
         }
         Err(status) => status,

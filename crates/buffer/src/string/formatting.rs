@@ -91,6 +91,7 @@ pub unsafe extern "C" fn swr_v1_string_format_step(
         Ok(result) => (OK, result),
         Err(status) => (status, StringFormatStep::default()),
     };
+    // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
     unsafe { output.write(result) };
     status
 }

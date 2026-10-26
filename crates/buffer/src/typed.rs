@@ -37,6 +37,7 @@ pub struct Detached {
 /// The output is aligned, writable and disjoint, as for the legacy create API.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_buffer_typed_create(size: u32, out: *mut *mut Buffer) -> i32 {
+    // SAFETY: forwards the caller's aligned, writable, disjoint output.
     unsafe {
         create_buffer(
             size,
@@ -63,6 +64,7 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_push(
     if buffer.is_null() {
         return INVALID;
     }
+    // SAFETY: `buffer` is non-null (checked above), live and exclusive.
     let queue = unsafe { &mut *buffer };
     if !matches!(queue.mode, Mode::Typed(_))
         || !match kind {
@@ -93,10 +95,12 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_front(buffer: *const Buffer, out: *
     if out.is_null() {
         return INVALID;
     }
+    // SAFETY: `out` is non-null (checked above), aligned, writable and disjoint.
     unsafe { out.write(Front::default()) };
     if buffer.is_null() {
         return INVALID;
     }
+    // SAFETY: `buffer` is non-null (checked above) and live.
     let queue = unsafe { &*buffer };
     let Mode::Typed(cursor) = &queue.mode else {
         return INVALID;
@@ -118,6 +122,7 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_front(buffer: *const Buffer, out: *
         }
         Some(Entry::Native(_)) => return INVALID,
     }
+    // SAFETY: `out` is non-null (checked above), aligned, writable and disjoint.
     unsafe { out.write(result) };
     OK
 }
@@ -136,6 +141,7 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_consume(
     if buffer.is_null() {
         return INVALID;
     }
+    // SAFETY: `buffer` is non-null (checked above), live and exclusive.
     let queue = unsafe { &mut *buffer };
     let Mode::Typed(cursor) = &mut queue.mode else {
         return INVALID;
@@ -162,10 +168,12 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_pop(buffer: *mut Buffer, out: *mut 
     if out.is_null() {
         return INVALID;
     }
+    // SAFETY: `out` is non-null (checked above), aligned, writable and disjoint.
     unsafe { out.write(Detached::default()) };
     if buffer.is_null() {
         return INVALID;
     }
+    // SAFETY: `buffer` is non-null (checked above), live and exclusive.
     let queue = unsafe { &mut *buffer };
     let Mode::Typed(cursor) = &mut queue.mode else {
         return INVALID;
@@ -186,6 +194,7 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_pop(buffer: *mut Buffer, out: *mut 
     };
     cursor.offset = 0;
     cursor.generation = cursor.generation.wrapping_add(1);
+    // SAFETY: `out` is non-null (checked above), aligned, writable and disjoint.
     unsafe { out.write(effect) };
     OK
 }

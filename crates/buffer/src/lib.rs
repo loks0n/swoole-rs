@@ -1,4 +1,11 @@
 //! Allocation-fallible owned buffer queue. See docs/buffer-abi-v1.md.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 #![expect(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
@@ -118,10 +125,12 @@ impl Buffer {
     // One initialized owning value for both ordinary modes. No raw exported C
     // operation is used as an internal constructor or mutates a published owner.
     fn try_new(chunk_size: u32, mode: Mode) -> Result<Box<Self>, i32> {
+        // SAFETY: `Buffer` is not zero-sized; null is handled below.
         let handle = unsafe { alloc(Layout::new::<Self>()) }.cast::<Self>();
         if handle.is_null() {
             return Err(NOMEM);
         }
+        // SAFETY: a fresh, non-null allocation with `Buffer`'s layout.
         unsafe {
             handle.write(Self {
                 entries: VecDeque::new(),
@@ -132,9 +141,10 @@ impl Buffer {
                 },
                 length: 0,
                 mode,
-            });
-            Ok(Box::from_raw(handle))
-        }
+            })
+        };
+        // SAFETY: a global allocation with `Box`'s layout, initialized above.
+        Ok(unsafe { Box::from_raw(handle) })
     }
 
     fn front_view(&self) -> Option<BufferView> {
@@ -226,10 +236,13 @@ impl Buffer {
                 let part = &iov[index];
                 let count = (part.length() - skip).min(size - filled);
                 if count != 0 {
+                    // SAFETY: `skip + count <= part.length()`, inside the descriptor's non-null,
+                    // readable data (validated above); `filled + count <= size`, inside the
+                    // reserved, disjoint `bytes` capacity.
                     unsafe {
                         ptr::copy_nonoverlapping(
-                            part.data().add(skip),
-                            bytes.as_mut_ptr().add(filled),
+                            part.data().wrapping_add(skip),
+                            bytes.as_mut_ptr().wrapping_add(filled),
                             count,
                         );
                     }
@@ -241,9 +254,8 @@ impl Buffer {
                     skip = 0;
                 }
             }
-            unsafe {
-                bytes.set_len(size);
-            }
+            // SAFETY: the copy loop initialized exactly `size <= capacity` bytes.
+            unsafe { bytes.set_len(size) };
             self.entries.push_back(Entry::Data(bytes));
             left -= size;
         }
@@ -257,11 +269,11 @@ unsafe fn create_buffer(chunk_size: u32, mode: Mode, output: *mut *mut Buffer) -
     if output.is_null() {
         return INVALID;
     }
-    unsafe {
-        output.write(ptr::null_mut());
-    }
+    // SAFETY: non-null (checked above), aligned, writable pointer storage.
+    unsafe { output.write(ptr::null_mut()) };
     match Buffer::try_new(chunk_size, mode) {
         Ok(owner) => {
+            // SAFETY: as above.
             unsafe { output.write(Box::into_raw(owner)) };
             OK
         }
@@ -274,6 +286,7 @@ unsafe fn create_buffer(chunk_size: u32, mode: Mode, output: *mut *mut Buffer) -
 /// `output` must be writable and aligned; see the frozen buffer ABI contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_buffer_create(chunk_size: u32, output: *mut *mut Buffer) -> i32 {
+    // SAFETY: forwards the caller's writable, aligned output.
     unsafe { create_buffer(chunk_size, Mode::Legacy(ptr::null_mut()), output) }
 }
 
@@ -285,6 +298,7 @@ pub unsafe extern "C" fn swr_v1_buffer_release(buffer: *mut Buffer) -> i32 {
     if buffer.is_null() {
         return OK;
     }
+    // SAFETY: non-null (checked above); a live, uniquely owned handle from create.
     let queue = unsafe { &*buffer };
     if queue
         .entries
@@ -293,9 +307,8 @@ pub unsafe extern "C" fn swr_v1_buffer_release(buffer: *mut Buffer) -> i32 {
     {
         return PENDING_NATIVE;
     }
-    unsafe {
-        drop(Box::from_raw(buffer));
-    }
+    // SAFETY: as above; the shared borrow ended and the handle is released once.
+    unsafe { drop(Box::from_raw(buffer)) };
     OK
 }
 
@@ -311,7 +324,10 @@ pub unsafe extern "C" fn swr_v1_buffer_append(
     if buffer.is_null() {
         return INVALID;
     }
-    unsafe { (&mut *buffer).appendv(&[BufferIovec { data, length }], 0) }
+    // SAFETY: `buffer` is non-null (checked above), live and exclusive.
+    let queue = unsafe { &mut *buffer };
+    // SAFETY: the borrowed input follows the frozen ABI's validity rules.
+    unsafe { queue.appendv(&[BufferIovec { data, length }], 0) }
 }
 
 /// Copy the concatenated vector suffix atomically into new queue entries.
@@ -336,9 +352,13 @@ pub unsafe extern "C" fn swr_v1_buffer_appendv(
     let parts = if count == 0 {
         &[]
     } else {
+        // SAFETY: non-null, `count` fits isize (checked above), readable descriptors.
         unsafe { slice::from_raw_parts(iov, count) }
     };
-    unsafe { (&mut *buffer).appendv(parts, offset) }
+    // SAFETY: `buffer` is non-null (checked above), live and exclusive.
+    let queue = unsafe { &mut *buffer };
+    // SAFETY: the borrowed input follows the frozen ABI's validity rules.
+    unsafe { queue.appendv(parts, offset) }
 }
 
 /// Diagnostics for the actual external C input layout; no conversion credit.
@@ -383,9 +403,13 @@ pub unsafe extern "C" fn swr_v1_buffer_append_iovec(
     let parts = if count == 0 {
         &[]
     } else {
+        // SAFETY: non-null, `count` fits isize (checked above), readable descriptors.
         unsafe { slice::from_raw_parts(iov, count) }
     };
-    unsafe { (&mut *buffer).appendv(parts, offset as u64) }
+    // SAFETY: `buffer` is non-null (checked above), live and exclusive.
+    let queue = unsafe { &mut *buffer };
+    // SAFETY: the borrowed input follows the frozen ABI's validity rules.
+    unsafe { queue.appendv(parts, offset as u64) }
 }
 
 /// Transfer one opaque native token to the queue on success.
@@ -396,6 +420,7 @@ pub unsafe extern "C" fn swr_v1_buffer_push_native(buffer: *mut Buffer, token: *
     if buffer.is_null() || token.is_null() {
         return INVALID;
     }
+    // SAFETY: `buffer` is non-null (checked above), live and exclusive.
     let queue = unsafe { &mut *buffer };
     if !matches!(queue.mode, Mode::Legacy(_)) {
         return INVALID;
@@ -424,12 +449,12 @@ pub unsafe extern "C" fn swr_v1_buffer_front(
     if output.is_null() {
         return INVALID;
     }
-    unsafe {
-        output.write(BufferView::ZERO);
-    }
+    // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
+    unsafe { output.write(BufferView::ZERO) };
     if buffer.is_null() {
         return INVALID;
     }
+    // SAFETY: `buffer` is non-null (checked above) and live.
     let queue = unsafe { &*buffer };
     if !matches!(queue.mode, Mode::Legacy(_)) {
         return INVALID;
@@ -437,9 +462,8 @@ pub unsafe extern "C" fn swr_v1_buffer_front(
     let Some(view) = queue.front_view() else {
         return EMPTY;
     };
-    unsafe {
-        output.write(view);
-    }
+    // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
+    unsafe { output.write(view) };
     OK
 }
 
@@ -454,12 +478,12 @@ pub unsafe extern "C" fn swr_v1_buffer_pop(
     if native_token.is_null() {
         return INVALID;
     }
-    unsafe {
-        native_token.write(ptr::null_mut());
-    }
+    // SAFETY: `native_token` is non-null (checked above), aligned, writable and disjoint.
+    unsafe { native_token.write(ptr::null_mut()) };
     if buffer.is_null() {
         return INVALID;
     }
+    // SAFETY: `buffer` is non-null (checked above), live and exclusive.
     let queue = unsafe { &mut *buffer };
     if !matches!(queue.mode, Mode::Legacy(_)) {
         return INVALID;
@@ -469,6 +493,7 @@ pub unsafe extern "C" fn swr_v1_buffer_pop(
         None => EMPTY,
         Some(detached) => {
             if !detached.token.is_null() {
+                // SAFETY: `native_token` is non-null (checked above), aligned and writable.
                 unsafe { native_token.write(detached.token) };
             }
             OK
@@ -489,10 +514,12 @@ pub unsafe extern "C" fn swr_v1_buffer_front_plan(
     if output.is_null() {
         return INVALID;
     }
+    // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
     unsafe { output.write(BufferView::ZERO) };
     if buffer.is_null() || facade_view.is_null() {
         return INVALID;
     }
+    // SAFETY: `buffer` is non-null (checked above), live and exclusive.
     let queue = unsafe { &mut *buffer };
     let Mode::Legacy(cached) = queue.mode else {
         return INVALID;
@@ -501,6 +528,7 @@ pub unsafe extern "C" fn swr_v1_buffer_front_plan(
         if cached != facade_view {
             return INVALID;
         }
+        // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
         unsafe {
             output.write(BufferView {
                 kind: 3,
@@ -518,6 +546,7 @@ pub unsafe extern "C" fn swr_v1_buffer_front_plan(
         view.kind = 2;
         view.token = facade_view;
     }
+    // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
     unsafe { output.write(view) };
     OK
 }
@@ -552,15 +581,18 @@ pub unsafe extern "C" fn swr_v1_buffer_advance(
     if output.is_null() {
         return INVALID;
     }
+    // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
     unsafe { output.write(BufferAdvance::ZERO) };
     if buffer.is_null() || drain > 1 || cached_destroy > 1 {
         return INVALID;
     }
+    // SAFETY: `buffer` is non-null (checked above), live and exclusive.
     let queue = unsafe { &mut *buffer };
     let Mode::Legacy(cached) = queue.mode else {
         return INVALID;
     };
     if !cached.is_null() && cached_destroy != 0 {
+        // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
         unsafe {
             output.write(BufferAdvance {
                 action: 1,
@@ -583,6 +615,7 @@ pub unsafe extern "C" fn swr_v1_buffer_advance(
             break;
         }
     }
+    // SAFETY: `output` is non-null (checked above), aligned, writable and disjoint.
     unsafe { output.write(result) };
     OK
 }
@@ -599,11 +632,12 @@ pub unsafe extern "C" fn swr_v1_buffer_stats(
     if buffer.is_null() || length.is_null() || count.is_null() {
         return INVALID;
     }
+    // SAFETY: `buffer` is non-null (checked above) and live.
     let queue = unsafe { &*buffer };
-    unsafe {
-        length.write(queue.length);
-        count.write(queue.entries.len());
-    }
+    // SAFETY: non-null (checked above), aligned, writable and disjoint outputs.
+    unsafe { length.write(queue.length) };
+    // SAFETY: as above.
+    unsafe { count.write(queue.entries.len()) };
     OK
 }
 
