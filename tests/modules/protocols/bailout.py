@@ -89,12 +89,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--engine', action='append', required=True)
     parser.add_argument('--php', default='php')
+    parser.add_argument('--php-extension', action='append', default=[], help='PHP module loaded before Swoole')
     parser.add_argument('--output', type=Path, default=ROOT / 'target/reports/protocols-bailout.json')
     args = parser.parse_args()
     report = {'created_utc': datetime.now(timezone.utc).isoformat(), 'engines': [], 'results': [],
               'scope': 'Real native PHP request-side exceptional outcomes; expected OOM fatalities recorded separately from successful requests. EOF/reset transport races retained raw but classified as closed for differential comparison.'}
     reference = {}
-    for engine_index, engine in enumerate(parse_engines(args.engine, args.php)):
+    for engine_index, engine in enumerate(parse_engines(args.engine, args.php, args.php_extension)):
         report['engines'].append(engine.metadata())
         for mode in ['base', 'process']:
             for scenario, coroutines in [('throw', False), ('throw', True), ('exit', False), ('exit', True), ('oom', False)]:

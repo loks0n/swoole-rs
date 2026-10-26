@@ -14,12 +14,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--engine', action='append', required=True)
     parser.add_argument('--php', default='php')
+    parser.add_argument('--php-extension', action='append', default=[], help='PHP module loaded before Swoole')
     parser.add_argument('--output', type=Path, default=ROOT / 'target/reports/protocols-handlers.json')
     args = parser.parse_args()
     script = Path(__file__).with_suffix('.php')
     report = {'created_utc': datetime.now(timezone.utc).isoformat(), 'engines': [], 'results': []}
     reference = None
-    for engine in parse_engines(args.engine, args.php):
+    for engine in parse_engines(args.engine, args.php, args.php_extension):
         report['engines'].append(engine.metadata())
         row = {'engine': engine.name, 'passed': False}
         try:
