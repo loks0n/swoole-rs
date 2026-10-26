@@ -112,9 +112,10 @@ def failure_logs(result):
     return {**result, 'logs': {job: lines[-LOG_LINES:] for job, lines in tails.items()}}
 
 
-def phases(run):
+def phases(run, tails=None):
     """{phase: passed} from a run's `phases*` artifacts (each shard's loop.json), or None without any.
-    A phase every shard runs (the builds) passes only if it passed everywhere."""
+    A phase every shard runs (the builds) passes only if it passed everywhere. Failed phases'
+    log tails are added to `tails` when given."""
     with tempfile.TemporaryDirectory() as directory:
         try:
             gh('run', 'download', str(run), '-p', 'phases*', '-D', directory)
@@ -127,12 +128,15 @@ def phases(run):
         for loop in loops:
             for row in json.loads(loop.read_text())['phases']:
                 passed[row['phase']] = passed.get(row['phase'], True) and not row['failed']
+                if tails is not None and row.get('log_tail'):
+                    tails[row['phase']] = row['log_tail']
         return passed
 
 
 def phase_changes(result):
     """Failed phases, plus those new or fixed since the previous completed run on main that has phases."""
-    current = phases(result['run'])
+    tails = {}
+    current = phases(result['run'], tails)
     if current is None:
         return result
     result = {**result, 'failed_phases': sorted(name for name, passed in current.items() if not passed)}
@@ -141,10 +145,11 @@ def phase_changes(result):
     for run in runs:
         previous = run['databaseId'] < result['run'] and run['conclusion'] in ('success', 'failure') and phases(run['databaseId'])
         if previous:
-            return {**result, 'previous_run': run['url'],
-                    # A phase the previous run didn't have is new too: it was added and fails on its first run.
-                    'new_failures': [name for name in result['failed_phases'] if previous.get(name) is not False],
-                    'fixed': sorted(name for name, passed in current.items() if passed and previous.get(name) is False)}
+            # A phase the previous run didn't have is new too: it was added and fails on its first run.
+            new = [name for name in result['failed_phases'] if previous.get(name) is not False]
+            return {**result, 'previous_run': run['url'], 'new_failures': new,
+                    'fixed': sorted(name for name, passed in current.items() if passed and previous.get(name) is False),
+                    'phase_logs': {name: tails[name] for name in new if name in tails}}
     return result
 
 
@@ -163,6 +168,8 @@ def report(result, as_json):
               f"fixed: {', '.join(result['fixed']) or 'none'}")
     for job, lines in result.get('logs', {}).items():
         print(f'--- {job} (last {len(lines)} lines)', *lines, sep='\n')
+    for name, lines in result.get('phase_logs', {}).items():
+        print(f'--- new failure {name} (last {len(lines)} log lines)', *lines, sep='\n')
 
 
 def main(argv=None):

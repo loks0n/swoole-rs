@@ -869,6 +869,7 @@ def phase_dependencies(commands, reports):
     return dependencies
 
 
+LOG_TAIL = 30  # lines of a failed phase's log kept in loop.json
 PHASE_WEIGHTS = ROOT / 'tools/phase_weights.json'  # seconds per phase from a merge-tier run
 DEFAULT_WEIGHT = 2
 
@@ -1114,6 +1115,13 @@ def main():
             error = error or source
         if error:
             report.update(infrastructure_error=error, blocked_phase=name)
+        if row['failed']:
+            # The reason, kept small enough for the `phases` artifact, so triage needs no full reports.
+            try:
+                lines = Path(row['log']).read_text(errors='replace').splitlines()
+                row['log_tail'] = [line for line in lines if line.strip()][-LOG_TAIL:]
+            except OSError:
+                pass
         report['phases'].append(row)
         report['phases'].sort(key=lambda r: order[r['phase']])
         write_report(reports / 'loop.json', report)
