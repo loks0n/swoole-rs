@@ -56,3 +56,20 @@ pub mod websocket {
         pub fn mask(data: *mut u8, length: usize, key: *const u8);
     }
 }
+
+pub mod http {
+    unsafe extern "C" {
+        /// Upstream `http_server::url_decode`, in place over `length + 1` bytes
+        /// (it writes a terminator); returns the decoded length.
+        #[link_name = "swr_oracle_http_url_decode"]
+        pub fn url_decode(data: *mut u8, length: usize) -> usize;
+        /// Upstream `http_server::url_encode`, copied with its NUL into `output`
+        /// (capacity `3 * length + 1`); returns the encoded length.
+        #[link_name = "swr_oracle_http_url_encode"]
+        pub fn url_encode(data: *const u8, length: usize, output: *mut u8) -> usize;
+        /// Every `http_server::parse_cookie` callback as u32 key length, key,
+        /// u32 value length, value, into `output` (capacity `8 * length + 16`).
+        #[link_name = "swr_oracle_http_cookies"]
+        pub fn cookies(data: *const u8, length: usize, output: *mut u8) -> usize;
+    }
+}
