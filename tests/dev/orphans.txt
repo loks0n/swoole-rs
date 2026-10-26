@@ -95,6 +95,7 @@ tests/modules/ossupport/queue_failure.py
 tests/modules/ossupport/retirement_shutdown.py
 tests/modules/ossupport/sendfile_fallback.py
 tests/modules/phpcoroutines/activated.cc
+tests/modules/phpcoroutines/bootstrap_bodies.py
 tests/modules/phpcoroutines/test_activated_boundary.py
 tests/modules/phpcoroutines/test_autoload_owner.py
 tests/modules/phpcoroutines/test_bootstrap_fallback.py

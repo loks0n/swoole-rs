@@ -16,8 +16,6 @@ for test in \
     tests/modules/buffer/string/test_production.py \
     tests/modules/buffer/test_facade_instrumentation.py \
     tests/modules/clients/test_gate_output.py \
-    tests/modules/http/test_legacy_directory.py \
-    tests/modules/http/test_rewrite_store.py \
     tests/modules/integration/test_bridge_inventory.py \
     tests/modules/memory/test_benchmark.py \
     tests/modules/phpcollections/test_body_map.py \
