@@ -45,6 +45,7 @@ pub unsafe extern "C" fn swr_v1_clients_async_event(
     let bytes = if length == 0 {
         &[][..]
     } else {
+        // SAFETY: `folded` is non-null and `length <= 12` (checked above); the caller lends those bytes.
         unsafe { std::slice::from_raw_parts(folded, length) }
     };
     // Native strncasecmp's n is the supplied name length: abbreviations and the

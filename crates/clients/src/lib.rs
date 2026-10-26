@@ -6,6 +6,13 @@
     clippy::cast_sign_loss,
     reason = "#157: casts not yet checked"
 )]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 
 pub mod async_client;
 pub mod coro_client;
@@ -90,6 +97,7 @@ pub unsafe extern "C" fn swr_v1_clients_url(data: *const u8, length: usize) -> U
     if data.is_null() || length > isize::MAX as usize {
         return UrlPlan::default();
     }
+    // SAFETY: `data` is non-null and `length <= isize::MAX` (checked above); the caller lends `length` initialized bytes for this call.
     url_plan(unsafe { std::slice::from_raw_parts(data, length) })
 }
 
@@ -163,12 +171,15 @@ pub unsafe extern "C" fn swr_v1_clients_hosts_match(
     {
         return HostMatch::default();
     }
+    // SAFETY: `line` is non-null and `line_length <= isize::MAX` (checked above); the caller lends `line_length` initialized bytes for this call.
     let line = unsafe { std::slice::from_raw_parts(line, line_length) };
     let search = if search_length == 0 {
         &[]
     } else {
+        // SAFETY: `search` is non-null and `search_length <= isize::MAX` (checked above); the caller lends `search_length` initialized bytes for this call.
         unsafe { std::slice::from_raw_parts(search, search_length) }
     };
+    // SAFETY: non-null (checked above); the caller lends its 256-entry class table.
     let spaces = unsafe { std::slice::from_raw_parts(spaces, 256) };
     hosts_match(line, search, spaces)
 }
@@ -188,6 +199,7 @@ pub unsafe extern "C" fn swr_v1_clients_cookie(data: *const u8, length: usize) -
     if length == 0 || data.is_null() || length > isize::MAX as usize {
         return CookiePlan::default();
     }
+    // SAFETY: `data` is non-null and `length <= isize::MAX` (checked above); the caller lends `length` initialized bytes for this call.
     let bytes = unsafe { std::slice::from_raw_parts(data, length) };
     let equals = bytes.iter().position(|&b| b == b'=');
     let value_offset = equals.map_or(0, |offset| offset + 1);
@@ -257,8 +269,10 @@ pub unsafe extern "C" fn swr_v1_clients_domain_encode(
     let input = if length == 0 {
         &[]
     } else {
+        // SAFETY: `source` is non-null and `length <= isize::MAX` (checked above); the caller lends `length` initialized bytes for this call.
         unsafe { std::slice::from_raw_parts(source, length) }
     };
+    // SAFETY: `output` is non-null and `required <= isize::MAX` (checked above); the caller lends `required` writable bytes for this call.
     let output = unsafe { std::slice::from_raw_parts_mut(output, required) };
     output[1..length + 1].copy_from_slice(input);
     output[length + 1] = b'.';
@@ -292,6 +306,7 @@ pub unsafe extern "C" fn swr_v1_clients_domain_decode(
     if data.is_null() || capacity == 0 || capacity > isize::MAX as usize {
         return 0;
     }
+    // SAFETY: `data` is non-null and `capacity <= isize::MAX` (checked above); the caller lends `capacity` writable bytes for this call.
     let bytes = unsafe { std::slice::from_raw_parts_mut(data, capacity) };
     let mut index = 0;
     loop {
@@ -807,6 +822,7 @@ pub unsafe extern "C" fn swr_v1_clients_resolv_line(data: *const u8, length: usi
     if data.is_null() || length > isize::MAX as usize {
         return ResolvLine::default();
     }
+    // SAFETY: `data` is non-null and `length <= isize::MAX` (checked above); the caller lends `length` initialized bytes for this call.
     resolv_line(unsafe { std::slice::from_raw_parts(data, length) })
 }
 
@@ -829,6 +845,7 @@ pub unsafe extern "C" fn swr_v1_clients_dns_endpoint(
     if data.is_null() || length > isize::MAX as usize {
         return DnsEndpoint::default();
     }
+    // SAFETY: `data` is non-null and `length <= isize::MAX` (checked above); the caller lends `length` initialized bytes for this call.
     let bytes = unsafe { std::slice::from_raw_parts(data, length) };
     let bytes = &bytes[..bytes
         .iter()
