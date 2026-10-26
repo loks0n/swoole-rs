@@ -2,6 +2,13 @@
 // Message text derived from Swoole v6.2.2 src/core/error.cc,
 // Copyright Swoole contributors; original author Tianfeng Han <rango@swoole.com>.
 //! Swoole error dispatch and ignored state; native code supplies OS messages.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 
 use std::ffi::c_char;
 

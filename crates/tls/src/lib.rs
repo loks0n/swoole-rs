@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! First-party TLS/DTLS decisions. No OpenSSL calls, callbacks, allocation or stored pointers.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 use core::ffi::c_long;
 const ALL: u32 = 0x7e;
 const DTLS: u32 = 0x80;
@@ -26,12 +33,15 @@ pub unsafe extern "C" fn swr_v1_tls_password(
         return 0;
     }
     // No slice, allocation, callback, panic, destructor or retained native borrow.
-    unsafe {
-        if length != 0 {
-            core::ptr::copy_nonoverlapping(source, destination, length as usize);
-        }
-        destination.add(length as usize).write(0);
+    if length != 0 {
+        // SAFETY: an accepted copy has `length` initialized source bytes and at least
+        // `length + 1` writable, non-overlapping destination bytes.
+        unsafe { core::ptr::copy_nonoverlapping(source, destination, length as usize) };
     }
+    // SAFETY: the terminator lands at offset `length`, inside those `length + 1` bytes.
+    let terminator = unsafe { destination.add(length as usize) };
+    // SAFETY: as above, `terminator` is writable.
+    unsafe { terminator.write(0) };
     length
 }
 
