@@ -66,6 +66,10 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_metadata(
                 unsafe { (*cells.silence).started = 1 };
                 plan.action = 1;
             }
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "the native int cell keeps the observation"
+            )]
             // SAFETY: this kind's cells are valid and initialized (see the contract).
             1 => unsafe { (*cells.original).value = observation as c_int },
             _ => (),
@@ -77,8 +81,14 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_metadata(
             // SAFETY: this kind's cells are valid and initialized (see the contract).
             0 if unsafe { (*cells.silence).started != 0 } => plan.action = 1,
             1 => {
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "the native int cell keeps the observation"
+                )]
                 // SAFETY: this kind's cells are valid and initialized (see the contract).
-                unsafe { (*cells.temporary).value = observation as c_int };
+                unsafe {
+                    (*cells.temporary).value = observation as c_int
+                };
                 plan = MetadataPlan {
                     action: 2,
                     // SAFETY: this kind's cells are valid and initialized (see the contract).

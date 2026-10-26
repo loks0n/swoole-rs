@@ -69,7 +69,7 @@ pub struct Http2ResponsePlan {
 #[no_mangle]
 pub extern "C" fn sw_rs_http2_setting_index(id: u32) -> i32 {
     if (1..=6).contains(&id) {
-        (id - 1) as i32
+        (id - 1).cast_signed()
     } else {
         -1
     }
@@ -77,17 +77,8 @@ pub extern "C" fn sw_rs_http2_setting_index(id: u32) -> i32 {
 
 fn header(kind: u8, length: u32, flags: u8, stream_id: u32) -> [u8; 9] {
     let id = stream_id.to_be_bytes();
-    [
-        (length >> 16) as u8,
-        (length >> 8) as u8,
-        length as u8,
-        kind,
-        flags,
-        id[0],
-        id[1],
-        id[2],
-        id[3],
-    ]
+    let [_, high, middle, low] = length.to_be_bytes();
+    [high, middle, low, kind, flags, id[0], id[1], id[2], id[3]]
 }
 
 #[repr(C)]
@@ -110,6 +101,10 @@ pub unsafe extern "C" fn sw_rs_http2_window_plan(
     if out.is_null() {
         return;
     }
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "native uint32_t window arithmetic"
+    )]
     let value = if credit != 0 {
         current.wrapping_add(amount as u32)
     } else {
@@ -180,7 +175,7 @@ pub extern "C" fn sw_rs_http2_queue_action(bound: u32, queued: usize, limit: u32
 
 #[no_mangle]
 pub extern "C" fn sw_rs_http2_send_complete(sent: isize, wanted: usize) -> u32 {
-    u32::from(sent == wanted as isize)
+    u32::from(isize::try_from(wanted).is_ok_and(|wanted| sent == wanted))
 }
 
 /// Match locale-folded native header bytes; Rust selects role-specific effects.
@@ -369,6 +364,10 @@ pub unsafe extern "C" fn sw_rs_http2_pack_frame_header(
     stream_id: u32,
 ) {
     if !out.is_null() {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the native uint8_t frame type and flags"
+        )]
         let bytes = header(kind as u8, length, flags as u8, stream_id);
         ptr::copy_nonoverlapping(bytes.as_ptr(), out, bytes.len());
     }
@@ -414,13 +413,14 @@ pub unsafe extern "C" fn sw_rs_http2_pack_settings(
         s.max_header_list_size,
     ];
     let mut bytes = [0u8; 45];
-    bytes[..9].copy_from_slice(&header(4, (count * 6) as u32, 0, 0));
+    bytes[..9].copy_from_slice(&header(4, u32::try_from(count * 6).unwrap_or(0), 0, 0));
     let mut offset = 9;
     for (index, value) in values.iter().enumerate() {
         if server != 0 && index == 1 {
             continue;
         }
-        bytes[offset..offset + 2].copy_from_slice(&((index + 1) as u16).to_be_bytes());
+        bytes[offset..offset + 2]
+            .copy_from_slice(&u16::try_from(index + 1).unwrap_or(0).to_be_bytes());
         bytes[offset + 2..offset + 6].copy_from_slice(&value.to_be_bytes());
         offset += 6;
     }
@@ -487,7 +487,8 @@ pub unsafe extern "C" fn sw_rs_http2_frame_length(bytes: *const u8, available: u
     }
     let mut b = [0u8; 3];
     ptr::copy_nonoverlapping(bytes, b.as_mut_ptr(), 3);
-    (((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32) as isize + 9
+    let length = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+    isize::try_from(length).map_or(-1, |length| length + 9)
 }
 
 /// # Safety
@@ -505,7 +506,7 @@ pub unsafe extern "C" fn sw_rs_http2_setting_plan(
         return;
     }
     let field = match id {
-        1 | 3 | 4 | 5 | 6 => (id - 1) as i32,
+        1 | 3 | 4 | 5 | 6 => (id - 1).cast_signed(),
         _ => -1,
     };
     ptr::write(
@@ -540,7 +541,11 @@ pub unsafe extern "C" fn sw_rs_http2_chunk(
         out,
         Http2ChunkPlan {
             length: if more { max_frame as usize } else { remaining },
-            flags: if more { 0 } else { flags as u8 as u32 },
+            flags: if more {
+                0
+            } else {
+                u32::from(flags.to_le_bytes()[0])
+            },
         },
     );
 }
@@ -680,6 +685,11 @@ pub extern "C" fn sw_rs_http2_color_group(kind: i32) -> u32 {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests {
     use super::*;
     #[test]

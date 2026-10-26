@@ -25,9 +25,14 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_system_file(
 ) -> FilePlan {
     // SAFETY: per this function's `# Safety` contract, `config` is live, aligned and initialized.
     let config = unsafe { &*config };
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "flags masked by the native int lock"
+    )]
+    let lock = (flags & i64::from(config.lock)) as i32;
     FilePlan {
         accepted: u8::from(nonempty != 0),
-        lock: (flags & i64::from(config.lock)) as i32,
+        lock,
         open: config.base_open
             | if flags & i64::from(config.append_mask) != 0 {
                 config.append_open

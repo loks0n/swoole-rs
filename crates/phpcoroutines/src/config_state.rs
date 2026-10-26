@@ -42,6 +42,10 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_config(
         // SAFETY: as above.
         2 => u64::from(unsafe { field::<u32>(state, offset_of!(ConfigState, hook_flags)).read() }),
         3 => {
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "the native uint32_t hook flags"
+            )]
             let flags = value as u32;
             // SAFETY: as above.
             unsafe { field::<u32>(state, offset_of!(ConfigState, hook_flags)).write(flags) };
