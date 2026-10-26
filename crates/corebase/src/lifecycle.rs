@@ -110,6 +110,7 @@ pub unsafe extern "C" fn swr_v1_corebase_lifecycle_next(
         5 => Operation::ForkExec,
         _ => return INVALID,
     };
+    // SAFETY: forwards the caller's exclusive, initially zeroed state unchanged.
     unsafe { next(operation, state, observed, argument) }
 }
 
@@ -127,6 +128,7 @@ pub unsafe extern "C" fn swr_v1_corebase_init_next(
     observed: u64,
     limit: u32,
 ) -> u32 {
+    // SAFETY: forwards the caller's exclusive, initially zeroed state unchanged.
     unsafe { next(Operation::Init, state, observed, limit) }
 }
 
@@ -143,6 +145,7 @@ pub unsafe extern "C" fn swr_v1_corebase_task_tmp_next(
     observed: u64,
     limit: u32,
 ) -> u32 {
+    // SAFETY: forwards the caller's exclusive, initially zeroed state unchanged.
     unsafe { next(Operation::TaskTmp, state, observed, limit) }
 }
 
@@ -152,6 +155,7 @@ unsafe fn next(
     observed: u64,
     argument: u32,
 ) -> u32 {
+    // SAFETY: the caller passes null or exclusively writable, initialized state.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return INVALID;
     };
