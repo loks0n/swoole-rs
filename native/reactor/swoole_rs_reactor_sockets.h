@@ -105,11 +105,7 @@ class ReactorSocketRegistry {
     ReactorSocketRegistry &operator=(const ReactorSocketRegistry &) = delete;
     ~ReactorSocketRegistry() { swr_v1_reactor_sockets_free(&owner_); }
     bool contains(int fd) const { return swr_v1_reactor_sockets_contains(owner_, fd) != 0; }
-    network::Socket *get(int fd) {
-        uintptr_t token = 0;
-        check(swr_v1_reactor_sockets_get(&owner_, fd, &token));
-        return reinterpret_cast<network::Socket *>(token);
-    }
+    network::Socket *get(int fd) const { return reinterpret_cast<network::Socket *>(swr_v1_reactor_sockets_get(owner_, fd)); }
     void put(int fd, network::Socket *socket) { check(swr_v1_reactor_sockets_put(&owner_, fd, reinterpret_cast<uintptr_t>(socket))); }
     void erase(int fd) { swr_v1_reactor_sockets_erase(owner_, fd); }
     size_t size() const { return swr_v1_reactor_sockets_len(owner_); }
