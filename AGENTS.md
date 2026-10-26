@@ -52,12 +52,14 @@ environments to one shared machine. Each executor loops:
 3. Push and open a PR whose body says `Closes #n`. The PR tier runs unit and
    integration CI (target: under 3 minutes).
 4. Run `gh pr merge --auto --squash <pr>`. GitHub squash-merges it once the
-   required checks (`rust`, `tooling`, `hybrid`) pass on its head; `main`'s
-   ruleset refuses anything else, including direct pushes. Watch the PR tier with
+   required checks (`rust`, `tooling`, about a minute) pass on its head; `main`'s
+   ruleset refuses anything else, including direct pushes. `hybrid` and `gates`
+   keep running but don't block the merge: watch the whole PR tier with
    `python3 tools/ci.py wait --workflow pr.yml --commit <branch>` (in the
-   background); on failure it prints the failing jobs and their log tails: fix and
-   push, and auto-merge follows the new head. If the PR conflicts, merge
-   `origin/main` and push.
+   background). If one of them fails because of your change, fix it in a
+   follow-up PR straight away, even if your PR already merged; otherwise the merge
+   tier's red-main rule picks it up. If the PR conflicts, merge `origin/main` and
+   push.
 5. The merge tier runs on `main`: everything above plus every gate, application
    and original PHPT for all modules. Watch it with `python3 tools/ci.py wait
    --commit <merge sha>` (`gh pr view <pr> --json mergeCommit -q
@@ -149,8 +151,10 @@ ad-hoc scripts, `gh run watch`).
 
 Three tiers: the pre-commit hook (~5s warm), the PR tier (`pr.yml`, under 3 minutes
 warm) and the merge tier (`merge.yml`, on `main`). `main`'s ruleset requires a
-pull request and the PR tier's `rust`, `tooling` and `hybrid` checks, so renaming
-those jobs means updating the ruleset in the same PR. Keep them cached and audit
+pull request and the PR tier's `rust` and `tooling` checks, so renaming those jobs
+means updating the ruleset in the same PR. `hybrid` (all-modules build, about 20
+minutes) and `gates` are informative, so merging stays fast; breakage they miss
+is caught by the merge tier and the red-main rule. Keep them cached and audit
 them regularly for waste and duplicate steps; slow or flaky CI is a ticket.
 
 The merge tier runs one at a time, latest wins: while a run is in progress, each
