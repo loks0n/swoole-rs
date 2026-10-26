@@ -15,11 +15,7 @@ from tools.harness import ROOT, run_isolated, write_report
 
 
 def legacy_fields(header):
-    fields=header.split('class StaticHandler {',1)[1].split('  public:',1)[0].replace('    friend class StaticHandlerV2;\n','')
-    selected='#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE\n    LegacyDirectory dir_files;\n#else\n    std::set<std::string> dir_files;\n#endif'
-    # Only the exact default-OFF declaration is projected. Additional/changed
-    # data declarations remain unequal and fail the original default gate.
-    return fields.replace(selected,'    std::set<std::string> dir_files;')
+    return header.split('class StaticHandler {',1)[1].split('  public:',1)[0].replace('    friend class StaticHandlerV2;\n','')
 
 
 def main():

@@ -2,10 +2,13 @@
 #define SWOOLE_RS_HTTP_STATIC_V2_H
 #include "swoole_static_handler.h"
 #include "swoole_rs_http_context.h"
-#include "swoole_rs_http_rewrite_store.h"
+#include <memory>
+#include <vector>
 
 namespace swoole {
 namespace http_server {
+struct RewriteRule;
+using RewriteRulesField = std::shared_ptr<std::vector<RewriteRule>>;
 // Unreleased selected facade. Sole metadata/container custody is Rust; native
 // retains only external server/configuration views, never mirrored context.
 class StaticHandlerV2 {

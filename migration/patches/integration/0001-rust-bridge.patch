@@ -1,8 +1,8 @@
 diff --git a/config.m4 b/config.m4
-index 230b1c0..d36cb1d 100644
+index 230b1c09a..4eacd05f8 100644
 --- a/config.m4
 +++ b/config.m4
-@@ -38,2 +38,172 @@ PHP_ARG_ENABLE([swoole],
+@@ -38,2 +38,157 @@ PHP_ARG_ENABLE([swoole],
  
 +PHP_ARG_WITH([swoole-rs],
 +  [Rust migration bridge prefix],
@@ -48,21 +48,6 @@ index 230b1c0..d36cb1d 100644
 +  [Rust http subsystem],
 +  [AS_HELP_STRING([--enable-swoole-rs-http],
 +    [Use the Rust http subsystem (requires --with-swoole-rs)])], [no], [no])
-+
-+PHP_ARG_ENABLE([swoole-rs-http-rewrite-store],
-+  [Experimental Rust-owned HTTP rewrite-rule storage],
-+  [AS_HELP_STRING([--enable-swoole-rs-http-rewrite-store],
-+    [Use Rust rewrite-rule storage (requires Rust HTTP)])], [no], [no])
-+
-+PHP_ARG_ENABLE([swoole-rs-http-static-config],
-+  [Experimental Rust-owned HTTP static configuration],
-+  [AS_HELP_STRING([--enable-swoole-rs-http-static-config],
-+    [Use Rust static configuration (requires Rust HTTP and rebuilt selected SDK)])], [no], [no])
-+
-+PHP_ARG_ENABLE([swoole-rs-http-legacy-directory-store],
-+  [Experimental Rust-owned HTTP Legacy directory storage],
-+  [AS_HELP_STRING([--enable-swoole-rs-http-legacy-directory-store],
-+    [Use Rust Legacy directory storage (requires Rust HTTP and rebuilt selected SDK)])], [no], [no])
 +
 +PHP_ARG_ENABLE([swoole-rs-utilities],
 +  [Rust utilities subsystem],
@@ -175,7 +160,7 @@ index 230b1c0..d36cb1d 100644
 +    [Use Rust PHP Coroutine policy (requires --with-swoole-rs)])], [no], [no])
 +
  PHP_ARG_ENABLE([mysqlnd],
-@@ -1301,2 +1471,304 @@ EOF
+@@ -1301,2 +1456,241 @@ EOF
  
 +    if test "$PHP_SWOOLE_RS_WEBSOCKET" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust WebSocket kernel requires --with-swoole-rs=DIR])
@@ -200,15 +185,6 @@ index 230b1c0..d36cb1d 100644
 +    fi
 +    if test "$PHP_SWOOLE_RS_HTTP" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust http subsystem requires --with-swoole-rs=DIR])
-+    fi
-+    if test "$PHP_SWOOLE_RS_HTTP_REWRITE_STORE" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
-+        AC_MSG_ERROR([Rust rewrite-rule storage requires --with-swoole-rs and --enable-swoole-rs-http])
-+    fi
-+    if test "$PHP_SWOOLE_RS_HTTP_STATIC_CONFIG" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
-+        AC_MSG_ERROR([Rust static configuration requires --with-swoole-rs and --enable-swoole-rs-http])
-+    fi
-+    if test "$PHP_SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
-+        AC_MSG_ERROR([Rust Legacy directory storage requires --with-swoole-rs and --enable-swoole-rs-http])
 +    fi
 +    if test "$PHP_SWOOLE_RS_UTILITIES" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust utilities subsystem requires --with-swoole-rs=DIR])
@@ -321,60 +297,6 @@ index 230b1c0..d36cb1d 100644
 +        if test "$PHP_SWOOLE_RS_HTTP" != "no"; then
 +            AC_DEFINE(SWOOLE_RS_HTTP, 1, [Use the Rust http subsystem])
 +        fi
-+        if test "$PHP_SWOOLE_RS_HTTP_REWRITE_STORE" != "no"; then
-+            if test "$PHP_SWOOLE_RS_HTTP" = "no"; then
-+                AC_MSG_ERROR([Rust rewrite-rule storage requires --enable-swoole-rs-http])
-+            fi
-+            AC_LANG_PUSH([C++])
-+            swr_http_rewrite_CPPFLAGS="$CPPFLAGS"
-+            CPPFLAGS="$CPPFLAGS -I$PHP_SWOOLE_RS/include"
-+            AC_MSG_CHECKING([for the staged HTTP rewrite-rule storage facade])
-+            AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
-+#define SWOOLE_RS_HTTP 1
-+#define SWOOLE_RS_HTTP_REWRITE_STORE 1
-+#include "swoole_rs_http_rewrite_store.h"
-+int main(void) { return 0; }
-+            ]])], [AC_MSG_RESULT([yes])], [AC_MSG_FAILURE([Rust rewrite-rule storage requires its concrete staged facade and compatible private field layout])])
-+            CPPFLAGS="$swr_http_rewrite_CPPFLAGS"
-+            AC_LANG_POP([C++])
-+            AC_DEFINE(SWOOLE_RS_HTTP_REWRITE_STORE, 1, [Use experimental Rust-owned HTTP rewrite-rule storage])
-+        fi
-+        if test "$PHP_SWOOLE_RS_HTTP_STATIC_CONFIG" != "no"; then
-+            if test "$PHP_SWOOLE_RS_HTTP" = "no"; then
-+                AC_MSG_ERROR([Rust static configuration requires --enable-swoole-rs-http])
-+            fi
-+            AC_LANG_PUSH([C++])
-+            swr_http_config_CPPFLAGS="$CPPFLAGS"
-+            CPPFLAGS="$CPPFLAGS -I$PHP_SWOOLE_RS/include"
-+            AC_MSG_CHECKING([for the staged HTTP static configuration facade])
-+            AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
-+#define SWOOLE_RS_HTTP 1
-+#define SWOOLE_RS_HTTP_STATIC_CONFIG 1
-+#include "swoole_rs_http_static_config.h"
-+int main(void) { return 0; }
-+            ]])], [AC_MSG_RESULT([yes])], [AC_MSG_FAILURE([Rust static configuration requires its concrete staged facade and rebuilt selected SDK])])
-+            CPPFLAGS="$swr_http_config_CPPFLAGS"
-+            AC_LANG_POP([C++])
-+            AC_DEFINE(SWOOLE_RS_HTTP_STATIC_CONFIG, 1, [Use experimental Rust-owned HTTP static configuration])
-+        fi
-+        if test "$PHP_SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE" != "no"; then
-+            if test "$PHP_SWOOLE_RS_HTTP" = "no"; then
-+                AC_MSG_ERROR([Rust Legacy directory storage requires --enable-swoole-rs-http])
-+            fi
-+            AC_LANG_PUSH([C++])
-+            swr_http_directory_CPPFLAGS="$CPPFLAGS"
-+            CPPFLAGS="$CPPFLAGS -I$PHP_SWOOLE_RS/include"
-+            AC_MSG_CHECKING([for the staged HTTP Legacy directory storage facade])
-+            AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
-+#define SWOOLE_RS_HTTP 1
-+#define SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE 1
-+#include "swoole_rs_http_legacy_directory.h"
-+int main(void) { return sizeof(swoole::http_server::LegacyDirectory) == 0; }
-+            ]])], [AC_MSG_RESULT([yes])], [AC_MSG_FAILURE([Rust Legacy directory storage requires its concrete staged facade and rebuilt selected SDK])])
-+            CPPFLAGS="$swr_http_directory_CPPFLAGS"
-+            AC_LANG_POP([C++])
-+            AC_DEFINE(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE, 1, [Use experimental Rust-owned HTTP Legacy directory storage])
-+        fi
 +        if test "$PHP_SWOOLE_RS_UTILITIES" != "no"; then
 +            AC_DEFINE(SWOOLE_RS_UTILITIES, 1, [Use the Rust utilities subsystem])
 +        fi
@@ -481,7 +403,7 @@ index 230b1c0..d36cb1d 100644
 +
      if test "$PHP_MYSQLND" = "yes"; then
 diff --git a/ext-src/php_swoole.cc b/ext-src/php_swoole.cc
-index 66f2386..89195eb 100644
+index 66f2386f2..89195ebbb 100644
 --- a/ext-src/php_swoole.cc
 +++ b/ext-src/php_swoole.cc
 @@ -21,2 +21,7 @@
