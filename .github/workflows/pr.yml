@@ -42,7 +42,7 @@ jobs:
       - run: rm -rf target/hybrid
       - run: .devcontainer/install.sh
       - id: upstream
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v4
         with:
           path: target/upstream
           key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
@@ -96,7 +96,7 @@ jobs:
         run: rm -rf target/hybrid && .devcontainer/install.sh
       - if: steps.touched.outputs.modules != ''
         id: upstream
-        uses: actions/cache/restore@v4
+        uses: actions/cache@v4
         with:
           path: target/upstream
           key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
