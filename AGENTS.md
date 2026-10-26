@@ -4,8 +4,7 @@ Complexity is the devil, and simplicity is human. Before starting, consider what
 can be deleted. Aim for a net negative LoC delta where the task permits it.
 
 Never edit target/upstream/src. It is the pinned reference. Hybrid changes belong
-in migration/patches/<module>/ and must declare their upstream destinations in
-migration/modules.json. Run `python3 tools/check_migration.py` after changing it.
+in migration/patches/<module>/ and are edited with `tools/patches.py`.
 
 Preserve upstream test assertions and expected outputs. Never mark unsupported,
 SKIP or XFAIL as passed, or weaken capability probes to hide behavior failures.

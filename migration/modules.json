@@ -369,36 +369,7 @@
         "tests/modules/halfclose/"
       ],
       "upstream_patch_targets": [],
-      "frozen_upstream_patches": [
-        {
-          "path": "migration/patches/halfclose/0003-send-tls-close-notify.patch",
-          "sha256": "dd7324cad68b041152f2afebc7f325dca3156c557b78972f342e28883b989730",
-          "upstream_paths": [
-            "src/network/socket.cc"
-          ],
-          "target_owner": "M05"
-        },
-        {
-          "path": "migration/patches/halfclose/0001-drain-before-close.patch",
-          "sha256": "143737059ce9fa6b527b983583032f73114a95b2228bfe399b4767d9268e9b65",
-          "upstream_paths": [
-            "src/server/base.cc",
-            "src/server/master.cc"
-          ],
-          "target_owners": {
-            "src/server/base.cc": "M05",
-            "src/server/master.cc": "M00"
-          }
-        },
-        {
-          "path": "migration/patches/halfclose/0002-preserve-prequeue-response.patch",
-          "sha256": "80780332917181b2c15c62369aa1d05146566a43f4018aa3627b7e8da47f7218",
-          "upstream_paths": [
-            "src/server/reactor_thread.cc"
-          ],
-          "target_owner": "M05"
-        }
-      ]
+      "applies_first": true
     },
     {
       "id": "M16",
