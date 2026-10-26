@@ -569,7 +569,7 @@ index cfc1f9658..2c09c6642 100644
 +    return length;
  }
 diff --git a/src/protocol/redis.cc b/src/protocol/redis.cc
-index c4cde38dd..825e9a599 100644
+index c4cde38dd..9c2b7d265 100644
 --- a/src/protocol/redis.cc
 +++ b/src/protocol/redis.cc
 @@ -23,2 +23,6 @@
@@ -609,7 +609,7 @@ index c4cde38dd..825e9a599 100644
 +    auto *request = static_cast<Request *>(conn->object);
 +    if (!request) {
          request = static_cast<Request *>(sw_malloc(sizeof(Request)));
-@@ -69,149 +57,52 @@ int recv_packet(Protocol *protocol, Connection *conn, String *buffer) {
+@@ -69,149 +57,46 @@ int recv_packet(Protocol *protocol, Connection *conn, String *buffer) {
          conn->object = request;
 -    } else {
 -        request = static_cast<Request *>(conn->object);
@@ -711,20 +711,7 @@ index c4cde38dd..825e9a599 100644
 -                if (pe - p < request->n_bytes_total - request->n_bytes_received) {
 -                    request->n_bytes_received += pe - p;
 -                    return SW_OK;
-+        if (received == 0) return SW_ERR;
-+        buffer->length += received;
-+        uint8_t set_offset = 0;
-+        uint8_t range = 0;
-+        const int action = swr_v1_resp_receive_range(reinterpret_cast<const uint8_t *>(buffer->str), buffer->length,
-+                                              buffer->size, protocol->package_max_length, request, &set_offset, &range);
-+        if (range) errno = ERANGE;
-+        if (set_offset) buffer->offset = buffer->length;
-+        if (action == 1) {
-+            if (buffer->length == buffer->size && buffer->size < protocol->package_max_length) {
-+                size_t size;
-+                if (buffer->size >= protocol->package_max_length / 2) {
-+                    size = protocol->package_max_length;
-                 } else {
+-                } else {
 -                    p += request->n_bytes_total + SW_CRLF_LEN;
 -                    request->n_bytes_total = 0;
 -                    request->n_lines_received++;
@@ -744,13 +731,22 @@ index c4cde38dd..825e9a599 100644
 -                        sw_memset_zero(request, sizeof(Request));
 -                        return SW_OK;
 -                    }
-+                    size = swoole_size_align(buffer->size * 2, swoole_pagesize());
-+                    if (size > protocol->package_max_length) size = protocol->package_max_length;
-                 }
+-                }
 -                break;
 -
 -            default:
 -                goto _failed;
++        if (received == 0) return SW_ERR;
++        buffer->length += received;
++        uint8_t set_offset = 0;
++        uint8_t range = 0;
++        const int action = swr_v1_resp_receive_range(reinterpret_cast<const uint8_t *>(buffer->str), buffer->length,
++                                              buffer->size, protocol->package_max_length, request, &set_offset, &range);
++        if (range) errno = ERANGE;
++        if (set_offset) buffer->offset = buffer->length;
++        if (action == 1) {
++            if (const size_t size = swr_v1_resp_extend_size(buffer->length, buffer->size,
++                                                            protocol->package_max_length, swoole_pagesize())) {
 +                buffer->extend(size);
              }
 -        } while (p < pe);
@@ -800,7 +796,7 @@ index c4cde38dd..825e9a599 100644
          }
 +        return SW_ERR;
      }
-@@ -219,51 +110,40 @@ void format(String *buf, ReplyType type, const std::string &value) {
+@@ -219,51 +104,40 @@ void format(String *buf, ReplyType type, const std::string &value) {
  
 -void format(String *buf, ReplyType type, long value) {
 -    buf->format(":%" PRId64 "\r\n", value);
@@ -888,7 +884,7 @@ index c4cde38dd..825e9a599 100644
 +    }
      return result;
 diff --git a/src/protocol/socks5.cc b/src/protocol/socks5.cc
-index c238f9de1..beaa44e44 100644
+index c238f9de1..27cf7898d 100644
 --- a/src/protocol/socks5.cc
 +++ b/src/protocol/socks5.cc
 @@ -20,2 +20,6 @@
@@ -1065,7 +1061,7 @@ index c238f9de1..beaa44e44 100644
 +        const auto size = decision.action == 1 ? pack_auth_request() : pack_connect_request();
 +        return size >= 0 && send_fn(buf, size) == size;
      }
-@@ -169,8 +95,8 @@ bool Socks5Proxy::handshake(const char *rbuf,
+@@ -169,27 +95,16 @@ bool Socks5Proxy::handshake(const char *rbuf,
  ssize_t Socks5Proxy::pack_connect_request() {
 -    char *p = buf;
 -    p[0] = SW_SOCKS5_VERSION_CODE;
@@ -1080,8 +1076,12 @@ index c238f9de1..beaa44e44 100644
 +    uint8_t address_type;
 +    network::Address target_addr;
      if (dns_tunnel) {
-@@ -182,14 +108,9 @@ ssize_t Socks5Proxy::pack_connect_request() {
-         }
+-        if (target_host.length() > UINT8_MAX) {
+-            swoole_error_log(SW_LOG_NOTICE,
+-                             SW_ERROR_SOCKS5_HANDSHAKE_FAILED,
+-                             "SOCKS5 target host is too long, max length is 255 bytes");
+-            return SW_ERR;
+-        }
 -        p[0] = 0x03;
 -        p[1] = target_host.length();
 -        p += 2;
@@ -1100,7 +1100,7 @@ index c238f9de1..beaa44e44 100644
 +            swoole_error_log(SW_LOG_NOTICE, SW_ERROR_SOCKS5_HANDSHAKE_FAILED,
 +                             "When disable SOCKS5 proxy DNS tunnel connection, the destination host must be an IP address.");
              return SW_ERR;
-@@ -197,11 +118,9 @@ ssize_t Socks5Proxy::pack_connect_request() {
+@@ -197,11 +112,9 @@ ssize_t Socks5Proxy::pack_connect_request() {
          if (network::Socket::is_inet4(static_cast<SocketType>(socket_type))) {
 -            p[0] = 0x01;  // IPv4 address type
 -            p += 1;
@@ -1118,12 +1118,19 @@ index c238f9de1..beaa44e44 100644
 +            address = reinterpret_cast<const uint8_t *>(&target_addr.addr.inet_v6.sin6_addr);
 +            address_length = sizeof(target_addr.addr.inet_v6.sin6_addr);
          } else {
-@@ -211,6 +130,4 @@ ssize_t Socks5Proxy::pack_connect_request() {
+@@ -211,6 +124,11 @@ ssize_t Socks5Proxy::pack_connect_request() {
      }
 -    const auto _target_port = htons(target_port);
 -    memcpy(p, &_target_port, sizeof(_target_port));
 -    p += 2;
 -    return p - buf;
-+    return swr_v1_socks_connect(address_type, address, address_length, target_port,
-+                                reinterpret_cast<uint8_t *>(buf), sizeof(buf));
++    const auto size = swr_v1_socks_connect(address_type, address, address_length, target_port,
++                                           reinterpret_cast<uint8_t *>(buf), sizeof(buf));
++    if (size == -2) {
++        swoole_error_log(SW_LOG_NOTICE,
++                         SW_ERROR_SOCKS5_HANDSHAKE_FAILED,
++                         "SOCKS5 target host is too long, max length is 255 bytes");
++        return SW_ERR;
++    }
++    return size;
  }

@@ -11,15 +11,12 @@ typedef struct { uint8_t state, action, error, reply; } swr_socks_transition;
 int32_t swr_v1_socks_transition(uint8_t state, uint8_t method, const uint8_t *, size_t, swr_socks_transition *);
 int64_t swr_v1_socks_negotiate(uint8_t has_user, uint8_t *method, uint8_t *output, size_t capacity);
 int64_t swr_v1_socks_auth(const uint8_t *user, size_t user_length, const uint8_t *password, size_t password_length, uint8_t *output, size_t capacity);
+/* -2: domain (type 3) over 255 bytes, before any write. */
 int64_t swr_v1_socks_connect(uint8_t address_type, const uint8_t *address, size_t length, uint16_t port, uint8_t *output, size_t capacity);
 /* Factory:0 rejected,1 no credentials,2 both credentials; max250 each. */
 int32_t swr_v1_socks_config(size_t user_length, size_t password_length);
 /* Static borrowed string; never free. */
 const char *swr_v1_socks_strerror(int32_t code);
-/* -2 proxy host over480, otherwise frozen CONNECT result; destination length
- * is independent. Oversized proxy is checked before borrowed memory access. */
-int64_t swr_v1_socks_domain_connect(size_t proxy_length, const uint8_t *destination,
-                                   size_t length, uint16_t port, uint8_t *output, size_t capacity);
 typedef struct { size_t offset, length; int32_t integer; uint32_t kind; } swr_resp_span;
 /* All-zero state begins a borrowed walk. No callback/allocation in Rust.
  * 1 event,0 end,-1 invalid; invalid leaves state/span unchanged.
@@ -59,6 +56,8 @@ int32_t swr_v1_resp_receive(const uint8_t *, size_t length, size_t capacity, siz
                           swr_resp_request *, uint8_t *set_offset);
 int32_t swr_v1_resp_receive_range(const uint8_t *, size_t length, size_t capacity, size_t maximum,
                                 swr_resp_request *, uint8_t *set_offset, uint8_t *range);
+/* After receive action 1: new buffer size, or 0 to keep reading without growth. */
+size_t swr_v1_resp_extend_size(size_t length, size_t size, size_t maximum, size_t page);
 typedef struct { uint32_t remaining, offset, maximum, minimum; uint8_t flags, mode; } swr_bus_writer;
 typedef struct { uint32_t offset, length; uint8_t flags, mode; } swr_bus_chunk;
 int32_t swr_v1_bus_writer_init(uint32_t length, uint32_t maximum, uint32_t minimum,

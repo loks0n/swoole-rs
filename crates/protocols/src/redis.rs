@@ -433,6 +433,31 @@ pub fn resp_receive(
 ) -> (u32, bool) {
     resp_receive_range(bytes, capacity, maximum, request, &mut false)
 }
+/// Size to extend a RESP receive buffer to after action 1 (upstream 0c954199e):
+/// 0 unless it is full and below the maximum; the maximum once it is half way;
+/// otherwise double, page-aligned and capped.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_resp_extend_size(
+    length: usize,
+    size: usize,
+    maximum: usize,
+    page: usize,
+) -> usize {
+    if length != size || size >= maximum {
+        0
+    } else if size >= maximum / 2 {
+        maximum
+    } else {
+        let doubled = size.saturating_mul(2);
+        let aligned = if page == 0 {
+            doubled
+        } else {
+            doubled.div_ceil(page).saturating_mul(page)
+        };
+        aligned.min(maximum)
+    }
+}
+
 fn resp_receive_range(
     bytes: &[u8],
     capacity: usize,
@@ -594,6 +619,21 @@ pub unsafe extern "C" fn swr_v1_resp_receive_range(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn extend_size_follows_upstream_growth() {
+        assert_eq!(swr_v1_resp_extend_size(10, 64, 1 << 20, 4096), 0);
+        assert_eq!(swr_v1_resp_extend_size(1 << 20, 1 << 20, 1 << 20, 4096), 0);
+        assert_eq!(swr_v1_resp_extend_size(4096, 4096, 1 << 20, 4096), 8192);
+        assert_eq!(swr_v1_resp_extend_size(5000, 5000, 1 << 20, 4096), 12288);
+        assert_eq!(
+            swr_v1_resp_extend_size(600_000, 600_000, 1 << 20, 4096),
+            1 << 20
+        );
+        assert_eq!(
+            swr_v1_resp_extend_size(300_000, 300_000, 500_000, 4096),
+            500_000
+        );
+    }
     #[test]
     fn handler_keys_preserve_nul_truncation_ascii_and_invalid_outputs() {
         for input in [
