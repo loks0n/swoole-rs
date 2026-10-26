@@ -92,12 +92,12 @@ impl Registry {
         if self.buckets.is_empty() {
             return ptr::null_mut();
         }
-        let bucket = cid as usize % self.buckets.len();
+        let bucket = hash(cid) % self.buckets.len();
         let mut entry = self.buckets[bucket];
         while !entry.is_null() {
             // SAFETY: a non-null link owned by this registry (see `Registry`).
             let current = unsafe { &*entry };
-            if current.cid as usize % self.buckets.len() != bucket {
+            if hash(current.cid) % self.buckets.len() != bucket {
                 break;
             }
             if current.cid == cid {
@@ -140,11 +140,11 @@ impl Registry {
         // SAFETY: `find` returned a non-null link owned by this registry; it is unlinked
         // below and freed when `entry` drops, so no link to it survives.
         let entry = unsafe { Box::from_raw(pointer) };
-        let bucket = cid as usize % self.buckets.len();
+        let bucket = hash(cid) % self.buckets.len();
         if self.buckets[bucket] == pointer {
             self.buckets[bucket] = if !entry.next.is_null()
                 // SAFETY: a non-null link owned by this registry (see `Registry`).
-                && unsafe { (*entry.next).cid } as usize % self.buckets.len() == bucket
+                && hash(unsafe { (*entry.next).cid }) % self.buckets.len() == bucket
             {
                 entry.next
             } else {
@@ -178,7 +178,7 @@ impl Registry {
         if !self.first.is_null() {
             let mut previous = self.first;
             // SAFETY: as above.
-            let mut previous_bucket = unsafe { (*previous).cid } as usize % count;
+            let mut previous_bucket = hash(unsafe { (*previous).cid }) % count;
             buckets[previous_bucket] = previous;
             loop {
                 // SAFETY: as above.
@@ -187,7 +187,7 @@ impl Registry {
                     break;
                 }
                 // SAFETY: as above.
-                let bucket = unsafe { (*current).cid } as usize % count;
+                let bucket = hash(unsafe { (*current).cid }) % count;
                 if bucket == previous_bucket {
                     previous = current;
                 } else if buckets[bucket].is_null() {
@@ -232,6 +232,11 @@ impl Registry {
             Policy::Gnu => self.prepare_gnu_order(),
         }
     }
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "libstdc++'s _Prime_rehash_policy float arithmetic"
+    )]
     fn prepare_apple_order(&mut self) -> Result<(), ()> {
         let count = self.count.checked_add(1).ok_or(())?;
         let buckets = self.buckets.len();
@@ -258,6 +263,11 @@ impl Registry {
     // GCC12 _Prime_rehash_policy and unique-key _M_rehash_aux candidate.
     // Official package/release bodies are captured, but NOT attested to our
     // Linux image. The Native selected header continues to refuse Linux ON.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "libstdc++'s _Prime_rehash_policy float arithmetic"
+    )]
     fn prepare_gnu_order(&mut self) -> Result<(), ()> {
         let count = self.count.checked_add(1).ok_or(())?;
         if count <= self.next_resize {
@@ -297,7 +307,7 @@ impl Registry {
     // non-null link owned by this registry (see `Registry`).
     fn link_order(&mut self, entry: *mut Entry) {
         // SAFETY: as above.
-        let bucket = unsafe { (*entry).cid } as usize % self.buckets.len();
+        let bucket = hash(unsafe { (*entry).cid }) % self.buckets.len();
         let head = self.buckets[bucket];
         let next = if head.is_null() { self.first } else { head };
         let previous = if head.is_null() {
@@ -323,6 +333,16 @@ impl Registry {
         self.buckets[bucket] = entry;
     }
 }
+/// libstdc++'s `std::hash<long>`: the key's bits as `size_t`.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "std::hash<long> is the identity into size_t on LP64"
+)]
+const fn hash(cid: i64) -> usize {
+    cid as usize
+}
+
 fn next_prime(requested: usize) -> Result<usize, ()> {
     let mut candidate = requested | 1;
     loop {
@@ -337,6 +357,11 @@ fn next_prime(requested: usize) -> Result<usize, ()> {
     }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "libstdc++'s _Prime_rehash_policy float arithmetic"
+)]
 fn gnu_next_buckets(requested: usize) -> (usize, usize) {
     if requested == 0 {
         return (1, 0);
@@ -717,6 +742,10 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_print_step(
         result.token = unsafe { (*entry).token };
         return result;
     }
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "the caller guarantees an aligned CoroutineStatus (see SAFETY)"
+    )]
     // SAFETY: at phase 1 `object` is the exact native pointer, with an initialized, aligned
     // `CoroutineStatus` at `status_offset` inside its allocation.
     let status = unsafe {
@@ -747,6 +776,12 @@ pub unsafe extern "C" fn swr_v1_coroutine_registry_print_step(
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_possible_wrap,
+    reason = "test ids, counters and table values double as tokens and statuses"
+)]
 mod tests {
     use super::*;
     #[test]

@@ -19,6 +19,10 @@ impl ChannelTokens {
 
     // Fallible admission precedes clone observation; Box alone owns cleanup.
     fn try_new() -> Option<Box<Self>> {
+        #[expect(
+            clippy::cast_ptr_alignment,
+            reason = "alloc honours Layout::new::<ChannelTokens>()"
+        )]
         // SAFETY: `ChannelTokens` is not zero-sized; null is handled by `NonNull::new`.
         let raw = NonNull::new(unsafe { alloc(Layout::new::<Self>()).cast::<Self>() })?;
         // SAFETY: a fresh, non-null allocation with this type's layout.
