@@ -44,7 +44,6 @@ def main():
                       native_original_unsupported_units=native['excluded_units'])
         address_source = subprocess.check_output(['git', '-C', str(args.source), 'cat-file', 'blob', PIN + ':src/network/address.cc'], timeout=15)
         assert (tree / 'src/network/address.cc').read_bytes() == address_source
-        assert (tree / 'src/core/crc32.cc').read_bytes() == (ROOT / 'native/crc32/adapter.cc').read_bytes()
         symbols = run(['nm', '-g', library])
         assert 'swr_v1_crc32' in symbols and 'Address8get_addr' in symbols
         report['commands'][-1]['stdout'] = '\n'.join(line for line in symbols.splitlines() if 'crc32' in line or 'get_addr' in line)

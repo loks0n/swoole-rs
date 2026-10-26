@@ -33,7 +33,7 @@ class DiskSpace(unittest.TestCase):
                 run.assert_not_called()
             report = json.loads(next(root.rglob('loop.json')).read_text())
             self.assertEqual(report['status'], 'failed')
-            self.assertEqual(report['blocked_phase'], 'error-unit')
+            self.assertEqual(report['blocked_phase'], 'crc32-unit')  # graduated modules are always selected
             self.assertEqual(report['infrastructure_error'], 'disk low')
             self.assertEqual(report['phases'], [])
 

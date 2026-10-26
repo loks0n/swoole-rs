@@ -54,7 +54,7 @@ jobs:
           key: ccache-${{ runner.os }}-${{ github.sha }}
           restore-keys: ccache-${{ runner.os }}-
       - run: cargo fetch --locked
-      - run: python3 tools/build_hybrid.py --fix-halfclose $(python3 -c "from tools.build_hybrid import MODULES; print(' '.join('--module ' + m for m in sorted(MODULES)))")
+      - run: python3 tools/build_hybrid.py --fix-halfclose $(python3 -c "from tools.build_hybrid import SELECTABLE; print(' '.join('--module ' + m for m in SELECTABLE))")
       - run: ccache --show-stats
       # 12-hyperf needs composer; it runs in the merge tier.
       - run: >
