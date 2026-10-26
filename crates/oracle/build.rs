@@ -61,15 +61,90 @@ fn original_test(file: &str, test: &str, name: &str) -> PathBuf {
     path
 }
 
+/// The text of `text` from `start` up to (not including) `end`, unchanged.
+fn slice(text: &str, start: &str, end: &str) -> String {
+    let from = text.find(start).expect(start);
+    text[from..from + text[from..].find(end).expect(end)].to_string()
+}
+
+/// The pinned HTTP cookie parser and URL decode/encode, copied unchanged for
+/// shim/http.cc to compile.
+fn http() {
+    let source = fs::read_to_string("upstream/src/protocol/http.cc").expect("vendored http.cc");
+    let text = [
+        slice(
+            &source,
+            "void parse_cookie(",
+            "bool parse_multipart_boundary(",
+        ),
+        slice(
+            &source,
+            "static int url_htoi(",
+            "int Request::get_protocol()",
+        ),
+    ]
+    .concat();
+    fs::write(out("http.inc"), text).unwrap();
+}
+
+/// The pinned WebSocket length query, mask and decoder with the header definitions
+/// they use, copied unchanged for shim/websocket.cc to compile.
+fn websocket() {
+    let source =
+        fs::read_to_string("upstream/src/protocol/websocket.cc").expect("vendored websocket.cc");
+    let header =
+        fs::read_to_string("upstream/include/swoole_websocket.h").expect("vendored header");
+    let constants: String = header
+        .lines()
+        .filter(|line| line.starts_with("#define SW_WEBSOCKET_"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    let text = [
+        constants,
+        slice(&header, "enum Flag {", "#define WEBSOCKET_VERSION"),
+        slice(&header, "enum Opcode {", "enum CloseReason {"),
+        slice(
+            &header,
+            "static inline bool is_control_frame",
+            "static inline uint16_t get_ext_flags",
+        ),
+        slice(
+            &source,
+            "static ssize_t get_package_length_impl",
+            "bool encode(",
+        ),
+        slice(&source, "bool decode(", "bool pack_close_frame("),
+    ]
+    .concat();
+    fs::write(out("websocket.inc"), text).unwrap();
+}
+
+/// A C++ build that matches the Rust side's sanitizer, so `cargo fuzz`'s ASan
+/// also checks the upstream code.
+fn cpp() -> cc::Build {
+    let mut build = cc::Build::new();
+    build.cpp(true).std("c++14");
+    if env::var("CARGO_CFG_SANITIZE").is_ok_and(|s| s.split(',').any(|s| s == "address")) {
+        build.flag("-fsanitize=address");
+        // rustc links its own ASan runtime; Apple clang would require its own by name.
+        if build.get_compiler().is_like_clang() {
+            build
+                .flag("-mllvm")
+                .flag("-asan-guard-against-version-mismatch=0");
+        }
+    }
+    build
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=upstream");
     println!("cargo:rerun-if-changed=shim");
 
     // The original code: base64 under `oracle::`, crc32 renamed, so both can sit
     // beside the Rust-backed `swoole::` and `swoole_crc32`.
-    cc::Build::new()
-        .cpp(true)
-        .std("c++14")
+    websocket();
+    http();
+    cpp()
         .define("swoole", "oracle")
         .define("swoole_crc32", "oracle_swoole_crc32")
         .include("shim")
@@ -77,6 +152,9 @@ fn main() {
         .file("upstream/src/core/base64.cc")
         .file("upstream/src/core/crc32.cc")
         .file("shim/oracle.cc")
+        .include(env::var("OUT_DIR").unwrap())
+        .file("shim/websocket.cc")
+        .file("shim/http.cc")
         .compile("swoole_oracle");
 
     // The original core-test assertions, run against the adapters that forward
@@ -86,9 +164,7 @@ fn main() {
         "TEST(hash, crc32)",
         "crc32_test.cpp",
     );
-    cc::Build::new()
-        .cpp(true)
-        .std("c++14")
+    cpp()
         .define("SWOOLE_RS_BASE64", "1")
         .define("SWOOLE_RS_CRC32", "1")
         .include("shim")

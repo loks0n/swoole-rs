@@ -22,6 +22,8 @@ def save():
     state.write_text(json.dumps(data))
 if args[0] == 'api' and '-X' in args:
     pass
+elif args[0] == 'api' and '/compare/' in args[1]:
+    print(data.get('compare', 'ahead'))
 elif args[0] == 'api':
     print('c' * 40)
 elif args[:2] == ['pr', 'view']:
@@ -30,6 +32,15 @@ elif args[:2] == ['pr', 'view']:
            'mergeable': data.get('mergeable', 'MERGEABLE')}[field])
 elif args[:2] == ['pr', 'merge']:
     sys.exit(data.get('merge_exit', 0))
+elif args[:2] == ['run', 'list'] and '--commit' not in args:
+    print(json.dumps(data.get('history', [])))
+elif args[:2] == ['run', 'download']:
+    rows = data.get('phases', {}).get(args[2])
+    if rows is None:
+        sys.exit(1)
+    loop = Path(args[args.index('-D') + 1]) / 'target/reports/dev/x/loop.json'
+    loop.parent.mkdir(parents=True)
+    loop.write_text(json.dumps({'phases': [{'phase': name, 'failed': not passed} for name, passed in rows]}))
 elif args[:2] == ['run', 'list']:
     sha = args[args.index('--commit') + 1]
     queue = data['runs'].get(sha, [])
@@ -99,6 +110,14 @@ class Ci(unittest.TestCase):
         self.assertIn('api repos/{owner}/{repo}/commits/main -q .sha', self.gh_calls)
         self.assertIn('rust: success in 31s', stderr)
 
+    def test_wait_follows_the_run_that_replaced_its_commit(self):
+        history = [{'headSha': 'd' * 40}]
+        code, result, stderr = self.ci('wait', runs={'c' * 40: ['cancelled'], 'd' * 40: ['success']}, history=history)
+        self.assertEqual((code, result['commit'], result['state']), (0, 'd' * 40, 'passed'))
+        self.assertIn('replaced by the run on ddddddd', stderr)
+        code, result, _ = self.ci('wait', runs={'c' * 40: ['cancelled']}, history=history, compare='diverged')
+        self.assertEqual((code, result['commit'], result['state']), (3, 'c' * 40, 'cancelled'))
+
     def test_hooks_warning_names_off_foreign_and_own_hooks(self):
         sys.path.insert(0, str(ROOT / 'tools'))
         import ci
@@ -120,6 +139,25 @@ class Ci(unittest.TestCase):
                 os.chdir(cwd)
                 os.environ.clear()
                 os.environ.update(saved)
+
+    def test_merge_tier_failure_lists_failed_new_and_fixed_phases(self):
+        history = [{'databaseId': 7, 'conclusion': 'failure', 'url': 'u7'}, {'databaseId': 6, 'conclusion': 'cancelled', 'url': 'u6'},
+                   {'databaseId': 5, 'conclusion': 'failure', 'url': 'u5'}, {'databaseId': 4, 'conclusion': 'failure', 'url': 'u4'}]
+        phases = {'7': [['build', False], ['timer-model', True], ['http-native', False], ['tls-native', True],
+                        ['ports-added', False]],
+                  '4': [['build', False], ['timer-model', False], ['http-native', True]]}
+        code, result, _ = self.ci('status', runs={'c' * 40: ['failure']}, history=history, phases=phases)
+        self.assertEqual((code, result['failed_phases']), (1, ['build', 'http-native', 'ports-added']))
+        # Run 6 was cancelled and run 5 has no phases artifact, so run 4 is the comparison.
+        # ports-added didn't exist in run 4, so its failure is new as well.
+        self.assertEqual((result['previous_run'], result['new_failures'], result['fixed']),
+                         ('u4', ['http-native', 'ports-added'], ['timer-model']))
+        self.assertEqual(result['logs'], {'rust': ['2026-10-25T21:00:01Z error: boom']})
+
+    def test_runs_without_phases_keep_the_log_tail(self):
+        code, result, _ = self.ci('status', runs={'c' * 40: ['failure']})
+        self.assertNotIn('failed_phases', result)
+        self.assertIn('rust', result['logs'])
 
     def test_status_without_a_run_is_none(self):
         code, result, _ = self.ci('status', '--commit', 'abc1234', runs={})

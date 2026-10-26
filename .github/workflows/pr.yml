@@ -7,7 +7,6 @@ concurrency:
 env:
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   CCACHE_MAXSIZE: 500M
-  DEPS: php-dev php-sqlite3 php-curl php-mbstring libpcre2-dev libssl-dev zlib1g-dev pkg-config ccache
 jobs:
   rust:
     runs-on: ubuntu-24.04
@@ -29,12 +28,19 @@ jobs:
       - run: python3 tools/check_migration.py
       - run: tests/dev/run.sh
 
+  # The all-modules hybrid with the halfclose repair, so no module's native code
+  # merges without being compiled into the extension next to the others.
   hybrid:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      # No rust-cache here: it restores all of target/, including half-built hybrid trees.
-      - run: sudo apt-get update -q && sudo apt-get install -yq $DEPS
+      # Restores main's release build; hybrid build trees must start clean.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
+          save-if: false
+      - run: rm -rf target/hybrid
+      - run: .devcontainer/install.sh
       - id: upstream
         uses: actions/cache@v4
         with:
@@ -42,13 +48,13 @@ jobs:
           key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
       - if: steps.upstream.outputs.cache-hit != 'true'
         run: python3 tools/build_upstream.py
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
           path: .ccache
           key: ccache-${{ runner.os }}-${{ github.sha }}
           restore-keys: ccache-${{ runner.os }}-
       - run: cargo fetch --locked
-      - run: python3 tools/build_hybrid.py --module buffer --module websocket --fix-halfclose
+      - run: python3 tools/build_hybrid.py --fix-halfclose $(python3 -c "from tools.build_hybrid import MODULES; print(' '.join('--module ' + m for m in sorted(MODULES)))")
       - run: ccache --show-stats
       # 12-hyperf needs composer; it runs in the merge tier.
       - run: >
@@ -57,16 +63,61 @@ jobs:
           --project 01-hello --project 02-router --project 03-notes --project 04-job-service
           --project 05-coroutines --project 06-websocket --project 07-tcp-framing
           --project 08-timers --project 09-shared-table --project 10-task-workers
-          --engine hybrid=target/hybrid/rust-buffer-websocket-halfclose/modules/swoole.so
+          --engine hybrid=$(echo target/hybrid/rust-*-halfclose)/modules/swoole.so
           --engine upstream=target/upstream/src/modules/swoole.so
           --output target/reports/corpus.json
       # Upstream truncates queued responses after a client half-close; --fix-halfclose repairs it.
       - run: >
           python3 corpus/run.py --project 11-buffer-lifecycle
-          --engine hybrid=target/hybrid/rust-buffer-websocket-halfclose/modules/swoole.so
+          --engine hybrid=$(echo target/hybrid/rust-*-halfclose)/modules/swoole.so
           --output target/reports/corpus-halfclose.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: pr-reports
+          path: target/reports/
+
+  # Candidate-lane gates of the modules this PR touches (every module for shared
+  # build inputs); prints "No module touched" and passes otherwise. Advisory until
+  # the gates main already fails are fixed (#106): read its result, it never blocks.
+  gates:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: touched
+        run: python3 -c "from tools.dev import changed_modules; print('modules=' + ' '.join(changed_modules('origin/${{ github.base_ref }}')))" >> "$GITHUB_OUTPUT"
+      - if: steps.touched.outputs.modules != ''
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
+          save-if: false
+      - if: steps.touched.outputs.modules != ''
+        run: rm -rf target/hybrid && .devcontainer/install.sh
+      - if: steps.touched.outputs.modules != ''
+        id: upstream
+        uses: actions/cache@v4
+        with:
+          path: target/upstream
+          key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
+      - if: steps.touched.outputs.modules != '' && steps.upstream.outputs.cache-hit != 'true'
+        run: python3 tools/build_upstream.py
+      - if: steps.touched.outputs.modules != ''
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-
+      - if: steps.touched.outputs.modules != ''
+        run: cargo fetch --locked
+      - if: steps.touched.outputs.modules != ''
+        run: >
+          python3 tools/dev.py candidate --changed-since origin/${{ github.base_ref }}
+          --php-extension pdo --php-extension pdo_sqlite --php-extension curl
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.touched.outputs.modules != ''
+        with:
+          name: gates-reports
           path: target/reports/

@@ -43,6 +43,27 @@ def require_frozen_source(expected):
         raise ValueError('Frozen source checkout changed; preserve the run and use a clean immutable checkout')
 
 
+# A change here can affect every module's native build or behaviour.
+SHARED_PATHS = ('crates/ffi/', 'native/include/', 'native/integration/', 'native/halfclose/',
+                'migration/patches/integration/', 'migration/patches/halfclose/', 'Cargo.toml', 'Cargo.lock',
+                'tools/build_hybrid.py', 'tools/build_upstream.py', 'migration/modules.json')
+
+
+def changed_modules(base):
+    """Modules whose owned paths the diff from BASE touches; shared build inputs select every module."""
+    names = {module_id: name for name, (module_id, _) in MODULES.items()}
+    owners = [(path, names.get(module['id'])) for module in json.loads((ROOT / 'migration/modules.json').read_text())['modules']
+              for path in module['owned_paths']]
+    selected = set()
+    for path in subprocess.check_output(['git', 'diff', '--name-only', base + '...HEAD'], cwd=ROOT, text=True).split():
+        owner = next((name for owned, name in owners if name and (path == owned or path.startswith(owned))), None)
+        if owner:
+            selected.add(owner)
+        elif path.startswith(SHARED_PATHS):
+            return sorted(MODULES)
+    return sorted(selected)
+
+
 def selected_modules(args):
     return sorted(MODULES if getattr(args, 'all_modules', False) else set(args.module or ['buffer', 'websocket']))
 
@@ -961,6 +982,7 @@ def main():
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--module', choices=sorted(MODULES), action='append')
     selection.add_argument('--all-modules', action='store_true', help='Select every concrete registered Rust module')
+    selection.add_argument('--changed-since', metavar='REF', help='Select the modules a diff from REF touches (all for shared build inputs)')
     parser.add_argument('--stdext', action='store_true', help='Build and compare genuine enabled experimental stdext profiles')
     parser.add_argument('--php-sockets', action='store_true', help='Build matching Native/Rust PHP sockets-integration profiles')
     parser.add_argument('--external-network', action='store_true',
@@ -999,6 +1021,12 @@ def main():
     parser.add_argument('--frozen-source', help='Require this literal 40-hex HEAD and a clean checkout before and after each integration phase')
     parser.add_argument('--plan', action='store_true', help='Print commands without executing or writing reports')
     args = parser.parse_args()
+    if args.changed_since:
+        args.module = changed_modules(args.changed_since)
+        if not args.module:
+            print('No module touched since ' + args.changed_since)
+            return 0
+        print('Modules touched since ' + args.changed_since + ': ' + ', '.join(args.module))
     if args.frozen_source and (args.lane != 'integrate' or len(args.frozen_source) != 40
                                or any(c not in '0123456789abcdef' for c in args.frozen_source)):
         parser.error('--frozen-source requires integration and a literal lowercase 40-hex commit')
@@ -1151,6 +1179,14 @@ def main():
         report['seconds'] = round(time.monotonic() - started, 4)
         write_report(reports / 'loop.json', report)
         print(f'Loop: {reports / "loop.json"}', flush=True)
+        failures = [row for row in report['phases'] if row['failed']]
+        if failures:
+            lines = [f'{len(failures)} of {len(report["phases"])} phases failed:'] + [
+                f'- {row["phase"]} (exit {row.get("returncode")}): {row.get("log")}' for row in failures]
+            print(*lines, sep='\n', flush=True)
+            if os.environ.get('GITHUB_STEP_SUMMARY'):
+                with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+                    summary.write('### Failed phases\n\n' + '\n'.join(lines) + '\n\n')
     return int(report['status'] not in {'passed', 'partial_passed'})
 
 
