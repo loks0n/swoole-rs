@@ -1,4 +1,11 @@
 //! Wrapper-local request state. Native parsers, callbacks, containers and IO stay native.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 #![expect(
     clippy::missing_safety_doc,
     reason = "every export is covered by the module-local C contract"
@@ -19,6 +26,7 @@ pub unsafe extern "C" fn swr_v1_wrappers_listener_plan(
     data: *const u8,
     len: usize,
 ) -> ListenerPlan {
+    // SAFETY: `data` lends `len` initialized bytes (or is unused when `len` is 0) for this call.
     let separator = unsafe { bytes(data, len) }
         .and_then(|address| address.iter().position(|&c| c == b':'))
         .unwrap_or(len);
@@ -98,7 +106,9 @@ pub unsafe extern "C" fn swr_v1_wrappers_content_length(
     if out.is_null() || capacity < count {
         return usize::MAX;
     }
-    unsafe { ptr::copy_nonoverlapping(digits.as_ptr().add(start), out, count) };
+    // SAFETY: `out` is non-null and the caller lends `capacity >= count` writable bytes,
+    // disjoint from the local `digits`, whose last `count` bytes start at `start`.
+    unsafe { ptr::copy_nonoverlapping(digits[start..].as_ptr(), out, count) };
     count
 }
 
@@ -143,6 +153,7 @@ unsafe fn bytes<'a>(p: *const u8, n: usize) -> Option<&'a [u8]> {
     } else if p.is_null() || n > isize::MAX as usize {
         None
     } else {
+        // SAFETY: `p` is non-null and the caller lends `n <= isize::MAX` initialized bytes.
         Some(unsafe { slice::from_raw_parts(p, n) })
     }
 }
@@ -163,8 +174,10 @@ pub extern "C" fn swr_v1_wrappers_request_new() -> *mut Request {
         clippy::cast_ptr_alignment,
         reason = "alloc honours Layout::new::<Request>()"
     )]
+    // SAFETY: `Request` is not zero-sized; null is handled below.
     let p = unsafe { alloc(Layout::new::<Request>()) as *mut Request };
     if !p.is_null() {
+        // SAFETY: `p` is a fresh, non-null allocation with `Request`'s layout.
         unsafe { p.write(Request::default()) };
     }
     p
@@ -172,15 +185,19 @@ pub extern "C" fn swr_v1_wrappers_request_new() -> *mut Request {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_wrappers_request_free(p: *mut Request) {
     if !p.is_null() {
-        unsafe {
-            ptr::drop_in_place(p);
-            dealloc(p.cast(), Layout::new::<Request>());
-        }
+        // SAFETY: `p` is a live handle from `swr_v1_wrappers_request_new`, freed exactly once.
+        unsafe { ptr::drop_in_place(p) };
+        // SAFETY: `p` came from `alloc` with this layout and its value was just dropped.
+        unsafe { dealloc(p.cast(), Layout::new::<Request>()) };
     }
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_wrappers_request_view(p: *const Request, out: *mut View) -> i32 {
-    let (Some(s), Some(out)) = (unsafe { p.as_ref() }, unsafe { out.as_mut() }) else {
+    // SAFETY: `p` is null or a live request handle from `swr_v1_wrappers_request_new`, with no other active use.
+    let s = unsafe { p.as_ref() };
+    // SAFETY: `out` is null or a writable View.
+    let out = unsafe { out.as_mut() };
+    let (Some(s), Some(out)) = (s, out) else {
         return -1;
     };
     *out = View {
@@ -198,7 +215,11 @@ pub unsafe extern "C" fn swr_v1_wrappers_header(
     data: *const u8,
     len: usize,
 ) -> i32 {
-    let (Some(s), Some(data)) = (unsafe { p.as_mut() }, unsafe { bytes(data, len) }) else {
+    // SAFETY: `p` is null or a live request handle from `swr_v1_wrappers_request_new`, with no other active use.
+    let s = unsafe { p.as_mut() };
+    // SAFETY: `data` lends `len` initialized bytes (or is unused when `len` is 0) for this call.
+    let data = unsafe { bytes(data, len) };
+    let (Some(s), Some(data)) = (s, data) else {
         return -1;
     };
     assign(&mut s.header, data)
@@ -211,7 +232,11 @@ pub unsafe extern "C" fn swr_v1_wrappers_header_kind(
     len: usize,
     multipart: u8,
 ) -> i32 {
-    let (Some(s), Some(data)) = (unsafe { p.as_ref() }, unsafe { bytes(data, len) }) else {
+    // SAFETY: `p` is null or a live request handle from `swr_v1_wrappers_request_new`, with no other active use.
+    let s = unsafe { p.as_ref() };
+    // SAFETY: `data` lends `len` initialized bytes (or is unused when `len` is 0) for this call.
+    let data = unsafe { bytes(data, len) };
+    let (Some(s), Some(data)) = (s, data) else {
         return -1;
     };
     if multipart != 0 {
@@ -242,6 +267,7 @@ pub unsafe extern "C" fn swr_v1_wrappers_header_kind(
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_wrappers_disposition_begin(p: *mut Request) {
+    // SAFETY: `p` is null or a live request handle from `swr_v1_wrappers_request_new`, with no other active use.
     if let Some(s) = unsafe { p.as_mut() } {
         s.name.clear();
         s.filename.clear();
@@ -257,11 +283,13 @@ pub unsafe extern "C" fn swr_v1_wrappers_parameter(
     value: *const u8,
     value_len: usize,
 ) -> i32 {
-    let (Some(s), Some(key), Some(value)) = (
-        unsafe { p.as_mut() },
-        unsafe { bytes(key, key_len) },
-        unsafe { bytes(value, value_len) },
-    ) else {
+    // SAFETY: `p` is null or a live request handle from `swr_v1_wrappers_request_new`, with no other active use.
+    let s = unsafe { p.as_mut() };
+    // SAFETY: `key` lends `key_len` initialized bytes (or is unused when `key_len` is 0).
+    let key = unsafe { bytes(key, key_len) };
+    // SAFETY: `value` lends `value_len` initialized bytes (or is unused when `value_len` is 0).
+    let value = unsafe { bytes(value, value_len) };
+    let (Some(s), Some(key), Some(value)) = (s, key, value) else {
         return -1;
     };
     // The pinned wrapper uses case-sensitive std::unordered_map keys here.
@@ -280,6 +308,7 @@ pub unsafe extern "C" fn swr_v1_wrappers_parameter(
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_wrappers_disposition_end(p: *mut Request) -> i32 {
+    // SAFETY: `p` is null or a live request handle from `swr_v1_wrappers_request_new`, with no other active use.
     let Some(s) = (unsafe { p.as_mut() }) else {
         return -1;
     };
@@ -301,7 +330,11 @@ pub unsafe extern "C" fn swr_v1_wrappers_disposition(
     data: *const u8,
     len: usize,
 ) -> i32 {
-    let (Some(state), Some(data)) = (unsafe { p.as_mut() }, unsafe { bytes(data, len) }) else {
+    // SAFETY: `p` is null or a live request handle from `swr_v1_wrappers_request_new`, with no other active use.
+    let state = unsafe { p.as_mut() };
+    // SAFETY: `data` lends `len` initialized bytes (or is unused when `len` is 0) for this call.
+    let data = unsafe { bytes(data, len) };
+    let (Some(state), Some(data)) = (state, data) else {
         return -1;
     };
     // strtok_r/strchr/strlen stop at the first NUL. Quotes and trailing spaces
@@ -312,6 +345,7 @@ pub unsafe extern "C" fn swr_v1_wrappers_disposition(
     for token in data.split(|&c| c == b';') {
         let equal = token.iter().position(|&c| c == b'=');
         let mut start = 0;
+        // SAFETY: isspace receives an unsigned char value, as C requires.
         while start < token.len() && unsafe { disposition_space(i32::from(token[start])) } != 0 {
             start += 1;
         }
@@ -348,7 +382,11 @@ pub unsafe extern "C" fn swr_v1_wrappers_body_skip(
     data: *const u8,
     len: usize,
 ) -> usize {
-    let (Some(s), Some(data)) = (unsafe { p.as_mut() }, unsafe { bytes(data, len) }) else {
+    // SAFETY: `p` is null or a live request handle from `swr_v1_wrappers_request_new`, with no other active use.
+    let s = unsafe { p.as_mut() };
+    // SAFETY: `data` lends `len` initialized bytes (or is unused when `len` is 0) for this call.
+    let data = unsafe { bytes(data, len) };
+    let (Some(s), Some(data)) = (s, data) else {
         return 0;
     };
     if s.started || data.is_empty() {
@@ -365,7 +403,11 @@ pub unsafe extern "C" fn swr_v1_wrappers_body_append(
     data: *const u8,
     len: usize,
 ) -> i32 {
-    let (Some(s), Some(data)) = (unsafe { p.as_mut() }, unsafe { bytes(data, len) }) else {
+    // SAFETY: `p` is null or a live request handle from `swr_v1_wrappers_request_new`, with no other active use.
+    let s = unsafe { p.as_mut() };
+    // SAFETY: `data` lends `len` initialized bytes (or is unused when `len` is 0) for this call.
+    let data = unsafe { bytes(data, len) };
+    let (Some(s), Some(data)) = (s, data) else {
         return -1;
     };
     if s.body.try_reserve(data.len()).is_err() {
@@ -376,6 +418,7 @@ pub unsafe extern "C" fn swr_v1_wrappers_body_append(
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_wrappers_part_end(p: *mut Request) {
+    // SAFETY: `p` is null or a live request handle from `swr_v1_wrappers_request_new`, with no other active use.
     if let Some(s) = unsafe { p.as_mut() } {
         if !s.form.is_empty() {
             s.body.clear();
@@ -387,6 +430,7 @@ pub unsafe extern "C" fn swr_v1_wrappers_part_end(p: *mut Request) {
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_wrappers_complete(p: *mut Request) {
+    // SAFETY: `p` is null or a live request handle from `swr_v1_wrappers_request_new`, with no other active use.
     if let Some(s) = unsafe { p.as_mut() } {
         s.completed = true;
     }
@@ -397,6 +441,7 @@ pub unsafe extern "C" fn swr_v1_wrappers_split(
     len: usize,
     delimiter: u8,
 ) -> usize {
+    // SAFETY: `data` lends `len` initialized bytes (or is unused when `len` is 0) for this call.
     unsafe { bytes(data, len) }.map_or(len, |s| {
         s.iter().position(|&c| c == delimiter).unwrap_or(len)
     })
@@ -410,7 +455,11 @@ pub unsafe extern "C" fn swr_v1_wrappers_header_wire(
     out: *mut u8,
     cap: usize,
 ) -> usize {
-    let (Some(key), Some(value)) = (unsafe { bytes(key, kn) }, unsafe { bytes(value, vn) }) else {
+    // SAFETY: `key` lends `kn` initialized bytes (or is unused when `kn` is 0) for this call.
+    let key = unsafe { bytes(key, kn) };
+    // SAFETY: `value` lends `vn` initialized bytes (or is unused when `vn` is 0) for this call.
+    let value = unsafe { bytes(value, vn) };
+    let (Some(key), Some(value)) = (key, value) else {
         return 0;
     };
     let key = &key[..key.iter().position(|&c| c == 0).unwrap_or(key.len())];
@@ -421,6 +470,8 @@ pub unsafe extern "C" fn swr_v1_wrappers_header_wire(
     if out.is_null() || cap > isize::MAX as usize {
         return 0;
     }
+    // SAFETY: `out` is non-null, `cap <= isize::MAX`, and the caller lends `cap` writable
+    // bytes disjoint from `key` and `value`.
     let dest = unsafe { slice::from_raw_parts_mut(out, cap) };
     let mut n = 0;
     for &c in key
