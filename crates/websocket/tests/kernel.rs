@@ -1,8 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    reason = "#157: casts not yet checked"
-)]
 use std::ptr::{null, null_mut};
 use swoole_rs_websocket::*;
 
@@ -53,7 +48,7 @@ fn header_boundaries_and_flags_roundtrip_without_payload() {
                 let mask_bytes = if flags & 32 != 0 { 4 } else { 0 };
                 assert_eq!(
                     parse(&output[1..1 + size + mask_bytes], &mut header),
-                    length as i64 + size as i64 + mask_bytes as i64
+                    i64::try_from(length + (size + mask_bytes) as u64).unwrap()
                 );
                 assert_eq!(header as usize, size + mask_bytes);
             }
@@ -133,7 +128,7 @@ fn binary_mask_matches_known_vector_and_is_an_involution() {
     unsafe { swr_v1_ws_mask(hello.as_mut_ptr(), hello.len(), key.as_ptr()) };
     assert_eq!(hello, [0x7f, 0x9f, 0x4d, 0x51, 0x58]);
     for length in [1, 3, 4, 7, 8, 9, 255, 1024] {
-        let mut bytes: Vec<_> = (0..length + 2).map(|x| x as u8).collect();
+        let mut bytes: Vec<_> = (0..length + 2).map(|x: usize| x.to_le_bytes()[0]).collect();
         let original = bytes.clone();
         for _ in 0..2 {
             assert_eq!(
