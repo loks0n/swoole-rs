@@ -291,12 +291,15 @@ jobs:
       - run: |
           set -- shards/*.json
           if [ -d recheck ]; then set -- "$@" --recheck recheck/*.json; fi
-          python3 corpus/upstream/gate.py "$@" --output phpt.json >> "$GITHUB_STEP_SUMMARY"
+          python3 corpus/upstream/gate.py "$@" --output phpt.json | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: phpt
-          path: phpt.json
+          path: |
+            phpt.json
+            flagged.txt
+            recheck/
       - if: needs.phpt.result != 'success'
         run: echo "A PHPT shard crashed; its tests are missing from the gate" && exit 1
 
