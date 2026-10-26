@@ -8,10 +8,6 @@
 #include <thread>
 #include <climits>
 #include "swoole_rs_coroutine.h"
-#ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
-#include "swoole_rs_coroutine_registry.h"
-using swoole::RustCoroutineRegistry;
-#endif
 #ifdef SW_THREAD
 #define SW_THREAD_LOCAL thread_local
 #else

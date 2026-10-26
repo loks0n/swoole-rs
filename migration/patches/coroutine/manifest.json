@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-scheduler-channel-policy.patch",
-      "sha256": "63c3cacacf48271db86f6ce34c31a10ee1e652d64cd40bff8b7a5fa75d5e03c0",
+      "sha256": "9af94cf839759c78fe6b0a5c8647d14caecfe8e50a0c59f470f7cb395d8972ad",
       "upstream_paths": [
         "src/coroutine/base.cc",
         "src/coroutine/channel.cc"
@@ -25,7 +25,7 @@
     },
     {
       "path": "0004-timing-header.patch",
-      "sha256": "2050b9c622365125e84f382f7161cc2fd0099f3757d2d82af4fe9bfed26e6a6e",
+      "sha256": "90c5d06d9d97042a976041bf4c59d4dfb97218e08ca4c5f10f03a7cc45121618",
       "upstream_paths": [
         "include/swoole_coroutine.h"
       ]

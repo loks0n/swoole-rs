@@ -2,8 +2,7 @@
 
 Implements `docs/coroutine-abi-v1.md`. Selected with `SWOOLE_RS_COROUTINE`
 (`--enable-swoole-rs-coroutine`); disabled selection keeps the original source
-exactly. Headers: `swoole_rs_coroutine.h`, `swoole_rs_channel_tokens.h`,
-`swoole_rs_coroutine_registry.h`, `swoole_rs_coroutine_registry_policy.h`.
+exactly. Headers: `swoole_rs_coroutine.h`, `swoole_rs_channel_tokens.h`.
 
 | Patch | Upstream files |
 | --- | --- |
@@ -168,29 +167,8 @@ enqueues before the trace and cancel-closure construction; cancellation removes
 before resume. The timer callback publishes `msg.error=true`, then
 `msg.timer=nullptr`, removes, then re-reads `msg.co` for resume.
 
-## Registry (`SWOOLE_RS_COROUTINE_REGISTRY_V2`, OFF by default)
+## Coroutine map
 
-One fallible Rust map owns ID→token entries; stable nodes give Native cursors.
-Entries own no Coroutine or Zend object. Handles keep their original global/TLS
-scope. Constructor, close/remove, find/count, print/GDB and the M29 range list
-use it. Allocation refusal returns before Native throws `bad_alloc`. The seven
-legacy exports keep their signatures, initial-null behavior and `RegistryItem`.
-
-Iteration order differs from the Native map, so PHP list order does not match:
-this blocks activation.
-
-Compiler policy capsule (12-byte POD `{family, version, abi}`) passed at
-`operator[]` insertion and constructor registration: `{1,210106,1}` = Apple
-libc++ 210106 ABI 1; `{2,120200,1}` = GCC 12.2 GNU source candidate. Both need
-64-bit `long` and `size_t`. Unknown capsules or a mismatch with the owner's
-captured policy return -4 without mutation; allocation refusal returns -3. The
-policy is captured at lazy owner allocation; a legacy insertion into an existing
-owner uses that owner's policy. The Native facade still requires the Apple
-compiler guard when V2 is on, so GNU acceptance does not enable Linux. Creation
-publishes the raw CID after Context construction and before registry
-registration, with no rollback.
-
-`swr_v1_coroutine_registry_print_step` walks entries, reads status fresh at the
-Native-supplied `status_` offset of each live allocation, picks a static NUL
-label, and returns print or abort; Native does the `printf`/`abort`. Invalid
-status selects the original abort.
+`Coroutine::coroutines` is upstream's `std::unordered_map<long, Coroutine *>`.
+Its iteration order is unspecified upstream and differs between standard
+libraries, so no Rust replica of one library's order is kept (#357).

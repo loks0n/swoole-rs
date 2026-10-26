@@ -4,16 +4,11 @@ from ordered_gate import block
 from make_coroutine_creation import GUARD
 
 PATTERN=re.compile(r'#if defined\(SWOOLE_RS_COROUTINE\) && SWOOLE_RS_COROUTINE // SWR_CREATION_BEGIN\n(.*?)\n#else // SWR_CREATION_NATIVE\n(.*?)\n#endif // SWR_CREATION_END',re.S)
-REMOVE='''#ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
-    coroutines.unregister(&cid);
-#else
-    coroutines.erase(get_cid());
-#endif'''
+REMOVE='    coroutines.erase(get_cid());'
 
 
 def restore_creation(after_source,after_header):
     source=PATTERN.sub(lambda m:m[2],after_source).replace('#include <new>\n','',1)
-    source=re.sub(r'\n#if defined\(SWOOLE_RS_COROUTINE\) && SWOOLE_RS_COROUTINE && defined\(SWOOLE_RS_COROUTINE_REGISTRY_V2\)\n    return swoole::Coroutine::coroutines.lookup\(cid\);\n#else // SWR_CID_LOOKUP_NATIVE(.*?)#endif // SWR_CID_LOOKUP_END\n',lambda m:m[1],source,flags=re.S)
     old=block(source,'long Coroutine::run()');new=old.replace('const long _cid = get_cid();','const long _cid = cid;');source=source.replace(old,new,1)
     old=block(source,'void Coroutine::close()');new=old.replace(REMOVE,'    coroutines.erase(cid);');source=source.replace(old,new,1)
     header=PATTERN.sub(lambda m:m[2],after_header).replace(GUARD,'',1)

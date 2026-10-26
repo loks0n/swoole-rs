@@ -1,18 +1,15 @@
 diff --git a/include/swoole_coroutine.h b/include/swoole_coroutine.h
-index fba89b0aa..622c25d03 100644
+index fba89b0..2654c78 100644
 --- a/include/swoole_coroutine.h
 +++ b/include/swoole_coroutine.h
-@@ -28,2 +28,9 @@
+@@ -28,2 +28,6 @@
  
 +#ifdef SWOOLE_RS_COROUTINE
 +#include "swoole_rs_coroutine.h"
-+#ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
-+#include "swoole_rs_coroutine_registry.h"
-+#endif
 +#endif
 +
  #include <climits>
-@@ -45,2 +52,20 @@ typedef std::chrono::microseconds seconds_type;
+@@ -45,2 +49,20 @@ typedef std::chrono::microseconds seconds_type;
  
 +#ifdef SWOOLE_RS_COROUTINE
 +static_assert(sizeof(swr_v1_coroutine_status) == 8 && alignof(swr_v1_coroutine_status) == 4 &&
@@ -33,7 +30,7 @@ index fba89b0aa..622c25d03 100644
 +              "Coroutine CID requires exact original long geometry");
 +#endif
  namespace swoole {
-@@ -52,2 +77,7 @@ class Coroutine {
+@@ -52,2 +74,7 @@ class Coroutine {
      constexpr static long MAX_NUM_LIMIT = LONG_MAX;
 +#ifdef SWOOLE_RS_COROUTINE
 +    static_assert(MIN_STACK_SIZE == SWR_CO_STACK_MIN, "stack minimum ABI");
@@ -41,7 +38,7 @@ index fba89b0aa..622c25d03 100644
 +    static_assert(STACK_ALIGNED_SIZE == SWR_CO_STACK_ALIGNMENT, "stack alignment ABI");
 +#endif
  
-@@ -72,3 +102,11 @@ class Coroutine {
+@@ -72,3 +99,11 @@ class Coroutine {
  
 +#ifdef SWOOLE_RS_COROUTINE
 +    static_assert(sizeof(State) == 4 && alignof(State) == 4 && sizeof(ResumeCode) == 4 && alignof(ResumeCode) == 4,
@@ -53,7 +50,7 @@ index fba89b0aa..622c25d03 100644
 +                  "Coroutine swap C/C++ function pointer linkage requires qualified compiler ABI");
 +#endif
      typedef std::function<void(void)> BailoutCallback;
-@@ -84,3 +122,7 @@ class Coroutine {
+@@ -84,3 +119,7 @@ class Coroutine {
      enum State get_state() const {
 +#ifdef SWOOLE_RS_COROUTINE
 +        return static_cast<State>(swr_v1_coroutine_status_read(&status_).state);
@@ -61,7 +58,7 @@ index fba89b0aa..622c25d03 100644
          return state;
 +    #endif
      }
-@@ -88,20 +130,48 @@ class Coroutine {
+@@ -88,20 +127,48 @@ class Coroutine {
      long get_init_msec() const {
 +#ifdef SWOOLE_RS_COROUTINE
 +        return timing_.init_msec;
@@ -114,7 +111,7 @@ index fba89b0aa..622c25d03 100644
      }
 +#endif // SWR_IDENTITY_END
  
-@@ -112,3 +182,7 @@ class Coroutine {
+@@ -112,3 +179,7 @@ class Coroutine {
      bool is_canceled() const {
 +#ifdef SWOOLE_RS_COROUTINE
 +        return swr_v1_coroutine_status_read(&status_).canceled;
@@ -122,7 +119,7 @@ index fba89b0aa..622c25d03 100644
          return resume_code_ == RC_CANCELED;
 +    #endif
      }
-@@ -116,3 +190,7 @@ class Coroutine {
+@@ -116,3 +187,7 @@ class Coroutine {
      bool is_timedout() const {
 +#ifdef SWOOLE_RS_COROUTINE
 +        return swr_v1_coroutine_status_read(&status_).timedout;
@@ -130,7 +127,7 @@ index fba89b0aa..622c25d03 100644
          return resume_code_ == RC_TIMEDOUT;
 +    #endif
      }
-@@ -120,8 +198,18 @@ class Coroutine {
+@@ -120,8 +195,18 @@ class Coroutine {
      bool is_suspending() const {
 +#ifdef SWOOLE_RS_COROUTINE
 +        return swr_v1_coroutine_status_read(&status_).suspending;
@@ -150,7 +147,7 @@ index fba89b0aa..622c25d03 100644
      }
 +#endif // SWR_IDENTITY_END
  
-@@ -129,8 +217,19 @@ class Coroutine {
+@@ -129,8 +214,19 @@ class Coroutine {
  
 -    void set_cancel_fn(CancelFunc *cancel_fn) {
 +    #if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE // SWR_IDENTITY_BEGIN
@@ -171,15 +168,7 @@ index fba89b0aa..622c25d03 100644
          return time<seconds_type>(true) - switch_usec + execute_usec;
 +#endif
      }
-@@ -141,3 +240,7 @@ class Coroutine {
- 
-+#ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
-+    static SW_THREAD_LOCAL RustCoroutineRegistry<Coroutine> coroutines;
-+#else
-     static SW_THREAD_LOCAL std::unordered_map<long, Coroutine *> coroutines;
-+#endif
- 
-@@ -165,7 +268,21 @@ class Coroutine {
+@@ -165,7 +261,21 @@ class Coroutine {
  
 -    static Coroutine *get_current() {
 +    #if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE // SWR_IDENTITY_BEGIN
@@ -203,7 +192,7 @@ index fba89b0aa..622c25d03 100644
 +#else // SWR_IDENTITY_NATIVE
 +static Coroutine *get_current_safe() {
          if (sw_unlikely(!current)) {
-@@ -175,12 +292,35 @@ class Coroutine {
+@@ -175,12 +285,31 @@ class Coroutine {
      }
 +#endif // SWR_IDENTITY_END
  
@@ -232,21 +221,17 @@ index fba89b0aa..622c25d03 100644
 -    static Coroutine *get_by_cid(long cid) {
 +    #if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE // SWR_CREATION_BEGIN
 +static Coroutine *get_by_cid(long cid) {
-+#ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
-+        return coroutines.lookup(cid);
-+#else
 +        auto i = coroutines.find(cid);
 +        return sw_likely(i != coroutines.end()) ? i->second : nullptr;
-+#endif
 +    }
 +#else // SWR_CREATION_NATIVE
 +static Coroutine *get_by_cid(long cid) {
          auto i = coroutines.find(cid);
-@@ -188,2 +328,3 @@ class Coroutine {
+@@ -188,2 +317,3 @@ class Coroutine {
      }
 +#endif // SWR_CREATION_END
  
-@@ -195,3 +336,7 @@ class Coroutine {
+@@ -195,3 +325,7 @@ class Coroutine {
      static size_t get_stack_size() {
 +#ifdef SWOOLE_RS_COROUTINE
 +        return scheduler_.stack_size;
@@ -254,7 +239,7 @@ index fba89b0aa..622c25d03 100644
          return stack_size;
 +#endif
      }
-@@ -199,3 +344,7 @@ class Coroutine {
+@@ -199,3 +333,7 @@ class Coroutine {
      static void set_stack_size(size_t size) {
 +#ifdef SWOOLE_RS_COROUTINE
 +        swr_v1_coroutine_scheduler_set_stack_size(&scheduler_, size);
@@ -262,7 +247,7 @@ index fba89b0aa..622c25d03 100644
          stack_size = SW_MEM_ALIGNED_SIZE_EX(SW_MAX(MIN_STACK_SIZE, SW_MIN(size, MAX_STACK_SIZE)), STACK_ALIGNED_SIZE);
 +#endif
      }
-@@ -203,3 +352,7 @@ class Coroutine {
+@@ -203,3 +341,7 @@ class Coroutine {
      static void set_socket_bound_cid(long cid) {
 +#ifdef SWOOLE_RS_COROUTINE
 +        swr_v1_coroutine_scheduler_bind_socket(&scheduler_, cid);
@@ -270,7 +255,7 @@ index fba89b0aa..622c25d03 100644
          socket_bound_cid = cid;
 +#endif
      }
-@@ -207,3 +360,7 @@ class Coroutine {
+@@ -207,3 +349,7 @@ class Coroutine {
      static long get_last_cid() {
 +#ifdef SWOOLE_RS_COROUTINE
 +        return scheduler_.last_cid;
@@ -278,7 +263,7 @@ index fba89b0aa..622c25d03 100644
          return last_cid;
 +#endif
      }
-@@ -211,3 +368,7 @@ class Coroutine {
+@@ -211,3 +357,7 @@ class Coroutine {
      static long get_socket_bound_cid() {
 +#ifdef SWOOLE_RS_COROUTINE
 +        return scheduler_.socket_bound_cid;
@@ -286,7 +271,7 @@ index fba89b0aa..622c25d03 100644
          return socket_bound_cid;
 +#endif
      }
-@@ -219,3 +380,7 @@ class Coroutine {
+@@ -219,3 +369,7 @@ class Coroutine {
      static uint64_t get_peak_num() {
 +#ifdef SWOOLE_RS_COROUTINE
 +        return scheduler_.peak_num;
@@ -294,7 +279,7 @@ index fba89b0aa..622c25d03 100644
          return peak_num;
 +#endif
      }
-@@ -239,16 +404,61 @@ class Coroutine {
+@@ -239,16 +393,61 @@ class Coroutine {
    protected:
 -    static SW_THREAD_LOCAL Coroutine *current;
 +    #if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE // SWR_IDENTITY_BEGIN
@@ -360,7 +345,7 @@ index fba89b0aa..622c25d03 100644
 +    swr_v1_coroutine_timing timing_ = seed_timing();
 +#else
      long init_msec = Timer::get_absolute_msec();
-@@ -256,5 +466,14 @@ class Coroutine {
+@@ -256,5 +455,14 @@ class Coroutine {
      long execute_usec = 0;
 -    void *task = nullptr;
 +#endif
@@ -377,7 +362,7 @@ index fba89b0aa..622c25d03 100644
 +Coroutine *origin = nullptr;
 +#endif // SWR_IDENTITY_END
      /* The coroutines resumed by this coroutine that are still alive */
-@@ -263,3 +482,7 @@ class Coroutine {
+@@ -263,3 +471,7 @@ class Coroutine {
      Coroutine *next_sibling = nullptr;
 -    CancelFunc *cancel_fn_ = nullptr;
 +    #if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE // SWR_IDENTITY_BEGIN

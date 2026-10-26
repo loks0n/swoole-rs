@@ -29,7 +29,6 @@ def main():
            actual_Coroutine_or_Context_constructed=False,callback_invoked=False,measurement_performed=False,
            limits=['Exact PIN registration BODY and actual selected body in supplemental inert metadata facades; Context initialization expressly excluded/unexecuted.',
                    'Native activation body is not executed: facade toggles initialized metadata only.',
-                   'Qualified Rust registry capability/defaults unchanged. Unsupported policies remain unsupported, not replaced by model.',
                    'Actual Linux/runtime/lifetime/failure/ZTS/externalSDK/performance/default gates remain open.'])
     def run(command):
         require_build_space(work);out=run_isolated(list(map(str,command)),cwd=work,timeout=120)
@@ -52,21 +51,19 @@ def main():
             if close.count(remove)!=1:raise ValueError('Exact pre-delete removal fragment missing')
             fragments[engine+'-remove.inc']=remove+'\n'
         for name,text in fragments.items():(work/name).write_text(text)
-        for backend in ['genuineNativeMap','qualifiedRustOwner']:
+        for backend in ['genuineNativeMap']:
             for standard in ['c++14','c++17']:
                 for sanitized in [False,True]:
                     binary=work/(backend+'-'+standard+'-'+str(sanitized));sanitizer=['-fsanitize=address,undefined','-fno-sanitize-recover=all']if sanitized else[]
-                    command=['c++','-std='+standard,'-O2','-Wall','-Wextra','-Werror','-UNDEBUG','-I'+str(work),'-I'+str(ROOT/'native/coroutine'),*(['-DSWR_CREATION_REGISTRY']if backend=='qualifiedRustOwner'else[]),Path(__file__).with_suffix('.cc'),a.archive.resolve(),'-lpthread',*(['-ldl','-lm']if sys.platform=='linux'else[]),*sanitizer,'-o',binary]
+                    command=['c++','-std='+standard,'-O2','-Wall','-Wextra','-Werror','-UNDEBUG','-I'+str(work),'-I'+str(ROOT/'native/coroutine'),Path(__file__).with_suffix('.cc'),a.archive.resolve(),'-lpthread',*(['-ldl','-lm']if sys.platform=='linux'else[]),*sanitizer,'-o',binary]
                     row=dict(backend=backend,standard=standard,native_sanitized=sanitized,rust_instrumented=False,status='NOT_RUN');r['profiles'].append(row)
                     try:run(command)
                     except ValueError:
-                        if 'Coroutine registry ON requires Apple libc++210106 ABI1' in r['commands'][-1]['stderr']:
-                            row['status']='UNSUPPORTED';r['unsupported_order_policy']=True
-                        else:row['status']='FAILED'
+                        row['status']='FAILED'
                         raise
                     observed=run([binary]);row.update(status='PASS',summary=json.loads(observed.stdout));write_report(a.report,r)
         if any(sha(path)!=digest for path,digest in identities.items()):raise ValueError('Input changed')
-        r['passed']=len(r['profiles'])==8 and all(row['status']=='PASS'for row in r['profiles'])
+        r['passed']=len(r['profiles'])==4 and all(row['status']=='PASS'for row in r['profiles'])
     except Exception as error:r['error']=str(error)
     write_report(a.report,r);print(json.dumps({key:r.get(key)for key in ['passed','error','work']}));return int(not r['passed'])
 

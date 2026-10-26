@@ -319,23 +319,6 @@ def plan(args, reports):
             script(phase, 'tests/modules/coroutine/' + name + '.py', '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
                    '--report', reports / (phase + '.json'))
-        script('coroutine-registry-metadata', 'tests/modules/coroutine/registry.py',
-               '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
-               '--report', reports / 'coroutine-registry-metadata.json')
-        script('coroutine-registry-order', 'tests/modules/coroutine/registry_order.py',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-               '--native-sanitize', '--report', reports / 'coroutine-registry-order.json')
-        for backend in ['ucontext', 'asm', 'thread']:
-            phase = 'coroutine-registry-compile' + ('' if backend == 'ucontext' else '-' + backend)
-            script(phase, 'tests/modules/coroutine/compile_gate.py',
-                   '--source', ROOT / 'target/upstream/src', '--registry', '--timing', '--stack-usage',
-                   '--backend', backend, '--report', reports / (phase + '.json'))
-        if integrate and 'phpcoroutines' in modules:
-            script('coroutine-registry-sdk', 'tests/modules/coroutine/registry_sdk.py',
-                   '--source', ROOT / 'target/upstream/src',
-                   '--sdk-export', selected_export / 'export.json',
-                   '--report', reports / 'coroutine-registry-sdk.json')
         script('coroutine-channel-state', 'tests/modules/coroutine/channel_state_gate.py',
                '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',

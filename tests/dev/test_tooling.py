@@ -558,23 +558,12 @@ class Lanes(unittest.TestCase):
         channel_state = commands['coroutine-channel-state']
         self.assertIn('tests/modules/coroutine/channel_state_gate.py', channel_state)
         self.assertEqual(channel_state[channel_state.index('--archive') + 1],
-                         commands['coroutine-registry-metadata'][commands['coroutine-registry-metadata'].index('--archive') + 1])
+                         commands['coroutine-scheduler'][commands['coroutine-scheduler'].index('--archive') + 1])
         channel_sdk = commands['coroutine-channel-state-sdk']
         self.assertIn('--sdk-export', channel_sdk)
         self.assertIn('--native-export', channel_sdk)
         self.assertNotIn('--sdk-snapshot', channel_sdk)
-        registry_order = commands['coroutine-registry-order']
-        self.assertIn('tests/modules/coroutine/registry_order.py', registry_order)
-        self.assertIn('--native-sanitize', registry_order)
-        self.assertNotIn('--sanitize', registry_order)
-        self.assertEqual(registry_order[registry_order.index('--archive') + 1],
-                         commands['coroutine-registry-metadata'][commands['coroutine-registry-metadata'].index('--archive') + 1])
-        for backend in ['ucontext', 'asm', 'thread']:
-            name = 'coroutine-registry-compile' + ('' if backend == 'ucontext' else '-' + backend)
-            command = commands[name]
-            self.assertEqual(command[command.index('--backend') + 1], backend)
-            self.assertIn('--registry', command)
-            self.assertIn('--timing', command)
+        self.assertFalse(any(name.startswith('coroutine-registry') for name in commands))
         for name in ['hooks-ordered','hooks-async-policy','hooks-packet-policy','hooks-lifecycle-policy','hooks-socket-policy','hooks-compile']:
             self.assertIn(name,commands)
         self.assertIn('--config',commands['hooks-compile'])

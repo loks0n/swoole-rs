@@ -64,7 +64,6 @@ def main():
     parser.add_argument('--sdk-snapshot', type=Path, help='Previously captured private SDK snapshot')
     parser.add_argument('--backend', choices=['header-default', 'asm', 'ucontext', 'thread'], default='header-default',
                         help='Optional private SDK-only backend projection; no configured world/runtime claim')
-    parser.add_argument('--registry-v2', action='store_true', help='Explicit qualified policy SDK-only projection; no runtime/default activation')
     parser.add_argument('--sdk-export', type=Path, help='Actual immutable selected export.json')
     parser.add_argument('--native-export', type=Path, help='Actual immutable Native export.json')
     args = parser.parse_args()
@@ -76,7 +75,7 @@ def main():
     work = output.parent / ('channel-state-sdk-' + uuid.uuid4().hex)
     work.mkdir(parents=True)
     report = dict(passed=False, scope=__doc__, work=str(work), commands=[], layouts=[], coroutine_layouts=[], context_layouts=[],
-                  backend_projection=args.backend, registry_v2_projection=args.registry_v2,
+                  backend_projection=args.backend,
                   runtime_executed=False, full_gate_passed=False,
                   limits=['Private configured SDK plus current verified M06 projection; no producer-source/runtime credit.',
                           'M06-only derives the feature flag from actual Native configuration; it is not a separately built production world.',
@@ -90,8 +89,6 @@ def main():
     bound_paths.append(Path(__file__).with_name('identity_source.py'))
     bound_paths.append(Path(__file__).with_name('swap_source.py'))
     bound_paths.append(Path(__file__).with_name('make_coroutine_swap.py'))
-    bound_paths.append(Path(__file__).with_name('print_source.py'))
-    bound_paths.append(Path(__file__).with_name('make_coroutine_print.py'))
     bound_paths.append(Path(__file__).with_name('entry_source.py'))
     bound_paths.append(Path(__file__).with_name('make_coroutine_entry.py'))
     bound_paths.append(Path(__file__).with_name('bailout_source.py'))
@@ -145,9 +142,6 @@ def main():
             if profile == 'm06':
                 config = tree / 'config.h'
                 config.write_text(config.read_text() + '\n/* Explicit private M06-only SDK projection. */\n#undef SWOOLE_RS_COROUTINE\n#define SWOOLE_RS_COROUTINE 1\n')
-            if args.registry_v2 and profile in ['m06', 'combined']:
-                config = tree / 'config.h'
-                config.write_text(config.read_text() + '\n/* Explicit SDK-only registry projection. */\n#undef SWOOLE_RS_COROUTINE_REGISTRY_V2\n#define SWOOLE_RS_COROUTINE_REGISTRY_V2 1\n')
             if args.backend != 'header-default':
                 config = tree / 'config.h'
                 config.write_text(config.read_text() + '\n/* Explicit SDK-only backend; not a configured runtime. */\n#undef SW_USE_THREAD_CONTEXT\n#undef SW_USE_ASM_CONTEXT\n' +
@@ -216,11 +210,9 @@ def main():
                     row['identity_imports'] = identity_imports
                     swap_imports = sorted({line.split()[-1].lstrip('_') for line in symbols.stdout.splitlines() if 'swr_v1_coroutine_swap_' in line or 'swr_v1_coroutine_dispatch' in line})
                     row['swap_imports'] = swap_imports
-                    creation_imports = sorted({line.split()[-1].lstrip('_') for line in symbols.stdout.splitlines() if any(name in line for name in ['swr_v1_coroutine_registry_print_step', 'swr_v1_coroutine_entry_step', 'swr_v1_coroutine_bailout_step', 'swr_v1_coroutine_create_step', 'swr_v1_coroutine_selected_create_step', 'swr_v1_coroutine_cid_read', 'swr_v1_coroutine_unregister', 'swr_v1_coroutine_registry_lookup'])})
+                    creation_imports = sorted({line.split()[-1].lstrip('_') for line in symbols.stdout.splitlines() if any(name in line for name in ['swr_v1_coroutine_entry_step', 'swr_v1_coroutine_bailout_step', 'swr_v1_coroutine_create_step', 'swr_v1_coroutine_cid_read'])})
                     row['creation_imports'] = creation_imports
-                    required_creation = {'swr_v1_coroutine_entry_step', 'swr_v1_coroutine_bailout_step', 'swr_v1_coroutine_cid_read', 'swr_v1_coroutine_selected_create_step' if args.registry_v2 else 'swr_v1_coroutine_create_step'}
-                    if args.registry_v2:
-                        required_creation |= {'swr_v1_coroutine_registry_print_step', 'swr_v1_coroutine_unregister', 'swr_v1_coroutine_registry_lookup'}
+                    required_creation = {'swr_v1_coroutine_entry_step', 'swr_v1_coroutine_bailout_step', 'swr_v1_coroutine_cid_read', 'swr_v1_coroutine_create_step'}
                     if profile != 'native' and unit == 'src/coroutine/base.cc' and not required_creation.issubset(creation_imports):
                         raise ValueError('Actual creation/CID/lookup/removal caller closure missed Rust owner')
                     if profile == 'native' and creation_imports:
@@ -237,11 +229,7 @@ def main():
                         raise ValueError('Actual Core missed sole completion-cell readout')
                     if profile == 'native' and context_imports:
                         raise ValueError('Context owner leaked into Native fallback')
-                    # V2 whole print reads via the same private status kernel,
-                    # replacing the last Native public get_state/read call.
-                    required_status = {'swr_v1_coroutine_status_transition'}
-                    if not args.registry_v2:
-                        required_status.add('swr_v1_coroutine_status_read')
+                    required_status = {'swr_v1_coroutine_status_transition', 'swr_v1_coroutine_status_read'}
                     if profile != 'native' and unit == 'src/coroutine/base.cc' and not required_status.issubset(status_imports):
                         raise ValueError('Actual lifecycle callers missed sole status owner')
                     if profile == 'native' and status_imports:

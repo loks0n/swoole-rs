@@ -1,8 +1,8 @@
 diff --git a/src/coroutine/base.cc b/src/coroutine/base.cc
-index 2fbb21de2..1357908b1 100644
+index 2fbb21d..72cd49f 100644
 --- a/src/coroutine/base.cc
 +++ b/src/coroutine/base.cc
-@@ -19,15 +19,54 @@
+@@ -19,15 +19,50 @@
  
 +#ifndef SWOOLE_RS_COROUTINE
 +#error "Coroutine overlay requires --enable-swoole-rs-coroutine"
@@ -26,11 +26,7 @@ index 2fbb21de2..1357908b1 100644
 +#ifndef SWOOLE_RS_COROUTINE
  SW_THREAD_LOCAL long Coroutine::socket_bound_cid = 0;
 +#endif
-+#ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
-+SW_THREAD_LOCAL RustCoroutineRegistry<Coroutine> Coroutine::coroutines;
-+#else
  SW_THREAD_LOCAL std::unordered_map<long, Coroutine *> Coroutine::coroutines;
-+#endif
 +#ifndef SWOOLE_RS_COROUTINE
  SW_THREAD_LOCAL uint64_t Coroutine::peak_num = 0;
 +#endif
@@ -57,7 +53,7 @@ index 2fbb21de2..1357908b1 100644
  SW_THREAD_LOCAL Coroutine::SwapCallback Coroutine::on_close = nullptr;
 +#endif // SWR_SWAP_END
  SW_THREAD_LOCAL Coroutine::BailoutCallback Coroutine::on_bailout = nullptr;
-@@ -45,3 +84,7 @@ void Coroutine::activate() {
+@@ -45,3 +80,7 @@ void Coroutine::activate() {
  #endif
 +#ifdef SWOOLE_RS_COROUTINE
 +    swr_v1_coroutine_scheduler_set_active(&scheduler_, 1);
@@ -65,7 +61,7 @@ index 2fbb21de2..1357908b1 100644
      activated = true;
 +#endif
      on_bailout = nullptr;
-@@ -53,3 +96,7 @@ void Coroutine::deactivate() {
+@@ -53,3 +92,7 @@ void Coroutine::deactivate() {
  #endif
 +#ifdef SWOOLE_RS_COROUTINE
 +    swr_v1_coroutine_scheduler_set_active(&scheduler_, 0);
@@ -73,7 +69,7 @@ index 2fbb21de2..1357908b1 100644
      activated = false;
 +#endif
      on_bailout = []() {
-@@ -65,2 +112,7 @@ void Coroutine::calc_execute_usec(Coroutine *yield_coroutine, Coroutine *resume_
+@@ -65,2 +108,7 @@ void Coroutine::calc_execute_usec(Coroutine *yield_coroutine, Coroutine *resume_
      long current_usec = time<seconds_type>(true);
 +#ifdef SWOOLE_RS_COROUTINE
 +    swr_v1_coroutine_timing_switch(yield_coroutine ? &yield_coroutine->timing_ : nullptr,
@@ -81,11 +77,11 @@ index 2fbb21de2..1357908b1 100644
 +                                 current_usec);
 +#else
      if (yield_coroutine) {
-@@ -72,2 +124,3 @@ void Coroutine::calc_execute_usec(Coroutine *yield_coroutine, Coroutine *resume_
+@@ -72,2 +120,3 @@ void Coroutine::calc_execute_usec(Coroutine *yield_coroutine, Coroutine *resume_
      }
 +#endif
  }
-@@ -75,3 +128,44 @@ void Coroutine::calc_execute_usec(Coroutine *yield_coroutine, Coroutine *resume_
+@@ -75,3 +124,39 @@ void Coroutine::calc_execute_usec(Coroutine *yield_coroutine, Coroutine *resume_
  
 -Coroutine::Coroutine(const CoroutineFunc &fn, void *private_data) : ctx(stack_size, fn, private_data) {
 +#if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE // SWR_CREATION_BEGIN
@@ -93,12 +89,7 @@ index 2fbb21de2..1357908b1 100644
 +    swr_v1_coroutine_creation_cursor cursor = {0};
 +    size_t observed_count = 0;
 +    for (;;) {
-+#ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
-+        const auto step = coroutines.creation_step(&cursor, &scheduler_, &cid, this, observed_count);
-+#else
-+        const auto step = swr_v1_coroutine_create_step(&cursor, &scheduler_, &cid, nullptr,
-+                                                     reinterpret_cast<uintptr_t>(this), observed_count);
-+#endif
++        const auto step = swr_v1_coroutine_create_step(&cursor, &scheduler_, &cid, observed_count);
 +        switch (step.action) {
 +        case SWR_CO_CREATE_INSERT:
 +            coroutines[step.cid] = this;
@@ -131,7 +122,7 @@ index 2fbb21de2..1357908b1 100644
 +    }
 +#else
      cid = ++last_cid;
-@@ -84,8 +178,24 @@ Coroutine::Coroutine(const CoroutineFunc &fn, void *private_data) : ctx(stack_si
+@@ -84,8 +169,24 @@ Coroutine::Coroutine(const CoroutineFunc &fn, void *private_data) : ctx(stack_si
      }
 +#endif
  }
@@ -158,7 +149,7 @@ index 2fbb21de2..1357908b1 100644
 -    } else if (sw_unlikely(on_bailout)) {
 +    } else if (plan.actions & SWR_CO_CALL_BAILOUT) {
          SW_ASSERT(current == nullptr);
-@@ -94,3 +204,16 @@ void Coroutine::check_end() {
+@@ -94,3 +195,16 @@ void Coroutine::check_end() {
  }
 +#endif // SWR_IDENTITY_END
  
@@ -175,12 +166,12 @@ index 2fbb21de2..1357908b1 100644
 +}
 +#else // SWR_IDENTITY_NATIVE
  long Coroutine::run() {
-@@ -100,3 +223,3 @@ long Coroutine::run() {
+@@ -100,3 +214,3 @@ long Coroutine::run() {
      CALC_EXECUTE_USEC(origin, nullptr);
 -    state = STATE_RUNNING;
 +    swr_v1_coroutine_status_transition(&status_, SWR_CO_RUN, 0, SWR_CO_STATUS_PUBLISH);
      ctx.swap_in();
-@@ -105,8 +228,22 @@ long Coroutine::run() {
+@@ -105,8 +219,22 @@ long Coroutine::run() {
  }
 +#endif // SWR_IDENTITY_END
  
@@ -206,27 +197,27 @@ index 2fbb21de2..1357908b1 100644
 +        (!!on_yield * SWR_CO_CALLBACK) | (!!task * SWR_CO_TASK), SWR_CO_STATUS_PUBLISH);
 +    if (plan.actions & SWR_CO_CALL) {
          on_yield(task);
-@@ -114,3 +251,2 @@ void Coroutine::yield() {
+@@ -114,3 +242,2 @@ void Coroutine::yield() {
      current = origin;
 -
      CALC_EXECUTE_USEC(this, current);
-@@ -118,2 +254,3 @@ void Coroutine::yield() {
+@@ -118,2 +245,3 @@ void Coroutine::yield() {
  }
 +#endif // SWR_IDENTITY_END
  
-@@ -128,3 +265,3 @@ bool Coroutine::yield_ex(double timeout) {
+@@ -128,3 +256,3 @@ bool Coroutine::yield_ex(double timeout) {
      TimerCallback timer_callback = [this](Timer *timer, TimerNode *tnode) {
 -        resume_code_ = RC_TIMEDOUT;
 +        swr_v1_coroutine_status_transition(&status_, SWR_CO_STATUS_TIMEOUT, 0, SWR_CO_STATUS_PUBLISH);
          resume();
-@@ -143,3 +280,5 @@ bool Coroutine::yield_ex(double timeout) {
+@@ -143,3 +271,5 @@ bool Coroutine::yield_ex(double timeout) {
  
 -    if (is_timedout()) {
 +    auto plan = swr_v1_coroutine_status_transition(&status_, SWR_CO_WAIT_BEFORE_DELETE,
 +        (!!timer * SWR_CO_TIMER), SWR_CO_STATUS_DECIDE);
 +    if (plan.error == -1) {
          swoole_set_last_error(SW_ERROR_CO_TIMEDOUT);
-@@ -147,6 +286,7 @@ bool Coroutine::yield_ex(double timeout) {
+@@ -147,6 +277,7 @@ bool Coroutine::yield_ex(double timeout) {
      }
 -    if (timer) {
 +    if (plan.actions & SWR_CO_DELETE_TIMER) {
@@ -236,7 +227,7 @@ index 2fbb21de2..1357908b1 100644
 +    plan = swr_v1_coroutine_status_transition(&status_, SWR_CO_WAIT_AFTER_DELETE, 0, SWR_CO_STATUS_DECIDE);
 +    if (plan.error == -2) {
          swoole_set_last_error(SW_ERROR_CO_CANCELED);
-@@ -157,9 +297,28 @@ bool Coroutine::yield_ex(double timeout) {
+@@ -157,9 +288,28 @@ bool Coroutine::yield_ex(double timeout) {
  
 +#if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE // SWR_IDENTITY_BEGIN
 +void Coroutine::resume() {
@@ -268,22 +259,23 @@ index 2fbb21de2..1357908b1 100644
 -    if (sw_likely(on_resume && task)) {
 +    if (plan.actions & SWR_CO_CALL) {
          on_resume(task);
-@@ -168,3 +327,2 @@ void Coroutine::resume() {
+@@ -168,3 +318,2 @@ void Coroutine::resume() {
      current = this;
 -
      CALC_EXECUTE_USEC(origin, this);
-@@ -173,5 +331,23 @@ void Coroutine::resume() {
+@@ -173,5 +322,9 @@ void Coroutine::resume() {
  }
 +#endif // SWR_IDENTITY_END
  
 +#if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE // SWR_IDENTITY_BEGIN
-+bool Coroutine::cancel() {
+ bool Coroutine::cancel() {
+-    if (!cancel_fn_) {
 +    const auto plan = swr_v1_coroutine_status_transition(&status_, SWR_CO_CANCEL,
 +        (!!swr_v1_coroutine_identity_read(&cancel_fn_) * SWR_CO_CANCELABLE), SWR_CO_STATUS_DECIDE);
 +    if (!(plan.actions & SWR_CO_PROCEED)) {
-+        swoole_set_last_error(SW_ERROR_CO_CANNOT_CANCEL);
-+        return false;
-+    }
+         swoole_set_last_error(SW_ERROR_CO_CANNOT_CANCEL);
+@@ -179,12 +332,58 @@ bool Coroutine::cancel() {
+     }
 +    // std::function's copy may throw: preserve its position before mutation.
 +    auto fn = *static_cast<CancelFunc *>(swr_v1_coroutine_identity_read(&cancel_fn_));
 +    set_cancel_fn(nullptr);
@@ -291,14 +283,13 @@ index 2fbb21de2..1357908b1 100644
 +    return fn(this);
 +}
 +#else // SWR_IDENTITY_NATIVE
- bool Coroutine::cancel() {
--    if (!cancel_fn_) {
++bool Coroutine::cancel() {
 +    const auto plan = swr_v1_coroutine_status_transition(&status_, SWR_CO_CANCEL,
 +        (!!cancel_fn_ * SWR_CO_CANCELABLE), SWR_CO_STATUS_DECIDE);
 +    if (!(plan.actions & SWR_CO_PROCEED)) {
-         swoole_set_last_error(SW_ERROR_CO_CANNOT_CANCEL);
-@@ -179,12 +355,48 @@ bool Coroutine::cancel() {
-     }
++        swoole_set_last_error(SW_ERROR_CO_CANNOT_CANCEL);
++        return false;
++    }
 +    // std::function's copy may throw: preserve its position before mutation.
      auto fn = *cancel_fn_;
      set_cancel_fn(nullptr);
@@ -321,11 +312,7 @@ index 2fbb21de2..1357908b1 100644
 +        SW_TRACE_CONTEXT, "coroutine#%ld stack memory use less than %ld bytes", get_cid(), ctx.get_stack_usage());
 +#endif
 +    swr_v1_coroutine_identity_route(&current, &origin, this, SWR_CO_IDENTITY_LEAVE);
-+#ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
-+    coroutines.unregister(&cid);
-+#else
 +    coroutines.erase(get_cid());
-+#endif
 +    /*
 +     * The coroutines resumed by this coroutine may still be suspended.
 +     * Their origin must be cleared so that they will never reference the released memory of this coroutine.
@@ -349,7 +336,7 @@ index 2fbb21de2..1357908b1 100644
 +        (!!on_close * SWR_CO_CALLBACK) | (!!task * SWR_CO_TASK), SWR_CO_STATUS_PUBLISH);
 +    if (plan.actions & SWR_CO_CALL) {
          on_close(task);
-@@ -211,8 +423,10 @@ void Coroutine::close() {
+@@ -211,8 +410,10 @@ void Coroutine::close() {
  }
 +#endif // SWR_IDENTITY_END
  
@@ -362,12 +349,12 @@ index 2fbb21de2..1357908b1 100644
 -    if (origin) {
 +    if (parent) {
          if (prev_sibling) {
-@@ -220,3 +434,3 @@ void Coroutine::set_origin(Coroutine *co) {
+@@ -220,3 +421,3 @@ void Coroutine::set_origin(Coroutine *co) {
          } else {
 -            origin->first_child = next_sibling;
 +            parent->first_child = next_sibling;
          }
-@@ -227,3 +441,7 @@ void Coroutine::set_origin(Coroutine *co) {
+@@ -227,3 +428,7 @@ void Coroutine::set_origin(Coroutine *co) {
      }
 +#if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE // SWR_IDENTITY_BEGIN
 +    swr_v1_coroutine_identity_publish(&origin, co);
@@ -375,58 +362,22 @@ index 2fbb21de2..1357908b1 100644
      origin = co;
 +#endif // SWR_IDENTITY_END
      if (co) {
-@@ -237,2 +455,32 @@ void Coroutine::set_origin(Coroutine *co) {
- 
-+#if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE && defined(SWOOLE_RS_COROUTINE_REGISTRY_V2) // SWR_PRINT_BEGIN
-+void Coroutine::print_list() {
-+    swr_v1_coroutine_registry_print_cursor cursor = {nullptr, 0};
-+    const Coroutine *object = nullptr;
-+    size_t status_offset = 0;
-+    for (;;) {
-+        const auto step = coroutines.print_step(&cursor, object, status_offset);
-+        switch (step.action) {
-+        case 0: return;
-+        case 1:
-+            object = reinterpret_cast<const Coroutine *>(step.token);
-+            status_offset = reinterpret_cast<const unsigned char *>(&object->status_) -
-+                            reinterpret_cast<const unsigned char *>(object);
-+            break;
-+        case 2:
-+            object = reinterpret_cast<const Coroutine *>(step.token);
-+            break;
-+        case 3:
-+            sw_printf("Coroutine\t%ld\t%s\n", step.cid, step.label);
-+            break;
-+        case 4:
-+            abort();
-+            return;
-+        default:
-+            abort();
-+            return;
-+        }
-+    }
-+}
-+#else // SWR_PRINT_NATIVE
- void Coroutine::print_list() {
-@@ -240,3 +488,3 @@ void Coroutine::print_list() {
+@@ -240,3 +445,3 @@ void Coroutine::print_list() {
          const char *state;
 -        switch (coroutine.second->state) {
 +        switch (coroutine.second->get_state()) {
          case STATE_INIT:
-@@ -260,5 +508,6 @@ void Coroutine::print_list() {
- }
-+#endif // SWR_PRINT_END
- 
+@@ -262,3 +467,3 @@ void Coroutine::print_list() {
  void Coroutine::print_socket_bound_error(int sock_fd, const char *event_str, long bound_cid) {
 -    socket_bound_cid = bound_cid;
 +    set_socket_bound_cid(bound_cid);
      swoole_fatal_error(SW_ERROR_CO_HAS_BEEN_BOUND,
-@@ -267,3 +516,3 @@ void Coroutine::print_socket_bound_error(int sock_fd, const char *event_str, lon
+@@ -267,3 +472,3 @@ void Coroutine::print_socket_bound_error(int sock_fd, const char *event_str, lon
                         sock_fd,
 -                       socket_bound_cid,
 +                       get_socket_bound_cid(),
                         event_str,
-@@ -272,2 +521,7 @@ void Coroutine::print_socket_bound_error(int sock_fd, const char *event_str, lon
+@@ -272,2 +477,7 @@ void Coroutine::print_socket_bound_error(int sock_fd, const char *event_str, lon
  
 +#if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE // SWR_SWAP_BEGIN
 +void Coroutine::set_on_yield(const SwapCallback func) {
@@ -434,7 +385,7 @@ index 2fbb21de2..1357908b1 100644
 +}
 +#else // SWR_SWAP_NATIVE
  void Coroutine::set_on_yield(const SwapCallback func) {
-@@ -275,3 +529,9 @@ void Coroutine::set_on_yield(const SwapCallback func) {
+@@ -275,3 +485,9 @@ void Coroutine::set_on_yield(const SwapCallback func) {
  }
 +#endif // SWR_SWAP_END
  
@@ -444,7 +395,7 @@ index 2fbb21de2..1357908b1 100644
 +}
 +#else // SWR_SWAP_NATIVE
  void Coroutine::set_on_resume(const SwapCallback func) {
-@@ -279,3 +539,9 @@ void Coroutine::set_on_resume(const SwapCallback func) {
+@@ -279,3 +495,9 @@ void Coroutine::set_on_resume(const SwapCallback func) {
  }
 +#endif // SWR_SWAP_END
  
@@ -454,7 +405,7 @@ index 2fbb21de2..1357908b1 100644
 +}
 +#else // SWR_SWAP_NATIVE
  void Coroutine::set_on_close(const SwapCallback func) {
-@@ -283,3 +549,71 @@ void Coroutine::set_on_close(const SwapCallback func) {
+@@ -283,3 +505,71 @@ void Coroutine::set_on_close(const SwapCallback func) {
  }
 +#endif // SWR_SWAP_END
  
@@ -526,7 +477,7 @@ index 2fbb21de2..1357908b1 100644
 +#endif // SWR_BAILOUT_END
 +#else // SWR_IDENTITY_NATIVE
  void Coroutine::bailout(const BailoutCallback &func) {
-@@ -308,4 +642,31 @@ void Coroutine::bailout(const BailoutCallback &func) {
+@@ -308,4 +598,31 @@ void Coroutine::bailout(const BailoutCallback &func) {
  }
 +#endif // SWR_IDENTITY_END
 +
@@ -558,11 +509,11 @@ index 2fbb21de2..1357908b1 100644
 +}
 +#else // SWR_ENTRY_NATIVE
  bool run(const CoroutineFunc &fn, void *arg) {
-@@ -320,2 +681,3 @@ bool run(const CoroutineFunc &fn, void *arg) {
+@@ -320,2 +637,3 @@ bool run(const CoroutineFunc &fn, void *arg) {
  }
 +#endif // SWR_ENTRY_END
  }  // namespace coroutine
-@@ -327,2 +689,7 @@ uint8_t swoole_coroutine_is_in() {
+@@ -327,2 +645,7 @@ uint8_t swoole_coroutine_is_in() {
  
 +#if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE // SWR_ENTRY_BEGIN
 +long swoole_coroutine_create(void (*routine)(void *), void *arg) {
@@ -570,30 +521,12 @@ index 2fbb21de2..1357908b1 100644
 +}
 +#else // SWR_ENTRY_NATIVE
  long swoole_coroutine_create(void (*routine)(void *), void *arg) {
-@@ -341,2 +708,3 @@ long swoole_coroutine_create(void (*routine)(void *), void *arg) {
+@@ -341,2 +664,3 @@ long swoole_coroutine_create(void (*routine)(void *), void *arg) {
  }
 +#endif // SWR_ENTRY_END
  
-@@ -347,2 +715,5 @@ long swoole_coroutine_get_id() {
- swoole::Coroutine *swoole_coroutine_get(long cid) {
-+#if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE && defined(SWOOLE_RS_COROUTINE_REGISTRY_V2)
-+    return swoole::Coroutine::coroutines.lookup(cid);
-+#else // SWR_CID_LOOKUP_NATIVE
-     auto i = swoole::Coroutine::coroutines.find(cid);
-@@ -353,2 +724,3 @@ swoole::Coroutine *swoole_coroutine_get(long cid) {
-     }
-+#endif // SWR_CID_LOOKUP_END
- }
-@@ -362,3 +734,7 @@ size_t swoole_coroutine_count() {
-  */
-+#ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
-+static swoole::RustCoroutineRegistry<swoole::Coroutine>::iterator gdb_iterator_;
-+#else
- static std::unordered_map<long, swoole::Coroutine *>::iterator gdb_iterator_;
-+#endif
- 
 diff --git a/src/coroutine/channel.cc b/src/coroutine/channel.cc
-index fc02f2ddb..f0a83bee8 100644
+index fc02f2d..f0a83be 100644
 --- a/src/coroutine/channel.cc
 +++ b/src/coroutine/channel.cc
 @@ -18,2 +18,7 @@

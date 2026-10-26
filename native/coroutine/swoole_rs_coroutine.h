@@ -26,18 +26,11 @@ typedef struct { int32_t action; long cid; } swr_v1_coroutine_creation_action;
 enum { SWR_CO_CREATE_DONE=0, SWR_CO_CREATE_INSERT=1, SWR_CO_CREATE_COUNT=2, SWR_CO_CREATE_ACTIVATE=3,
        SWR_CO_CREATE_ALLOCATION=-3, SWR_CO_CREATE_INVALID=-4 };
 long swr_v1_coroutine_cid_read(const swr_v1_coroutine_cid *);
-uintptr_t swr_v1_coroutine_registry_lookup(const void *, long);
-size_t swr_v1_coroutine_registry_erase(void *, long);
-size_t swr_v1_coroutine_unregister(void *, const swr_v1_coroutine_cid *);
 
 typedef struct { void *token; } swr_v1_coroutine_identity;
 enum { SWR_CO_IDENTITY_ENTER = 0, SWR_CO_IDENTITY_LEAVE = 1 };
 void *swr_v1_coroutine_identity_read(const swr_v1_coroutine_identity *);
 void swr_v1_coroutine_identity_publish(swr_v1_coroutine_identity *, void *);
-/* Whole print effects: done/first-object-offset/object/print/abort. */
-typedef struct { const void *entry; uint32_t phase; } swr_v1_coroutine_registry_print_cursor;
-typedef struct { uint32_t action; long cid; uintptr_t token; const char *label; } swr_v1_coroutine_registry_print_action;
-swr_v1_coroutine_registry_print_action swr_v1_coroutine_registry_print_step(const void *, swr_v1_coroutine_registry_print_cursor *, const void *, size_t);
 /* Whole entry effects: available/init/activate/create/wait/deactivate/done. */
 typedef struct { uint32_t mode, phase; uint8_t managed; long cid; } swr_v1_coroutine_entry_cursor;
 typedef struct { uint32_t action; long result; } swr_v1_coroutine_entry_action;
@@ -153,7 +146,7 @@ typedef struct {
     uint64_t peak_num;
     uint8_t activated;
 } swr_v1_coroutine_scheduler;
-swr_v1_coroutine_creation_action swr_v1_coroutine_create_step(swr_v1_coroutine_creation_cursor *, swr_v1_coroutine_scheduler *, swr_v1_coroutine_cid *, void **, uintptr_t, size_t);
+swr_v1_coroutine_creation_action swr_v1_coroutine_create_step(swr_v1_coroutine_creation_cursor *, swr_v1_coroutine_scheduler *, swr_v1_coroutine_cid *, size_t);
 enum { SWR_CO_STACK_MIN = 64 * 1024, SWR_CO_STACK_MAX = 16 * 1024 * 1024, SWR_CO_STACK_ALIGNMENT = 4 * 1024 };
 long swr_v1_coroutine_scheduler_next_id(swr_v1_coroutine_scheduler *);
 uint32_t swr_v1_coroutine_scheduler_registration(const swr_v1_coroutine_scheduler *, size_t count, uint32_t stage);
@@ -171,15 +164,6 @@ long swr_v1_coroutine_timing_usage(const swr_v1_coroutine_timing *, long now);
  * spans are written/read; usage requires those spans already initialized. */
 void swr_v1_context_stack_mark(uint8_t *stack, size_t size);
 size_t swr_v1_context_stack_usage(const uint8_t *stack, size_t size);
-/* Opaque registry capability. Cursors borrow entry identity, never a Rust reference. */
-typedef struct { long cid; uintptr_t token; const void *next; } swr_v1_coroutine_registry_entry;
-int32_t swr_v1_coroutine_registry_insert(void **owner, long cid, uintptr_t token);
-void swr_v1_coroutine_registry_remove(void *owner, long cid);
-const void *swr_v1_coroutine_registry_find(const void *owner, long cid);
-size_t swr_v1_coroutine_registry_count(const void *owner);
-const void *swr_v1_coroutine_registry_first(const void *owner);
-swr_v1_coroutine_registry_entry swr_v1_coroutine_registry_item(const void *cursor);
-void swr_v1_coroutine_registry_drop(void **owner);
 #ifdef __cplusplus
 }
 static_assert(sizeof(swr_v1_coroutine_plan) == 16, "coroutine plan ABI");
