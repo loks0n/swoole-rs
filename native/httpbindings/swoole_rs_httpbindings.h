@@ -43,13 +43,6 @@ int32_t swr_v1_httpbindings_codec(int32_t, uint32_t, uint32_t, size_t, uint32_t)
 int32_t swr_v1_httpbindings_codec_level(int32_t, int32_t, int32_t, int32_t);
 int32_t swr_v1_httpbindings_response_header(swr_v1_httpbindings_text);
 enum {
- SWR_HTTPBINDINGS_RESPONSE_APPEND=1, SWR_HTTPBINDINGS_RESPONSE_SERVER,
- SWR_HTTPBINDINGS_RESPONSE_DATE, SWR_HTTPBINDINGS_RESPONSE_TYPE,
- SWR_HTTPBINDINGS_RESPONSE_ASSERT_CHUNKED, SWR_HTTPBINDINGS_RESPONSE_COMPRESS,
- SWR_HTTPBINDINGS_RESPONSE_ENCODING, SWR_HTTPBINDINGS_RESPONSE_LENGTH,
- SWR_HTTPBINDINGS_RESPONSE_PUBLISH, SWR_HTTPBINDINGS_RESPONSE_DONE
-};
-enum {
  SWR_HTTPBINDINGS_WRITE_HTTP2=1, SWR_HTTPBINDINGS_WRITE_BUFFER,
  SWR_HTTPBINDINGS_WRITE_HEADER, SWR_HTTPBINDINGS_WRITE_READ,
  SWR_HTTPBINDINGS_WRITE_EMPTY, SWR_HTTPBINDINGS_WRITE_CHUNK,
@@ -77,7 +70,6 @@ enum {
 };
 int32_t swr_v1_httpbindings_file(uint32_t *, uint32_t);
 int32_t swr_v1_httpbindings_file_range(int64_t, int64_t, int64_t, int64_t *);
-int32_t swr_v1_httpbindings_response_tail(uint32_t *, uint32_t, uint32_t, size_t, swr_v1_httpbindings_action *);
 int32_t swr_v1_httpbindings_response_key(uint8_t *, size_t);
 typedef struct { uint32_t entry, alias, stage; } swr_v1_httpbindings_settings_cursor;
 enum {
