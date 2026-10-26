@@ -1,18 +1,13 @@
-#!/usr/bin/env python3
 """Pinned Swoole malformed/control/aggregate network-policy compatibility gate."""
-import argparse
-from datetime import datetime, timezone
-import json
+import contextlib
 from pathlib import Path
 import struct
-import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+import pytest
+
 from corpus.run import WebSocket, expect
-from tools.harness import ROOT, parse_engines, request, server, write_report
-from close_probe import frame
-
-from tools.build_upstream import COMMIT as PIN
+from tools.harness import request, server
+from test_close import frame
 
 
 def wire(payload, opcode, final=True, masked=True):
@@ -85,32 +80,25 @@ def run_case(port, name, data, expected):
     return row
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--engine', action='append', required=True)
-    parser.add_argument('--php', default='php')
-    parser.add_argument('--php-extension', action='append', default=[])
-    parser.add_argument('--output', default=str(ROOT / 'target/reports/websocket-invalid.json'))
-    args = parser.parse_args()
-    entry = Path(__file__).with_suffix('.php')
-    report = {'created_utc': datetime.now(timezone.utc).isoformat(), 'upstream_commit': PIN,
-              'scope': 'Explicit pinned policy, not RFC conformance. Each case uses a fresh socket; rejected connections must terminate (EOF/reset), timeout fails. Accepted controls have a text reply barrier. HTTP health checked after every case. Configured and effective aggregate payload limit65536 (native minimum); each fragment wire length below65536. This supplements original PHPTs without replacing their outcomes.',
-              'engines': [], 'results': []}
-    for engine in parse_engines(args.engine, args.php, args.php_extension):
-        report['engines'].append(engine.metadata())
-        row = {'engine': engine.name, 'cases': [], 'passed': False}
-        try:
-            with server(engine, entry) as (port, _):
-                row['cases'] = [run_case(port, *case) for case in scenarios()]
-            expect(len(row['cases']), 20)
-            row['passed'] = all(case['passed'] for case in row['cases'])
-        except Exception as error:
-            row['error'] = f'{type(error).__name__}: {error}'
-        report['results'].append(row)
-    write_report(args.output, report)
-    print(json.dumps(report['results']))
-    return int(any(not row['passed'] for row in report['results']))
+@pytest.fixture(scope='module')
+def ports():
+    """One server per engine for all of its cases, as the pinned gate ran them."""
+    with contextlib.ExitStack() as stack:
+        started = {}
+
+        def port(engine):
+            if engine.name not in started:
+                started[engine.name] = stack.enter_context(server(engine, Path(__file__).with_name('invalid.php')))[0]
+            return started[engine.name]
+        yield port
 
 
-if __name__ == '__main__':
-    sys.exit(main())
+@pytest.mark.parametrize('name,data,expected', scenarios(), ids=[row[0] for row in scenarios()])
+def test_invalid(engine, ports, name, data, expected):
+    """Explicit pinned policy, not RFC conformance. Each case uses a fresh socket;
+    rejected connections must terminate (EOF/reset), a timeout fails. Accepted controls
+    have a text reply barrier, and HTTP health is checked after every case. Aggregate
+    payload limit 65536 (native minimum)."""
+    assert len(scenarios()) == 20
+    row = run_case(ports(engine), name, data, expected)
+    assert row['passed'], row

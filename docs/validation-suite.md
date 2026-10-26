@@ -11,9 +11,9 @@ PHPTs (see [hybrid build](hybrid-build.md)). `EXT` is a path to a built
 | Buffer backpressure/lifecycle | `python3 tests/modules/buffer/lifecycle.py --engine upstream=EXT --engine hybrid=EXT`, or corpus project `11-buffer-lifecycle` |
 | Native buffer benchmark | `python3 tests/modules/buffer/benchmark.py --build-manifest target/hybrid/rust-buffer-websocket/build-manifest.json --iterations 50000 --repeat 5 --output target/reports/buffer-benchmark.json` (`--peek-front` reads each front before pop; `--previous-build-manifest` adds an older build to the same trial series) |
 | Original upstream PHPTs | `python3 corpus/upstream/run.py --engine NAME=EXT --require-all` |
-| WebSocket length prefixes vs pinned C++ | `python3 tests/modules/websocket/prefix.py --sanitize` |
-| WebSocket raw transport | `python3 tests/modules/websocket/close_probe.py --engine upstream=EXT --engine hybrid=EXT` |
-| WebSocket invalid-frame policy | `python3 tests/modules/websocket/invalid.py --engine upstream=EXT --engine hybrid=EXT` |
+| WebSocket length prefixes vs pinned C++ | `python3 -m pytest tests/modules/websocket/test_prefix.py --sanitize --manifest MANIFEST` |
+| WebSocket raw transport | `python3 -m pytest tests/modules/websocket/test_close.py --engine upstream=EXT --engine hybrid=EXT` |
+| WebSocket invalid-frame policy | `python3 -m pytest tests/modules/websocket/test_invalid.py --engine upstream=EXT --engine hybrid=EXT` |
 | Autobahn RFC suite | `python3 tests/modules/websocket/autobahn.py --engine upstream=EXT --engine hybrid=EXT` |
 | Timer model / kernel / adapter / fork | `python3 -m pytest tests/modules/timer --sanitize --manifest MANIFEST --engine upstream=EXT --engine timer=EXT` |
 | Pinned Hyperf skeleton | `python3 corpus/thirdparty/hyperf.py --prepare`, then corpus project `12-hyperf-skeleton` ([scope](../corpus/thirdparty/README.md)) |

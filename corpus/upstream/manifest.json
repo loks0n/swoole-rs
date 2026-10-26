@@ -299,6 +299,16 @@
       ]
     },
     {
+      "path": "tests/swoole_websocket_server/pack_compression_incompressible.phpt",
+      "sha256": "724476093eb6b83bc4ceff1abd3006e36b4f860461505cc227c056763f8cdd56",
+      "module": "websocket",
+      "requires": [
+        "upstream_test_bootstrap",
+        "websocket_codec",
+        "zlib"
+      ]
+    },
+    {
       "path": "tests/swoole_websocket_server/recv_decode.phpt",
       "sha256": "c5e7ba1ee15f4df8fb8d9db5651c77508c656ed318c40f94f32f220e1cf5ee59",
       "module": "websocket-network",
@@ -516,6 +526,21 @@
     {
       "path": "tests/swoole_websocket_server/compression.phpt",
       "sha256": "75307bb5a7dd3298c5e1a7383a08a10ddf47f283bee577e8c8c2c181bd644c36",
+      "module": "websocket-network",
+      "requires": [
+        "upstream_test_bootstrap",
+        "websocket",
+        "coroutines",
+        "event_loop",
+        "processes",
+        "atomics",
+        "coroutine_http_client",
+        "php_sockets"
+      ]
+    },
+    {
+      "path": "tests/swoole_websocket_server/compression_incompressible.phpt",
+      "sha256": "011c3a2f529b46b5c9b082be92fa1410a5f127fd477ead340c9d0e62da0b3103",
       "module": "websocket-network",
       "requires": [
         "upstream_test_bootstrap",

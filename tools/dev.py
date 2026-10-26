@@ -826,17 +826,15 @@ def plan(args, reports):
             script('buffer-model', 'tests/modules/buffer/model.py', '--build-manifest', manifest, '--sanitize', *report('buffer-model'))
         script('buffer-network', 'tests/modules/buffer/network.py', '--php', args.php, *engines, *report('buffer-network'))
     if 'websocket' in modules:
-        script('websocket-kernel', 'tests/modules/websocket/test_kernel.py', '--archive',
-               manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize')
-        script('websocket-codec', 'tests/modules/websocket/codec.py', '--archive',
-               manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report('websocket-codec'))
-        script('websocket-prefix', 'tests/modules/websocket/prefix.py', '--build-manifest', manifest, '--sanitize', *report('websocket-prefix'))
-        comparison = ['--engine', f'hybrid={hybrid}', '--engine', f'upstream={reference}']
-        script('websocket-differential', 'tests/modules/websocket/differential.py', *php, *comparison, *report('websocket-differential'))
-        script('websocket-invalid', 'tests/modules/websocket/invalid.py', *php, *engines, *report('websocket-invalid'))
+        archive = manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a'
+        pytest('websocket-kernel', 'tests/modules/websocket/test_kernel.py', '--archive', archive, '--sanitize')
+        pytest('websocket-codec', 'tests/modules/websocket/test_codec.py', '--archive', archive, '--sanitize')
+        pytest('websocket-prefix', 'tests/modules/websocket/test_prefix.py', '--manifest', manifest, '--sanitize')
+        pytest('websocket-differential', 'tests/modules/websocket/test_differential.py', *php,
+               '--engine', f'upstream={reference}', '--engine', f'hybrid={hybrid}')
+        pytest('websocket-invalid', 'tests/modules/websocket/test_invalid.py', *php, *engines)
         if integrate:
-            script('websocket-close', 'tests/modules/websocket/close_probe.py', '--php', args.php,
-                   *engines, *report('websocket-close'))
+            pytest('websocket-close', 'tests/modules/websocket/test_close.py', '--php', args.php, *engines)
     if repair:
         tls13_python = getattr(args, 'tls13_python', None) or python
         add('halfclose-tls13-driver', tls13_python, '-I', '-S', '-B', '-c', TLS13_PROBE)
@@ -865,9 +863,6 @@ def plan(args, reports):
         script('halfclose-tls-native', 'tests/modules/halfclose/tls_shutdown.py',
                '--source', manifest.parent / 'src', '--cert', certs / 'server.crt',
                '--key', certs / 'server.key', *openssl, *report('halfclose-tls-native'))
-    if 'websocket' in modules and integrate:
-        script('websocket-originals', 'tests/modules/websocket/upstream.py', '--source', ROOT / 'target/upstream/src',
-               *php, *engines, *report('websocket-originals'))
     if integrate and 'http' in modules:
         reference_first = ['--engine', f'upstream={reference}',
                            '--engine', f'hybrid={hybrid}']
