@@ -205,9 +205,10 @@ jobs:
           tool: cargo-fuzz
       - working-directory: fuzz
         run: |
-          for target in base64_decode base64_encode; do
+          for target in base64_decode base64_encode ws_decode ws_frame_length ws_mask; do
             mkdir -p corpus/$target
-            cargo +nightly fuzz run $target corpus/$target seeds/$target -- -dict=base64.dict -max_total_time=60
+            dict=$([ -f ${target%%_*}.dict ] && echo -dict=${target%%_*}.dict)
+            cargo +nightly fuzz run $target corpus/$target seeds/$target -- $dict -max_total_time=60
           done
       - uses: actions/upload-artifact@v4
         if: failure()

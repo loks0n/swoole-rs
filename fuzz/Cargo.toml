@@ -12,6 +12,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 swoole-rs-base64 = { path = "../crates/base64" }
 swoole-rs-oracle = { path = "../crates/oracle" }
+swoole-rs-websocket = { path = "../crates/websocket" }
 
 [[bin]]
 name = "base64_decode"
@@ -23,6 +24,27 @@ bench = false
 [[bin]]
 name = "base64_encode"
 path = "fuzz_targets/base64_encode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ws_decode"
+path = "fuzz_targets/ws_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ws_frame_length"
+path = "fuzz_targets/ws_frame_length.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ws_mask"
+path = "fuzz_targets/ws_mask.rs"
 test = false
 doc = false
 bench = false
