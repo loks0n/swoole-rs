@@ -19,7 +19,7 @@ class TransferFallback(unittest.TestCase):
             before, after = body(original, signature), body(selected, signature)
             fallback = after.rsplit('#else\n', 1)[1].rsplit('#endif', 1)[0]
             self.assertEqual(fallback, before)
-            self.assertIn('swr_v1_phpcoroutines_transfer(', after)
+            self.assertIn('swr_coro_transfer_next(', after)
             # Every native write/copy/helper effect is carried verbatim; only
             # the surrounding presence/order policy crosses the Rust boundary.
             new_body = after.split('#else\n', 1)[0]

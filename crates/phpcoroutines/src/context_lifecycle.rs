@@ -64,12 +64,41 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_lifecycle(
     kind: u32,
     observation: i64,
 ) -> u32 {
-    use Action::*;
     // SAFETY: per this function's `# Safety` contract, `stage` is live, aligned and exclusive.
     let stage = unsafe { &mut *stage };
+    let (action, next) = step(*stage, kind, observation);
+    *stage = next;
+    action
+}
+
+/// Table steps cover stages below this; every lifecycle finishes before reaching it.
+const STAGES: usize = 16;
+
+/// [`step`] for every kind, stage and observation, indexed `(kind * 16 + stage) * 2 + observation`,
+/// so native code steps with a load instead of a call. Built at compile time from the same `step`.
+#[unsafe(export_name = "swr_v1_phpcoroutines_lifecycle_table")]
+pub static LIFECYCLE_TABLE: [crate::transfer::Step; 6 * STAGES * 2] = {
+    let mut table = [crate::transfer::Step::DONE; 6 * STAGES * 2];
+    let mut index = 0;
+    while index < table.len() {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "kinds and stages are below 16"
+        )]
+        let (kind, stage) = ((index / (STAGES * 2)) as u32, (index / 2 % STAGES) as u32);
+        let (action, next) = step(stage, kind, if index % 2 == 0 { 0 } else { 1 });
+        table[index] = crate::transfer::Step::new(action, next, STAGES);
+        index += 1;
+    }
+    table
+};
+
+/// One lifecycle step from `stage`: the action, and the stage after it (`u32::MAX` once done).
+const fn step(mut stage: u32, kind: u32, observation: i64) -> (u32, u32) {
+    use Action::*;
     loop {
-        let current = *stage;
-        *stage = current.saturating_add(1);
+        let current = stage;
+        stage = current.saturating_add(1);
         let action = match kind {
             0 => match current {
                 0 => CtorInit,
@@ -102,7 +131,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_lifecycle(
                 3 => MainFiber,
                 4 if observation != 0 => MainUserFunction,
                 4 => {
-                    *stage = 6;
+                    stage = 6;
                     continue;
                 }
                 5 if observation != 0 => MainNotify,
@@ -132,7 +161,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_lifecycle(
                 2 => DestroyOutput,
                 3 if observation != 0 => DestroySaveHeaders,
                 3 => {
-                    *stage = 7;
+                    stage = 7;
                     continue;
                 }
                 4 => DestroyActive,
@@ -164,10 +193,10 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_lifecycle(
             },
             _ => Done,
         };
-        if action == Done {
-            *stage = u32::MAX;
+        if matches!(action, Done) {
+            stage = u32::MAX;
         }
-        return action as u32;
+        return (action as u32, stage);
     }
 }
 
@@ -257,5 +286,20 @@ mod tests {
         }
         assert_eq!(trace(4, &[0]), vec![39, 40]);
         assert_eq!(trace(4, &[1]), vec![39, 40, 41]);
+    }
+
+    #[test]
+    fn table_matches_step() {
+        for kind in 0..6u32 {
+            for stage in 0..16u32 {
+                for observation in 0..2usize {
+                    let entry = LIFECYCLE_TABLE
+                        [(kind as usize * STAGES + stage as usize) * 2 + observation];
+                    let (action, next) = step(stage, kind, i64::from(observation == 1));
+                    assert_eq!(u32::from(entry.action), action);
+                    assert_eq!(u32::from(entry.next), if action == 0 { 255 } else { next });
+                }
+            }
+        }
     }
 }
