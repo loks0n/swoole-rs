@@ -334,13 +334,8 @@ def plan(args, reports):
                *(['--sockets-owned'] if getattr(args, 'reactor_sockets_owned', False) else []),
                '--report', reports / 'reactor-compile.json')
     if typed_buffer(args):
-        script('buffer-typed-layout', 'tests/modules/buffer/typed_layout.py',
-               '--source', ROOT / 'target/upstream/src',
-               '--report', reports / 'buffer-typed-layout.json')
-        script('buffer-typed', 'tests/modules/buffer/typed.py',
-               '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
-               '--report', reports / 'buffer-typed.json')
+        pytest('buffer-typed-layout', 'tests/modules/buffer/test_typed_layout.py')
+        pytest('buffer-typed', 'tests/modules/buffer/test_typed.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize')
         script('reactor-buffer-typed-compile', 'tests/modules/reactor/buffer_typed_compile.py',
                '--source', ROOT / 'target/upstream/src',
                '--master-patch', ROOT / 'migration/patches/integration/0003-server-static-config.patch',
@@ -782,23 +777,17 @@ def plan(args, reports):
             pytest('timer-native', 'tests/modules/timer/test_adapter.py', '--manifest', manifest, *php,
                    *(['--sanitize'] if sys.platform == 'darwin' else []))
     if 'buffer' in modules:
-        script('buffer-string-compatibility', 'tests/modules/buffer/string/compatibility.py',
-               '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-               '--sanitize', *report('buffer-string-compatibility'))
+        pytest('buffer-string-compatibility', 'tests/modules/buffer/string/test_compatibility.py',
+               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize')
         if integrate and getattr(args, 'php_sockets', False):
             script('php-sockets-sendfile-original', 'corpus/upstream/run.py',
                    '--source', manifest.parent / 'src', '--manifest', ROOT / 'tests/modules/buffer/originals.json',
                    '--case', 'tests/swoole_server/sendfile_02.phpt', *php_for('curl', 'sockets'),
                    *engines, '--require-all', '--isolate-cases', *report('php-sockets-sendfile-original'))
-        script('buffer-facade', 'tests/modules/buffer/facade.py', '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report('buffer-facade'))
-        script('buffer-native', 'tests/modules/buffer/hybrid.py', '--build-manifest', manifest, '--sanitize', *report('buffer-native'))
-        script('buffer-callbacks', 'tests/modules/buffer/callbacks.py', '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('buffer-callbacks'))
-        script('buffer-posix-iovec', 'tests/modules/buffer/iovec.py', '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
-               *report('buffer-posix-iovec'))
+        pytest('buffer-facade', 'tests/modules/buffer/test_facade.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize')
+        pytest('buffer-native', 'tests/modules/buffer/test_native.py', '--manifest', manifest, '--sanitize')
+        pytest('buffer-callbacks', 'tests/modules/buffer/test_callbacks.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a')
+        pytest('buffer-posix-iovec', 'tests/modules/buffer/test_iovec.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize')
         if integrate:
             for consumer in ['random', 'storage', 'metadata', 'facade', 'copy', 'split', 'integer', 'ownership', 'allocation', 'format', 'compatibility']:
                 name = 'string-production-' + consumer
@@ -823,8 +812,8 @@ def plan(args, reports):
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', '--transition-only',
                *report('string-transitions'))
         if integrate:
-            script('buffer-model', 'tests/modules/buffer/model.py', '--build-manifest', manifest, '--sanitize', *report('buffer-model'))
-        script('buffer-network', 'tests/modules/buffer/network.py', '--php', args.php, *engines, *report('buffer-network'))
+            pytest('buffer-model', 'tests/modules/buffer/test_model.py', '--manifest', manifest, '--sanitize')
+        pytest('buffer-network', 'tests/modules/buffer/test_network.py', '--php', args.php, *engines)
     if 'websocket' in modules:
         archive = manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a'
         pytest('websocket-kernel', 'tests/modules/websocket/test_kernel.py', '--archive', archive, '--sanitize')

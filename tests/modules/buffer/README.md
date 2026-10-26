@@ -6,7 +6,8 @@ Native runners extract sources from pinned upstream
 `c7e514509451beafd4d70ce5b78943d51e76381c` into a disposable tree, apply the
 patches from `migration/patches/buffer/manifest.json` (checksum and destinations
 checked by `staging.py`) and link a supplied Rust archive. They never rebuild the
-archive. `--sanitize` adds C++ ASan/UBSan; the Rust archive is not instrumented
+archive. The `test_*.py` gates run under pytest (`python3 -m pytest tests/modules/buffer/<file>`) with the
+shared options in `tests/conftest.py` and read sources from `target/upstream/src`. `--sanitize` adds C++ ASan/UBSan; the Rust archive is not instrumented
 unless built that way and declared with `--rust-asan` (see below).
 
 ## Native queue gates
@@ -14,20 +15,20 @@ unless built that way and declared with `--rust-asan` (see below).
 | Command | Checks |
 | --- | --- |
 | `baseline.py --sanitize` | Pinned upstream only: original `core-tests/src/memory/buffer.cpp` assertions (64 seeded runs) plus a scatter/gather matrix that records upstream defects. |
-| `hybrid.py --build-manifest M --sanitize` (or `--archive A`) | Same originals against the patched facade and Rust queue; the matrix must have zero byte/accounting mismatches. Also C ABI validation, native-token ownership, cached front identity, DATA callbacks on live bytes and quiescent fork. |
-| `model.py --build-manifest M --sanitize` (or `--archive A`) | Six seeded 64-step sequences against an independent C++ reference queue, six facade sequences, and a fixture that replays each sequence once per allocation ordinal with that allocation failing. Failed operations must leave queue state unchanged. Details: [model.md](model.md). |
-| `facade.py --source S --archive A --output R [--sanitize] [--rust-asan]` | Six seeded facade lifecycles (binary data, CLOSE tokens, partial offsets, mixed teardown); native and selected outcomes must match. |
-| `iovec.py --source S --archive A --output R [--sanitize]` | Twelve positive POSIX iovec append cases; native and selected layout and observation counts must match. |
-| `callbacks.py --source S --archive A --output R` | A throwing destroy callback must reach `std::terminate` (exit 77) for DATA pop, native-token pop and teardown in both engines. |
-| `typed.py --source S --archive A --report R [--sanitize]` | Typed queue facade compiled and run under C++14/17/20. |
-| `typed_layout.py --source S --report R` | `Buffer`/`BufferChunk` sizes and offsets under typed ON/omitted/zero; omitted and zero must preprocess to the same declaration as the control header. |
+| `test_native.py --manifest M --sanitize` (or `--archive A`) | Same originals against the patched facade and Rust queue; the matrix must have zero byte/accounting mismatches. Also C ABI validation, native-token ownership, cached front identity, DATA callbacks on live bytes and quiescent fork. |
+| `test_model.py --manifest M --sanitize` (or `--archive A`) | Six seeded 64-step sequences against an independent C++ reference queue, six facade sequences, and a fixture that replays each sequence once per allocation ordinal with that allocation failing. Failed operations must leave queue state unchanged. Details: [model.md](model.md). |
+| `test_facade.py --archive A [--sanitize] [--rust-asan]` | Six seeded facade lifecycles (binary data, CLOSE tokens, partial offsets, mixed teardown); native and selected outcomes must match. |
+| `test_iovec.py --archive A [--sanitize]` | Twelve positive POSIX iovec append cases; native and selected layout and observation counts must match. |
+| `test_callbacks.py --archive A` | A throwing destroy callback must reach `std::terminate` (exit 77) for DATA pop, native-token pop and teardown in both engines. |
+| `test_typed.py --archive A [--sanitize]` | Typed queue facade compiled and run under C++14/17/20. |
+| `test_typed_layout.py` | `Buffer`/`BufferChunk` sizes and offsets under typed ON/omitted/zero; omitted and zero must preprocess to the same declaration as the control header. |
 
 Run as `python3 tests/modules/buffer/<script>`; `S` is the pinned upstream
 checkout (`target/upstream/src`).
 
 ## PHP gates
 
-- `network.py --engine NAME=SO ... [--php PHP]`: ordered 4 MiB streaming, server
+- `test_network.py --engine NAME=SO ... [--php PHP]`: ordered 4 MiB streaming, server
   reported queued bytes, sendfile offset/length, keep-alive and health after a
   cancelled response.
 - `lifecycle.py --engine NAME=SO ... [--php-extension EXT]`: slow readers,
@@ -54,7 +55,7 @@ adds a previous hybrid build to the comparison.
 
 ## Rust ASan
 
-`hybrid.py`, `facade.py` and `string/gate.py` accept `--rust-asan` with
+`test_native.py`, `test_facade.py` and `string/gate.py` accept `--rust-asan` with
 `--sanitize` for an archive built with Rust ASan. They refuse archives without
 `__asan_report_` imports. Build such an archive on Linux with
 `RUSTC_BOOTSTRAP=1 RUSTFLAGS='-Zsanitizer=address -Zexternal-clangrt=yes' cargo build --locked --offline -p swoole-rs-buffer --release --target=aarch64-unknown-linux-gnu`;
