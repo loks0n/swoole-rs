@@ -17,7 +17,7 @@
     },
     {
       "path": "0003-string-storage.patch",
-      "sha256": "f9f6928dcf0be9a76d12844ce9fe450e12e88a3e23e651993a16274e07a3f09b",
+      "sha256": "a6e27965cf3415f832aa1dfe5afb07b3ab4910d706bf896a191404405bfd244b",
       "upstream_paths": [
         "include/swoole_string.h",
         "src/core/string.cc"

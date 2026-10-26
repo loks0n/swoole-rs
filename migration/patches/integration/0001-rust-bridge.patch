@@ -1,8 +1,8 @@
 diff --git a/config.m4 b/config.m4
-index 230b1c09a..a59fd65f7 100644
+index 230b1c0..b12c9ac 100644
 --- a/config.m4
 +++ b/config.m4
-@@ -38,2 +38,187 @@ PHP_ARG_ENABLE([swoole],
+@@ -38,2 +38,182 @@ PHP_ARG_ENABLE([swoole],
  
 +PHP_ARG_WITH([swoole-rs],
 +  [Rust migration bridge prefix],
@@ -18,11 +18,6 @@ index 230b1c09a..a59fd65f7 100644
 +  [Rust buffer queue],
 +  [AS_HELP_STRING([--enable-swoole-rs-buffer],
 +    [Use the Rust buffer queue (requires --with-swoole-rs)])], [no], [no])
-+
-+PHP_ARG_ENABLE([swoole-rs-string-direct-fields],
-+  [Experimental same-storage String field operations],
-+  [AS_HELP_STRING([--enable-swoole-rs-string-direct-fields],
-+    [Use String field operations (requires Rust Buffer and qualified Native ABI)])], [no], [no])
 +
 +PHP_ARG_ENABLE([swoole-rs-buffer-typed],
 +  [Experimental sole Rust Buffer cursor and typed consumers],
@@ -190,7 +185,7 @@ index 230b1c09a..a59fd65f7 100644
 +    [Use Rust PHP Coroutine policy (requires --with-swoole-rs)])], [no], [no])
 +
  PHP_ARG_ENABLE([mysqlnd],
-@@ -1301,2 +1486,336 @@ EOF
+@@ -1301,2 +1481,315 @@ EOF
  
 +    if test "$PHP_SWOOLE_RS_WEBSOCKET" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust WebSocket kernel requires --with-swoole-rs=DIR])
@@ -300,11 +295,6 @@ index 230b1c09a..a59fd65f7 100644
 +    if test "$PHP_SWOOLE_RS_PHPCOROUTINES" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust PHP Coroutine policy requires --with-swoole-rs=DIR])
 +    fi
-+    if test "$PHP_SWOOLE_RS_STRING_DIRECT_FIELDS" != "no"; then
-+        if test "$PHP_SWOOLE_RS" = "no" || test "$PHP_SWOOLE_RS_BUFFER" = "no"; then
-+            AC_MSG_ERROR([String direct fields require --with-swoole-rs and --enable-swoole-rs-buffer])
-+        fi
-+    fi
 +    if test "$PHP_SWOOLE_RS" != "no"; then
 +        if test "$PHP_SWOOLE_RS" = "yes"; then
 +            AC_MSG_ERROR([--with-swoole-rs requires a prefix directory])
@@ -317,22 +307,6 @@ index 230b1c09a..a59fd65f7 100644
 +        fi
 +        if test "$PHP_SWOOLE_RS_BUFFER" != "no"; then
 +            AC_DEFINE(SWOOLE_RS_BUFFER, 1, [Use the Rust buffer queue])
-+        fi
-+        if test "$PHP_SWOOLE_RS_STRING_DIRECT_FIELDS" != "no"; then
-+            AC_LANG_PUSH([C++])
-+            swr_string_fields_CPPFLAGS="$CPPFLAGS"
-+            CPPFLAGS="$CPPFLAGS -I$PHP_SWOOLE_RS/include"
-+            AC_MSG_CHECKING([for the qualified same-storage String field ABI])
-+            AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
-+#define SWOOLE_RS_BUFFER 1
-+#define SWOOLE_RS_STRING_DIRECT_FIELDS 1
-+#include "swoole_rs_string_fields.h"
-+static_assert(sizeof(off_t) == 8, "String offset ABI");
-+int main(void) { return 0; }
-+            ]])], [AC_MSG_RESULT([yes])], [AC_MSG_FAILURE([String direct fields require the qualified Native compiler/target and staged concrete schema])])
-+            CPPFLAGS="$swr_string_fields_CPPFLAGS"
-+            AC_LANG_POP([C++])
-+            AC_DEFINE(SWOOLE_RS_STRING_DIRECT_FIELDS, 1, [Use experimental same-storage String field operations])
 +        fi
 +        if test "$PHP_SWOOLE_RS_BUFFER_TYPED" != "no"; then
 +            if test "$PHP_SWOOLE_RS_BUFFER" = "no" || test "$PHP_SWOOLE_RS_REACTOR" = "no"; then
@@ -528,7 +502,7 @@ index 230b1c09a..a59fd65f7 100644
 +
      if test "$PHP_MYSQLND" = "yes"; then
 diff --git a/ext-src/php_swoole.cc b/ext-src/php_swoole.cc
-index 66f2386f2..2fa28811a 100644
+index 66f2386..2fa2881 100644
 --- a/ext-src/php_swoole.cc
 +++ b/ext-src/php_swoole.cc
 @@ -21,2 +21,7 @@

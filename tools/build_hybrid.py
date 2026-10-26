@@ -46,8 +46,7 @@ def http_storage_capabilities(args):
 
 def storage_suffix(args):
     return (reactor_owned_suffix(args) + ''.join('-http-' + name for name in http_storage_capabilities(args))
-            + ('-buffer-typed' if getattr(args, 'buffer_typed', False) else '')
-            + ('-string-direct-fields' if getattr(args, 'string_direct_fields', False) else ''))
+            + ('-buffer-typed' if getattr(args, 'buffer_typed', False) else ''))
 
 
 def profile_suffix(args):
@@ -360,8 +359,6 @@ def main():
     parser.add_argument('--fix-halfclose', action='store_true', help='Apply the opt-in native queued-close drain repair (not a Rust kernel)')
     parser.add_argument('--buffer-typed', action='store_true',
                         help='Experimental sole Rust Buffer cursor; requires Rust Buffer/Reactor, default off')
-    parser.add_argument('--string-direct-fields', action='store_true',
-                        help='Experimental same-storage String field operations; requires Rust Buffer, default off')
     for name in HTTP_STORAGE_CAPABILITIES:
         parser.add_argument('--http-' + name, action='store_true',
                             help='Experimental Rust HTTP ' + name + '; requires Rust HTTP, default off')
@@ -386,8 +383,6 @@ def main():
             parser.error('--http-' + name + ' requires --backend rust --module http')
     if args.buffer_typed and (args.backend != 'rust' or not {'buffer', 'reactor'} <= set(args.module)):
         parser.error('--buffer-typed requires --backend rust --module buffer --module reactor')
-    if args.string_direct_fields and (args.backend != 'rust' or 'buffer' not in args.module):
-        parser.error('--string-direct-fields requires --backend rust --module buffer')
     with exclusive(ROOT / 'target/hybrid/.builder.lock'):
         return build(args, parser)
 
@@ -428,11 +423,9 @@ def build(args, parser):
     switches += ['--enable-swoole-rs-http-' + name for name in http_storage_capabilities(args)]
     if getattr(args, 'buffer_typed', False):
         switches.append('--enable-swoole-rs-buffer-typed')
-    if getattr(args, 'string_direct_fields', False):
-        switches.append('--enable-swoole-rs-string-direct-fields')
     effective_configure, effective_env = extension_configuration(args, switches)
     headers = headers_for(args.module)
-    inputs = {'string_direct_fields_requested': getattr(args, 'string_direct_fields', False), 'buffer_typed_requested': getattr(args, 'buffer_typed', False), 'php_sockets_requested': getattr(args, 'php_sockets', False), **{'http_' + name.replace('-', '_') + '_requested': name in http_storage_capabilities(args)
+    inputs = {'buffer_typed_requested': getattr(args, 'buffer_typed', False), 'php_sockets_requested': getattr(args, 'php_sockets', False), **{'http_' + name.replace('-', '_') + '_requested': name in http_storage_capabilities(args)
                  for name in HTTP_STORAGE_CAPABILITIES},
               'compiler_cache': compiler_cache_identity(args), 'fix_halfclose': getattr(args, 'fix_halfclose', False), **{'reactor_' + name + '_owned_requested': name in reactor_owned_capabilities(args)
                  for name in REACTOR_OWNED_CAPABILITIES}, 'modules': args.module, 'builder_sha256': digest(__file__), 'php_builder_sha256': digest(ROOT / 'tools/build_upstream.py'),

@@ -56,62 +56,6 @@ def compatibility_inputs(manifest):
 
 
 
-def direct_fields_inputs(manifest, selected_export, native_export, source_ref, required, consumer):
-    """Fail closed on mode/source/config before any PHP/DSO/addon execution."""
-    key='string_direct_fields_requested'
-    requested=manifest.get('inputs',{}).get(key,False)
-    if not isinstance(requested,bool):
-        raise ValueError('Direct fields requested identity must be boolean')
-    if not required and not requested:
-        return None
-    if not required or not requested:
-        raise ValueError('Direct fields requires literal --require-direct-fields and requested=true')
-    if consumer != 'compatibility':
-        raise ValueError('Only exact44 compatibility consumer is qualified for direct-mode readiness')
-    if not re.fullmatch('[0-9a-f]{40}',source_ref):
-        raise ValueError('Direct fields requires literal source SHA')
-    sources={}
-    for path, table in [('crates/buffer/src/string/fields.rs','rust_sources_sha256'),
-                        ('native/buffer/swoole_rs_string_fields.h','headers_sha256')]:
-        value=manifest.get('inputs',{}).get(table,{}).get(path)
-        if not isinstance(value,str) or not re.fullmatch('[0-9a-f]{64}',value):
-            raise ValueError('Direct fields requires concrete source identity: '+path)
-        raw=subprocess.check_output(['git','show',source_ref+':'+path],cwd=ROOT)
-        if hashlib.sha256(raw).hexdigest()!=value:
-            raise ValueError('Direct field source differs from compiled manifest: '+path)
-        sources[path]=value
-    path='migration/patches/buffer/0003-string-storage.patch'
-    entries=[entry for entry in manifest.get('inputs',{}).get('patches',[]) if entry.get('path')==path]
-    if len(entries)!=1 or set(entries[0].get('upstream_paths',[]))!={'src/core/string.cc','include/swoole_string.h'}:
-        raise ValueError('Direct fields requires exact actual String caller overlay')
-    raw=subprocess.check_output(['git','show',source_ref+':'+path],cwd=ROOT)
-    if hashlib.sha256(raw).hexdigest()!=entries[0].get('sha256'):
-        raise ValueError('Direct field caller overlay differs from compiled source')
-    sources[path]=entries[0]['sha256']
-    configs=[]
-    for selected, export_path in [(True,selected_export),(False,native_export)]:
-        export=json.loads(export_path.read_text())
-        for name in ['config.h','build-manifest.json','swoole.so']:
-            if sha(export_path.parent/name)!=export.get('files',{}).get(name,{}).get('sha256'):
-                raise ValueError('Direct field export input changed: '+name)
-        data=json.loads((export_path.parent/'build-manifest.json').read_text())
-        actual=data.get('inputs',{}).get(key,False)
-        if actual is not selected:
-            raise ValueError('Direct fields requires selected ON and Native OFF manifests')
-        if selected and (export.get('source_ref')!=source_ref or data!=manifest):
-            raise ValueError('Direct fields selected export does not bind exact source/manifest')
-        raw=(export_path.parent/'config.h').read_text()
-        values=re.findall(r'^\s*#\s*define\s+SWOOLE_RS_STRING_DIRECT_FIELDS(?:[ \t]+([^\r\n]+))?$',raw,re.MULTILINE)
-        undef=re.findall(r'^\s*#\s*undef\s+SWOOLE_RS_STRING_DIRECT_FIELDS\b',raw,re.MULTILINE)
-        if len(values)>1 or (values and undef) or any(value.strip() not in ['0','1'] for value in values):
-            raise ValueError('Direct fields actual SDK macro is ambiguous or unsupported')
-        enabled=bool(values and values[0].strip()=='1')
-        if enabled is not selected:
-            raise ValueError('Direct fields actual SDK macro does not match selected/Native mode')
-        configs.append(dict(selected=selected,source_ref=export.get('source_ref'),actual_macro=1 if enabled else 0))
-    return dict(sources=sources,configs=configs,scope='Source/config admission only; actual ABI, methods, addon imports and loaded origins remain mandatory')
-
-
 def headers(source, export_path, manifest, destination):
     export = json.loads(export_path.read_text())
     def git(path):
@@ -224,7 +168,6 @@ def main():
     p.add_argument('--php-extension', action='append', default=[])
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--consumer', choices=PROFILES, default='random')
-    p.add_argument('--require-direct-fields', action='store_true', help='Exact44 only; require actual requested/source/config and selected controller origins')
     p.add_argument('--borrow-immutable-exports', action='store_true', help='Borrow exact canonical owner-private export DSOs after source/hash checks; never mutable aliases')
     a = p.parse_args()
     output = a.output.resolve()
@@ -233,7 +176,7 @@ def main():
     work = output.parent / ('string-production-' + uuid.uuid4().hex)
     work.mkdir(parents=True)
     report = dict(passed=False, scope=__doc__, assigned_to='@loks0n', work=str(work),
-                  require_direct_fields=a.require_direct_fields, profile=PROFILES[a.consumer], cases=CASES[a.consumer], broader_failed_gate_replaced=False, extension_mode='borrowed-immutable-exports' if a.borrow_immutable_exports else 'private-copies', borrowed_inputs=[], commands=[], engines=[], results=[],
+                  profile=PROFILES[a.consumer], cases=CASES[a.consumer], broader_failed_gate_replaced=False, extension_mode='borrowed-immutable-exports' if a.borrow_immutable_exports else 'private-copies', borrowed_inputs=[], commands=[], engines=[], results=[],
                   limits=['Genuine loaded production methods are called; addon includes no String/Buffer implementation or linked Rust archive. Source-qualified inline header bodies remain native/control callers.',
                           'Ordinary entropy/Base64 integration; independent strict/canonical PHP decoding, not an entropy-byte oracle or short-read/OOM/lifetime/performance claim.' if a.consumer == 'random' else 'Positive owned storage/metadata supplement only; no unsafe original domain, complete lifetime/parity or performance claim.'])
     def run(command, timeout=60):
@@ -246,9 +189,6 @@ def main():
             raise ValueError('Command failed or warned; first outputs retained')
         return result.stdout
     try:
-        actual_manifest=json.loads(a.build_manifest.read_text())
-        report['direct_fields_source_admission']=direct_fields_inputs(actual_manifest,a.selected_export,
-            a.native_export,a.source_ref,a.require_direct_fields,a.consumer)
         if a.consumer == 'compatibility':
             report['compatibility_source_admission']=compatibility_inputs(json.loads(a.build_manifest.read_text()))
         source = Path(__file__).parent
@@ -305,8 +245,6 @@ def main():
             undefined = subprocess.check_output(['nm', '-u', str(addon)], text=True)
             if any(method not in undefined for method in METHODS[a.consumer]):
                 raise ValueError('Addon does not require the genuine production method')
-            if selected and a.require_direct_fields and '_ZN6swoole6String16initialize_bytesEPKcm' not in undefined:
-                raise ValueError('Direct fields addon lacks actual production constructor bridge')
             if selected and a.consumer == 'compatibility' and '_ZN6swoole6String19set_null_terminatedEv' not in undefined:
                 raise ValueError('Selected compatibility addon lacks actual outlined termination consumer')
             if selected and a.consumer == 'terminator' and '_ZN6swoole6String19set_null_terminatedEv' not in undefined:
@@ -319,8 +257,6 @@ def main():
                 raise ValueError('Selected facade addon lacks actual outlined front consumer')
             engine = Engine(row['name'], Path(row['extension']), a.php, tuple(a.php_extension))
             result = json.loads(run(engine.command('-d', 'extension=' + str(addon), fixture)))
-            if a.consumer=='compatibility' and result.get('direct_fields') is not (selected and a.require_direct_fields):
-                raise ValueError('Actual compiled addon direct mode does not match explicit selected/Native admission')
             if not consumer_inventory(a.consumer, result, selected):
                 raise ValueError('Actual consumer/origin assertion inventory differs')
             if any(image != str(Path(row['extension']).resolve()) for image in [result['method_image'], *result.get('additional_method_images', {}).values()]):
