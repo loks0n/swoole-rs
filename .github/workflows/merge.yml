@@ -21,7 +21,7 @@ jobs:
           shared-key: release
       # rust-cache restores all of target/; hybrid build trees must start clean.
       - run: rm -rf target/hybrid
-      - run: .devcontainer/install.sh
+      - uses: ./.github/actions/install
       # Caches are saved as soon as they are built, so a failing gate later does not discard
       # them; PR branches can only restore caches saved on main.
       - id: upstream
@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: .devcontainer/install.sh
+      - uses: ./.github/actions/install
       - id: upstream
         uses: actions/cache@v4
         with:
@@ -107,7 +107,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - run: .devcontainer/install.sh
+      - uses: ./.github/actions/install
       - uses: actions/cache/restore@v4
         with:
           path: target/upstream
@@ -178,7 +178,9 @@ jobs:
         options: --health-cmd "redis-cli ping" --health-interval 2s --health-retries 30
     steps:
       - uses: actions/checkout@v4
-      - run: .devcontainer/install.sh && sudo apt-get install -yq php-gmp php-bcmath php-mysql php-pgsql
+      - uses: ./.github/actions/install
+        with:
+          packages: php-gmp php-bcmath php-mysql php-pgsql
       - run: echo '127.0.0.1 httpbin pgsql mysql redis' | sudo tee -a /etc/hosts
       - uses: actions/cache/restore@v4
         with:

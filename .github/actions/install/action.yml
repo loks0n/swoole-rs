@@ -1,0 +1,19 @@
+name: Install system packages
+description: .devcontainer/install.sh with apt's package files and indexes cached between runs.
+inputs:
+  packages:
+    description: Extra apt packages this job needs, space separated
+    default: ''
+runs:
+  using: composite
+  steps:
+    - id: week
+      shell: bash
+      run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+    # Weekly key: packages stay current, and a stale index is refreshed by install.sh.
+    - uses: actions/cache@v4
+      with:
+        path: .apt-cache
+        key: apt-${{ runner.os }}-${{ steps.week.outputs.week }}-${{ hashFiles('.devcontainer/install.sh') }}-${{ inputs.packages }}
+    - shell: bash
+      run: APT_CACHE="$PWD/.apt-cache" .devcontainer/install.sh ${{ inputs.packages }}
