@@ -46,6 +46,7 @@ pub unsafe extern "C" fn swr_v1_corebase_random_next(
     min: i32,
     max: i32,
 ) -> u32 {
+    // SAFETY: the caller passes null or exclusively writable, initialized state.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return INVALID;
     };

@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Compatibility derived from Swoole v6.2.2 src/core/base.cc (Swoole contributors).
 //! Core numeric and byte helpers; native code retains allocation and effect custody.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 mod hook;
 mod lifecycle;
 mod random;
@@ -34,10 +41,12 @@ pub unsafe extern "C" fn swr_v1_corebase_parse_stoi(
         return 0;
     }
     let mut end = ptr::null_mut();
+    // SAFETY: `input` is a non-null, NUL-terminated string; `end` is a live local.
     let value = unsafe { strtol(input, &mut end, 10) };
     if end.cast_const() == input || value < c_int::MIN as c_long || value > c_int::MAX as c_long {
         return 0;
     }
+    // SAFETY: `output` is non-null, writable and disjoint from `input`.
     unsafe { output.write(value as c_int) };
     1
 }
@@ -92,10 +101,10 @@ pub extern "C" fn swr_v1_corebase_systemd_listen_fds_action(
 pub unsafe extern "C" fn swr_v1_corebase_itoa(output: *mut c_char, value: c_long) -> c_int {
     let mut buffer = itoa::Buffer::new();
     let bytes = buffer.format(value).as_bytes();
-    unsafe {
-        ptr::copy_nonoverlapping(bytes.as_ptr(), output.cast(), bytes.len());
-        output.add(bytes.len()).write(0);
-    }
+    // SAFETY: the caller sizes `output` for these digits plus NUL, disjoint from `buffer`.
+    unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), output.cast(), bytes.len()) };
+    // SAFETY: the NUL lands at offset `bytes.len()`, inside that same extent.
+    unsafe { output.wrapping_add(bytes.len()).write(0) };
     bytes.len() as c_int
 }
 
@@ -114,15 +123,16 @@ pub unsafe extern "C" fn swr_v1_corebase_radix(
         return usize::MAX;
     }
     const DIGITS: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
+    let put = |index: usize, byte: u8| {
+        // SAFETY: `index < capacity`; `output` is non-null and lends `capacity` writable bytes.
+        unsafe { output.wrapping_add(index).write(byte) }
+    };
     let mut index = capacity - 1;
-    unsafe { output.add(index).write(0) };
+    put(index, 0);
     loop {
+        // At least `c_ulong::BITS` digit slots precede the NUL, enough for radix 2.
         index -= 1;
-        unsafe {
-            output
-                .add(index)
-                .write(DIGITS[(value % c_ulong::from(radix)) as usize])
-        };
+        put(index, DIGITS[(value % c_ulong::from(radix)) as usize]);
         value /= c_ulong::from(radix);
         if value == 0 {
             return index;
@@ -136,6 +146,7 @@ pub unsafe extern "C" fn swr_v1_corebase_radix(
 /// must match this Rust target's default c_char.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_corebase_hex(input: *const c_char, parsed: *mut usize) -> c_ulong {
+    // SAFETY: forwards the caller's own input and output contract unchanged.
     unsafe { swr_v1_corebase_hex_mode(input, parsed, u8::from(c_char::MIN != 0)) }
 }
 
@@ -151,37 +162,42 @@ pub unsafe extern "C" fn swr_v1_corebase_hex_mode(
 ) -> c_ulong {
     let mut current = input;
     let mut value = 0_usize;
-    unsafe {
-        parsed.write(0);
-        if strncasecmp(input, c"0x".as_ptr(), 2) == 0 {
-            current = current.add(2);
-        }
-        loop {
-            let byte = current.cast::<u8>().read();
-            let digit = if byte.is_ascii_digit() {
-                (byte - b'0') as usize
-            } else {
-                let input = if native_char_signed != 0 {
-                    byte as i8 as c_int
-                } else {
-                    byte as c_int
-                };
-                let upper = toupper(input);
-                let byte = if native_char_signed != 0 {
-                    upper as i8 as c_int
-                } else {
-                    upper as u8 as c_int
-                };
-                if !(c_int::from(b'A')..=c_int::from(b'Z')).contains(&byte) {
-                    break;
-                }
-                (byte - c_int::from(b'A')) as usize + 10
-            };
-            value = value.wrapping_mul(16).wrapping_add(digit);
-            current = current.add(1);
-        }
-        parsed.write(current.offset_from(input) as usize);
+    // `current` walks the caller's NUL-terminated string and stops at the first non-digit
+    // (at the latest, the NUL), so every read below is inside it.
+    // SAFETY: `parsed` is writable and disjoint from `input`.
+    unsafe { parsed.write(0) };
+    // SAFETY: `input` is NUL-terminated, so strncasecmp stops at its end; the literal is too.
+    if unsafe { strncasecmp(input, c"0x".as_ptr(), 2) } == 0 {
+        current = current.wrapping_add(2);
     }
+    loop {
+        // SAFETY: see above; `current` has not passed the NUL.
+        let byte = unsafe { current.cast::<u8>().read() };
+        let digit = if byte.is_ascii_digit() {
+            (byte - b'0') as usize
+        } else {
+            let input = if native_char_signed != 0 {
+                byte as i8 as c_int
+            } else {
+                byte as c_int
+            };
+            // SAFETY: the caller guarantees the host ctype precondition for these bytes.
+            let upper = unsafe { toupper(input) };
+            let byte = if native_char_signed != 0 {
+                upper as i8 as c_int
+            } else {
+                upper as u8 as c_int
+            };
+            if !(c_int::from(b'A')..=c_int::from(b'Z')).contains(&byte) {
+                break;
+            }
+            (byte - c_int::from(b'A')) as usize + 10
+        };
+        value = value.wrapping_mul(16).wrapping_add(digit);
+        current = current.wrapping_add(1);
+    }
+    // SAFETY: `parsed` is writable and disjoint from `input`.
+    unsafe { parsed.write(current.addr() - input.addr()) };
     value as c_ulong
 }
 
@@ -193,24 +209,30 @@ pub unsafe extern "C" fn swr_v1_corebase_version(
     mut left: *const c_char,
     mut right: *const c_char,
 ) -> c_int {
-    unsafe {
-        loop {
-            let (mut left_end, mut right_end) = (ptr::null_mut(), ptr::null_mut());
-            let first = strtoul(left, &mut left_end, 10);
-            let second = strtoul(right, &mut right_end, 10);
-            match first.cmp(&second) {
-                Ordering::Less => return -1,
-                Ordering::Greater => return 1,
-                Ordering::Equal => {}
-            }
-            match (left_end.read() == 0, right_end.read() == 0) {
-                (true, true) => return 0,
-                (true, false) => return -1,
-                (false, true) => return 1,
-                (false, false) => {
-                    left = left_end.add(1);
-                    right = right_end.add(1);
-                }
+    // `left` and `right` always point into the caller's NUL-terminated strings: strtoul
+    // ends on a non-digit, and the code steps past it only when it isn't the NUL.
+    loop {
+        let (mut left_end, mut right_end) = (ptr::null_mut(), ptr::null_mut());
+        // SAFETY: see above; `left_end` is a live local.
+        let first = unsafe { strtoul(left, &mut left_end, 10) };
+        // SAFETY: see above; `right_end` is a live local.
+        let second = unsafe { strtoul(right, &mut right_end, 10) };
+        match first.cmp(&second) {
+            Ordering::Less => return -1,
+            Ordering::Greater => return 1,
+            Ordering::Equal => {}
+        }
+        // SAFETY: strtoul set `left_end` inside the left string.
+        let left_done = unsafe { left_end.read() } == 0;
+        // SAFETY: strtoul set `right_end` inside the right string.
+        let right_done = unsafe { right_end.read() } == 0;
+        match (left_done, right_done) {
+            (true, true) => return 0,
+            (true, false) => return -1,
+            (false, true) => return 1,
+            (false, false) => {
+                left = left_end.wrapping_add(1);
+                right = right_end.wrapping_add(1);
             }
         }
     }
@@ -224,6 +246,7 @@ pub unsafe extern "C" fn swr_v1_corebase_dirname(input: *const u8, length: usize
     if length == 0 {
         return 0;
     }
+    // SAFETY: nonempty input lends `length <= isize::MAX` readable bytes.
     unsafe { slice::from_raw_parts(input, length) }
         .iter()
         .rposition(|&byte| byte == b'/')
@@ -256,7 +279,13 @@ pub unsafe extern "C" fn swr_v1_corebase_mkdir_next(
     if output.is_null() || state.is_null() || capacity == 0 || capacity > isize::MAX as usize {
         return 3;
     }
+    // SAFETY: non-null, initialized state lent exclusively for this call.
     let state = unsafe { &mut *state };
+    let put = |index: usize, byte: u8| {
+        // SAFETY: every caller keeps `index < capacity`; `output` lends `capacity` writable
+        // bytes disjoint from the input.
+        unsafe { output.wrapping_add(index).write(byte) }
+    };
     if state.next == 0 {
         if input_length >= capacity {
             return 2;
@@ -264,6 +293,7 @@ pub unsafe extern "C" fn swr_v1_corebase_mkdir_next(
         if input.is_null() || input_length == 0 {
             return 3;
         }
+        // SAFETY: non-null input lends `input_length < capacity <= isize::MAX` readable bytes.
         let input = unsafe { slice::from_raw_parts(input, input_length) };
         let prefix = input
             .iter()
@@ -274,24 +304,24 @@ pub unsafe extern "C" fn swr_v1_corebase_mkdir_next(
         if length >= capacity {
             return 2;
         }
-        unsafe {
-            ptr::copy_nonoverlapping(input.as_ptr(), output, prefix);
-            if append {
-                output.add(prefix).write(b'/');
-            }
-            output.add(length).write(0);
+        // SAFETY: `prefix <= length < capacity` writable output bytes, disjoint from input.
+        unsafe { ptr::copy_nonoverlapping(input.as_ptr(), output, prefix) };
+        if append {
+            put(prefix, b'/');
         }
+        put(length, 0);
         state.length = length;
         state.next = 1;
     } else {
         if state.length >= capacity || state.next > state.length {
             return 3;
         }
-        unsafe { output.add(state.next - 1).write(b'/') };
+        put(state.next - 1, b'/');
     }
     for index in state.next..state.length {
-        if unsafe { output.add(index).read() } == b'/' {
-            unsafe { output.add(index).write(0) };
+        // SAFETY: `index < state.length < capacity`, written earlier by this iterator.
+        if unsafe { output.wrapping_add(index).read() } == b'/' {
+            put(index, 0);
             state.next = index + 1;
             return 1;
         }
