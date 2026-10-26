@@ -7,6 +7,13 @@
     clippy::cast_sign_loss,
     reason = "#157: casts not yet checked"
 )]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 mod bus;
 mod mqtt;
 mod pool;
@@ -28,6 +35,7 @@ unsafe fn input<'a>(data: *const u8, length: usize) -> Option<&'a [u8]> {
     } else if length == 0 {
         Some(&[])
     } else {
+        // SAFETY: non-null, `length <= isize::MAX`; the caller lends `length` readable bytes.
         Some(unsafe { std::slice::from_raw_parts(data, length) })
     }
 }
@@ -38,6 +46,8 @@ unsafe fn output<'a>(data: *mut u8, capacity: usize, required: usize) -> Option<
     if data.is_null() || capacity > isize::MAX as usize || capacity < required {
         None
     } else {
+        // SAFETY: non-null, `required <= capacity <= isize::MAX`; the caller lends `capacity`
+        // exclusive writable bytes.
         Some(unsafe { std::slice::from_raw_parts_mut(data, required) })
     }
 }

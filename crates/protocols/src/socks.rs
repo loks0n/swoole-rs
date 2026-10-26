@@ -61,9 +61,11 @@ pub unsafe extern "C" fn swr_v1_socks_transition(
     if result.is_null() {
         return -1;
     }
+    // SAFETY: `data` lends `length` initialized bytes (null only when empty) for this call.
     let Some(response) = (unsafe { crate::input(data, length) }) else {
         return -1;
     };
+    // SAFETY: `result` is non-null (checked above), aligned and writable per the export's contract.
     unsafe { result.write(socks_transition(state, method, response)) };
     0
 }
@@ -79,9 +81,11 @@ pub unsafe extern "C" fn swr_v1_socks_auth(
     output: *mut u8,
     capacity: usize,
 ) -> i64 {
-    let (Some(user), Some(password)) = (unsafe { crate::input(user, user_length) }, unsafe {
-        crate::input(password, password_length)
-    }) else {
+    // SAFETY: `user` lends `user_length` initialized bytes (null only when empty) for this call.
+    let user = unsafe { crate::input(user, user_length) };
+    // SAFETY: `password` lends `password_length` initialized bytes (null only when empty).
+    let password = unsafe { crate::input(password, password_length) };
+    let (Some(user), Some(password)) = (user, password) else {
         return -1;
     };
     let Some(size) = user_length
@@ -90,6 +94,7 @@ pub unsafe extern "C" fn swr_v1_socks_auth(
     else {
         return -1;
     };
+    // SAFETY: `output` lends `capacity` exclusive writable bytes, disjoint from the inputs.
     let Some(output) = (unsafe { crate::output(output, capacity, size) }) else {
         return -1;
     };
@@ -116,6 +121,7 @@ pub unsafe extern "C" fn swr_v1_socks_connect(
     output: *mut u8,
     capacity: usize,
 ) -> i64 {
+    // SAFETY: `address` lends `length` initialized bytes (null only when empty) for this call.
     let Some(address) = (unsafe { crate::input(address, length) }) else {
         return -1;
     };
@@ -129,6 +135,7 @@ pub unsafe extern "C" fn swr_v1_socks_connect(
     let Some(size) = length.checked_add(offset + 2) else {
         return -1;
     };
+    // SAFETY: `output` lends `capacity` exclusive writable bytes, disjoint from the inputs.
     let Some(output) = (unsafe { crate::output(output, capacity, size) }) else {
         return -1;
     };
@@ -154,11 +161,13 @@ pub unsafe extern "C" fn swr_v1_socks_negotiate(
     if method.is_null() {
         return -1;
     }
+    // SAFETY: `output` lends `capacity` exclusive writable bytes, disjoint from the inputs.
     let Some(output) = (unsafe { crate::output(output, capacity, 3) }) else {
         return -1;
     };
     let selected = if has_user == 0 { 0 } else { 2 };
     output.copy_from_slice(&[5, 1, selected]);
+    // SAFETY: `method` is non-null (checked above), aligned and writable per the export's contract.
     unsafe { method.write(selected) };
     3
 }

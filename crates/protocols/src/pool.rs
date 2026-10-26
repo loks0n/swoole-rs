@@ -94,8 +94,10 @@ pub extern "C" fn swr_v1_bus_pool_create_capacity(capacity: usize) -> *mut Packe
     if pool.indices.try_reserve(capacity).is_err() || pool.entries.try_reserve(capacity).is_err() {
         return std::ptr::null_mut();
     }
+    // SAFETY: `PacketPool` is not zero-sized; null is handled below.
     let pointer = unsafe { alloc(Layout::new::<PacketPool>()).cast::<PacketPool>() };
     if !pointer.is_null() {
+        // SAFETY: `pointer` is a fresh, non-null allocation with `PacketPool`'s layout.
         unsafe { pointer.write(pool) };
     }
     pointer
@@ -107,25 +109,28 @@ pub unsafe extern "C" fn swr_v1_bus_pool_release(pool: *mut PacketPool) -> i32 {
     if pool.is_null() {
         return 0;
     }
+    // SAFETY: non-null (checked above); a live, exclusively owned pool from create.
     if !unsafe { &*pool }.entries.is_empty() {
         return -1;
     }
-    unsafe {
-        pool.drop_in_place();
-        dealloc(pool.cast(), Layout::new::<PacketPool>());
-    }
+    // SAFETY: as above; released exactly once.
+    unsafe { pool.drop_in_place() };
+    // SAFETY: allocated with this layout by create; its value was just dropped.
+    unsafe { dealloc(pool.cast(), Layout::new::<PacketPool>()) };
     0
 }
 /// # Safety
 /// Pool is null or a live handle with no concurrent mutation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_bus_pool_len(pool: *const PacketPool) -> usize {
+    // SAFETY: `pool` is null or a live pool from create.
     unsafe { pool.as_ref() }.map_or(0, |pool| pool.entries.len())
 }
 /// # Safety
 /// Pool is null or a live handle with no concurrent mutation.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_bus_pool_find(pool: *const PacketPool, id: u64) -> usize {
+    // SAFETY: `pool` is null or a live pool from create.
     unsafe { pool.as_ref() }
         .and_then(|pool| {
             pool.indices
@@ -140,6 +145,7 @@ pub unsafe extern "C" fn swr_v1_bus_pool_find(pool: *const PacketPool, id: u64) 
 /// remains valid only while native ownership and pool membership remain live.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_bus_pool_find_value(pool: *const PacketPool, id: u64) -> usize {
+    // SAFETY: `pool` is null or a live pool from create.
     unsafe { pool.as_ref() }
         .and_then(|pool| pool.indices.get(&id).map(|location| location.value))
         .unwrap_or(0)
@@ -153,6 +159,7 @@ pub unsafe extern "C" fn swr_v1_bus_pool_insert(
     id: u64,
     token: usize,
 ) -> i32 {
+    // SAFETY: `pool` is null or a live pool from create, exclusively accessed.
     if unsafe { pool.as_mut() }.is_some_and(|pool| pool.insert(id, token)) {
         0
     } else {
@@ -163,12 +170,14 @@ pub unsafe extern "C" fn swr_v1_bus_pool_insert(
 /// Pool is null or a live exclusive handle. Returned nonzero token is removed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_bus_pool_take(pool: *mut PacketPool, id: u64) -> usize {
+    // SAFETY: `pool` is null or a live pool from create, exclusively accessed.
     unsafe { pool.as_mut() }.map_or(0, |pool| pool.remove(id))
 }
 /// # Safety
 /// Pool is null or a live exclusive handle. Returned nonzero token is removed.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_bus_pool_pop(pool: *mut PacketPool) -> usize {
+    // SAFETY: `pool` is null or a live pool from create, exclusively accessed.
     let Some(pool) = (unsafe { pool.as_mut() }) else {
         return 0;
     };
@@ -187,6 +196,7 @@ pub unsafe extern "C" fn swr_v1_bus_pool_at(
     index: usize,
     id: *mut u64,
 ) -> usize {
+    // SAFETY: `pool` is null or a live pool from create.
     let Some(&(key, token)) = (unsafe { pool.as_ref() }).and_then(|pool| pool.entries.get(index))
     else {
         return 0;
@@ -194,6 +204,7 @@ pub unsafe extern "C" fn swr_v1_bus_pool_at(
     if id.is_null() {
         return 0;
     }
+    // SAFETY: `id` is non-null (checked above), aligned and writable per the export's contract.
     unsafe { id.write(key) };
     token
 }
@@ -220,12 +231,14 @@ pub unsafe extern "C" fn swr_v1_bus_pool_insert_many(
     {
         return -1;
     }
+    // SAFETY: `pool` is null or a live pool from create, exclusively accessed.
     let Some(pool) = (unsafe { pool.as_mut() }) else {
         return -1;
     };
     let values = if length == 0 {
         &[]
     } else {
+        // SAFETY: non-null and size-bounded (checked above); `length` readable entries.
         unsafe { std::slice::from_raw_parts(entries, length) }
     };
     if pool.insert_many(values) { 0 } else { -1 }
@@ -248,18 +261,20 @@ pub unsafe extern "C" fn swr_v1_bus_pool_insert_values(
     {
         return -1;
     }
+    // SAFETY: `pool` is null or a live pool from create, exclusively accessed.
     let Some(pool) = (unsafe { pool.as_mut() }) else {
         return -1;
     };
     let (entries, lookups) = if length == 0 {
         (&[][..], &[][..])
     } else {
-        unsafe {
-            (
-                std::slice::from_raw_parts(entries, length),
-                std::slice::from_raw_parts(lookups, length),
-            )
-        }
+        // Both are non-null and size-bounded (checked above), with `length` readable elements.
+        (
+            // SAFETY: as above.
+            unsafe { std::slice::from_raw_parts(entries, length) },
+            // SAFETY: as above.
+            unsafe { std::slice::from_raw_parts(lookups, length) },
+        )
     };
     if pool.insert_values(
         entries
@@ -286,6 +301,7 @@ pub unsafe extern "C" fn swr_v1_bus_pool_snapshot(
     if output.is_null() || capacity > isize::MAX as usize / std::mem::size_of::<PoolEntry>() {
         return 0;
     }
+    // SAFETY: `pool` is null or a live pool from create.
     let Some(pool) = (unsafe { pool.as_ref() }) else {
         return 0;
     };
@@ -294,7 +310,8 @@ pub unsafe extern "C" fn swr_v1_bus_pool_snapshot(
     };
     let count = entries.len().min(capacity);
     for (index, &(id, token)) in entries[..count].iter().enumerate() {
-        unsafe { output.add(index).write(PoolEntry { id, token }) };
+        // SAFETY: `index < count <= capacity`; `output` is non-null with `capacity` writable slots.
+        unsafe { output.wrapping_add(index).write(PoolEntry { id, token }) };
     }
     count
 }
@@ -311,13 +328,15 @@ pub unsafe extern "C" fn swr_v1_bus_pool_drain(
     if output.is_null() || capacity > isize::MAX as usize / std::mem::size_of::<usize>() {
         return 0;
     }
+    // SAFETY: `pool` is null or a live pool from create, exclusively accessed.
     let Some(pool) = (unsafe { pool.as_mut() }) else {
         return 0;
     };
     let count = pool.entries.len().min(capacity);
     if count == pool.entries.len() {
         for (index, &(_, token)) in pool.entries.iter().enumerate() {
-            unsafe { output.add(index).write(token) };
+            // SAFETY: `index < count <= capacity`; `output` is non-null with `capacity` writable slots.
+            unsafe { output.wrapping_add(index).write(token) };
         }
         pool.entries.clear();
         pool.indices.clear();
@@ -325,7 +344,8 @@ pub unsafe extern "C" fn swr_v1_bus_pool_drain(
         let kept = pool.entries.len() - count;
         for (index, (id, token)) in pool.entries.drain(kept..).rev().enumerate() {
             pool.indices.remove(&id);
-            unsafe { output.add(index).write(token) };
+            // SAFETY: `index < count <= capacity`; `output` is non-null with `capacity` writable slots.
+            unsafe { output.wrapping_add(index).write(token) };
         }
     }
     count

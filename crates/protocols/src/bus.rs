@@ -121,6 +121,7 @@ pub unsafe extern "C" fn swr_v1_bus_writer_init(
     else {
         return -1;
     };
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the export's contract.
     unsafe { output.write(writer) };
     0
 }
@@ -134,10 +135,12 @@ pub unsafe extern "C" fn swr_v1_bus_writer_next(
     if writer.is_null() || output.is_null() {
         return -1;
     }
+    // SAFETY: `writer` is non-null (checked above), aligned and initialized per the export's contract.
     let writer = unsafe { writer.read() };
     if writer.mode > 3 || (writer.maximum == 0 && writer.mode != 0 && writer.mode != 3) {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the export's contract.
     unsafe { output.write(writer.next_chunk()) };
     0
 }
@@ -152,6 +155,7 @@ pub unsafe extern "C" fn swr_v1_bus_writer_complete(
     if writer.is_null() {
         return -1;
     }
+    // SAFETY: non-null (checked above), aligned, initialized and exclusively lent.
     let writer = unsafe { &mut *writer };
     if (writer.maximum == 0 && writer.mode != 0)
         || writer.minimum == 0

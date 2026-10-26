@@ -100,12 +100,14 @@ pub unsafe extern "C" fn swr_v1_resp_reply_parts(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `data` lends `length` initialized bytes (null only when empty) for this call.
     let Some(value) = (unsafe { crate::input(data, length) }) else {
         return -1;
     };
     let Some(parts) = reply_parts(kind, present != 0, number, value) else {
         return -1;
     };
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the export's contract.
     unsafe { output.write(parts) };
     0
 }
