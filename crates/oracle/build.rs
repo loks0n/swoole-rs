@@ -187,7 +187,6 @@ fn main() {
     );
     cpp()
         .define("SWOOLE_RS_BASE64", "1")
-        .define("SWOOLE_RS_CRC32", "1")
         .include("shim")
         .include("upstream")
         .include("upstream/include")

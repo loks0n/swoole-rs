@@ -1,11 +1,10 @@
 diff --git a/src/core/crc32.cc b/src/core/crc32.cc
-index f00d66660..ce5fb76a5 100644
+index f00d66660..61ede0a3e 100644
 --- a/src/core/crc32.cc
 +++ b/src/core/crc32.cc
-@@ -21,34 +21,10 @@
+@@ -21,34 +21,6 @@
  #include "swoole_hash.h"
-+#include "swoole_rs_crc32.h"
- 
+-
 -static constexpr int CRC32_TABLE_SIZE = 256;
 -static uint32_t crc32_table[CRC32_TABLE_SIZE];
 -static bool generated = false;
@@ -24,9 +23,7 @@ index f00d66660..ce5fb76a5 100644
 -        table[i] = c;
 -    }
 -}
-+#ifndef SWOOLE_RS_CRC32
-+#error "CRC32 overlay requires --enable-swoole-rs-crc32"
-+#endif
++#include "swoole_rs_crc32.h"
  
  uint32_t swoole_crc32(const char *data, size_t size) {
 -    if (sw_unlikely(!generated)) {

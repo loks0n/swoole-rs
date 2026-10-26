@@ -649,7 +649,7 @@ class Lanes(unittest.TestCase):
                                jobs=2, test=None, case=None, benchmark=False, compare=False, fix_halfclose=False)
         with patch.object(dev.subprocess, 'check_output', return_value='/openssl'):
             commands = dict(dev.plan(args, ROOT / 'target/reports/all-registered'))
-        self.assertEqual(set(commands['build'][i+1] for i,x in enumerate(commands['build']) if x=='--module'),set(dev.MODULES))
+        self.assertEqual(set(commands['build'][i+1] for i,x in enumerate(commands['build']) if x=='--module'),set(dev.SELECTABLE))
         self.assertIn('reactor-ordered',commands)
         self.assertIn('reactor-filters',commands)
         self.assertIn('--sanitize', commands['reactor-poll-snapshot'])
@@ -1093,7 +1093,7 @@ class Lanes(unittest.TestCase):
     def test_all_module_build_receipt_uses_the_executed_selection(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            variant = 'rust' + ''.join('-' + name for name in sorted(dev.MODULES)) + '-halfclose'
+            variant = 'rust' + ''.join('-' + name for name in dev.SELECTABLE) + '-halfclose'
             receipt = root / 'target/hybrid' / variant / 'last-run.json'
             receipt.parent.mkdir(parents=True)
             manifest = receipt.parent / 'build-manifest.json'

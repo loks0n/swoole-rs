@@ -15,7 +15,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.harness import ROOT, write_report
-from tools.build_hybrid import MODULES, REACTOR_OWNED_CAPABILITIES, HTTP_STORAGE_CAPABILITIES, reactor_owned_capabilities, http_storage_capabilities, storage_suffix, profile_suffix, build_alias
+from tools.build_hybrid import GRADUATED, MODULES, SELECTABLE, REACTOR_OWNED_CAPABILITIES, HTTP_STORAGE_CAPABILITIES, reactor_owned_capabilities, http_storage_capabilities, storage_suffix, profile_suffix, build_alias
 from tools.build_upstream import require_build_space
 from tools.dev_report import read_json
 from tools.private_copy import copy_private
@@ -65,7 +65,8 @@ def changed_modules(base):
 
 
 def selected_modules(args):
-    return sorted(MODULES if getattr(args, 'all_modules', False) else set(args.module or ['buffer', 'websocket']))
+    chosen = MODULES if getattr(args, 'all_modules', False) else args.module or ['buffer', 'websocket']
+    return sorted(set(chosen) | set(GRADUATED))
 
 
 def build_variant(args):
@@ -98,7 +99,7 @@ def verify_artifact_report(args):
                 or ('--enable-sockets' in manifest['configure']) != getattr(args, 'php_sockets', False)
                 or any(manifest['inputs'].get('http_' + name.replace('-', '_') + '_requested', False)
                        != (label == 'selected' and name in http_storage_capabilities(args)) for name in HTTP_STORAGE_CAPABILITIES)
-                or label == 'selected' and (sorted(manifest['inputs']['modules']) != selected_modules(args)
+                or label == 'selected' and (sorted(set(manifest['inputs']['modules']) | set(GRADUATED)) != selected_modules(args)
                     or manifest['inputs']['fix_halfclose'] != args.fix_halfclose
                     or any(manifest['inputs'].get('reactor_' + name + '_owned_requested', False)
                            != (name in reactor_owned_capabilities(args)) for name in REACTOR_OWNED_CAPABILITIES))):
@@ -132,7 +133,7 @@ def plan(args, reports):
         return php + [argument for extension in dependencies
                       if sys.platform.startswith('linux') and extension not in args.php_extension
                       for argument in ['--php-extension', extension]]
-    flags = [arg for module in modules for arg in ['--module', module]]
+    flags = [arg for module in modules if module not in GRADUATED for arg in ['--module', module]]
     for module in modules:
         add(module + '-unit', 'cargo', 'test', '--locked', '-p', 'swoole-rs-' + module,
             *([args.test] if args.test and args.lane == 'edit' else []))
@@ -980,7 +981,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('lane', choices=['edit', 'candidate', 'integrate'])
     selection = parser.add_mutually_exclusive_group()
-    selection.add_argument('--module', choices=sorted(MODULES), action='append')
+    selection.add_argument('--module', choices=SELECTABLE, action='append')
     selection.add_argument('--all-modules', action='store_true', help='Select every concrete registered Rust module')
     selection.add_argument('--changed-since', metavar='REF', help='Select the modules a diff from REF touches (all for shared build inputs)')
     parser.add_argument('--stdext', action='store_true', help='Build and compare genuine enabled experimental stdext profiles')

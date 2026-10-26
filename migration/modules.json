@@ -258,7 +258,6 @@
       ],
       "owned_paths": [
         "crates/crc32/",
-        "native/crc32/",
         "migration/patches/crc32/",
         "tests/modules/crc32/"
       ],
