@@ -483,7 +483,7 @@ class Lanes(unittest.TestCase):
         for explicit in [[], ['curl']]:
             args = SimpleNamespace(lane='integrate', module=['phpcollections', 'base64', 'phphelpers'], all_modules=False,
                                    php='php', php_extension=explicit, jobs=2, test=None, case=None,
-                                   benchmark=False, compare=False, fix_halfclose=False)
+                                   benchmark=False, compare=False, fix_halfclose=False, stdext=True)
             with patch.object(dev.sys, 'platform', 'linux'):
                 commands = dict(dev.plan(args, ROOT / 'target/reports/collections'))
             for phase in ['phpcollections-runtime',
@@ -532,6 +532,10 @@ class Lanes(unittest.TestCase):
                                jobs=2, test=None, case=None, benchmark=False, compare=False, fix_halfclose=False)
         with patch.object(dev.subprocess, 'check_output', return_value='/openssl'):
             commands = dict(dev.plan(args, ROOT / 'target/reports/all-registered'))
+            # phphelpers' runtime fixtures call stdext helpers, so only stdext plans run them.
+            stdext = dict(dev.plan(SimpleNamespace(**vars(args), stdext=True), ROOT / 'target/reports/all-registered-stdext'))
+        for name in ['phphelpers-facade-runtime', 'phphelpers-entrypoint', 'phphelpers-runtime']:
+            self.assertNotIn(name, commands)
         self.assertEqual(set(commands['build'][i+1] for i,x in enumerate(commands['build']) if x=='--module'),set(dev.SELECTABLE))
         self.assertIn('reactor-ordered',commands)
         self.assertIn('reactor-filters',commands)
@@ -640,10 +644,10 @@ class Lanes(unittest.TestCase):
             self.assertIn('--native-export', command)
             self.assertEqual(command.count('--engine'), 2)
         self.assertLess(list(commands).index('buffer-legacy-build'), list(commands).index('string-production-facade'))
-        self.assertLess(list(commands).index('phphelpers-sdk'), list(commands).index('phphelpers-facade-runtime'))
-        self.assertNotIn('--prepare-only', commands['phphelpers-facade-runtime'])
-        self.assertEqual(commands['phphelpers-facade-runtime'].count('--engine'), 2)
-        self.assertIn('--source-ref', commands['phphelpers-facade-runtime'])
+        self.assertLess(list(stdext).index('phphelpers-sdk'), list(stdext).index('phphelpers-facade-runtime'))
+        self.assertNotIn('--prepare-only', stdext['phphelpers-facade-runtime'])
+        self.assertEqual(stdext['phphelpers-facade-runtime'].count('--engine'), 2)
+        self.assertIn('--source-ref', stdext['phphelpers-facade-runtime'])
         for family in ['logger', 'hash']:
             command = commands['utilities-' + family + '-originals']
             self.assertIn('--' + family + '-originals', command)
@@ -726,13 +730,13 @@ class Lanes(unittest.TestCase):
             self.assertIn('--sdk-report', commands[phase])
             self.assertLess(list(commands).index('phphelpers-sdk'), list(commands).index(phase))
             self.assertNotIn('--engine', commands[phase])
-        self.assertIn('--sdk-report', commands['phphelpers-entrypoint'])
-        self.assertIn('--build-manifest', commands['phphelpers-entrypoint'])
-        self.assertIn('--archive', commands['phphelpers-entrypoint'])
-        self.assertEqual(commands['phphelpers-entrypoint'].count('--engine'), 2)
+        self.assertIn('--sdk-report', stdext['phphelpers-entrypoint'])
+        self.assertIn('--build-manifest', stdext['phphelpers-entrypoint'])
+        self.assertIn('--archive', stdext['phphelpers-entrypoint'])
+        self.assertEqual(stdext['phphelpers-entrypoint'].count('--engine'), 2)
         self.assertLess(list(commands).index('build'), list(commands).index('phphelpers-sdk'))
-        self.assertLess(list(commands).index('phphelpers-sdk'), list(commands).index('phphelpers-entrypoint'))
-        self.assertIn('--build-manifest', commands['phphelpers-runtime'])
+        self.assertLess(list(stdext).index('phphelpers-sdk'), list(stdext).index('phphelpers-entrypoint'))
+        self.assertIn('--build-manifest', stdext['phphelpers-runtime'])
         self.assertIn('--archive', commands['phphelpers-policy'])
         asynchronous = commands['phphelpers-async']
         self.assertIn('tests/modules/phphelpers/async_gate.py', ' '.join(asynchronous))
