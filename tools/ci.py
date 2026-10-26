@@ -2,7 +2,8 @@
 """Watch this repository's CI and merge pull requests when it passes.
 
   ci.py merge PR             wait for the PR tier on the PR's head, then squash-merge
-  ci.py wait [--commit SHA]  wait for a workflow run (default: the merge tier on main)
+  ci.py wait [--commit SHA]  wait for a workflow run (default: the merge tier on main); a run
+                             replaced by a newer push to main follows the newer run
   ci.py status [--commit SHA]  the same, without waiting
 
 For the merge tier, failed phases come from its `phases` artifact, with new and fixed ones
@@ -65,11 +66,26 @@ def status(workflow, sha):
                      for job in jobs]}
 
 
+def successor(workflow, sha):
+    """The newest run's head on main when it contains sha: the run that replaced sha's (latest wins)."""
+    runs = json.loads(gh('run', 'list', '--workflow', workflow, '--branch', 'main', '--limit', '1', '--json', 'headSha'))
+    head = runs[0]['headSha'] if runs else sha
+    if head != sha and gh('api', f'repos/{{owner}}/{{repo}}/compare/{sha}...{head}', '-q', '.status').strip() == 'ahead':
+        return head
+    return None
+
+
 def wait(workflow, sha, deadline, poll):
-    """Wait for the run on sha to finish, reporting each job as its state changes."""
+    """Wait for the run on sha to finish, reporting each job as its state changes. A run
+    replaced by a newer push to main follows the newer run, which also covers sha."""
     seen, appear_by = {}, time.monotonic() + 300
     while True:
         result = status(workflow, sha)
+        newer = result['state'] == 'cancelled' and successor(workflow, sha)
+        if newer:
+            say(f'{workflow} {sha[:7]}: replaced by the run on {newer[:7]}, which contains it')
+            sha, seen = newer, {}
+            continue
         for job in result.get('jobs', []):
             if seen.get(job['name']) != job['state']:
                 seen[job['name']] = job['state']

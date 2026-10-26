@@ -22,6 +22,8 @@ def save():
     state.write_text(json.dumps(data))
 if args[0] == 'api' and '-X' in args:
     pass
+elif args[0] == 'api' and '/compare/' in args[1]:
+    print(data.get('compare', 'ahead'))
 elif args[0] == 'api':
     print('c' * 40)
 elif args[:2] == ['pr', 'view']:
@@ -107,6 +109,14 @@ class Ci(unittest.TestCase):
         self.assertEqual((code, result['workflow'], result['state']), (0, 'merge.yml', 'passed'))
         self.assertIn('api repos/{owner}/{repo}/commits/main -q .sha', self.gh_calls)
         self.assertIn('rust: success in 31s', stderr)
+
+    def test_wait_follows_the_run_that_replaced_its_commit(self):
+        history = [{'headSha': 'd' * 40}]
+        code, result, stderr = self.ci('wait', runs={'c' * 40: ['cancelled'], 'd' * 40: ['success']}, history=history)
+        self.assertEqual((code, result['commit'], result['state']), (0, 'd' * 40, 'passed'))
+        self.assertIn('replaced by the run on ddddddd', stderr)
+        code, result, _ = self.ci('wait', runs={'c' * 40: ['cancelled']}, history=history, compare='diverged')
+        self.assertEqual((code, result['commit'], result['state']), (3, 'c' * 40, 'cancelled'))
 
     def test_hooks_warning_names_off_foreign_and_own_hooks(self):
         sys.path.insert(0, str(ROOT / 'tools'))
