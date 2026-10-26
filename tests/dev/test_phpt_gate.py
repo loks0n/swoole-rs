@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from corpus.upstream.gate import category, compare, flagged, markdown, recheck, rows, skip_reason
+from corpus.upstream.gate import category, compare, flagged, markdown, pending, recheck, rows, skip_reason
 from corpus.upstream.inventory import shard
 
 
@@ -63,6 +63,16 @@ class PhptGate(unittest.TestCase):
         self.assertIn('2 regressions: pass on upstream, fail on a re-run here', summary)
         self.assertIn('1 flaky on upstream', summary)
         self.assertIn('1 passed on re-run on both engines', summary)
+
+    def test_a_test_failing_an_upstream_rerun_needs_no_more_reruns(self):
+        def row(test, engine, status):
+            return {'test': test, 'family': 'a', 'engine': engine, 'status': status, 'category': 'other'}
+        rechecked = [row('flaky', 'upstream', 'failed'), row('steady', 'upstream', 'passed'),
+                     row('steady', 'hybrid', 'failed')]
+        self.assertEqual(pending(['flaky', 'steady', 'unrun'], rechecked), ['steady', 'unrun'])
+        self.assertEqual(pending(['flaky'], []), ['flaky'])
+        # Re-runs stop at the first upstream failure, so a flaky test may have no hybrid re-run.
+        self.assertEqual(recheck(['flaky'], [row('flaky', 'upstream', 'failed')]), ([], ['flaky'], []))
 
     def test_incomplete_shards_are_refused(self):
         with tempfile.TemporaryDirectory() as temp:

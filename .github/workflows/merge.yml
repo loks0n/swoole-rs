@@ -288,10 +288,18 @@ jobs:
         run: |
           python3 corpus/upstream/inventory.py --output target/phpt/all.json
           extensions=$(sed -n 's/^extension=\(.*\)/--php-extension \1/p' /etc/php/*/cli/conf.d/*.ini | sed 's/\.so$//' | tr '\n' ' ')
-          cases=$(sed 's/^/--case /' flagged.txt | tr '\n' ' ')
+          # Upstream first: a test failing an upstream re-run is flaky on upstream and is
+          # dropped. The hybrid is re-run only on tests that passed every upstream re-run.
           mkdir -p recheck
-          for attempt in 1 2 3; do
-            for engine in upstream hybrid; do
+          pending() {
+            set -- shards/*.json
+            if ls recheck/*.json >/dev/null 2>&1; then set -- "$@" --recheck recheck/*.json; fi
+            python3 corpus/upstream/gate.py "$@" --print-pending | sed 's/^/--case /' | tr '\n' ' '
+          }
+          for engine in upstream hybrid; do
+            for attempt in 1 2 3; do
+              cases=$(pending)
+              [ -n "$cases" ] || break
               python3 corpus/upstream/run.py --manifest target/phpt/all.json --timeout 30 --external-network \
                 $extensions $cases --engine $engine=target/phpt/$engine.so \
                 --output recheck/$engine-$attempt.json || [ $? -eq 1 ]
