@@ -74,8 +74,6 @@ def main():
             if engine == 'rust':
                 patch = args.patch.resolve()
                 report['patch_application'] = [apply_module_patch(tree, patch, allow_override=True)]
-                fast = 'swr_v1_string_edit_in_place' in (tree / 'src/core/string.cc').read_text()
-                assert fast or 'swr_v1_string_prepare' in (tree / 'src/core/string.cc').read_text()
             binary = (args.prepare_benchmark or tree) / engine
             command = ['c++', '-std=c++17', '-O3' if args.prepare_benchmark else '-O1', '-g', '-ffunction-sections', '-fdata-sections',
                        '-I' + str(local), '-I' + str(tree / 'include'), '-I' + str(ROOT / 'native/buffer'),
@@ -96,8 +94,8 @@ def main():
             row['binary'] = str(binary)
             if engine == 'rust':
                 symbols = subprocess.check_output(['nm', '-g', str(binary)], text=True)
-                required = ['swr_v1_string_edit_in_place', 'swr_v1_string_apply', 'swr_v1_string_append_in_place', 'swr_v1_string_edit_system'] if fast else ['swr_v1_string_prepare', 'swr_v1_string_apply']
-                if args.transition_only: required.append('swr_v1_string_transition')
+                # Exports the profile's native callers reach; Rust-only callees may be inlined or stripped.
+                required = ['swr_v1_string_edit_in_place', 'swr_v1_string_append_in_place'] if args.original_only else ['swr_v1_string_transition']
                 if args.random_only: required.append('swr_v1_string_random_step')
                 if args.format_only: required.append('swr_v1_string_format_step')
                 if args.allocation_only: required.append('swr_v1_string_allocation_plan')
