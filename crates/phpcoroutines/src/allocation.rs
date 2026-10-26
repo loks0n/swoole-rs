@@ -7,9 +7,11 @@ pub(crate) fn try_owned<T>(value: T) -> *mut T {
     let ptr = if layout.size() == 0 {
         NonNull::<T>::dangling().as_ptr()
     } else {
+        // SAFETY: `layout` is non-zero-sized here; null is handled below.
         unsafe { alloc(layout) }.cast::<T>()
     };
     if !ptr.is_null() {
+        // SAFETY: a fresh, non-null allocation with `T`'s layout (or dangling for a ZST).
         unsafe { ptr.write(value) };
     }
     ptr

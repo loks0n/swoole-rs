@@ -10,6 +10,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_transfer(
     observation: u8,
     stack_limit: u8,
 ) -> u32 {
+    // SAFETY: per this function's `# Safety` contract, `stage` is live, aligned and exclusive.
     let stage = unsafe { &mut *stage };
     loop {
         let current = *stage;

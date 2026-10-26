@@ -17,6 +17,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_control(
     observation: i64,
     constants: *const SchedulerConstants,
 ) -> u32 {
+    // SAFETY: per this function's `# Safety` contract, `stage` is live, aligned and exclusive.
     let stage = unsafe { &mut *stage };
     loop {
         let current = *stage;
@@ -24,17 +25,20 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_control(
         let action = match kind {
             0 => match current {
                 0 => 1, // original Native call, following assert/null seed
+                // SAFETY: per this function's `# Safety` contract, `constants` is live, aligned and initialized.
                 1 if observation != unsafe { (*constants).success } => 2,
                 1 => continue,
                 2 => 3, // fresh exception after callback/error handler returns
                 3 if observation != 0 => 4,
                 3 => continue,
                 4 => 5, // fresh result type only after exception effect returns
+                // SAFETY: per this function's `# Safety` contract, `constants` is live, aligned and initialized.
                 5 if observation == unsafe { (*constants).false_tag } => 7,
                 5 => 6,
                 _ => 0,
             },
             1 => match current {
+                // SAFETY: per this function's `# Safety` contract, `constants` is live, aligned and initialized.
                 0 if observation == unsafe { (*constants).php_resolver } => 8,
                 0 => 10,
                 1 => 9,

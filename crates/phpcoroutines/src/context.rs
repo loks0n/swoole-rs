@@ -55,6 +55,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_stack_step(
     observation: i64,
     bytes: usize,
 ) -> u32 {
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     match state.stage {
         0 => {
@@ -114,6 +115,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_context_query(
             10
         }; // original signed long result
     }
+    // SAFETY: per this function's `# Safety` contract, `stage` is live, aligned and exclusive.
     let stage = unsafe { &mut *stage };
     let current = *stage;
     *stage = current.saturating_add(1);

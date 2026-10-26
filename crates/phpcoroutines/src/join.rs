@@ -22,6 +22,7 @@ pub extern "C" fn swr_v1_phpcoroutines_join_try_new() -> *mut JoinOwner {
 /// refcount admission leaves ownership unchanged and executes no Native effect.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_join_clone(owner: *const JoinOwner) -> u8 {
+    // SAFETY: the caller holds a live strong reference for this call.
     let references = unsafe { &(*owner).references };
     u8::from(
         references
@@ -39,8 +40,11 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_clone(owner: *const JoinOwner
 /// lifetime/capture validity is authoritative, as for the original shared_ptr.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_join_drop(owner: *const JoinOwner) {
+    // SAFETY: the caller consumes one live strong reference here.
     if unsafe { (*owner).references.fetch_sub(1, Ordering::Release) } == 1 {
         fence(Ordering::Acquire);
+        // SAFETY: this was the last strong reference to a `Box` from `try_owned`, so no
+        // other user remains and it is freed exactly once.
         unsafe { drop(Box::from_raw(owner.cast_mut())) };
     }
 }
@@ -54,7 +58,10 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_try_insert(
     owner: *const JoinOwner,
     token: usize,
 ) -> u8 {
-    let tokens = unsafe { &mut *(*owner).tokens.get() };
+    // SAFETY: the caller holds a live strong reference for this call.
+    let owner = unsafe { &*owner };
+    // SAFETY: payload access is serial and exclusive, so this borrow is unique.
+    let tokens = unsafe { &mut *owner.tokens.get() };
     if let Err(index) = tokens.binary_search(&token) {
         if tokens.try_reserve(1).is_err() {
             return 0;
@@ -71,7 +78,10 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_erase_empty(
     owner: *const JoinOwner,
     token: usize,
 ) -> u8 {
-    let tokens = unsafe { &mut *(*owner).tokens.get() };
+    // SAFETY: the caller holds a live strong reference for this call.
+    let owner = unsafe { &*owner };
+    // SAFETY: payload access is serial and exclusive, so this borrow is unique.
+    let tokens = unsafe { &mut *owner.tokens.get() };
     if let Ok(index) = tokens.binary_search(&token) {
         tokens.remove(index);
     }
@@ -81,7 +91,10 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_erase_empty(
 /// Owner is held live, payload reads are serial with writes as in Native.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_join_empty(owner: *const JoinOwner) -> u8 {
-    u8::from(unsafe { &*(*owner).tokens.get() }.is_empty())
+    // SAFETY: the caller holds a live strong reference for this call.
+    let owner = unsafe { &*owner };
+    // SAFETY: payload reads are serial with writes.
+    u8::from(unsafe { &*owner.tokens.get() }.is_empty())
 }
 /// # Safety
 /// Owner is held live with serial payload access. Cursor/output are writable,
@@ -94,13 +107,17 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_next(
     cursor: *mut usize,
     output: *mut usize,
 ) -> u8 {
-    let tokens = unsafe { &*(*owner).tokens.get() };
+    // SAFETY: the caller holds a live strong reference for this call.
+    let owner = unsafe { &*owner };
+    // SAFETY: payload access is serial; no token mutation occurs during traversal.
+    let tokens = unsafe { &*owner.tokens.get() };
+    // SAFETY: `cursor` is writable, initialized local POD, distinct from the metadata.
     let index = unsafe { *cursor };
     if let Some(token) = tokens.get(index) {
-        unsafe {
-            *output = *token;
-            *cursor = index + 1;
-        }
+        // SAFETY: `output` is writable local POD, distinct from the cursor and metadata.
+        unsafe { *output = *token };
+        // SAFETY: as for the cursor read.
+        unsafe { *cursor = index + 1 };
         1
     } else {
         0
@@ -112,21 +129,30 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_next(
 /// Release capacity without dropping token referents or cancellation custody.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_join_release_membership(owner: *const JoinOwner) {
-    drop(unsafe { std::mem::take(&mut *(*owner).tokens.get()) });
+    // SAFETY: the caller holds a live strong reference for this call.
+    let owner = unsafe { &*owner };
+    // SAFETY: membership access is serial and exclusive here.
+    drop(std::mem::take(unsafe { &mut *owner.tokens.get() }));
 }
 /// # Safety
 /// Owner is held live with original Native serial canceled-flag access. This
 /// publication occurs only after Native callback-field cleanup completes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_join_cancel(owner: *const JoinOwner) {
-    unsafe { *(*owner).canceled.get() = true };
+    // SAFETY: the caller holds a live strong reference for this call.
+    let owner = unsafe { &*owner };
+    // SAFETY: canceled-flag access is serial, as in Native.
+    unsafe { *owner.canceled.get() = true };
 }
 /// # Safety
 /// Owner is held live with original Native serial canceled-flag access. Native
 /// resumes only after this decision returns; no Rust frame/borrow spans resume.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_join_can_resume(owner: *const JoinOwner) -> u8 {
-    u8::from(!unsafe { *(*owner).canceled.get() })
+    // SAFETY: the caller holds a live strong reference for this call.
+    let owner = unsafe { &*owner };
+    // SAFETY: canceled-flag access is serial, as in Native.
+    u8::from(!unsafe { *owner.canceled.get() })
 }
 
 #[cfg(test)]

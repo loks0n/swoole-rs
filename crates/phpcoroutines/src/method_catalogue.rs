@@ -129,6 +129,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_method(
         3 => TABLE_3,
         _ => &[],
     };
+    // SAFETY: per this function's `# Safety` contract, `cursor` is live, aligned and exclusive.
     let cursor = unsafe { &mut *cursor };
     while let Some(method) = table.get(cursor.next as usize) {
         let handler = method.binding;

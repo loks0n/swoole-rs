@@ -17,6 +17,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_trace(
     observation: i64,
     printing: u8,
 ) -> TracePlan {
+    // SAFETY: per this function's `# Safety` contract, `stage` is live, aligned and exclusive.
     let stage = unsafe { &mut *stage };
     let current = *stage;
     *stage = current.saturating_add(1);

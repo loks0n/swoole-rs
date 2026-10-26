@@ -1,12 +1,19 @@
 //! Sole primitive frontend configuration, in the original native TLS/global slot.
 //! A zero disable bit preserves the original enabled deadlock-check default;
 //! the native compile-time maximum seed needs no dynamic initializer.
+use std::mem::offset_of;
+
 #[repr(C)]
 pub struct ConfigState {
     pub max_num: u64,
     pub hook_flags: u32,
     pub preemptive: u8,
     pub disable_deadlock: u8,
+}
+
+// The address of one field inside `state`, computed without dereferencing it.
+fn field<T>(state: *mut ConfigState, offset: usize) -> *mut T {
+    state.wrapping_byte_add(offset).cast()
 }
 
 /// # Safety
@@ -22,30 +29,47 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_config(
     operation: u32,
     value: u64,
 ) -> u64 {
+    // Each operation reads or writes exactly its own field of the caller's live, aligned,
+    // initialized state; same-field races are outside the native contract.
     match operation {
-        0 => unsafe { std::ptr::read(std::ptr::addr_of!((*state).max_num)) },
+        // SAFETY: as above.
+        0 => unsafe { field::<u64>(state, offset_of!(ConfigState, max_num)).read() },
         1 => {
-            unsafe { std::ptr::write(std::ptr::addr_of_mut!((*state).max_num), value) };
+            // SAFETY: as above.
+            unsafe { field::<u64>(state, offset_of!(ConfigState, max_num)).write(value) };
             value
         }
-        2 => u64::from(unsafe { std::ptr::read(std::ptr::addr_of!((*state).hook_flags)) }),
+        // SAFETY: as above.
+        2 => u64::from(unsafe { field::<u32>(state, offset_of!(ConfigState, hook_flags)).read() }),
         3 => {
             let flags = value as u32;
-            unsafe { std::ptr::write(std::ptr::addr_of_mut!((*state).hook_flags), flags) };
+            // SAFETY: as above.
+            unsafe { field::<u32>(state, offset_of!(ConfigState, hook_flags)).write(flags) };
             u64::from(flags)
         }
-        4 => u64::from(unsafe { std::ptr::read(std::ptr::addr_of!((*state).preemptive)) } != 0),
+        // SAFETY: as above.
+        4 => u64::from(
+            unsafe { field::<u8>(state, offset_of!(ConfigState, preemptive)).read() } != 0,
+        ),
         5 => {
             let enabled = u8::from(value != 0);
-            unsafe { std::ptr::write(std::ptr::addr_of_mut!((*state).preemptive), enabled) };
+            // SAFETY: as above.
+            unsafe { field::<u8>(state, offset_of!(ConfigState, preemptive)).write(enabled) };
             u64::from(enabled)
         }
         6 => {
-            u64::from(unsafe { std::ptr::read(std::ptr::addr_of!((*state).disable_deadlock)) } == 0)
+            // SAFETY: as above.
+            u64::from(
+                unsafe { field::<u8>(state, offset_of!(ConfigState, disable_deadlock)).read() }
+                    == 0,
+            )
         }
         7 => {
             let disabled = u8::from(value == 0);
-            unsafe { std::ptr::write(std::ptr::addr_of_mut!((*state).disable_deadlock), disabled) };
+            // SAFETY: as above.
+            unsafe {
+                field::<u8>(state, offset_of!(ConfigState, disable_deadlock)).write(disabled)
+            };
             u64::from(value != 0)
         }
         _ => 0,

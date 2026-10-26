@@ -82,7 +82,9 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_exit(
     kind: u32,
     fact: i64,
 ) -> ExitPlan {
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
+    // SAFETY: per this function's `# Safety` contract, `config` is live, aligned and initialized.
     let config = unsafe { &*config };
     loop {
         let phase = state.phase;

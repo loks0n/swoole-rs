@@ -42,6 +42,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_stats(
     observation: u8,
     has_iouring: u8,
 ) -> StatsPlan {
+    // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     if state.index == 3 {
         state.zero_async = u8::from(observation == 0);

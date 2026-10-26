@@ -18,14 +18,20 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_phase(
     state: *mut SchedulerPhase,
     operation: u32,
 ) -> u8 {
+    // `SchedulerPhase` is `repr(C)` with one `u8` field, so `state` addresses `started`.
+    // The caller passes the live, aligned, initialized native cell; same-field races are
+    // outside the native contract.
     match operation {
-        0 => unsafe { std::ptr::read(std::ptr::addr_of!((*state).started)) },
+        // SAFETY: as above.
+        0 => unsafe { state.cast::<u8>().read() },
         1 => {
-            unsafe { std::ptr::write(std::ptr::addr_of_mut!((*state).started), 1) };
+            // SAFETY: as above.
+            unsafe { state.cast::<u8>().write(1) };
             1
         }
         2 => {
-            unsafe { std::ptr::write(std::ptr::addr_of_mut!((*state).started), 0) };
+            // SAFETY: as above.
+            unsafe { state.cast::<u8>().write(0) };
             0
         }
         _ => 0,

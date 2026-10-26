@@ -12,11 +12,21 @@ pub struct InterruptPlan {
     pub value: u64,
 }
 
+// The running cell, viewed atomically. Callers pass the live, zero-seeded native cell,
+// which every runtime access treats as `std::atomic_bool`.
+unsafe fn running<'a>(state: *mut InterruptState) -> &'a AtomicU8 {
+    // SAFETY: `state` is live for the call (see above).
+    let cell = unsafe { &(*state).running };
+    // SAFETY: the cell is aligned for `u8` and only ever accessed atomically.
+    unsafe { AtomicU8::from_ptr(cell.get()) }
+}
 unsafe fn load(state: *mut InterruptState) -> u8 {
-    unsafe { AtomicU8::from_ptr((*state).running.get()).load(Ordering::Acquire) }
+    // SAFETY: forwards the caller's live cell.
+    unsafe { running(state) }.load(Ordering::Acquire)
 }
 unsafe fn store(state: *mut InterruptState, value: u8) {
-    unsafe { AtomicU8::from_ptr((*state).running.get()).store(value, Ordering::Release) };
+    // SAFETY: forwards the caller's live cell.
+    unsafe { running(state) }.store(value, Ordering::Release);
 }
 
 /// # Safety
@@ -35,6 +45,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_interrupt(
     kind: u32,
     max_exec: u8,
 ) -> InterruptPlan {
+    // SAFETY: per this function's `# Safety` contract, `stage` is live, aligned and exclusive.
     let stage = unsafe { &mut *stage };
     loop {
         let current = *stage;
@@ -45,21 +56,26 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_interrupt(
         };
         plan.action = match kind {
             0 => match current {
+                // SAFETY: `state` is the live native interrupt cell (see the contract).
                 0 if unsafe { load(state) } == 0 => 1,
                 1 => {
+                    // SAFETY: `state` is the live native interrupt cell (see the contract).
                     unsafe { store(state, 1) };
                     2
                 }
                 _ => 0,
             },
             1 => match current {
+                // SAFETY: `state` is the live native interrupt cell (see the contract).
                 0 if unsafe { load(state) } != 0 => {
+                    // SAFETY: `state` is the live native interrupt cell (see the contract).
                     unsafe { store(state, 0) };
                     3
                 }
                 _ => 0,
             },
             2 => match current {
+                // SAFETY: `state` is the live native interrupt cell (see the contract).
                 0 if unsafe { load(state) } != 0 => 4,
                 1 => {
                     plan.value = u64::from(max_exec / 2);
@@ -72,6 +88,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_interrupt(
                 _ => 0,
             },
             3 => match current {
+                // SAFETY: `state` is the live native interrupt cell (see the contract).
                 0 if unsafe { load(state) } != 0 => 6,
                 _ => 0,
             },
