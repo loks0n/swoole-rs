@@ -31,26 +31,35 @@ unsafe fn try_insert_slot(slot: *mut *mut PhpEventRegistry, fd: i32, value: usiz
     if slot.is_null() {
         return -1;
     }
-    unsafe {
-        if (*slot).is_null() {
-            #[expect(
-                clippy::cast_ptr_alignment,
-                reason = "alloc honours Layout::new::<PhpEventRegistry>()"
-            )]
-            let owner = std::alloc::alloc(std::alloc::Layout::new::<PhpEventRegistry>())
-                .cast::<PhpEventRegistry>();
-            if owner.is_null() {
-                return -3;
-            }
+    // SAFETY: non-null, aligned, initialized slot; access is serialized.
+    let current = unsafe { slot.read() };
+    if current.is_null() {
+        // SAFETY: `PhpEventRegistry` is not zero-sized; null is handled below.
+        let raw = unsafe { std::alloc::alloc(std::alloc::Layout::new::<PhpEventRegistry>()) };
+        #[expect(
+            clippy::cast_ptr_alignment,
+            reason = "alloc honours Layout::new::<PhpEventRegistry>()"
+        )]
+        let owner = raw.cast::<PhpEventRegistry>();
+        if owner.is_null() {
+            return -3;
+        }
+        // SAFETY: `owner` is a fresh, non-null allocation with this type's layout.
+        unsafe {
             owner.write(PhpEventRegistry {
                 sockets: HashMap::default(),
-            });
-            let mut owner = Box::from_raw(owner);
-            if owner.try_insert(fd, value).is_err() {
-                return -3;
-            }
-            slot.write(Box::into_raw(owner));
-        } else if (&mut **slot).try_insert(fd, value).is_err() {
+            })
+        };
+        // SAFETY: a global-allocator allocation with `Box`'s layout, initialized above.
+        let mut owner = unsafe { Box::from_raw(owner) };
+        if owner.try_insert(fd, value).is_err() {
+            return -3;
+        }
+        // SAFETY: as for the read above.
+        unsafe { slot.write(Box::into_raw(owner)) };
+    } else {
+        // SAFETY: a non-null slot holds this module's live owner; access is serialized.
+        if unsafe { &mut *current }.try_insert(fd, value).is_err() {
             return -3;
         }
     }
@@ -66,6 +75,7 @@ pub unsafe extern "C" fn swr_v1_phpevents_registry_try_insert(
     fd: i32,
     value: usize,
 ) -> i32 {
+    // SAFETY: forwards the caller's slot contract unchanged.
     unsafe { try_insert_slot(slot, fd, value) }
 }
 
@@ -79,6 +89,7 @@ pub unsafe extern "C" fn swr_v1_phpevents_registry_insert(
     fd: i32,
     value: usize,
 ) {
+    // SAFETY: forwards the caller's slot contract unchanged.
     if unsafe { try_insert_slot(slot, fd, value) } == -3 {
         std::alloc::handle_alloc_error(std::alloc::Layout::new::<PhpEventRegistry>());
     }
@@ -92,6 +103,7 @@ pub unsafe extern "C" fn swr_v1_phpevents_registry_contains(
     registry: *const PhpEventRegistry,
     fd: i32,
 ) -> u8 {
+    // SAFETY: null or this module's live registry, not concurrently changed.
     unsafe { registry.as_ref() }.is_some_and(|registry| registry.sockets.contains_key(&fd)) as u8
 }
 
@@ -104,6 +116,7 @@ pub unsafe extern "C" fn swr_v1_phpevents_registry_get(
     registry: *const PhpEventRegistry,
     fd: i32,
 ) -> usize {
+    // SAFETY: null or this module's live registry, not concurrently changed.
     unsafe { registry.as_ref() }
         .and_then(|registry| registry.sockets.get(&fd).copied())
         .unwrap_or(0)
@@ -117,6 +130,7 @@ pub unsafe extern "C" fn swr_v1_phpevents_registry_erase(
     registry: *mut PhpEventRegistry,
     fd: i32,
 ) -> u8 {
+    // SAFETY: null or this module's live registry, uniquely accessed for this call.
     unsafe { registry.as_mut() }.is_some_and(|registry| registry.sockets.remove(&fd).is_some())
         as u8
 }
@@ -128,6 +142,7 @@ pub unsafe extern "C" fn swr_v1_phpevents_registry_erase(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_registry_drop(registry: *mut PhpEventRegistry) {
     if !registry.is_null() {
+        // SAFETY: a uniquely owned `Box` pointer from `try_insert_slot`, released once.
         drop(unsafe { Box::from_raw(registry) });
     }
 }

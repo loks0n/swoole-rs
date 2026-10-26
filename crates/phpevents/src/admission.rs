@@ -30,6 +30,7 @@ enum Init {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_reactor_init(phase: *mut u32, observation: i64) -> u32 {
     use Init::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase word.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Error as u32;
     };
@@ -70,6 +71,7 @@ pub unsafe extern "C" fn swr_v1_phpevents_reactor_init(phase: *mut u32, observat
 /// publication complete outside Rust. Existing Read handler means no writes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_handlers(phase: *mut u32, observation: u8) -> u32 {
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase word.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return 0;
     };
