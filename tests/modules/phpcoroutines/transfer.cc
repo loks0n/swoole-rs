@@ -15,6 +15,7 @@ struct Fields {
     uintptr_t bailout, vm_stack_top, vm_stack_end, vm_stack, vm_stack_page_size, current_execute_data;
     uintptr_t jit_trace_num, error_handling, exception_class, exception, stack_base, stack_limit;
     int error_reporting;
+    uintptr_t opline_before_exception;
 };
 struct Basic { int serialize_lock; Buffer serialize, unserialize; };
 static Fields eg;
@@ -30,6 +31,7 @@ void php_output_activate() { trace.push_back("activate-output-model"); og = {}; 
 struct PHPContext {
     uintptr_t bailout, vm_stack_top, vm_stack_end, vm_stack, vm_stack_page_size, execute_data;
     uintptr_t jit_trace_num, error_handling, exception_class, exception, stack_base, stack_limit;
+    uintptr_t opline_before_exception;
 #ifdef SWOOLE_RS_PHPCOROUTINES
     swr_phpcoroutines_scheduler_phase in_silence, enable_scheduler, fiber_init_notified;
     swr_phpcoroutines_error_cell ori_error_reporting, tmp_error_reporting;
@@ -68,11 +70,11 @@ int main() {
         trace.clear();
         ctx = {};
         PHASE(ctx.in_silence) = bits & 1; SCALAR(ctx.ori_error_reporting) = 77;
-        eg = {1,2,3,4,5,6,7,8,9,10,11,12,99};
+        eg = {1,2,3,4,5,6,7,8,9,10,11,12,99,13};
         og = {{bits & 2 ? 3 : 0}, 123};
         bg = {bits & 4 ? 7 : 0, {bits & 8 ? 19u : 0u, 31}, {bits & 16 ? 23u : 0u, 37}};
         PHPCoroutine::save_context(&ctx);
-        assert(ctx.bailout == 1 && ctx.execute_data == 6 && ctx.exception == 10);
+        assert(ctx.bailout == 1 && ctx.execute_data == 6 && ctx.exception == 10 && ctx.opline_before_exception == 13);
 #ifdef ZEND_CHECK_STACK_LIMIT
         assert(ctx.stack_base == 11 && ctx.stack_limit == 12);
 #else
@@ -86,7 +88,7 @@ int main() {
         assert(ctx.unserialize.data == (bits & 16 ? 23u : 0u));
         eg = {}; bg = {}; og = {};
         PHPCoroutine::restore_context(&ctx);
-        assert(eg.bailout == 1 && eg.current_execute_data == 6 && eg.exception == 10);
+        assert(eg.bailout == 1 && eg.current_execute_data == 6 && eg.exception == 10 && eg.opline_before_exception == 13);
 #ifdef ZEND_CHECK_STACK_LIMIT
         assert(eg.stack_base == 11 && eg.stack_limit == 12);
 #else

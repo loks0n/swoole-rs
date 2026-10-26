@@ -65,6 +65,14 @@ def replace_context_lifecycle(source, result, body):
     original = body(source, DESTROY)
     prefix = original[:original.index('    if (swoole_isset_hook(')]
     context_release = body(original, 'if (ctx->context) {')
+    # v6.2.4 keeps the origin lookup out of the yielding release; keep its rationale with the release.
+    rationale = '''/*
+ * Object destruction may yield and allow the origin coroutine to exit.
+ * Do not cache its context across resource cleanup; resolve it immediately before each use.
+ */'''
+    if rationale.replace('\n', '\n    ') not in original:
+        raise ValueError('Pinned destroy-context rationale changed')
+    context_release = rationale + '\n' + context_release
     resources = original[original.index('    Z_TRY_DELREF(ctx->fci.function_name);'):]
     selected = prefix + '    zend_bool no_headers = false;\n' + drive('DESTROY', [
         ('DONE', 'return;'),
