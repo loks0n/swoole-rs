@@ -182,6 +182,7 @@ pub unsafe extern "C" fn swr_v2_http_context_new(
     length: usize,
     capacity: usize,
 ) -> *mut HttpStaticContext {
+    // SAFETY: the caller lends `length` initialized bytes at `url` (null only when empty).
     let input = match unsafe { bytes(url, length) } {
         Ok(input) => input,
         Err(_) => return std::ptr::null_mut(),
@@ -202,8 +203,10 @@ pub unsafe extern "C" fn swr_v2_http_context_new(
         clippy::cast_ptr_alignment,
         reason = "alloc honours Layout::new::<HttpStaticContext>()"
     )]
+    // SAFETY: a non-zero-sized layout; null is handled below.
     let context = unsafe { alloc(Layout::new::<HttpStaticContext>()).cast::<HttpStaticContext>() };
     if !context.is_null() {
+        // SAFETY: `context` is non-null (checked above), aligned and writable.
         unsafe {
             context.write(HttpStaticContext {
                 original,
@@ -252,6 +255,7 @@ pub unsafe extern "C" fn swr_v2_http_context_text(
     capacity: usize,
     written: *mut usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live and aligned for this call.
     let Some(owner) = (unsafe { owner.as_ref() }) else {
         return INVALID;
     };
@@ -270,6 +274,7 @@ pub unsafe extern "C" fn swr_v2_http_context_text(
         }
         unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), output, text.len()) };
     }
+    // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(text.len()) };
     0
 }
@@ -285,9 +290,11 @@ pub unsafe extern "C" fn swr_v2_http_context_publish(
     input: *const u8,
     length: usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
+    // SAFETY: the caller lends `length` initialized bytes at `input` (null only when empty).
     let text = match unsafe { bytes(input, length) } {
         Ok(text) => text,
         Err(error) => return error,
@@ -305,6 +312,7 @@ pub unsafe extern "C" fn swr_v2_http_context_boundary(
     random: *const u8,
     length: usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
@@ -315,6 +323,7 @@ pub unsafe extern "C" fn swr_v2_http_context_boundary(
     if length != 39 - prefix.len() {
         return INVALID;
     }
+    // SAFETY: the caller lends `length` initialized bytes at `random` (null only when empty).
     let random = match unsafe { bytes(random, length) } {
         Ok(random) => random,
         Err(error) => return error,
@@ -339,6 +348,7 @@ pub unsafe extern "C" fn swr_v2_http_context_observe(
     owner: *const HttpStaticContext,
     output: *mut HttpStaticObservation,
 ) -> i32 {
+    // SAFETY: `owner` is null or live and aligned for this call.
     let Some(owner) = (unsafe { owner.as_ref() }) else {
         return INVALID;
     };
@@ -349,6 +359,7 @@ pub unsafe extern "C" fn swr_v2_http_context_observe(
     result.last = owner.path.last;
     result.directory_count = owner.directory.len();
     result.task_count = unsafe { swr_v2_http_tasks_count(&owner.tasks) };
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(result) };
     0
 }
@@ -362,7 +373,11 @@ pub unsafe extern "C" fn swr_v2_http_context_observed(
     kind: u32,
     input: *const HttpStaticObservation,
 ) -> i32 {
-    let (Some(owner), Some(input)) = (unsafe { owner.as_mut() }, unsafe { input.as_ref() }) else {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
+    let owner = unsafe { owner.as_mut() };
+    // SAFETY: `input` is null or live and aligned for this call.
+    let input = unsafe { input.as_ref() };
+    let (Some(owner), Some(input)) = (owner, input) else {
         return INVALID;
     };
     match kind {
@@ -389,6 +404,7 @@ pub unsafe extern "C" fn swr_v2_http_context_format(
     owner: *mut HttpStaticContext,
     kind: u32,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
@@ -464,9 +480,11 @@ pub unsafe extern "C" fn swr_v2_http_context_rewrite_step(
     observed: u32,
     index: *mut usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
+    // SAFETY: `index` is null or live, aligned and exclusively lent for this call.
     let Some(index) = (unsafe { index.as_mut() }) else {
         return INVALID;
     };
@@ -484,8 +502,11 @@ pub unsafe extern "C" fn swr_v2_http_context_rewrite_literal(
     replacement: *const HttpProxyText,
 ) -> i32 {
     let (Some(owner), Some(pattern), Some(replacement)) = (
+        // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
         unsafe { owner.as_mut() },
+        // SAFETY: `pattern` is null or live and aligned for this call.
         unsafe { pattern.as_ref() },
+        // SAFETY: `replacement` is null or live and aligned for this call.
         unsafe { replacement.as_ref() },
     ) else {
         return INVALID;
@@ -508,9 +529,11 @@ pub unsafe extern "C" fn swr_v2_http_context_rewrite_regex(
     data: *const u8,
     length: usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let value = match unsafe { bytes(data, length) } {
         Ok(value) => value,
         Err(error) => return error,
@@ -540,11 +563,13 @@ pub unsafe extern "C" fn swr_v2_http_context_path(
     length: usize,
     facts: u32,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
     match operation {
         0 => {
+            // SAFETY: the caller lends `length` initialized bytes at `input` (null only when empty).
             let root = match unsafe { bytes(input, length) } {
                 Ok(root) => root,
                 Err(error) => return error,
@@ -587,11 +612,13 @@ pub unsafe extern "C" fn swr_v2_http_context_directory(
     input: *const u8,
     length: usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
     match operation {
         0 | 2 => {
+            // SAFETY: the caller lends `length` initialized bytes at `input` (null only when empty).
             let name = match unsafe { bytes(input, length) } {
                 Ok(name) => name,
                 Err(error) => return error,
@@ -627,7 +654,11 @@ pub unsafe extern "C" fn swr_v2_http_context_page(
     capacity: usize,
     written: *mut usize,
 ) -> i32 {
-    let (Some(owner), Some(page)) = (unsafe { owner.as_ref() }, unsafe { page.as_ref() }) else {
+    // SAFETY: `owner` is null or live and aligned for this call.
+    let owner = unsafe { owner.as_ref() };
+    // SAFETY: `page` is null or live and aligned for this call.
+    let page = unsafe { page.as_ref() };
+    let (Some(owner), Some(page)) = (owner, page) else {
         return INVALID;
     };
     let input = HttpIndexPage {
@@ -666,6 +697,7 @@ pub unsafe extern "C" fn swr_v2_http_context_task(
     format: *const HttpRangeFormat,
     written: *mut usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
@@ -688,6 +720,7 @@ pub unsafe extern "C" fn swr_v2_http_context_tasks(
     capacity: usize,
     written: *mut usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live and aligned for this call.
     let Some(owner) = (unsafe { owner.as_ref() }) else {
         return INVALID;
     };

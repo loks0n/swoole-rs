@@ -76,6 +76,7 @@ pub unsafe extern "C" fn swr_v1_http_static_select(
     value: usize,
     status: i32,
 ) -> i32 {
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return INVALID;
     };

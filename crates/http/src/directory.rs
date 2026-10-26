@@ -53,8 +53,10 @@ pub extern "C" fn swr_v2_http_directory_new() -> *mut HttpDirectory {
         clippy::cast_ptr_alignment,
         reason = "alloc honours Layout::new::<HttpDirectory>()"
     )]
+    // SAFETY: a non-zero-sized layout; null is handled below.
     let owner = unsafe { alloc(Layout::new::<HttpDirectory>()).cast::<HttpDirectory>() };
     if !owner.is_null() {
+        // SAFETY: `owner` is a fresh, non-null allocation with its type's layout.
         unsafe { owner.write(HttpDirectory::default()) };
     }
     owner
@@ -64,6 +66,7 @@ pub extern "C" fn swr_v2_http_directory_new() -> *mut HttpDirectory {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_directory_drop(owner: *mut HttpDirectory) {
     if !owner.is_null() {
+        // SAFETY: a live, unique owner from `directory_new`, destroyed once.
         unsafe { drop(Box::from_raw(owner)) };
     }
 }
@@ -77,9 +80,11 @@ pub unsafe extern "C" fn swr_v2_http_directory_clone(
     source: *const HttpDirectory,
     destination: *mut *mut HttpDirectory,
 ) -> i32 {
+    // SAFETY: `destination` is null or live, aligned and exclusively lent for this call.
     let Some(destination) = (unsafe { destination.as_mut() }) else {
         return INVALID;
     };
+    // SAFETY: `source` is null or live and aligned for this call.
     let Some(source) = (unsafe { source.as_ref() }) else {
         *destination = ptr::null_mut();
         return 0;
@@ -103,10 +108,12 @@ pub unsafe extern "C" fn swr_v2_http_directory_clone(
         clippy::cast_ptr_alignment,
         reason = "alloc honours Layout::new::<HttpDirectory>()"
     )]
+    // SAFETY: a non-zero-sized layout; null is handled below.
     let owner = unsafe { alloc(Layout::new::<HttpDirectory>()).cast::<HttpDirectory>() };
     if owner.is_null() {
         return ALLOCATION;
     }
+    // SAFETY: `owner` is a fresh, non-null allocation with its type's layout.
     unsafe { owner.write(copy) };
     *destination = owner;
     0
@@ -122,9 +129,11 @@ pub unsafe extern "C" fn swr_v2_http_directory_insert(
     data: *const u8,
     length: usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let name = match unsafe { bytes(data, length) } {
         Ok(name) => name,
         Err(error) => return error,
@@ -160,9 +169,11 @@ pub unsafe extern "C" fn swr_v2_http_directory_scan_append(
     data: *const u8,
     length: usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let name = match unsafe { bytes(data, length) } {
         Ok(name) => name,
         Err(error) => return error,
@@ -179,6 +190,7 @@ pub unsafe extern "C" fn swr_v2_http_directory_scan_append(
 /// Null or a live unique owner. Existing observers are valid only after return.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_directory_scan_finish(owner: *mut HttpDirectory) {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     if let Some(owner) = unsafe { owner.as_mut() } {
         owner.scan_finish();
     }
@@ -187,6 +199,7 @@ pub unsafe extern "C" fn swr_v2_http_directory_scan_finish(owner: *mut HttpDirec
 /// Owner is null (lazy empty) or live, finished and unchanged for this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_directory_count(owner: *const HttpDirectory) -> usize {
+    // SAFETY: `owner` is null or live and aligned for this call.
     unsafe { owner.as_ref() }.map_or(0, HttpDirectory::len)
 }
 /// # Safety
@@ -197,10 +210,12 @@ pub unsafe extern "C" fn swr_v2_http_directory_contains(
     data: *const u8,
     length: usize,
 ) -> i32 {
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let name = match unsafe { bytes(data, length) } {
         Ok(name) => name,
         Err(error) => return error,
     };
+    // SAFETY: `owner` is null or live and aligned for this call.
     let Some(owner) = (unsafe { owner.as_ref() }) else {
         return 0;
     };
@@ -226,10 +241,12 @@ pub unsafe extern "C" fn swr_v2_http_directory_page(
     capacity: usize,
     written: *mut usize,
 ) -> i32 {
+    // SAFETY: `page` is null or live and aligned for this call.
     let Some(page) = (unsafe { page.as_ref() }) else {
         return INVALID;
     };
     let entry = if page.part == 1 {
+        // SAFETY: `owner` is null or live and aligned for this call.
         let Some(owner) = (unsafe { owner.as_ref() }) else {
             return INVALID;
         };
@@ -260,6 +277,7 @@ pub unsafe extern "C" fn swr_v2_http_directory_page(
         powered: copy_span(&page.powered),
         part: page.part,
     };
+    // SAFETY: `page` is a local copy of the caller's spans; output follows its contract.
     unsafe { swr_v1_http_index_page(&page, output, capacity, written) }
 }
 
@@ -279,6 +297,7 @@ pub unsafe extern "C" fn swr_v2_http_directory_emit(
     capacity: usize,
     output: *mut crate::HttpContextPageBuffer,
 ) -> i32 {
+    // SAFETY: forwards the caller's input, buffer and output under emit_page's contract.
     unsafe {
         crate::index_page::emit_page(
             input,

@@ -39,6 +39,7 @@ pub unsafe extern "C" fn swr_v2_http_cookie_flow(
     callback_result: u32,
     copy_only: u32,
 ) -> i32 {
+    // SAFETY: `flow` is null or live, aligned and exclusively lent for this call.
     let Some(flow) = (unsafe { flow.as_mut() }) else {
         return INVALID;
     };
@@ -72,7 +73,8 @@ pub unsafe extern "C" fn swr_v2_http_cookie_flow(
             if flow.source_offset > capacity || length > capacity - flow.source_offset {
                 return INVALID;
             }
-            unsafe { scratch.add(flow.source_offset).cast_const() }
+            // In range: `source_offset + length <= capacity` (checked above).
+            scratch.wrapping_add(flow.source_offset).cast_const()
         } else {
             source
         };
@@ -82,9 +84,11 @@ pub unsafe extern "C" fn swr_v2_http_cookie_flow(
             }
             // Raw memmove semantics: valid overlapping Native spans are allowed;
             // no simultaneous overlapping Rust references are constructed.
+            // SAFETY: both non-null; `length < capacity` writable scratch bytes and `length` readable input.
             unsafe { std::ptr::copy(input, scratch, length) };
         }
-        unsafe { scratch.add(length).write(0) };
+        // SAFETY: `length + 1 == required <= capacity`, inside the writable scratch.
+        unsafe { scratch.wrapping_add(length).write(0) };
         flow.cursor = 0;
         if copy_only != 0 {
             flow.phase = DONE;
@@ -100,6 +104,8 @@ pub unsafe extern "C" fn swr_v2_http_cookie_flow(
     } else {
         return INVALID;
     }
+    // SAFETY: the scratch holds the NUL-terminated cookie text in `capacity` bytes; the
+    // cursor and cookie are fields of the caller's exclusive flow.
     let result = unsafe {
         crate::swr_v1_http_cookie_next(scratch, capacity, &mut flow.cursor, &mut flow.cookie)
     };

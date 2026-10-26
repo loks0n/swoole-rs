@@ -35,9 +35,8 @@ pub extern "C" fn swr_v2_http_status_message(code: i32) -> *const c_char {
         let mut written = 0;
         // i32 formatting is bounded well below128 bytes; the existing formatter
         // completes within this thread's initialized array before pointer return.
-        unsafe {
-            crate::swr_v1_http_unknown_status(code, output, 128, &mut written);
-        }
+        // SAFETY: `output` is this thread's 128-byte array and `written` a local.
+        unsafe { crate::swr_v1_http_unknown_status(code, output, 128, &mut written) };
         output.cast::<c_char>()
     })
 }

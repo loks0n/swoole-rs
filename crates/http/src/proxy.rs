@@ -193,6 +193,7 @@ pub unsafe extern "C" fn swr_v2_http_proxy_authorization(
     }
     // At most 255 bytes plus terminator: the fixed 512-byte output is ample.
     let encoded = unsafe { swoole_rs_base64::swr_v1_base64_encode(plain.as_ptr(), count, output) };
+    // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(encoded) };
     status
 }
@@ -216,6 +217,7 @@ pub unsafe extern "C" fn swr_v1_http_proxy_pack(
     if capacity > i32::MAX as usize {
         return OVERFLOW;
     }
+    // SAFETY: `request` is non-null (checked above), aligned and initialized per the caller contract.
     let request = unsafe { &*request };
     let inputs = unsafe {
         [
@@ -287,6 +289,7 @@ pub unsafe extern "C" fn swr_v1_http_proxy_pack(
     if capacity != 0 {
         unsafe { output.add(length).write(0) };
     }
+    // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(length) };
     0
 }
@@ -296,6 +299,7 @@ pub unsafe extern "C" fn swr_v1_http_proxy_pack(
 /// Input is initialized/readable for length; no borrow escapes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_http_proxy_handshake(data: *const u8, length: usize) -> i32 {
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let input = match unsafe { bytes(data, length) } {
         Ok(v) => v,
         Err(_) => return INVALID,

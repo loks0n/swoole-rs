@@ -47,9 +47,11 @@ pub unsafe extern "C" fn swr_v2_http_context_page_step(
     begin: u32,
     index: *mut usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
+    // SAFETY: `index` is null or live, aligned and exclusively lent for this call.
     let Some(index) = (unsafe { index.as_mut() }) else {
         return INVALID;
     };
@@ -135,6 +137,7 @@ pub unsafe extern "C" fn swr_v2_http_context_scan(
     name: *const u8,
     length: usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
@@ -159,6 +162,7 @@ pub unsafe extern "C" fn swr_v2_http_context_scan(
             0
         }
         (Scan::Read, 3) => {
+            // SAFETY: the caller lends `length` initialized bytes at `name` (null only when empty).
             let name = match unsafe { bytes(name, length) } {
                 Ok(name) => name,
                 Err(error) => return error,
@@ -197,9 +201,11 @@ pub unsafe extern "C" fn swr_v2_http_context_index(
     length: usize,
     cursor: *mut usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
+    // SAFETY: `cursor` is null or live, aligned and exclusively lent for this call.
     let Some(cursor) = (unsafe { cursor.as_mut() }) else {
         return INVALID;
     };
@@ -230,6 +236,7 @@ pub unsafe extern "C" fn swr_v2_http_context_index(
         }
         (Index::Candidate { next, count }, 2) => {
             let (next, count) = (*next, *count);
+            // SAFETY: the caller lends `length` initialized bytes at `name` (null only when empty).
             let name = match unsafe { bytes(name, length) } {
                 Ok(name) => name,
                 Err(error) => return error,

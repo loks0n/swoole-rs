@@ -58,6 +58,7 @@ pub unsafe extern "C" fn swr_v1_http_static_location(
         (Ok(a), Ok(b)) => (a, b),
         (Err(e), _) | (_, Err(e)) => return e,
     };
+    // SAFETY: `state` is non-null (checked above), aligned and exclusive per the caller contract.
     match location_match(url, location, unsafe { &mut *state }) {
         Ok(found) => i32::from(found),
         Err(error) => error,
@@ -273,6 +274,7 @@ pub unsafe extern "C" fn swr_v1_http_static_index_path(
     if capacity > isize::MAX as usize {
         return OVERFLOW;
     }
+    // SAFETY: the caller lends `name_length` initialized bytes at `name` (null only when empty).
     let name = match unsafe { bytes(name, name_length) } {
         Ok(v) => v,
         Err(e) => return e,

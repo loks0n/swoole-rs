@@ -68,6 +68,7 @@ pub unsafe extern "C" fn swr_v1_http_multipart_data(state: *mut HttpMultipartDat
     if state.is_null() {
         return INVALID;
     }
+    // SAFETY: `state` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *state };
     state.step()
 }
@@ -93,6 +94,7 @@ pub extern "C" fn swr_v1_http_multipart_result(
 /// The input span is readable for this call. No reference survives the return.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_http_multipart_disposition(data: *const u8, length: usize) -> i32 {
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     match unsafe { crate::bytes(data, length) } {
         Ok(name) => i32::from(crate::case_equal(name, b"content-disposition")),
         Err(status) => status,
@@ -109,14 +111,17 @@ pub unsafe extern "C" fn swr_v1_http_multipart_filename(data: *mut u8, capacity:
     let mut cursor = 0;
     let mut cookie = crate::headers::HttpCookie::default();
     loop {
+        // SAFETY: `data` holds `capacity` writable bytes with a reachable NUL (see the contract).
         let status = unsafe {
             crate::headers::swr_v1_http_cookie_next(data, capacity, &mut cursor, &mut cookie)
         };
         if status != 1 {
             return status;
         }
-        let key =
-            unsafe { core::slice::from_raw_parts(data.add(cookie.key_offset), cookie.key_length) };
+        // SAFETY: the parser returned a key span inside the `capacity` initialized bytes.
+        let key = unsafe {
+            core::slice::from_raw_parts(data.wrapping_add(cookie.key_offset), cookie.key_length)
+        };
         if crate::case_equal(key, b"filename") {
             return 1;
         }

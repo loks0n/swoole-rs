@@ -147,13 +147,16 @@ pub unsafe extern "C" fn swr_v1_http_header_info(
     if state.is_null() || multipart.is_null() {
         return INVALID;
     }
+    // SAFETY: `multipart` is non-null (checked above), aligned and writable.
     unsafe {
         multipart.write(HttpSpan::default());
     }
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let input = match unsafe { bytes(data, length) } {
         Ok(v) => v,
         Err(e) => return e,
     };
+    // SAFETY: `state` is non-null (checked above), aligned and exclusive per the caller contract.
     header_info(input, end, unsafe { &mut *state }, unsafe {
         &mut *multipart
     })
@@ -244,6 +247,7 @@ pub unsafe extern "C" fn swr_v1_http_cookie_next(
     if output.is_null() || cursor.is_null() {
         return INVALID;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(HttpCookie::default());
     }
@@ -252,6 +256,7 @@ pub unsafe extern "C" fn swr_v1_http_cookie_next(
     }
     match unsafe { cookie(data, capacity, &mut *cursor) } {
         Ok(Some(value)) => {
+            // SAFETY: `output` is non-null (checked above), aligned and writable.
             unsafe {
                 output.write(value);
             }

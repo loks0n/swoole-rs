@@ -66,6 +66,7 @@ pub unsafe extern "C" fn swr_v2_http_context_range_begin(
     length: usize,
     if_range: u32,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
@@ -99,6 +100,7 @@ pub unsafe extern "C" fn swr_v2_http_context_range_step(
     text: *const u8,
     length: usize,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
@@ -106,6 +108,7 @@ pub unsafe extern "C" fn swr_v2_http_context_range_step(
         return INVALID;
     }
     // Validate the current Native span even when this call will only finish.
+    // SAFETY: the caller lends `length` initialized bytes at `text` (null only when empty).
     let input = match unsafe { bytes(text, length) } {
         Ok(input) => input,
         Err(error) => return error,
@@ -198,8 +201,11 @@ pub unsafe extern "C" fn swr_v2_http_context_range_resume(
     owner: *mut HttpStaticContext,
     observed: *const HttpContextRangeObservation,
 ) -> i32 {
-    let (Some(owner), Some(observed)) = (unsafe { owner.as_mut() }, unsafe { observed.as_ref() })
-    else {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
+    let owner = unsafe { owner.as_mut() };
+    // SAFETY: `observed` is null or live and aligned for this call.
+    let observed = unsafe { observed.as_ref() };
+    let (Some(owner), Some(observed)) = (owner, observed) else {
         return INVALID;
     };
     match owner.range.stage {

@@ -56,9 +56,12 @@ impl HttpTasks {
         self.scratch.offset = offset;
         self.scratch.length = length;
         if format.is_null() {
+            // SAFETY: callers pass the export's aligned, writable `written` output.
             unsafe { written.write(0) };
             return 0;
         }
+        // SAFETY: `format` is non-null with validated spans; the scratch header holds 256
+        // writable bytes; `written` is the caller's output.
         unsafe {
             swr_v1_http_range_format(format, self.scratch.part_header.as_mut_ptr(), 256, written)
         }
@@ -71,8 +74,10 @@ pub extern "C" fn swr_v2_http_tasks_new() -> *mut HttpTasks {
         clippy::cast_ptr_alignment,
         reason = "alloc honours Layout::new::<HttpTasks>()"
     )]
+    // SAFETY: a non-zero-sized layout; null is handled below.
     let owner = unsafe { alloc(Layout::new::<HttpTasks>()).cast::<HttpTasks>() };
     if !owner.is_null() {
+        // SAFETY: `owner` is a fresh, non-null allocation with its type's layout.
         unsafe { owner.write(HttpTasks::default()) };
     }
     owner
@@ -83,6 +88,7 @@ pub extern "C" fn swr_v2_http_tasks_new() -> *mut HttpTasks {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_tasks_drop(owner: *mut HttpTasks) {
     if !owner.is_null() {
+        // SAFETY: a unique, live owner from `tasks_new`, dropped once.
         unsafe { drop(Box::from_raw(owner)) };
     }
 }
@@ -92,6 +98,7 @@ pub unsafe extern "C" fn swr_v2_http_tasks_drop(owner: *mut HttpTasks) {
 /// Unique live owner; no Rust task pointers are exported or retained by native.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_tasks_begin(owner: *mut HttpTasks) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
@@ -117,9 +124,11 @@ pub unsafe extern "C" fn swr_v2_http_tasks_prepare(
     if written.is_null() {
         return INVALID;
     }
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
+    // SAFETY: `written` is non-null (checked above); `format` follows the export contract.
     unsafe { owner.prepare(offset, length, format, written) }
 }
 /// Commit the prepared value with fallible admission; error publishes no task.
@@ -129,6 +138,7 @@ pub unsafe extern "C" fn swr_v2_http_tasks_prepare(
 /// Unique live owner with initialized per-parse scratch. No concurrent observer.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_tasks_push(owner: *mut HttpTasks) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
@@ -138,6 +148,7 @@ pub unsafe extern "C" fn swr_v2_http_tasks_push(owner: *mut HttpTasks) -> i32 {
 /// Null lazy-empty or live unchanged owner for this complete call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_tasks_count(owner: *const HttpTasks) -> usize {
+    // SAFETY: `owner` is null or live and aligned for this call.
     unsafe { owner.as_ref() }.map_or(0, HttpTasks::count)
 }
 /// Copy one completed task into Native send-snapshot storage. No Rust pointer or
@@ -153,12 +164,14 @@ pub unsafe extern "C" fn swr_v2_http_tasks_copy(
     if output.is_null() {
         return INVALID;
     }
+    // SAFETY: `owner` is null or live and aligned for this call.
     let Some(owner) = (unsafe { owner.as_ref() }) else {
         return INVALID;
     };
     let Some(task) = owner.items.get(index) else {
         return INVALID;
     };
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(*task) };
     0
 }
@@ -179,6 +192,7 @@ pub unsafe extern "C" fn swr_v2_http_tasks_snapshot(
     if written.is_null() {
         return INVALID;
     }
+    // SAFETY: `owner` is null or live and aligned for this call.
     let tasks = unsafe { owner.as_ref() }.map_or(&[][..], |owner| owner.items.as_slice());
     if capacity != 0 {
         if capacity < tasks.len()
@@ -190,9 +204,11 @@ pub unsafe extern "C" fn swr_v2_http_tasks_snapshot(
             return INVALID;
         }
         if !tasks.is_empty() {
+            // SAFETY: non-null (checked above), `len <= capacity` slots, disjoint from the owner.
             unsafe { std::ptr::copy_nonoverlapping(tasks.as_ptr(), output, tasks.len()) };
         }
     }
+    // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(tasks.len()) };
     0
 }
@@ -202,6 +218,7 @@ pub unsafe extern "C" fn swr_v2_http_tasks_snapshot(
 /// Unique live owner. Native IO snapshots, if any, are independent owned copies.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_tasks_clear(owner: *mut HttpTasks) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };

@@ -91,6 +91,7 @@ pub unsafe extern "C" fn swr_v1_http_multipart_emit(
         (4, _) => VALUE,
         _ => return std::ptr::null(),
     };
+    // SAFETY: `count` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { count.write(plan.len()) };
     plan.as_ptr()
 }

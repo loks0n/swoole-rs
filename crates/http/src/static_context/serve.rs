@@ -31,6 +31,7 @@ pub unsafe extern "C" fn swr_v2_http_context_serve(
     root: *const HttpProxyText,
     observation: *const HttpContextServeObservation,
 ) -> i32 {
+    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };

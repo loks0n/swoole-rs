@@ -16,6 +16,7 @@ pub unsafe extern "C" fn swr_v1_http_static_boundary(
     if length != 0 || random_length.is_null() {
         return std::ptr::null();
     }
+    // SAFETY: `random_length` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { random_length.write(39 - BOUNDARY.len()) };
     BOUNDARY.as_ptr()
 }
@@ -42,7 +43,9 @@ pub unsafe extern "C" fn swr_v1_http_static_content_type(
     if boundary.is_null() || written.is_null() || (capacity != 0 && output.is_null()) {
         return INVALID;
     }
+    // SAFETY: `boundary` is non-null (checked above), aligned and initialized per the caller contract.
     let boundary = unsafe { &*boundary };
+    // SAFETY: the boundary span names `length` initialized bytes (null only when empty).
     let boundary = match unsafe { bytes(boundary.data, boundary.length) } {
         Ok(v) => v,
         Err(e) => return e,
@@ -59,11 +62,13 @@ pub unsafe extern "C" fn swr_v1_http_static_content_type(
         if capacity < length || capacity > isize::MAX as usize {
             return OVERFLOW;
         }
+        // SAFETY: non-null (checked above); `length <= capacity <= isize::MAX` writable bytes.
         let output = unsafe { slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), length) };
         for (slot, &byte) in output.iter_mut().zip(prefix.iter().chain(boundary)) {
             slot.write(byte);
         }
     }
+    // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(length) };
     0
 }
@@ -81,6 +86,7 @@ pub unsafe extern "C" fn swr_v1_http_static_path_check(
     if kind > 1 {
         return INVALID;
     }
+    // SAFETY: the caller lends the filename's declared initialized span.
     let filename = match unsafe {
         bytes(
             filename,
@@ -105,6 +111,7 @@ pub unsafe extern "C" fn swr_v1_http_static_path_check(
     if filename.len() <= root_length || filename[root_length] != b'/' {
         return 0;
     }
+    // SAFETY: the caller lends `root_length` initialized bytes at `root` (null only when empty).
     let root = match unsafe { bytes(root, root_length) } {
         Ok(v) => v,
         Err(e) => return e,
@@ -130,6 +137,7 @@ pub unsafe extern "C" fn swr_v1_http_static_catch(last: u32, status: *mut i32) -
     if last == 0 {
         return 0;
     }
+    // SAFETY: `status` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { status.write(404) };
     1
 }
