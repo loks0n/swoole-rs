@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Project complete CID/creation/registry operation and actual consumer closure."""
+"""Project complete CID/creation operation and actual consumer closure."""
 import argparse,difflib,hashlib,json,subprocess,sys,tempfile
 from pathlib import Path
 from ordered_gate import ROOT,PIN,block
@@ -34,23 +34,14 @@ def main():
             old='    long cid;';assert h.count(old)==1;h=h.replace(old,wrap(old,'    swr_v1_coroutine_cid cid;'),1)
             sig='long get_cid() const';old=block(h,sig);chosen=old.replace('return cid;','return swr_v1_coroutine_cid_read(&cid);');h=h.replace(old,wrap(old,chosen),1)
             sig='static Coroutine *get_by_cid(';old=block(h,sig);chosen=old[:old.index('{')+1]+'''
-#ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
-        return coroutines.lookup(cid);
-#else
         auto i = coroutines.find(cid);
         return sw_likely(i != coroutines.end()) ? i->second : nullptr;
-#endif
     }''';h=h.replace(old,wrap(old,chosen),1)
             sig='Coroutine::Coroutine(';old=block(s,sig);chosen='''Coroutine::Coroutine(const CoroutineFunc &fn, void *private_data) : ctx(get_stack_size(), fn, private_data) {
     swr_v1_coroutine_creation_cursor cursor = {0};
     size_t observed_count = 0;
     for (;;) {
-#ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
-        const auto step = coroutines.creation_step(&cursor, &scheduler_, &cid, this, observed_count);
-#else
-        const auto step = swr_v1_coroutine_create_step(&cursor, &scheduler_, &cid, nullptr,
-                                                     reinterpret_cast<uintptr_t>(this), observed_count);
-#endif
+        const auto step = swr_v1_coroutine_create_step(&cursor, &scheduler_, &cid, observed_count);
         switch (step.action) {
         case SWR_CO_CREATE_INSERT:
             coroutines[step.cid] = this;
@@ -71,17 +62,8 @@ def main():
     }
 }''';s=s.replace(old,wrap(old,chosen),1)
             sig='long Coroutine::run()';old=block(s,sig);chosen=old.replace('const long _cid = cid;','const long _cid = get_cid();');assert chosen!=old;s=s.replace(old,chosen,1)
-            sig='void Coroutine::close()';old=block(s,sig);chosen=old.replace('    coroutines.erase(cid);','''#ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
-    coroutines.unregister(&cid);
-#else
-    coroutines.erase(get_cid());
-#endif''');assert chosen!=old;s=s.replace(old,chosen,1)
+            sig='void Coroutine::close()';old=block(s,sig);chosen=old.replace('    coroutines.erase(cid);','    coroutines.erase(get_cid());');assert chosen!=old;s=s.replace(old,chosen,1)
             (tree/hn).write_text(h);(tree/sn).write_text(s)
-        if '// SWR_CID_LOOKUP_NATIVE' not in s:
-            sig='swoole::Coroutine *swoole_coroutine_get('
-            old=block(s,sig);inner=old[old.index('{')+1:-1]
-            chosen=old[:old.index('{')+1]+'\n#if defined(SWOOLE_RS_COROUTINE) && SWOOLE_RS_COROUTINE && defined(SWOOLE_RS_COROUTINE_REGISTRY_V2)\n    return swoole::Coroutine::coroutines.lookup(cid);\n#else // SWR_CID_LOOKUP_NATIVE'+inner+'#endif // SWR_CID_LOOKUP_END\n}'
-            s=s.replace(old,chosen,1);(tree/sn).write_text(s)
         if '#include <new>\n' not in s:
             s=s.replace('#include \"swoole_rs_coroutine.h\"\n', '#include \"swoole_rs_coroutine.h\"\n#include <new>\n', 1)
             (tree/sn).write_text(s)

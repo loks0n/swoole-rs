@@ -15,16 +15,16 @@ int main(void) {
     swr_v1_coroutine_cid cid; /* raw publication, no prior read */
     swr_v1_coroutine_scheduler scheduler={65536,0,0,0,0};
     swr_v1_coroutine_creation_cursor cursor={0};
-    swr_v1_coroutine_creation_action step=swr_v1_coroutine_create_step(&cursor,&scheduler,&cid,0,0,0);
+    swr_v1_coroutine_creation_action step=swr_v1_coroutine_create_step(&cursor,&scheduler,&cid,0);
     assert(step.action==SWR_CO_CREATE_INSERT && step.cid==1);
     assert(swr_v1_coroutine_cid_read(&cid)==1);
-    step=swr_v1_coroutine_create_step(&cursor,&scheduler,&cid,0,0,0);
+    step=swr_v1_coroutine_create_step(&cursor,&scheduler,&cid,0);
     assert(step.action==SWR_CO_CREATE_COUNT);
-    step=swr_v1_coroutine_create_step(&cursor,&scheduler,&cid,0,0,7);
+    step=swr_v1_coroutine_create_step(&cursor,&scheduler,&cid,7);
     assert(step.action==SWR_CO_CREATE_COUNT);
-    step=swr_v1_coroutine_create_step(&cursor,&scheduler,&cid,0,0,5);
+    step=swr_v1_coroutine_create_step(&cursor,&scheduler,&cid,5);
     assert(step.action==SWR_CO_CREATE_ACTIVATE && scheduler.peak_num==5);
     /* Terminal metadata only, no object/scheduler access or actual activation. */
-    assert(swr_v1_coroutine_create_step(&cursor,0,0,0,0,0).action==SWR_CO_CREATE_DONE);
+    assert(swr_v1_coroutine_create_step(&cursor,0,0,0).action==SWR_CO_CREATE_DONE);
     return 0;
 }

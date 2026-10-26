@@ -320,6 +320,3 @@ mod tests {
         }
     }
 }
-
-mod registry;
-pub use registry::*;

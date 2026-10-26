@@ -8,10 +8,6 @@
 #include <cstdio>
 #include <new>
 #include <unordered_map>
-#ifdef SWR_CREATION_REGISTRY
-#define SWOOLE_RS_COROUTINE_REGISTRY_V2 1
-#include "swoole_rs_coroutine_registry.h"
-#endif
 #define sw_unlikely(value) (value)
 #define sw_likely(value) (value)
 
@@ -47,11 +43,7 @@ struct SelectedRegistration {
     uint32_t marker;
     static swr_v1_coroutine_scheduler scheduler_;
     static size_t count_calls,activation_calls;
-#ifdef SWR_CREATION_REGISTRY
-    static swoole::RustCoroutineRegistry<SelectedRegistration> coroutines;
-#else
     static std::unordered_map<long,SelectedRegistration *> coroutines;
-#endif
     static size_t count() { ++count_calls;return coroutines.size(); }
     static void activate() {
         ++activation_calls;
@@ -68,11 +60,7 @@ struct SelectedRegistration {
 };
 swr_v1_coroutine_scheduler SelectedRegistration::scheduler_={65536,0,0,0,0};
 size_t SelectedRegistration::count_calls=0,SelectedRegistration::activation_calls=0;
-#ifdef SWR_CREATION_REGISTRY
-swoole::RustCoroutineRegistry<SelectedRegistration> SelectedRegistration::coroutines;
-#else
 std::unordered_map<long,SelectedRegistration *> SelectedRegistration::coroutines;
-#endif
 
 int main() {
     size_t observations=0;
@@ -101,11 +89,7 @@ int main() {
             assert(NativeRegistration::activated==(SelectedRegistration::scheduler_.activated!=0));++observations;
             assert(NativeRegistration::activation_calls==SelectedRegistration::activation_calls);++observations;
             assert(NativeRegistration::coroutines.size()==SelectedRegistration::coroutines.size());++observations;
-#ifdef SWR_CREATION_REGISTRY
-            assert(SelectedRegistration::count_calls==0);
-#else
             assert(NativeRegistration::count_calls==SelectedRegistration::count_calls);
-#endif
             ++observations;
             for (long key=seed-2;key<=seed+70;key++) {
                 auto *a=NativeRegistration::get_by_cid(key);

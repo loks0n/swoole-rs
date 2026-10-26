@@ -20,7 +20,6 @@ p.add_argument('--source', type=Path, required=True)
 p.add_argument('--report', type=Path, required=True)
 p.add_argument('--stack-usage', action='store_true', help='Compile actual optional stack-marker callers')
 p.add_argument('--timing', action='store_true', help='Compile actual optional Coroutine timing callers')
-p.add_argument('--registry', action='store_true', help='Compile actual optional authoritative Rust registry callers')
 p.add_argument('--standard', choices=['c++14','c++17'], default='c++14')
 p.add_argument('--backend', choices=['header-default', 'asm', 'ucontext', 'thread'], default='header-default',
                help='Compile the requested Native backend; no switching or runtime execution')
@@ -44,8 +43,6 @@ with tempfile.TemporaryDirectory(prefix='swr-coroutine-compile-') as tmp:
         flags += ['-DSW_USE_ASM_CONTEXT']
     elif a.backend == 'thread':
         flags += ['-DSW_USE_THREAD_CONTEXT']
-    if a.registry:
-        flags += ['-DSWOOLE_RS_COROUTINE_REGISTRY_V2']
     if a.stack_usage:
         flags += ['-DSW_CONTEXT_DETECT_STACK_USAGE']
     if a.timing:
@@ -62,7 +59,7 @@ with tempfile.TemporaryDirectory(prefix='swr-coroutine-compile-') as tmp:
                     raise ValueError('Patch checksum differs')
                 apply_patch_verified(tree, patch, entry['upstream_paths'], entry['sha256'])
         for name in backends:
-            selected_flags = [flag for flag in flags if variant != 'disabled' or flag not in ['-DSWOOLE_RS_COROUTINE', '-DSWOOLE_RS_COROUTINE_REGISTRY_V2']]
+            selected_flags = [flag for flag in flags if variant != 'disabled' or flag not in ['-DSWOOLE_RS_COROUTINE']]
             cmd = ['c++', *selected_flags, '-c', str(tree/('src/coroutine/'+name+'.cc')), '-o', str(tree/(variant+'-'+name+'.o'))]
             try:
                 require_build_space(tree)

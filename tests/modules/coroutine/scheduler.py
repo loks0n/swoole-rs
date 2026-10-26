@@ -15,10 +15,10 @@ def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 def main():
  p=argparse.ArgumentParser(description=__doc__)
  for n in ('source','archive','report'):p.add_argument('--'+n,type=Path,required=True)
- p.add_argument('--registry',action='store_true');p.add_argument('--sanitize',action='store_true');p.add_argument('--rust-instrumented',action='store_true');a=p.parse_args();a.report=a.report.resolve()
+ p.add_argument('--sanitize',action='store_true');p.add_argument('--rust-instrumented',action='store_true');a=p.parse_args();a.report=a.report.resolve()
  if a.rust_instrumented and (sys.platform!='linux' or not a.sanitize):p.error('Mixed instrumentation requires Linux and --sanitize')
  if a.report.exists():p.error('Choose a unique receipt')
- a.report.parent.mkdir(parents=True,exist_ok=True);work=a.report.parent/('scheduler-'+uuid.uuid4().hex);work.mkdir();manifest=ROOT/'migration/patches/coroutine/manifest.json';entries=json.loads(manifest.read_text())['patches'];bound=[Path(__file__),Path(__file__).with_suffix('.cc'),manifest,ROOT/'native/coroutine/swoole_rs_coroutine.h',ROOT/'native/coroutine/swoole_rs_coroutine_registry.h',a.archive.resolve(),*sorted((ROOT/'crates/coroutine/src').glob('*.rs')),*[manifest.parent/e['path']for e in entries]];identities={str(p):sha(p)for p in bound};r=dict(registry_selected=a.registry,passed=False,full_gate_passed=False,pin=PIN,scope=__doc__,inputs_sha256=identities,native_sanitized=a.sanitize,rust_instrumented=a.rust_instrumented,rust_std_instrumented=False,archive_source_attested_here=False,commands=[],results=[])
+ a.report.parent.mkdir(parents=True,exist_ok=True);work=a.report.parent/('scheduler-'+uuid.uuid4().hex);work.mkdir();manifest=ROOT/'migration/patches/coroutine/manifest.json';entries=json.loads(manifest.read_text())['patches'];bound=[Path(__file__),Path(__file__).with_suffix('.cc'),manifest,ROOT/'native/coroutine/swoole_rs_coroutine.h',a.archive.resolve(),*sorted((ROOT/'crates/coroutine/src').glob('*.rs')),*[manifest.parent/e['path']for e in entries]];identities={str(p):sha(p)for p in bound};r=dict(passed=False,full_gate_passed=False,pin=PIN,scope=__doc__,inputs_sha256=identities,native_sanitized=a.sanitize,rust_instrumented=a.rust_instrumented,rust_std_instrumented=False,archive_source_attested_here=False,commands=[],results=[])
  try:
   if a.rust_instrumented:
    imports=subprocess.check_output(['nm','-u',str(a.archive.resolve())],text=True,stderr=subprocess.DEVNULL);r['rust_asan_report_imports']=sorted(set(line.strip()for line in imports.splitlines()if '__asan_report_'in line))
@@ -45,11 +45,7 @@ static SW_THREAD_LOCAL Coroutine *current;
 static SW_THREAD_LOCAL SwapCallback on_yield,on_resume,on_close;
 #endif
 static SW_THREAD_LOCAL BailoutCallback on_bailout;
-#ifdef SWOOLE_RS_COROUTINE_REGISTRY_V2
-static SW_THREAD_LOCAL RustCoroutineRegistry<Coroutine> coroutines;
-#else
 static SW_THREAD_LOCAL std::unordered_map<long,Coroutine*> coroutines;
-#endif
 #ifdef SWOOLE_RS_COROUTINE
 static SW_THREAD_LOCAL swr_v1_coroutine_scheduler scheduler_;
 static void reset_model(){scheduler_={SW_DEFAULT_C_STACK_SIZE,0,0,0,0};coroutines.clear();on_bailout=nullptr;}
@@ -78,7 +74,7 @@ static void activate();static void deactivate();
    start=source.index('namespace swoole {\n')+len('namespace swoole {\n');end=source.index('#ifdef SW_USE_THREAD_CONTEXT\nnamespace',start)
    text=decl+source[start:end]+'\n'+block(source,'void Coroutine::activate()')+'\n'+block(source,'void Coroutine::deactivate()')+'\n'+block(source,'Coroutine::Coroutine(')+'\n';inc=folder/'scheduler.inc';inc.write_text(text)
    for threaded in (False,True):
-    binary=folder/('metadata-thread'if threaded else'metadata-global');command=['c++','-std=c++14','-O1','-g','-UNDEBUG','-Wall','-Wextra','-Werror','-I'+str(folder),'-I'+str(ROOT/'native/coroutine'),*(['-DSWOOLE_RS_COROUTINE_REGISTRY_V2','-include',str(ROOT/'native/coroutine/swoole_rs_coroutine_registry.h')]if a.registry and engine=='selected'else[]),*(['-DSWOOLE_RS_COROUTINE']if engine=='selected'else[]),*(['-DSW_THREAD']if threaded else[]),str(Path(__file__).with_suffix('.cc')),*([str(a.archive.resolve())]if engine=='selected'else[]),'-lpthread',*(['-ldl','-lm']if sys.platform.startswith('linux')else[]),'-o',str(binary)]
+    binary=folder/('metadata-thread'if threaded else'metadata-global');command=['c++','-std=c++14','-O1','-g','-UNDEBUG','-Wall','-Wextra','-Werror','-I'+str(folder),'-I'+str(ROOT/'native/coroutine'),*(['-DSWOOLE_RS_COROUTINE']if engine=='selected'else[]),*(['-DSW_THREAD']if threaded else[]),str(Path(__file__).with_suffix('.cc')),*([str(a.archive.resolve())]if engine=='selected'else[]),'-lpthread',*(['-ldl','-lm']if sys.platform.startswith('linux')else[]),'-o',str(binary)]
     if a.sanitize:command+=['-fsanitize=address,undefined','-fno-sanitize-recover=all']
     for stage,cmd in [('compile',command),('execute',[str(binary)])]:
      require_build_space(work);out=run_isolated(cmd,cwd=folder,timeout=90);r['commands'].append(dict(engine=engine,threaded=threaded,stage=stage,command=cmd,exit=out.returncode,stdout=out.stdout,stderr=out.stderr));write_report(a.report,r)

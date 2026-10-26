@@ -35,11 +35,6 @@ tests/modules/corebase/random-policy.rs
 tests/modules/corebase/random-runtime.cc
 tests/modules/coroutine/make_context_bookkeeping.py
 tests/modules/coroutine/make_coroutine_status.py
-tests/modules/coroutine/registry_gnu_body.cc
-tests/modules/coroutine/registry_gnu_body.py
-tests/modules/coroutine/registry_gnu_source_test.py
-tests/modules/coroutine/registry_prepare_benchmark.py
-tests/modules/coroutine/registry_rust_checks.py
 tests/modules/coroutine/thread_context_audit.py
 tests/modules/crc32/address_span.cc
 tests/modules/crc32/address_span.py
