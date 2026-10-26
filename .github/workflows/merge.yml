@@ -15,7 +15,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      # Saved from main under a key the PR tier's hybrid and gates jobs restore.
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
       # rust-cache restores all of target/; hybrid build trees must start clean.
       - run: rm -rf target/hybrid
       - run: .devcontainer/install.sh
