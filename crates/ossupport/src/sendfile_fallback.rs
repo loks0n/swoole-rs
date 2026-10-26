@@ -29,7 +29,7 @@ pub unsafe extern "C" fn swr_v1_os_sendfile_fallback_next(
             1
         }
         1 if observed > 0 => {
-            state.amount = observed as usize;
+            state.amount = crate::size_t(observed);
             state.phase = 2;
             2
         }

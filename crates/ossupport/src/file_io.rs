@@ -25,7 +25,7 @@ pub unsafe extern "C" fn swr_v1_os_file_io_next(
         0 => (),
         1 if result > 0 => {
             // Native size_t += ssize_t uses unsigned arithmetic.
-            state.completed = state.completed.wrapping_add(result as usize);
+            state.completed = state.completed.wrapping_add(crate::size_t(result));
         }
         1 if result == 0 => {
             state.phase = 2;

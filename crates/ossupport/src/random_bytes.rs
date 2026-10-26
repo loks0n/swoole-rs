@@ -27,7 +27,7 @@ pub unsafe extern "C" fn swr_v1_os_random_bytes_next(
             return 0;
         }
         1 if result == -1 => (),
-        1 => state.completed = state.completed.wrapping_add(result as usize),
+        1 => state.completed = state.completed.wrapping_add(crate::size_t(result)),
         2 => return 0,
         _ => return u32::MAX,
     }

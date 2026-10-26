@@ -25,9 +25,13 @@ pub unsafe extern "C" fn swr_v1_os_file_line_result(
             extra: 0,
         };
     }
-    let end = unsafe { crate::swr_v1_os_line_end(data, read_result as usize) };
+    let end = unsafe { crate::swr_v1_os_line_end(data, crate::size_t(read_result)) };
     FileLineResult {
-        length: if end == 0 { read_result } else { end as i64 },
+        length: if end == 0 {
+            read_result
+        } else {
+            crate::ssize_t(end)
+        },
         action: 1,
         extra: u32::from(end == 0),
     }
@@ -58,7 +62,9 @@ mod tests {
             (b"abc\n".as_slice(), 4, 0),
         ] {
             assert_eq!(
-                unsafe { swr_v1_os_file_line_result(bytes.as_ptr(), bytes.len() as i64) },
+                unsafe {
+                    swr_v1_os_file_line_result(bytes.as_ptr(), i64::try_from(bytes.len()).unwrap())
+                },
                 FileLineResult {
                     length,
                     action: 1,
