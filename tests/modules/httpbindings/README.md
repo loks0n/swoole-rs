@@ -26,7 +26,7 @@ uninstrumented).
 | `request_gate.py` | header/URL callbacks, token list, quote trim, response key formatting | `--without-compression` |
 | `server_gate.py` | coroutine handler routing, whole accept loop | |
 | `payload_gate.py` | body/completion callbacks, option assignment, compression method selection | `--capabilities 0..7`, `--native-libc --locale NAME` |
-| `response_gate.py` | known-header classifier and `build_header` tail | `--without-compression`, `--native-libc --locale NAME` |
+| `response_gate.py` | known-header classifier (`build_header` is upstream's) | `--without-compression`, `--native-libc --locale NAME` |
 | `codec_gate.py` | `HttpContext::compress` dispatch, levels, backend errors, partial writes | `--capabilities 0..7` |
 | `settings_gate.py` | coroutine server startup settings body: alias order, null/false fallthrough, level clamp | `--without-compression` |
 | `emission_gate.py` | `HttpContext::write`/`end` chunk/trailer packetization and split sends | `--without-compression`, `--without-zlib` |

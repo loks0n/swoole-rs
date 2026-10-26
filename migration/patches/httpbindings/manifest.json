@@ -17,7 +17,7 @@
     },
     {
       "path": "0003-response-policy.patch",
-      "sha256": "e5f9755d8b54afd343a96889bd9b56648311002417715e3c95e75a026fcbb5be",
+      "sha256": "4387c3c0f43522e830ee2801e576bbcbf2a7cc8fbc21c4dca97bd3de55df9dd1",
       "upstream_paths": [
         "ext-src/swoole_http_response.cc"
       ]
