@@ -3,8 +3,7 @@
 Opt-in feature bit 2097152 (`httpbindings`). ABI: `docs/http-bindings-abi-v1.md`
 and `swoole_rs_httpbindings.h`. Patched upstream files:
 `ext-src/swoole_http_cookie.cc`, `ext-src/swoole_http_request.cc`,
-`ext-src/swoole_http_response.cc`, `ext-src/swoole_http_server.cc`,
-`ext-src/swoole_http_server_coro.cc`. Public PHP headers, class layouts,
+`ext-src/swoole_http_response.cc`, `ext-src/swoole_http_server_coro.cc`. Public PHP headers, class layouts,
 stubs/arginfo and Context layout are unchanged.
 
 Common rule: Rust returns before every native effect (Zend mutation, allocation,
@@ -58,14 +57,11 @@ trim to one quote then `a`. Response header-key case formatting keeps the
 leading/consecutive-hyphen state machine, bounded binary/NUL behavior, and treats
 negative lengths as a no-op.
 
-## Server receive and coroutine server
+## Coroutine server
 
-The normal-server receive controller decides protocol routing, callback
-selection, parse-failure sequencing, handshake publication, before-callback queue
-transfer and captured-object cleanup. Context/object pointers stay native locals.
-After request processing or the two captured-object releases, it consumes only
-its cursor and never re-reads a possibly destroyed context. A false
-before-request result returns without destruction, leaving queue custody native.
+The normal server's receive path (`php_swoole_http_server_onReceive`) is upstream's:
+its protocol routing and callback sequencing own no data, so a Rust controller
+only added per-step calls (#366).
 
 Coroutine handler matching uses the native `unordered_map` iteration and
 default-callback identity, skipping default entries before any context-path

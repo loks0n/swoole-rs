@@ -23,13 +23,6 @@
       ]
     },
     {
-      "path": "0004-server-policy.patch",
-      "sha256": "6c42cf9ba9724cdf711b49980633cf8ac05352d9ff49bc1768f39a7f7f5fa039",
-      "upstream_paths": [
-        "ext-src/swoole_http_server.cc"
-      ]
-    },
-    {
       "path": "0005-coro-server-policy.patch",
       "sha256": "be4121c846fa0c191a425334b8daaa103f34b78c71e5ce86af9d012bf71aa81a",
       "upstream_paths": [
