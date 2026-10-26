@@ -190,6 +190,19 @@ jobs:
               --output target/phpt/stdext-$engine.json || [ $? -eq 1 ]
           done
       - run: python3 corpus/upstream/gate.py target/phpt/stdext-*.json --output phpt-stdext.json >> "$GITHUB_STEP_SUMMARY"
+      # phphelpers' runtime fixtures call stdext helpers, so they run here, not in full-gates.
+      - if: always()
+        run: >
+          python3 tools/dev.py integrate --module phphelpers --stdext
+          --php-extension pdo --php-extension pdo_sqlite --php-extension curl --php-extension sockets --php-extension tokenizer --php-extension ffi
+          --phase build --phase stdext-reference-build --phase phphelpers-sdk
+          --phase phphelpers-facade-runtime --phase phphelpers-entrypoint --phase phphelpers-runtime
+      # tools/ci.py reads phases* artifacts for new and fixed phases.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phases-stdext
+          path: target/reports/dev/*/loop.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
