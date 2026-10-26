@@ -9,6 +9,12 @@ pub struct ReactorIovProgress {
     pub index: i32,
     pub action: i32,
 }
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "native ssize_t/int iovec progress arithmetic"
+)]
 pub(crate) fn progress(
     lengths: impl IntoIterator<Item = usize>,
     n: isize,
@@ -73,8 +79,10 @@ pub unsafe extern "C" fn swr_v1_reactor_iov_progress(
     offset: usize,
 ) -> ReactorIovProgress {
     progress(
-        // SAFETY: `i < remaining`, and `vectors` names `remaining` initialized iovecs.
-        (0..remaining).map(|i| unsafe { (*vectors.wrapping_add(i as usize)).iov_len }),
+        (0..remaining).map(|i| {
+            // SAFETY: `i < remaining`, and `vectors` names `remaining` initialized iovecs.
+            unsafe { (*vectors.wrapping_add(i.unsigned_abs() as usize)).iov_len }
+        }),
         n,
         remaining,
         index,

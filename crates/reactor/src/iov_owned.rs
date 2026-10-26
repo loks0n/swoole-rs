@@ -29,6 +29,10 @@ fn descriptor_offset() -> usize {
 /// For count>0, source names count initialized, readable target C iovec objects.
 /// Source objects/payloads remain Native-owned and disjoint from the new owner.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "the header sits at the start of allocation_layout's aligned block"
+)]
 pub unsafe extern "C" fn swr_v1_reactor_iov_owned_new(
     source: *const libc::iovec,
     count: i32,
@@ -46,7 +50,7 @@ pub unsafe extern "C" fn swr_v1_reactor_iov_owned_new(
     if count > i32::MAX / 2 {
         return refused(-2);
     }
-    let count = count as usize;
+    let count = count.unsigned_abs() as usize;
     let Some((layout, offset)) = allocation_layout(count) else {
         return refused(-2);
     };
@@ -80,6 +84,10 @@ pub unsafe extern "C" fn swr_v1_reactor_iov_owned_new(
 /// original is null or the unmodified base returned by owned_new, exclusively owned and
 /// released exactly once. Foreign/replaced/shallow-copied owners are unsupported.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_ptr_alignment,
+    reason = "the header sits at the start of allocation_layout's aligned block"
+)]
 pub unsafe extern "C" fn swr_v1_reactor_iov_owned_free(original: *mut libc::iovec) {
     if original.is_null() {
         return;
@@ -103,7 +111,7 @@ pub unsafe extern "C" fn swr_v1_reactor_iov_owned_length(
 ) -> usize {
     (0..count).fold(0usize, |total, i| {
         // SAFETY: `i < count`, and `original` names `count` readable initialized iovecs.
-        total.wrapping_add(unsafe { (*original.wrapping_add(i as usize)).iov_len })
+        total.wrapping_add(unsafe { (*original.wrapping_add(i.unsigned_abs() as usize)).iov_len })
     })
 }
 /// Compute the existing progress policy and mutate the actual owned iterator
@@ -122,8 +130,10 @@ pub unsafe extern "C" fn swr_v1_reactor_iov_owned_progress(
     offset: usize,
 ) -> ReactorIovProgress {
     let reply = progress(
-        // SAFETY: `i < remaining`, and `iterator` names `remaining` initialized iovecs.
-        (0..remaining).map(|i| unsafe { (*iterator.wrapping_add(i as usize)).iov_len }),
+        (0..remaining).map(|i| {
+            // SAFETY: `i < remaining`, and `iterator` names `remaining` initialized iovecs.
+            unsafe { (*iterator.wrapping_add(i.unsigned_abs() as usize)).iov_len }
+        }),
         n,
         remaining,
         index,
@@ -154,6 +164,11 @@ pub extern "C" fn swr_v1_reactor_iov_owned_layout(field: u32) -> usize {
     }
 }
 #[cfg(test)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests {
     use super::*;
     #[test]

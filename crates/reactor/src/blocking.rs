@@ -46,6 +46,10 @@ fn after_wait(state: &mut ReactorBlockingWait) -> i32 {
 /// `state` is a unique live POD for this synchronous call. No reference survives
 /// return or spans a Native callback, clock, syscall, logger or exception.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "native recv/send ssize_t results and int timeout arithmetic, as upstream"
+)]
 pub unsafe extern "C" fn swr_v1_reactor_blocking_wait(
     state: *mut ReactorBlockingWait,
     observed: i32,
@@ -122,6 +126,12 @@ fn io(phase: u32, action: i32, length: usize, offset: usize, value: isize) -> Re
 ///4 publish last error,5 publish byte counter,6 observe File offset/end.
 /// Positive overflow outside the pinned defined ssize_t domain is not parity.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "native recv/send ssize_t results and int timeout arithmetic, as upstream"
+)]
 pub extern "C" fn swr_v1_reactor_blocking_io(
     kind: u32,
     phase: u32,

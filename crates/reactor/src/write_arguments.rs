@@ -38,6 +38,7 @@ pub unsafe extern "C" fn swr_v1_reactor_write_prepare(
 /// Kind zero is contiguous bytes; kind one is a vector's offset-only append.
 /// Native retains the original size_t-to-uint32_t/off_t conversions at Buffer.
 #[unsafe(no_mangle)]
+#[expect(clippy::cast_sign_loss, reason = "native ssize_t sent offsets")]
 pub extern "C" fn swr_v1_reactor_write_append(
     kind: u32,
     length: usize,
@@ -66,6 +67,10 @@ pub extern "C" fn swr_v1_reactor_iovec_layout(field: u32) -> usize {
     }
 }
 #[cfg(test)]
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests {
     use super::*;
     #[test]
