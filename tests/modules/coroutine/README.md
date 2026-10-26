@@ -14,7 +14,7 @@ python3 tests/modules/coroutine/core.py --source PINNED_TREE --config CONFIG_H -
 Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
 `core.py` builds full native reference and coroutine-only libraries and runs the
-32 unchanged GoogleTests, plus three supplemental real-context tests from
+33 unchanged GoogleTests (32 before v6.2.4 added `coroutine_base.expired_origin`), plus three supplemental real-context tests from
 `lifetime.cpp`, each in its own process group. `--ucontext` derives a private
 config selecting ucontext. `--rust-asan` requires ASan imports in the archive;
 ASan stack-switch warnings yield `warned`, not `passed`. On macOS pass
