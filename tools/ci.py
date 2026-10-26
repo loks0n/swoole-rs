@@ -155,8 +155,14 @@ def merge(number, workflow, deadline, poll):
         if result['state'] != 'passed':
             return {**failure_logs(result), 'merged': False}
         # Merge only the commit that passed: --match-head-commit refuses if the branch moved.
-        merged = subprocess.run(['gh', 'pr', 'merge', str(number), '--squash', '--match-head-commit', head],
-                                capture_output=True, text=True)
+        # GitHub refuses a clean PR when another merge lands at the same moment; that's worth a retry.
+        for attempt in range(4):
+            if attempt:
+                time.sleep(poll * attempt)
+            merged = subprocess.run(['gh', 'pr', 'merge', str(number), '--squash', '--match-head-commit', head],
+                                    capture_output=True, text=True)
+            if 'Base branch was modified' not in merged.stderr or pr_head(number) != head:
+                break
         if merged.returncode == 0:
             sha = gh('pr', 'view', str(number), '--json', 'mergeCommit', '-q', '.mergeCommit.oid').strip()
             # Remote only: `gh pr merge --delete-branch` fails in a worktree that has the branch checked out.
