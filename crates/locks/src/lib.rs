@@ -487,6 +487,10 @@ pub unsafe extern "C" fn swr_v1_locks_wait(word: *mut u32, timeout: f64) -> i32 
     {
         return 0;
     }
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "upstream's split of the seconds; Rust's float casts saturate where C's are undefined"
+    )]
     let duration = timespec {
         tv_sec: timeout as time_t,
         tv_nsec: ((timeout - (timeout as time_t) as f64) * 1000.0 * 1000.0 * 1000.0) as c_long,
@@ -528,6 +532,10 @@ pub unsafe extern "C" fn swr_v1_locks_wakeup(word: *mut u32, n: i32) -> i32 {
     if a.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
         .is_ok()
     {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "FUTEX_WAKE returns -1 or at most `n` woken waiters"
+        )]
         // SAFETY: `word` is a live futex word; FUTEX_WAKE reads no other pointer.
         unsafe {
             syscall(
