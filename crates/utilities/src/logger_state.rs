@@ -112,6 +112,10 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_create(
     if super::log_defaults().0.to_bytes().len() > native_max {
         return LENGTH;
     }
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<LogState>()"
+    )]
     // SAFETY: `LogState` is not zero-sized; null is handled below.
     let state = unsafe { alloc(Layout::new::<LogState>()) }.cast::<LogState>();
     if state.is_null() {
