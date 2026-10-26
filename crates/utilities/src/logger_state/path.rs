@@ -31,12 +31,15 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_create(
     if output.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above), exclusive pointer storage.
     unsafe { output.write(std::ptr::null_mut()) };
+    // SAFETY: `state` is null or live and aligned for this call.
     let Some(state) = (unsafe { state.as_ref() }) else {
         return INVALID;
     };
     let text = match operation {
         0 => Text::copy(
+            // SAFETY: the state is quiescent; nothing mutates the logical path during the copy.
             c_prefix(unsafe { &*state.texts[0].get() }.bytes()),
             state.native_max,
         ),
@@ -50,6 +53,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_create(
             let bytes = if length == 0 {
                 &[]
             } else {
+                // SAFETY: non-null, `length` admitted (<= isize::MAX), readable for this call.
                 unsafe { std::slice::from_raw_parts(input, length) }
             };
             Text::copy(bytes, state.native_max)
@@ -60,17 +64,20 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_create(
         Ok(text) => text,
         Err(status) => return status,
     };
+    // SAFETY: `LogPath` is not zero-sized; null is handled below.
     let path = unsafe { alloc(Layout::new::<LogPath>()) }.cast::<LogPath>();
     if path.is_null() {
         return ALLOCATION;
     }
+    // SAFETY: a fresh, non-null allocation with `LogPath`'s layout.
     unsafe {
         path.write(LogPath {
             text,
             native_max: state.native_max,
-        });
-        output.write(path)
+        })
     };
+    // SAFETY: as for the first write to `output`.
+    unsafe { output.write(path) };
     OK
 }
 
@@ -84,6 +91,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_rotate(
     date: *const u8,
     date_length: usize,
 ) -> u32 {
+    // SAFETY: `path` is null or live, aligned and exclusively lent for this call.
     let Some(path) = (unsafe { path.as_mut() }) else {
         return INVALID;
     };
@@ -105,6 +113,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_rotate(
     let date = if date_length == 0 {
         &[]
     } else {
+        // SAFETY: non-null, `date_length` within the admitted total; readable for this call.
         unsafe { std::slice::from_raw_parts(date, date_length) }
     };
     match Text::assemble(&[path.text.bytes(), b".", date], path.native_max) {
@@ -125,8 +134,10 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_get(
     path: *const LogPath,
     length: *mut usize,
 ) -> *const c_char {
+    // SAFETY: `path` is null or live and aligned for this call.
     let path = unsafe { path.as_ref() };
     if !length.is_null() {
+        // SAFETY: non-null (checked above), exclusive writable size_t storage.
         unsafe { length.write(path.map_or(0, |p| p.text.bytes().len())) };
     }
     path.map_or(c"".as_ptr(), |p| p.text.pointer())
@@ -137,10 +148,10 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_get(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_utils_log_path_destroy(path: *mut LogPath) {
     if !path.is_null() {
-        unsafe {
-            path.drop_in_place();
-            dealloc(path.cast(), Layout::new::<LogPath>())
-        };
+        // SAFETY: solely owned from create, quiescent, and not previously consumed.
+        unsafe { path.drop_in_place() };
+        // SAFETY: allocated with this layout by create; its value was just dropped.
+        unsafe { dealloc(path.cast(), Layout::new::<LogPath>()) };
     }
 }
 
@@ -154,18 +165,23 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_adopt(
     state: *const LogState,
     path: *mut LogPath,
 ) -> u32 {
-    let (Some(state), Some(borrowed)) = (unsafe { state.as_ref() }, unsafe { path.as_ref() })
-    else {
+    // SAFETY: `state` is null or live and aligned for this call.
+    let state = unsafe { state.as_ref() };
+    // SAFETY: `path` is null or live and aligned for this call.
+    let borrowed = unsafe { path.as_ref() };
+    let (Some(state), Some(borrowed)) = (state, borrowed) else {
         return INVALID;
     };
     if let Err(status) = admission(borrowed.text.bytes().len(), state.native_max) {
         return status;
     }
+    // SAFETY: non-null and live (checked above); the move-out is final, since the
+    // allocation is freed below without dropping in place.
     let owned = unsafe { path.read() };
-    unsafe {
-        *state.texts[1].get() = owned.text;
-        dealloc(path.cast(), Layout::new::<LogPath>())
-    };
+    // SAFETY: the resolved-path field is exclusive against this mutation.
+    unsafe { *state.texts[1].get() = owned.text };
+    // SAFETY: allocated with this layout by create; its value was moved out above.
+    unsafe { dealloc(path.cast(), Layout::new::<LogPath>()) };
     OK
 }
 
@@ -186,15 +202,21 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_emit_step(
     if phase.is_null() {
         return 0;
     }
+    // SAFETY: `phase` is non-null (checked above), aligned and initialized.
     let changed = if unsafe { phase.read() } == 14 {
-        let (Some(state), Some(path)) = (unsafe { state.as_ref() }, unsafe { path.as_ref() })
-        else {
+        // SAFETY: `state` is null or live and aligned for this call.
+        let state = unsafe { state.as_ref() };
+        // SAFETY: `path` is null or live and aligned for this call.
+        let path = unsafe { path.as_ref() };
+        let (Some(state), Some(path)) = (state, path) else {
             return 0;
         };
+        // SAFETY: nothing mutates the resolved path during this comparison.
         path.text.bytes() != c_prefix(unsafe { &*state.texts[1].get() }.bytes())
     } else {
         false
     };
+    // SAFETY: forwards the caller's state and phase contract unchanged.
     unsafe {
         super::swr_v1_utils_log_state_emit_step(
             state,
