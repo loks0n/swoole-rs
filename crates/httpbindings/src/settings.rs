@@ -86,7 +86,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_settings(
     };
     *out = Action::default();
     if cursor.stage > 1
-        || cursor.entry > SETTINGS.len() as u32
+        || cursor.entry > u32::try_from(SETTINGS.len()).unwrap_or(u32::MAX)
         || (cursor.stage == 0 && cursor.alias != 0)
     {
         return -1;
@@ -141,7 +141,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_settings(
 /// Zend conversion remains native; preserve the original unsigned-byte clamp.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_httpbindings_server_level(level: i64) -> u32 {
-    level.clamp(0, 255) as u32
+    u8::try_from(level.clamp(0, 255)).map_or(0, u32::from)
 }
 
 #[cfg(test)]

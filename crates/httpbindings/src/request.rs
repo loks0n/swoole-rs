@@ -79,9 +79,11 @@ pub unsafe extern "C" fn swr_v1_httpbindings_request_key(name: Text) -> i32 {
     let Some(name) = (unsafe { bytes(name) }) else {
         return -1;
     };
-    KEYS.iter()
+    let index = KEYS
+        .iter()
         .position(|key| case_equal(name, key))
-        .unwrap_or(KEYS.len()) as i32
+        .unwrap_or(KEYS.len());
+    i32::try_from(index).unwrap_or(-1)
 }
 
 /// Native first calls mode0 on the original span, preserving its no-copy fast
@@ -149,10 +151,14 @@ pub unsafe extern "C" fn swr_v1_httpbindings_tokens(
         }
         let mut first = start;
         let mut last = stop;
-        while first < last && unsafe { isspace((read(first) as c_char) as c_int) } != 0 {
+        while first < last
+            && unsafe { isspace(c_int::from(c_char::from_ne_bytes([read(first)]))) } != 0
+        {
             first += 1;
         }
-        while last > first && unsafe { isspace((read(last - 1) as c_char) as c_int) } != 0 {
+        while last > first
+            && unsafe { isspace(c_int::from(c_char::from_ne_bytes([read(last - 1)]))) } != 0
+        {
             last -= 1;
             write(last, 0);
         }
