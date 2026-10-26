@@ -51,7 +51,7 @@ def main():
                 parts += [body(text, 'static swr_v1_http_proxy_text static_header_text('), body(text, 'static size_t encode_static_headers(')]
             if 'static bool select_static_handler_impl(' in text:
                 view = ROOT/'native/http/swoole_rs_http_request_view.h'
-                parts.append('namespace http_server { template<class T>\n' + body(view.read_text(), 'class LegacyRequestView {') + '; }')
+                parts.append('namespace http_server { using RewriteRulesField = ::swoole::http_server::RewriteRulesField;\ntemplate<class T>\n' + body(view.read_text(), 'class LegacyRequestView {') + '; }')
                 parts.append('template<class RequestView>\n' + body(text, 'static bool select_static_handler_impl('))
             parts.append(body(text, 'bool Server::select_static_handler('))
             extracted = tree/(namespace+'.cc'); extracted.write_text('#include "static_oracle.h"\nnamespace '+namespace+' {\n'+'\n'.join(parts)+'\n}\n')
