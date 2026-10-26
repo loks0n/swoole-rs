@@ -2,6 +2,7 @@
 //! the pinned upstream C++ in `swoole-rs-oracle`; return values and every output
 //! byte, red zones included, must match.
 
+use std::ffi::{CStr, c_char};
 use swoole_rs_base64::{swr_v1_base64_decode, swr_v1_base64_encode};
 use swoole_rs_framing::{swr_v1_framing_default, swr_v1_framing_unpack, swr_v1_framing_width};
 use swoole_rs_http::{
@@ -10,6 +11,7 @@ use swoole_rs_http::{
 };
 use swoole_rs_oracle::{
     base64 as upstream, framing as upstream_framing, http as upstream_http,
+    http_frame::{self, CANDIDATE, Engine, UPSTREAM},
     websocket as upstream_ws,
 };
 use swoole_rs_websocket::{DecodedFrame, swr_v1_ws_decode, swr_v1_ws_frame_length, swr_v1_ws_mask};
@@ -270,4 +272,153 @@ pub fn framing_length(bytes: &[u8]) {
         // Upstream adds the body offset to a body length near i64::MAX as a signed sum (undefined).
         _ => assert!(want < 0, "error {status} vs {want} for {bytes:?}"),
     }
+}
+
+/// `data` and a NUL, as both engines read it: get_header may look one byte past
+/// the header end, and strtoul stops at the NUL.
+fn terminated(data: &[u8]) -> Vec<c_char> {
+    data.iter()
+        .chain(&[0])
+        .map(|&byte| byte as c_char)
+        .collect()
+}
+
+/// Whether strtoul could read a chunk length that overflows upstream's pointer
+/// sum: a negated non-zero number, or more than 12 significant hex digits.
+fn huge_chunk(data: &[u8]) -> bool {
+    let mut at = 0;
+    while at < data.len() {
+        let length = data[at..]
+            .iter()
+            .take_while(|byte| byte.is_ascii_hexdigit())
+            .count();
+        if length == 0 {
+            at += 1;
+            continue;
+        }
+        let digits = &data[at..at + length];
+        let nonzero = digits.iter().position(|&byte| byte != b'0');
+        let sign = at.checked_sub(1).map(|before| data[before]);
+        let prefixed = at >= 3 && matches!(data[at - 1], b'x' | b'X') && data[at - 2] == b'0';
+        let negated = sign == Some(b'-') || prefixed && data[at - 3] == b'-';
+        if nonzero.is_some_and(|first| length - first > 12 || negated) {
+            return true;
+        }
+        at += length;
+    }
+    false
+}
+
+fn frame(
+    engine: &Engine,
+    operation: u32,
+    data: &[u8],
+    state: http_frame::State,
+) -> (i32, http_frame::State) {
+    let (mut buffer, mut state) = (terminated(data), state);
+    // SAFETY: the buffer holds data.len() bytes and a NUL; state is a local.
+    let status = unsafe { (engine.frame)(operation, buffer.as_mut_ptr(), data.len(), &mut state) };
+    (status, state)
+}
+
+/// get_protocol, get_header_length or get_chunked_body_length on both engines
+/// from the same offset, header length and request state.
+pub fn http_frame(bytes: &[u8]) {
+    let Some((&[control, offset_low, offset_high, header_low, header_high], data)) =
+        bytes.split_first_chunk::<5>()
+    else {
+        return;
+    };
+    let operation = u32::from(control % 3);
+    let bound = |low, high| u16::from_le_bytes([low, high]) as usize % (data.len() + 1);
+    let mut state = http_frame::State {
+        offset: bound(offset_low, offset_high),
+        header_length: bound(header_low, header_high) as u32,
+        ..Default::default()
+    };
+    if control & 0x80 != 0 {
+        state = http_frame::State {
+            method: 19,
+            version: 3,
+            known_length: 1,
+            content_length: 123,
+            url_offset: 3,
+            url_length: 7,
+            line_length: 9,
+            ..state
+        };
+    }
+    let got = frame(&CANDIDATE, operation, data, state);
+    // Upstream's pointer arithmetic wraps on these lengths (#178).
+    if operation == 2 && huge_chunk(&data[state.offset..]) {
+        return;
+    }
+    let want = frame(&UPSTREAM, operation, data, state);
+    // Upstream accepts a request line cut before its version, at an offset 8
+    // bytes past what it read (#177); the candidate waits for more.
+    if operation == 0 && want.0 == 0 && want.1.offset > data.len() {
+        assert_eq!(
+            (got.0, got.1.offset),
+            (-1, state.offset),
+            "partial request line {bytes:?}"
+        );
+        return;
+    }
+    assert_eq!(got, want, "operation {operation} for {bytes:?}");
+}
+
+fn method(engine: &Engine, method: i32) -> Option<&'static CStr> {
+    // SAFETY: the result is null or one of the engine's static strings.
+    let string = unsafe { (engine.method)(method) };
+    (!string.is_null()).then(|| unsafe { CStr::from_ptr(string) })
+}
+
+/// has_expect_header, get_header(name) and get_method_string on both engines.
+pub fn http_header(bytes: &[u8]) {
+    let Some((
+        &[
+            name_length,
+            url_offset,
+            url_length,
+            header_low,
+            header_high,
+            code,
+        ],
+        rest,
+    )) = bytes.split_first_chunk::<6>()
+    else {
+        return;
+    };
+    assert_eq!(
+        method(&CANDIDATE, (code as i8).into()),
+        method(&UPSTREAM, (code as i8).into()),
+        "method {code}"
+    );
+    let (name, data) = rest.split_at(usize::from(name_length % 16).min(rest.len()));
+    let name: Vec<c_char> = name
+        .iter()
+        .take_while(|&&byte| byte != 0)
+        .chain(&[0])
+        .map(|&byte| byte as c_char)
+        .collect();
+    let header_length = u16::from_le_bytes([header_low, header_high]) as usize % (data.len() + 1);
+    let [want, got] = [&UPSTREAM, &CANDIDATE].map(|engine| {
+        let (mut buffer, mut output) = (terminated(data), vec![0 as c_char; data.len()]);
+        // SAFETY: the buffer holds data.len() bytes and a NUL; output has data.len() bytes.
+        unsafe {
+            let expect = (engine.expect)(buffer.as_mut_ptr(), data.len());
+            let size = (engine.header)(
+                buffer.as_mut_ptr(),
+                data.len(),
+                url_offset.into(),
+                url_length.into(),
+                header_length as u32,
+                name.as_ptr(),
+                output.as_mut_ptr(),
+            );
+            output.truncate(size);
+            (expect, output)
+        }
+    });
+    assert_eq!(got, want, "expect/header for {bytes:?}");
 }
