@@ -7,6 +7,12 @@ concurrency:
 env:
   CCACHE_DIR: ${{ github.workspace }}/.ccache
   CCACHE_MAXSIZE: 500M
+# Explicit bash runs steps with -eo pipefail; the default (`bash -e`) lets a pipe
+# like `gate.py | tee` report success when gate.py fails.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   rust:
     runs-on: ubuntu-24.04
