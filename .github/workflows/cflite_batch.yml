@@ -1,0 +1,30 @@
+name: ClusterFuzzLite batch
+on:
+  schedule:
+    - cron: '0 3 * * *'
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+permissions: read-all
+jobs:
+  # Nightly: an hour across every fuzz/ target, growing ClusterFuzzLite's stored
+  # corpus. The second schedule prunes that corpus. Crashes fail the job.
+  fuzz:
+    runs-on: ubuntu-24.04
+    steps:
+      - id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@v1
+        with:
+          language: rust
+          sanitizer: address
+      - id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: ${{ github.event.schedule == '0 6 * * *' && 600 || 3600 }}
+          mode: ${{ github.event.schedule == '0 6 * * *' && 'prune' || 'batch' }}
+          sanitizer: address
+      - if: failure() && steps.build.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cflite-crashes
+          path: ./out/artifacts

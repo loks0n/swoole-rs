@@ -51,5 +51,13 @@ On Linux, build with `CC=clang CXX=clang++` so the C++ ASan matches rustc's.
 2. Add a comparison to `src/lib.rs`: call both sides on the same input, with
    red zones around each output, and assert on the returns and the bytes.
 3. Add `fuzz_targets/<name>.rs` calling it, a `[[bin]]` in `Cargo.toml`, a few
-   seeds in `seeds/<name>/` taken from the crate's exhaustive tests, and the
-   target to the `fuzz` job in `.github/workflows/merge.yml`.
+   seeds in `seeds/<name>/` taken from the crate's exhaustive tests. A
+   `<prefix>.dict` named after the target's first word is picked up too.
+
+## CI
+
+ClusterFuzzLite (`.clusterfuzzlite/`) builds every target. On PRs touching
+`crates/`, `fuzz/` or `.clusterfuzzlite/`, it fuzzes the targets the change reaches
+for five minutes (`cflite_pr.yml`). Nightly it fuzzes all targets for an hour
+and then prunes its stored corpus (`cflite_batch.yml`). A crash fails the run,
+and the minimised input is uploaded as `cflite-crashes`.
