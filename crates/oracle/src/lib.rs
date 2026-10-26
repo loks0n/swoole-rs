@@ -189,3 +189,49 @@ pub mod http_frame {
         method: swr_oracle_http_method_candidate,
     };
 }
+
+pub mod protocols {
+    use std::ffi::c_char;
+
+    /// MQTT's length decoder and RESP's parse compiled from one engine's sources:
+    /// `upstream` is the pinned file, `candidate` the file with the protocols overlay
+    /// patch, which calls the Rust exports (the caller's binary must link them).
+    pub struct Engine {
+        /// `mqtt::get_package_length` over `size` bytes.
+        pub mqtt_length: unsafe extern "C" fn(*const c_char, u32) -> i64,
+        /// `redis::parse` over `length` bytes followed by a NUL, from errno 0: each
+        /// string as u32 length and bytes in a buffer of `*size` bytes (release with
+        /// [`free`]); `*error` is errno afterwards.
+        pub resp_parse:
+            unsafe extern "C" fn(*const c_char, usize, *mut usize, *mut i32) -> *mut c_char,
+    }
+
+    unsafe extern "C" {
+        fn swr_oracle_mqtt_length_upstream(data: *const c_char, size: u32) -> i64;
+        fn swr_oracle_resp_parse_upstream(
+            data: *const c_char,
+            length: usize,
+            size: *mut usize,
+            error: *mut i32,
+        ) -> *mut c_char;
+        fn swr_oracle_mqtt_length_candidate(data: *const c_char, size: u32) -> i64;
+        fn swr_oracle_resp_parse_candidate(
+            data: *const c_char,
+            length: usize,
+            size: *mut usize,
+            error: *mut i32,
+        ) -> *mut c_char;
+        /// Releases a `resp_parse` buffer.
+        #[link_name = "swr_oracle_free"]
+        pub fn free(pointer: *mut c_char);
+    }
+
+    pub const UPSTREAM: Engine = Engine {
+        mqtt_length: swr_oracle_mqtt_length_upstream,
+        resp_parse: swr_oracle_resp_parse_upstream,
+    };
+    pub const CANDIDATE: Engine = Engine {
+        mqtt_length: swr_oracle_mqtt_length_candidate,
+        resp_parse: swr_oracle_resp_parse_candidate,
+    };
+}

@@ -42,6 +42,16 @@ upstream behaviours are excluded: a request line cut inside its URL is accepted
 negated chunk size wraps upstream's pointer (#178). Seeds include the requests
 `http.client` sends for the corpus applications.
 
+For MQTT and RESP, `mqtt_length` compares `mqtt::get_package_length` over any
+received bytes and `resp_parse` compares `redis::parse` (every string and, on
+glibc, `ERANGE`), each against the same body after
+`migration/patches/protocols/0001-rust-packet-protocols.patch`. With nothing
+received, upstream's `size - 1` wraps, so only the candidate runs. `resp_parse`
+models upstream's walk without reading memory and skips upstream where it
+dereferences null after a malformed number, copies past its input (#224), or
+meets a type byte other than `*`, `$` or `:`, which only reaches `parse` in
+upstream's core-tests.
+
 For packet framing (`open_length_check`), `framing_unpack` compares
 `swr_v1_framing_unpack` with `swoole_unpack` for every length type, and
 `framing_length` compares `swr_v1_framing_default` with

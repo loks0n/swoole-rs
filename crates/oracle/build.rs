@@ -11,10 +11,26 @@ fn out(name: &str) -> PathBuf {
     PathBuf::from(env::var("OUT_DIR").unwrap()).join(name)
 }
 
+/// The part of a multi-file overlay patch that changes `path`.
+fn section<'a>(patch: &'a str, path: &str) -> &'a str {
+    let start = patch.find(&format!("\n+++ b/{path}\n")).expect(path) + 1;
+    let end = patch[start..]
+        .find("\ndiff --git ")
+        .map_or(patch.len(), |end| start + end + 1);
+    &patch[start..end]
+}
+
 /// An overlay patch applied to the text of its one vendored original, hunk by
 /// hunk, checking every context and removed line.
 fn apply(original: &str, patch: &str) -> String {
-    assert_eq!(patch.matches("\n+++ ").count(), 1, "one file per patch");
+    assert_eq!(
+        patch
+            .lines()
+            .filter(|line| line.starts_with("+++ "))
+            .count(),
+        1,
+        "one file per patch"
+    );
     let lines: Vec<&str> = original.lines().collect();
     let (mut output, mut cursor) = (Vec::new(), 0);
     let mut hunks = patch
@@ -166,6 +182,48 @@ fn http_frame() {
     fs::write(out("http_frame_enums.inc"), enums.concat()).unwrap();
 }
 
+/// MQTT's length decoder and RESP's parse from the pinned mqtt.cc and redis.cc
+/// (upstream) and from them with the protocols overlay patch applied (candidate,
+/// calling Rust), copied unchanged for shim/protocols.cc, with redis's states.
+fn protocols() {
+    let patch = "../../migration/patches/protocols/0001-rust-packet-protocols.patch";
+    println!("cargo:rerun-if-changed={patch}");
+    let patch = fs::read_to_string(patch).expect("protocols patch");
+    let mqtt = fs::read_to_string("upstream/src/protocol/mqtt.cc").expect("vendored mqtt.cc");
+    let redis = fs::read_to_string("upstream/src/protocol/redis.cc").expect("vendored redis.cc");
+    let sources = [
+        ("upstream", mqtt.clone(), redis.clone()),
+        (
+            "candidate",
+            apply(&mqtt, section(&patch, "src/protocol/mqtt.cc")),
+            apply(&redis, section(&patch, "src/protocol/redis.cc")),
+        ),
+    ];
+    for (name, mqtt, redis) in sources {
+        let mut parts = Vec::new();
+        if mqtt.contains("#define SW_MQTT_RECV_LEN_AGAIN") {
+            parts.push(slice(&mqtt, "#define SW_MQTT_RECV_LEN_AGAIN", "\n") + "\n");
+        }
+        parts.push(definition(&mqtt, "ssize_t get_package_length("));
+        if redis.contains("const char *get_number(") {
+            parts.push(definition(&redis, "const char *get_number("));
+        }
+        parts.push(definition(&redis, "std::vector<std::string> parse("));
+        fs::write(
+            out(&format!("protocols_{name}.inc")),
+            parts.join("\n") + "\n",
+        )
+        .unwrap();
+    }
+    let header =
+        fs::read_to_string("upstream/include/swoole_redis.h").expect("vendored swoole_redis.h");
+    fs::write(
+        out("protocols_states.inc"),
+        slice(&header, "enum State {", "\n};") + "\n};\n",
+    )
+    .unwrap();
+}
+
 /// The pinned packet length function and integer unpacking, copied unchanged for
 /// shim/framing.cc to compile.
 fn framing() {
@@ -244,6 +302,16 @@ fn main() {
     http();
     framing();
     http_frame();
+    protocols();
+    cpp()
+        .define("SWR_PROTO_ENGINE", "upstream")
+        .define("SWR_PROTO_UPSTREAM", "1")
+        .define("SWR_PROTO_INC", "\"protocols_upstream.inc\"")
+        .flag_if_supported("-Wno-unused-parameter")
+        .include("../../native/protocols")
+        .include(env::var("OUT_DIR").unwrap())
+        .file("shim/protocols.cc")
+        .compile("swoole_oracle_protocols");
     cpp()
         .define("SWR_FRAME_ENGINE", "upstream")
         .define("SWR_FRAME_INC", "\"http_frame_upstream.inc\"")
@@ -301,4 +369,11 @@ fn main() {
         .include(env::var("OUT_DIR").unwrap())
         .file("shim/http_frame.cc")
         .compile("swoole_candidate_http_frame");
+    cpp()
+        .define("SWR_PROTO_ENGINE", "candidate")
+        .define("SWR_PROTO_INC", "\"protocols_candidate.inc\"")
+        .include("../../native/protocols")
+        .include(env::var("OUT_DIR").unwrap())
+        .file("shim/protocols.cc")
+        .compile("swoole_candidate_protocols");
 }
