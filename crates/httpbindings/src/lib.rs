@@ -1,5 +1,12 @@
 //! PHP HTTP policy. Native effects execute only after these functions return.
 #![deny(unsafe_op_in_unsafe_fn)]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 mod emission;
 mod file;
 mod payload;
@@ -175,11 +182,13 @@ pub unsafe extern "C" fn swr_v1_httpbindings_cookie(
     phase: *mut u32,
     output: *mut Action,
 ) -> i32 {
-    let (Some(input), Some(phase), Some(output)) = (
-        unsafe { input.as_ref() },
-        unsafe { phase.as_mut() },
-        unsafe { output.as_mut() },
-    ) else {
+    // SAFETY: `input` is null or initialized, aligned and lent for this call.
+    let input = unsafe { input.as_ref() };
+    // SAFETY: `phase` is null or aligned, writable and disjoint from the other objects.
+    let phase = unsafe { phase.as_mut() };
+    // SAFETY: `output` is null or aligned, writable and disjoint from the other objects.
+    let output = unsafe { output.as_mut() };
+    let (Some(input), Some(phase), Some(output)) = (input, phase, output) else {
         return -1;
     };
     *output = Action::default();
@@ -189,6 +198,8 @@ pub unsafe extern "C" fn swr_v1_httpbindings_cookie(
             return -1;
         }
         if text.length != 0 {
+            // SAFETY: non-null, `length <= isize::MAX`, and each nonempty field spans that
+            // many initialized bytes for this call.
             fields[index] = unsafe { core::slice::from_raw_parts(text.data, text.length) };
         }
     }

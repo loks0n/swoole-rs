@@ -16,6 +16,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_response_header(name: Text) -> i32 
         (b"Transfer-Encoding", 64),
         (b"Content-Encoding", 256),
     ];
+    // SAFETY: `name` spans `length` initialized bytes (null only when empty) for this call.
     let Some(name) = (unsafe { bytes(name) }) else {
         return -1;
     };
@@ -95,7 +96,11 @@ pub unsafe extern "C" fn swr_v1_httpbindings_response_tail(
     length: usize,
     out: *mut Action,
 ) -> i32 {
-    let (Some(cursor), Some(out)) = (unsafe { cursor.as_mut() }, unsafe { out.as_mut() }) else {
+    // SAFETY: `cursor` is null or aligned, writable and exclusively lent for this call.
+    let cursor = unsafe { cursor.as_mut() };
+    // SAFETY: `out` is null or aligned, writable and exclusively lent for this call.
+    let out = unsafe { out.as_mut() };
+    let (Some(cursor), Some(out)) = (cursor, out) else {
         return -1;
     };
     *out = Action::default();

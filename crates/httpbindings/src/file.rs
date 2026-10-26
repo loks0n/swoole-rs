@@ -24,6 +24,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_file_range(
     length: i64,
     resolved: *mut i64,
 ) -> i32 {
+    // SAFETY: `resolved` is null or aligned, writable and exclusively lent for this call.
     let Some(resolved) = (unsafe { resolved.as_mut() }) else {
         return -1;
     };
@@ -46,6 +47,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_file_range(
 /// `phase` is initialized writable caller storage for this call only.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_httpbindings_file(phase: *mut u32, fact: u32) -> i32 {
+    // SAFETY: `phase` is null or aligned, writable and exclusively lent for this call.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return -1;
     };
