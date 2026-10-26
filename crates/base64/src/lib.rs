@@ -21,12 +21,21 @@ fn encoded_size(length: usize) -> Option<usize> {
         .checked_add(1)
 }
 
+/// The character for a sextet; only its low six bits are used.
+fn symbol(sextet: u8) -> u8 {
+    #[expect(
+        clippy::indexing_slicing,
+        reason = "masked to 0..64, the length of ALPHABET"
+    )]
+    ALPHABET[usize::from(sextet & 63)]
+}
+
 fn encoded_triplet(a: u8, b: u8, c: u8) -> [MaybeUninit<u8>; 4] {
     [
-        ALPHABET[(a >> 2) as usize],
-        ALPHABET[(((a & 3) << 4) | (b >> 4)) as usize],
-        ALPHABET[(((b & 15) << 2) | (c >> 6)) as usize],
-        ALPHABET[(c & 63) as usize],
+        symbol(a >> 2),
+        symbol(((a & 3) << 4) | (b >> 4)),
+        symbol(((b & 15) << 2) | (c >> 6)),
+        symbol(c),
     ]
     .map(MaybeUninit::new)
 }
@@ -41,9 +50,9 @@ fn encode(input: &[u8], output: &mut [MaybeUninit<u8>]) -> usize {
         let consumed = input.len() / 48 * 48;
         let written = consumed / 3 * 4;
         if consumed != 0 {
-            // SAFETY: compile target guarantees NEON; exact complete blocks
-            // have initialized input and disjoint writable output extents.
-            unsafe { encode_neon(&input[..consumed], &mut output[..written]) };
+            // SAFETY: compile target guarantees NEON; it encodes the complete
+            // 48-byte input blocks into disjoint, writable 64-slot output blocks.
+            unsafe { encode_neon(input, output) };
         }
         (consumed, written)
     };
@@ -53,7 +62,8 @@ fn encode(input: &[u8], output: &mut [MaybeUninit<u8>]) -> usize {
         target_feature = "neon"
     )))]
     let (consumed, written) = (0, 0);
-    written + encode_scalar(&input[consumed..], &mut output[written..])
+    let rest = output.get_mut(written..).unwrap_or_default();
+    written + encode_scalar(input.get(consumed..).unwrap_or_default(), rest)
 }
 
 #[cfg(all(
@@ -118,10 +128,14 @@ fn encode_scalar(input: &[u8], output: &mut [MaybeUninit<u8>]) -> usize {
         if tail.len() == 1 {
             group[2].write(b'=');
         }
-        output[written..written + 4].copy_from_slice(&group);
+        if let Some(slots) = output.get_mut(written..written + 4) {
+            slots.copy_from_slice(&group);
+        }
         written += 4;
     }
-    output[written].write(0);
+    if let Some(nul) = output.get_mut(written) {
+        nul.write(0);
+    }
     written
 }
 
@@ -150,24 +164,24 @@ unsafe fn encode_overlapping(input: *const u8, length: usize, output: *mut u8) -
             1 => ((get(i - 1) & 3) << 4) + (get(i) >> 4),
             _ => ((get(i - 1) & 15) << 2) + (get(i) >> 6),
         };
-        put(written, ALPHABET[sextet as usize]);
+        put(written, symbol(sextet));
         written += 1;
         if i % 3 == 2 {
             // This reread must occur after the preceding store, just as in C++.
-            put(written, ALPHABET[(get(i) & 63) as usize]);
+            put(written, symbol(get(i)));
             written += 1;
         }
     }
     let last = length - 1;
     match last % 3 {
         0 => {
-            put(written, ALPHABET[((get(last) & 3) << 4) as usize]);
+            put(written, symbol((get(last) & 3) << 4));
             put(written + 1, b'=');
             put(written + 2, b'=');
             written += 3;
         }
         1 => {
-            put(written, ALPHABET[((get(last) & 15) << 2) as usize]);
+            put(written, symbol((get(last) & 15) << 2));
             put(written + 1, b'=');
             written += 2;
         }
@@ -183,7 +197,13 @@ const fn decoding_table() -> [u8; 256] {
     while index < ALPHABET.len() {
         #[expect(clippy::cast_possible_truncation, reason = "index < 64")]
         let value = index as u8;
-        table[ALPHABET[index] as usize] = value;
+        #[expect(
+            clippy::indexing_slicing,
+            reason = "index < 64 and a u8 indexes 256 entries; get() isn't const"
+        )]
+        {
+            table[ALPHABET[index] as usize] = value;
+        }
         index += 1;
     }
     table
@@ -191,11 +211,17 @@ const fn decoding_table() -> [u8; 256] {
 static DECODING: [u8; 256] = decoding_table();
 
 fn sextet(byte: u8) -> Option<u8> {
-    let value = DECODING[byte as usize];
+    #[expect(clippy::indexing_slicing, reason = "a u8 indexes 256 entries")]
+    let value = DECODING[usize::from(byte)];
     (value != u8::MAX).then_some(value)
 }
 
 fn decode(input: &[u8], output: &mut [MaybeUninit<u8>]) -> usize {
+    let mut put = |at: usize, byte: u8| {
+        if let Some(slot) = output.get_mut(at) {
+            slot.write(byte);
+        }
+    };
     let mut written = 0;
     let mut partial = 0u8;
     for (i, &byte) in input.iter().enumerate() {
@@ -208,36 +234,38 @@ fn decode(input: &[u8], output: &mut [MaybeUninit<u8>]) -> usize {
         match i % 4 {
             0 => {
                 partial = c << 2;
-                output[written].write(partial);
+                put(written, partial);
             }
             1 => {
                 partial = partial.wrapping_add((c >> 4) & 3);
-                output[written].write(partial);
+                put(written, partial);
                 written += 1;
                 // Keep size_t subtraction and short-circuiting: short incomplete
                 // groups do write a provisional next byte in the pinned decoder.
-                if i < input.len().wrapping_sub(3) || input[input.len() - 2] != b'=' {
+                if i < input.len().wrapping_sub(3)
+                    || input.get(input.len().wrapping_sub(2)) != Some(&b'=')
+                {
                     partial = (c & 15) << 4;
-                    output[written].write(partial);
+                    put(written, partial);
                 }
             }
             2 => {
                 partial = partial.wrapping_add((c >> 2) & 15);
-                output[written].write(partial);
+                put(written, partial);
                 written += 1;
-                if i < input.len().wrapping_sub(2) || input[input.len() - 1] != b'=' {
+                if i < input.len().wrapping_sub(2) || input.last() != Some(&b'=') {
                     partial = (c & 3) << 6;
-                    output[written].write(partial);
+                    put(written, partial);
                 }
             }
             _ => {
                 partial = partial.wrapping_add(c);
-                output[written].write(partial);
+                put(written, partial);
                 written += 1;
             }
         }
     }
-    output[written].write(0);
+    put(written, 0);
     written
 }
 

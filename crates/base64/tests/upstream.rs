@@ -12,7 +12,7 @@ const RED_ZONE: usize = 17;
 fn compare(bytes: &[u8], encode: bool) {
     let mut shifted = vec![0xa5];
     shifted.extend_from_slice(bytes);
-    let input = shifted[1..].as_ptr();
+    let input = shifted.as_ptr().wrapping_add(1);
     let capacity = if encode {
         bytes.len().div_ceil(3) * 4 + 1
     } else {
