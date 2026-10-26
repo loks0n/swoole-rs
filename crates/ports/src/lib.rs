@@ -3,6 +3,13 @@
     clippy::missing_safety_doc,
     reason = "every export is covered by the module-local C contract"
 )]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 use std::ffi::{CStr, c_char, c_int};
 use std::slice;
 
@@ -113,10 +120,13 @@ pub unsafe extern "C" fn swr_v1_ports_connection_count(
     }
     let mut total = 0_u64;
     for index in 0..count as usize {
-        total = total.wrapping_add(u64::from(unsafe {
-            std::sync::atomic::AtomicU32::from_ptr(counters.add(index))
-                .load(std::sync::atomic::Ordering::Relaxed)
-        }));
+        // SAFETY: `index < count`, and the caller guarantees `count` cells from `counters`.
+        let cell = unsafe { counters.add(index) };
+        // SAFETY: the cell is aligned, initialized and has no concurrent non-atomic writes.
+        let counter = unsafe { std::sync::atomic::AtomicU32::from_ptr(cell) };
+        total = total.wrapping_add(u64::from(
+            counter.load(std::sync::atomic::Ordering::Relaxed),
+        ));
     }
     total
 }
@@ -804,10 +814,12 @@ pub unsafe extern "C" fn swr_v1_ports_event(
     if len == 0 || data.is_null() || len > isize::MAX as usize {
         return missing;
     }
+    // SAFETY: `data` is non-null and the caller lends `len <= isize::MAX` initialized bytes.
     let bytes = unsafe { slice::from_raw_parts(data, len) };
     for (index, &(key, property)) in EVENTS.iter().enumerate() {
         if len == key.len()
             && if native_casefold != 0 {
+                // SAFETY: both ranges hold `len` readable bytes (`len == key.len()`).
                 unsafe { strncasecmp(data.cast(), key.as_ptr().cast(), len) == 0 }
             } else {
                 bytes == key
@@ -830,6 +842,7 @@ pub unsafe extern "C" fn swr_v1_ports_event(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_ports_callback_property(data: *const u8, len: usize) -> PortsSpan {
     if !data.is_null() && len <= isize::MAX as usize {
+        // SAFETY: `data` is non-null and the caller lends `len <= isize::MAX` initialized bytes.
         let name = unsafe { slice::from_raw_parts(data, len) };
         if let Some(&(_, property)) = EVENTS
             .iter()
@@ -894,7 +907,11 @@ pub unsafe extern "C" fn swr_v1_ports_listen_step(
     state: *mut PortsListenState,
     input: *const PortsListenInput,
 ) -> PortsListenAction {
-    let (Some(s), Some(i)) = (unsafe { state.as_mut() }, unsafe { input.as_ref() }) else {
+    // SAFETY: the caller passes null or its live, exclusive step state.
+    let state = unsafe { state.as_mut() };
+    // SAFETY: the caller passes null or an initialized input, refreshed after each action.
+    let input = unsafe { input.as_ref() };
+    let (Some(s), Some(i)) = (state, input) else {
         return listen_done(-1);
     };
     loop {
@@ -993,7 +1010,11 @@ pub unsafe extern "C" fn swr_v1_ports_socket_step(
     state: *mut PortsSocketState,
     input: *const PortsSocketInput,
 ) -> PortsSocketAction {
-    let (Some(s), Some(i)) = (unsafe { state.as_mut() }, unsafe { input.as_ref() }) else {
+    // SAFETY: the caller passes null or its live, exclusive step state.
+    let state = unsafe { state.as_mut() };
+    // SAFETY: the caller passes null or an initialized input, refreshed after each action.
+    let input = unsafe { input.as_ref() };
+    let (Some(s), Some(i)) = (state, input) else {
         return socket_done(-1);
     };
     loop {

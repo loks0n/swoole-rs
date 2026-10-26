@@ -1,6 +1,13 @@
 //! IEEE CRC32, ported from Swoole v6.2.2 src/core/crc32.cc (Apache-2.0).
 //! Original author: Tianfeng Han <rango@swoole.com>.
 //! The lookup table is immutable and generated during compilation.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 
 // Use instructions only when the compiler's target contract already guarantees
 // IEEE CRC support. No runtime CPU query, lazy state or OS effect is introduced.
@@ -200,22 +207,31 @@ mod tests {
                     "portable offset={offset}, length={length}"
                 );
                 // The same actual C entrypoint is linked by production callers.
-                assert_eq!(
-                    unsafe { swr_v1_crc32(bytes.as_ptr(), bytes.len()) },
-                    expected
-                );
+                // SAFETY: `bytes` is a live slice of exactly `bytes.len()` readable bytes.
+                let actual = unsafe { swr_v1_crc32(bytes.as_ptr(), bytes.len()) };
+                assert_eq!(actual, expected);
             }
         }
     }
 
     #[test]
     fn defensive_bounds() {
-        unsafe {
-            assert_eq!(swr_v1_crc32(core::ptr::null(), 0), 0);
-            assert_eq!(swr_v1_crc32(core::ptr::null(), 1), 0);
-            assert_eq!(swr_v1_crc32(core::ptr::dangling(), usize::MAX), 0);
-            assert_eq!(swr_v1_crc32(usize::MAX as *const u8, 1), 0);
-            assert_eq!(swr_v1_crc32((usize::MAX - 7) as *const u8, 8), 0);
+        // The export rejects null, overlong and address-wrapping
+        // ranges before reading, so none of these pointers is dereferenced.
+        let cases: [(*const u8, usize); 5] = [
+            (core::ptr::null(), 0),
+            (core::ptr::null(), 1),
+            (core::ptr::dangling(), usize::MAX),
+            (usize::MAX as *const u8, 1),
+            ((usize::MAX - 7) as *const u8, 8),
+        ];
+        for (data, length) in cases {
+            // SAFETY: see above; the export returns 0 without reading.
+            assert_eq!(
+                unsafe { swr_v1_crc32(data, length) },
+                0,
+                "{data:?} {length}"
+            );
         }
     }
 }

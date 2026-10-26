@@ -14,13 +14,10 @@ fn compare(bytes: &[u8]) {
         let mut buffer = vec![0xa5; offset];
         buffer.extend_from_slice(bytes);
         let input = buffer[offset..].as_ptr();
-        // SAFETY: `input` points at `bytes.len()` readable bytes.
-        let (want, got) = unsafe {
-            (
-                upstream::crc32(input, bytes.len()),
-                swr_v1_crc32(input, bytes.len()),
-            )
-        };
+        // SAFETY: `input` points into `buffer`, which holds `bytes.len()` readable bytes after it.
+        let want = unsafe { upstream::crc32(input, bytes.len()) };
+        // SAFETY: as above.
+        let got = unsafe { swr_v1_crc32(input, bytes.len()) };
         assert_eq!(got, want, "crc32 at offset {offset} of {bytes:?}");
     }
 }
