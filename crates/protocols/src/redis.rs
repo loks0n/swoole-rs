@@ -41,12 +41,17 @@ fn number(bytes: &[u8], range: &mut bool) -> Option<Number> {
         return None;
     }
     let signed = if negative {
-        value.wrapping_neg() as i64
+        value.wrapping_neg().cast_signed()
     } else {
-        value as i64
+        value.cast_signed()
     };
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "C's int ret = strtol(..) narrows the long"
+    )]
+    let value = signed as i32;
     Some(Number {
-        value: signed as i32,
+        value,
         consumed: end + 3,
     })
 }
@@ -282,7 +287,11 @@ pub unsafe extern "C" fn swr_v1_resp_parse_range(
     }
     let Some(count) = count else { return -1 };
     if output.is_null() {
-        return if capacity == 0 { count as i64 } else { -2 };
+        return if capacity == 0 {
+            i64::try_from(count).unwrap_or(-1)
+        } else {
+            -2
+        };
     }
     if capacity < count || count > isize::MAX as usize / std::mem::size_of::<RespSpan>() {
         return -2;
@@ -298,7 +307,7 @@ pub unsafe extern "C" fn swr_v1_resp_parse_range(
         },
         &mut overflow,
     );
-    count as i64
+    i64::try_from(count).unwrap_or(-1)
 }
 
 /// Scan once, writing at most capacity spans and returning the full count.
@@ -347,7 +356,7 @@ pub unsafe extern "C" fn swr_v1_resp_scan(
         // SAFETY: `range` is non-null (checked above), aligned and writable per the export's contract.
         unsafe { range.write(u8::from(overflow)) };
     }
-    count.map_or(-1, |count| count as i64)
+    count.map_or(-1, |count| i64::try_from(count).unwrap_or(-1))
 }
 
 pub(crate) fn decimal(mut value: u64, buffer: &mut [u8; 20]) -> &[u8] {
@@ -521,7 +530,7 @@ fn resp_receive_range(
                 }
                 continue;
             }
-            if (value.value as usize)
+            if (value.value.unsigned_abs() as usize)
                 .checked_add(position)
                 .is_none_or(|n| n > maximum)
             {
@@ -538,10 +547,11 @@ fn resp_receive_range(
             let Some(remaining) = request.bytes_total.checked_sub(request.bytes_received) else {
                 return (0, set_offset);
             };
-            if (bytes.len() - position) < remaining.max(0) as usize {
-                let Some(received) = request
-                    .bytes_received
-                    .checked_add((bytes.len() - position) as i32)
+            if (bytes.len() - position) < remaining.max(0).unsigned_abs() as usize {
+                // Fewer bytes than `remaining`, an i32, are left.
+                let Some(received) = i32::try_from(bytes.len() - position)
+                    .ok()
+                    .and_then(|left| request.bytes_received.checked_add(left))
                 else {
                     return (0, set_offset);
                 };
@@ -641,10 +651,15 @@ pub unsafe extern "C" fn swr_v1_resp_receive_range(
     }
     // SAFETY: `set_offset` is non-null (checked above), aligned and writable per the export's contract.
     unsafe { set_offset.write(u8::from(offset)) };
-    action as i32
+    action.cast_signed()
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests {
     use super::*;
     #[test]

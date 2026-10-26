@@ -2,10 +2,10 @@
 /// are intentionally not validated, matching the pinned protocol.
 pub fn mqtt_frame_length(bytes: &[u8]) -> i64 {
     let mut length = 0;
-    for (position, byte) in bytes.iter().skip(1).take(4).enumerate() {
+    for (position, byte) in (0i64..).zip(bytes.iter().skip(1).take(4)) {
         length += i64::from(byte & 127) << (7 * position);
         if byte & 128 == 0 {
-            return length + position as i64 + 2;
+            return length + position + 2;
         }
         if position == 3 {
             return -1;
@@ -23,6 +23,10 @@ pub unsafe extern "C" fn swr_v1_mqtt_frame_length(data: *const u8, length: usize
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests {
     use super::*;
     #[test]
