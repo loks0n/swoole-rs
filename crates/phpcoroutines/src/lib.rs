@@ -1,9 +1,4 @@
 //! PHP Scheduler frontend metadata. Zend payloads and execution stay native.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
 #![cfg_attr(
     not(test),
     deny(
@@ -79,7 +74,7 @@ impl SchedulerQueue {
     fn pop(&mut self) -> Option<SchedulerTask> {
         self.0.pop_front().map(|task| SchedulerTask {
             token: task.token,
-            repetitions: task.count.max(0) as u64,
+            repetitions: task.count.max(0).unsigned_abs(),
         })
     }
     /// Consume exactly one live owner, after Native payloads have been drained.

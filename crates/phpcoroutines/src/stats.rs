@@ -52,7 +52,11 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_stats(
     }
     let index = state.index.min(14) as usize;
     let key = KEYS[index];
-    let action = if index == 14 { 0 } else { index as u32 + 1 };
+    let action = if index == 14 {
+        0
+    } else {
+        u32::try_from(index + 1).unwrap_or(0)
+    };
     state.index = (state.index + 1).min(14);
     StatsPlan {
         action,
