@@ -26,6 +26,7 @@ pub unsafe extern "C" fn swr_v2_utils_log_frontdoor_step(
     unsigned_width: u32,
     high: u64,
 ) -> SwrLogAction {
+    // SAFETY: the caller passes a unique, live, aligned context for this call only.
     let state = unsafe { &mut *state };
     let level = match operation {
         0 => 2,
@@ -147,6 +148,7 @@ pub unsafe extern "C" fn swr_v2_utils_log_hex_step(
     length: usize,
     previous: i32,
 ) -> u32 {
+    // SAFETY: the caller passes a unique, live, aligned context for this call only.
     let s = unsafe { &mut *state };
     let next_byte = |s: &mut SwrLogHex| {
         if s.index < s.offset.wrapping_add(16) && s.index < length {

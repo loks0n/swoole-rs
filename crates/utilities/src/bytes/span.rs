@@ -10,6 +10,7 @@ fn whitespace(byte: u8, signed_char: u8) -> bool {
     } else {
         i32::from(byte)
     };
+    // SAFETY: callers guarantee each promoted byte is a defined isspace argument.
     unsafe { super::isspace(promoted) != 0 }
 }
 
@@ -27,13 +28,24 @@ pub unsafe extern "C" fn swr_v2_utils_ltrim(
 ) -> usize {
     let mut skipped = 0;
     while skipped < length {
-        // Keep the original short-circuit and fresh cursor observations.
-        if unsafe { cursor.read().read() } == 0
-            || !whitespace(unsafe { cursor.read().cast::<u8>().read() }, signed_char)
-        {
+        // Keep the original short-circuit and fresh cursor observations. With `length > 0`
+        // the slot is writable and every visited byte readable.
+        // SAFETY: as above.
+        let current = unsafe { cursor.read() };
+        // SAFETY: as above.
+        if unsafe { current.read() } == 0 {
             break;
         }
-        unsafe { cursor.write(cursor.read().add(1)) };
+        // SAFETY: as above.
+        let current = unsafe { cursor.read() };
+        // SAFETY: as above.
+        if !whitespace(unsafe { current.cast::<u8>().read() }, signed_char) {
+            break;
+        }
+        // SAFETY: as above.
+        let current = unsafe { cursor.read() };
+        // SAFETY: as above.
+        unsafe { cursor.write(current.wrapping_add(1)) };
         skipped += 1;
     }
     length - skipped
@@ -52,10 +64,13 @@ pub unsafe extern "C" fn swr_v2_utils_rtrim(
 ) -> usize {
     let mut kept = length;
     while kept != 0 {
-        let byte = unsafe { data.add(kept - 1) };
+        // Byte `kept - 1` is a visited byte: readable and writable per the contract.
+        let byte = data.wrapping_add(kept - 1);
+        // SAFETY: as above.
         if !whitespace(unsafe { byte.cast::<u8>().read() }, signed_char) {
             break;
         }
+        // SAFETY: as above.
         unsafe { byte.write(0) };
         kept -= 1;
     }
@@ -88,6 +103,7 @@ pub unsafe extern "C" fn swr_v2_utils_search(
     mode: u8,
 ) -> SwrUtilsSearchResult {
     let needle_length = if mode == 2 {
+        // SAFETY: mode 2 requires a valid NUL-terminated needle.
         unsafe { CStr::from_ptr(needle) }.to_bytes().len() as u32
     } else {
         needle_length
@@ -103,15 +119,20 @@ pub unsafe extern "C" fn swr_v2_utils_search(
         } else {
             position <= length - count
         } {
-            let current = unsafe { data.add(position) };
-            let first_matches = unsafe { current.read() == needle.read() };
+            // `position + count <= length`, so `count` bytes from `current` lie in the
+            // haystack, and the needle has `count` readable bytes.
+            let current = data.wrapping_add(position);
+            // SAFETY: as above.
+            let first = unsafe { current.read() };
+            // SAFETY: as above; `count != 0`.
+            let first_matches = first == unsafe { needle.read() };
             let matched = first_matches
-                && unsafe {
-                    if mode == 1 {
-                        super::strncasecmp(current, needle, count) == 0
-                    } else {
-                        memcmp(current.cast(), needle.cast(), count) == 0
-                    }
+                && if mode == 1 {
+                    // SAFETY: as above.
+                    unsafe { super::strncasecmp(current, needle, count) == 0 }
+                } else {
+                    // SAFETY: as above.
+                    unsafe { memcmp(current.cast(), needle.cast(), count) == 0 }
                 };
             if matched {
                 offset = position as isize;
@@ -128,7 +149,7 @@ pub unsafe extern "C" fn swr_v2_utils_search(
         pointer: if offset < 0 {
             std::ptr::null()
         } else {
-            unsafe { data.add(offset as usize) }
+            data.wrapping_add(offset as usize)
         },
         offset,
         needle_length,

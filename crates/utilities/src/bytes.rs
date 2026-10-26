@@ -19,6 +19,7 @@ pub unsafe extern "C" fn swr_v1_utils_lowercase(data: *mut u8, length: i32, sign
     if length <= 0 || data.is_null() {
         return;
     }
+    // SAFETY: non-null, positive `length` (checked above); an exclusive writable range.
     let data = unsafe { std::slice::from_raw_parts_mut(data, length as usize) };
     for byte in data {
         let value = if signed_char != 0 {
@@ -26,6 +27,7 @@ pub unsafe extern "C" fn swr_v1_utils_lowercase(data: *mut u8, length: i32, sign
         } else {
             i32::from(*byte)
         };
+        // SAFETY: the caller guarantees each promoted char is a defined tolower argument.
         *byte = unsafe { tolower(value) } as u8;
     }
 }
@@ -36,6 +38,7 @@ unsafe fn bytes<'a>(data: *const u8, length: usize) -> Option<&'a [u8]> {
     } else if data.is_null() || length > isize::MAX as usize {
         None
     } else {
+        // SAFETY: non-null, `length <= isize::MAX`; the caller lends that many readable bytes.
         Some(unsafe { std::slice::from_raw_parts(data, length) })
     }
 }
@@ -52,6 +55,7 @@ pub unsafe extern "C" fn swr_v1_utils_trim(
     right: u8,
     signed_char: u8,
 ) -> usize {
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let Some(data) = (unsafe { bytes(data, length) }) else {
         return 0;
     };
@@ -61,6 +65,7 @@ pub unsafe extern "C" fn swr_v1_utils_trim(
         } else {
             i32::from(*byte)
         };
+        // SAFETY: the caller guarantees each promoted byte is a defined isspace argument.
         unsafe { isspace(value) != 0 }
     };
     if right != 0 {
@@ -91,15 +96,18 @@ pub unsafe extern "C" fn swr_v1_utils_find(
     if count == 0 || count > length {
         return -1;
     }
-    let (Some(data), Some(needle)) = (unsafe { bytes(data, length) }, unsafe {
-        bytes(needle, count)
-    }) else {
+    // SAFETY: the caller lends `length` initialized bytes at `data`.
+    let data = unsafe { bytes(data, length) };
+    // SAFETY: the caller lends `count` initialized bytes at `needle`.
+    let needle = unsafe { bytes(needle, count) };
+    let (Some(data), Some(needle)) = (data, needle) else {
         return -1;
     };
     let found = match mode {
         0 => memchr::memmem::find(data, needle),
+        // SAFETY: `p <= length - count`, so both ranges hold `count` readable bytes.
         1 => memchr::memchr_iter(needle[0], &data[..length - count + 1]).find(|p| unsafe {
-            strncasecmp(data.as_ptr().add(*p).cast(), needle.as_ptr().cast(), count) == 0
+            strncasecmp(data[*p..].as_ptr().cast(), needle.as_ptr().cast(), count) == 0
         }),
         2 => memchr::memmem::rfind(&data[1..], needle).map(|p| p + 1),
         _ => None,
@@ -131,7 +139,10 @@ pub unsafe extern "C" fn swr_v1_utils_compare(
         return 0;
     }
     let equal = match mode {
+        // SAFETY: both are non-null (checked above); C comparison stops at `count` or NUL,
+        // within the caller's readable ranges.
         0 | 2 => unsafe { strncmp(data.cast(), needle.cast(), count) == 0 },
+        // SAFETY: as above.
         1 | 3 => unsafe { strncasecmp(data.cast(), needle.cast(), count) == 0 },
         4 | 5 => {
             if count > isize::MAX as usize || (mode == 5 && length > isize::MAX as usize) {
@@ -141,7 +152,9 @@ pub unsafe extern "C" fn swr_v1_utils_compare(
             if offset > isize::MAX as usize {
                 return 0;
             }
-            let compared = unsafe { std::slice::from_raw_parts(data.add(offset), count) };
+            // SAFETY: non-null; `offset + count <= length <= isize::MAX`, inside the readable range.
+            let compared = unsafe { std::slice::from_raw_parts(data.wrapping_add(offset), count) };
+            // SAFETY: non-null, `count <= isize::MAX`, and the caller lends `count` readable bytes.
             let needle = unsafe { std::slice::from_raw_parts(needle, count) };
             compared == needle
         }
@@ -160,6 +173,7 @@ pub unsafe extern "C" fn swr_v1_utils_partition(
     separator: u8,
     before: u8,
 ) -> isize {
+    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
     let Some(data) = (unsafe { bytes(data, length) }) else {
         return -1;
     };

@@ -88,10 +88,10 @@ impl LogState {
     }
     // No native callback runs while these field borrows exist.
     unsafe fn clear_paths(&self) {
-        unsafe {
-            *self.texts[0].get() = Text::Static(c"");
-            *self.texts[1].get() = Text::Static(c"");
-        }
+        // SAFETY: callers hold the path fields exclusively, with no outstanding borrow.
+        unsafe { *self.texts[0].get() = Text::Static(c"") };
+        // SAFETY: as above.
+        unsafe { *self.texts[1].get() = Text::Static(c"") };
     }
 }
 
@@ -107,18 +107,20 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_create(
     if output.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above), aligned, writable pointer storage.
     unsafe { output.write(std::ptr::null_mut()) };
     if super::log_defaults().0.to_bytes().len() > native_max {
         return LENGTH;
     }
+    // SAFETY: `LogState` is not zero-sized; null is handled below.
     let state = unsafe { alloc(Layout::new::<LogState>()) }.cast::<LogState>();
     if state.is_null() {
         return ALLOCATION;
     }
-    unsafe {
-        state.write(LogState::new(native_max));
-        output.write(state);
-    }
+    // SAFETY: a fresh, non-null allocation with `LogState`'s layout.
+    unsafe { state.write(LogState::new(native_max)) };
+    // SAFETY: as for the first write to `output`.
+    unsafe { output.write(state) };
     OK
 }
 
@@ -129,10 +131,10 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_create(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_utils_log_state_destroy(state: *mut LogState) {
     if !state.is_null() {
-        unsafe {
-            state.drop_in_place();
-            dealloc(state.cast(), Layout::new::<LogState>());
-        }
+        // SAFETY: exclusively owned from create, users quiescent, destroyed at most once.
+        unsafe { state.drop_in_place() };
+        // SAFETY: allocated with this layout by create; its value was just dropped.
+        unsafe { dealloc(state.cast(), Layout::new::<LogState>()) };
     }
 }
 
@@ -144,6 +146,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_scalar_get(
     state: *const LogState,
     field: u32,
 ) -> i32 {
+    // SAFETY: `state` is null or live and aligned for this call.
     let Some(state) = (unsafe { state.as_ref() }) else {
         return 0;
     };
@@ -168,6 +171,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_scalar_set(
     field: u32,
     value: i32,
 ) -> u32 {
+    // SAFETY: `state` is null or live and aligned for this call.
     let Some(state) = (unsafe { state.as_ref() }) else {
         return INVALID;
     };
@@ -192,10 +196,12 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_text_get(
     state: *const LogState,
     field: u32,
 ) -> *const c_char {
+    // SAFETY: `state` is null or live and aligned for this call.
     let Some(state) = (unsafe { state.as_ref() }) else {
         return c"".as_ptr();
     };
     match state.texts.get(field as usize) {
+        // SAFETY: callers are quiescent against mutation of this field for this read.
         Some(text) => unsafe { &*text.get() }.pointer(),
         None => c"".as_ptr(),
     }
@@ -213,6 +219,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_text_set(
     input: *const u8,
     length: usize,
 ) -> u32 {
+    // SAFETY: `state` is null or live and aligned for this call.
     let Some(state) = (unsafe { state.as_ref() }) else {
         return INVALID;
     };
@@ -228,10 +235,13 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_text_set(
     let bytes = if length == 0 {
         &[]
     } else {
+        // SAFETY: non-null, `length` admitted (<= isize::MAX), readable for this call.
         unsafe { std::slice::from_raw_parts(input, length) }
     };
     match Text::copy(bytes, state.native_max) {
         Ok(text) => {
+            // SAFETY: the target field is exclusively accessible; the copy (which may have
+            // read it through `input`) is complete, so no borrow of it remains.
             unsafe { *target.get() = text };
             OK
         }
@@ -248,6 +258,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_text_copy(
     source: u32,
     target: u32,
 ) -> u32 {
+    // SAFETY: `state` is null or live and aligned for this call.
     let Some(state) = (unsafe { state.as_ref() }) else {
         return INVALID;
     };
@@ -260,9 +271,12 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_text_copy(
     if source == target {
         return OK;
     }
+    // SAFETY: the source field is readable and not mutated during the copy.
     let result = Text::copy(unsafe { &*source_cell.get() }.bytes(), state.native_max);
     match result {
         Ok(text) => {
+            // SAFETY: the target (a different field) is exclusively accessible, and the
+            // source borrow ended with the copy.
             unsafe { *target_cell.get() = text };
             OK
         }
@@ -275,8 +289,10 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_text_copy(
 /// State is live and configuration mutations are quiescent.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_utils_log_state_reset(state: *const LogState) {
+    // SAFETY: `state` is null or live and aligned for this call.
     if let Some(state) = unsafe { state.as_ref() } {
         let (date, rotation, level, microseconds) = super::log_defaults();
+        // SAFETY: configuration is quiescent; no borrow of the date field is outstanding.
         unsafe { *state.texts[2].get() = Text::Static(date) };
         state.microseconds.set(microseconds != 0);
         state.rotation.set(rotation);
@@ -290,14 +306,17 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_reset(state: *const LogState) {
 /// Failed-open=1 publishes opened=false before paths; close=0 publishes it last.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_utils_log_state_clear(state: *const LogState, failed_open: u8) {
+    // SAFETY: `state` is null or live and aligned for this call.
     if let Some(state) = unsafe { state.as_ref() } {
         if failed_open != 0 {
             state.opened.set(false);
         }
         if failed_open != 0 {
+            // SAFETY: the state is exclusive after the native effects; no path borrow remains.
             unsafe { state.clear_paths() };
         } else {
             // Native close retains the last resolved filename.
+            // SAFETY: as above.
             unsafe { *state.texts[0].get() = Text::Static(c"") };
         }
         if failed_open == 0 {
@@ -317,13 +336,16 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_file_step(
     operation: u32,
     descriptor: i32,
 ) -> u32 {
+    // SAFETY: `state` is null or live and aligned for this call.
     let Some(state) = (unsafe { state.as_ref() }) else {
         return 0;
     };
     if phase.is_null() {
         return 0;
     }
+    // SAFETY: `phase` is non-null (checked above), aligned, exclusive and initialized.
     let current = unsafe { phase.read() };
+    // SAFETY: forwards the caller's exclusive, initialized phase.
     unsafe {
         super::swr_v1_utils_log_file_step(
             phase,
@@ -358,15 +380,18 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_redirect_step(
     enable: u8,
     result: i32,
 ) -> u32 {
+    // SAFETY: `state` is null or live and aligned for this call.
     let Some(state) = (unsafe { state.as_ref() }) else {
         return 0;
     };
     if phase.is_null() {
         return 0;
     }
+    // SAFETY: `phase` is non-null (checked above), aligned, exclusive and initialized.
     let current = unsafe { phase.read() };
     let opened = current == 0 && enable != 0 && state.opened.get();
     let redirected = current == 0 && (enable == 0 || opened) && state.redirected.get();
+    // SAFETY: forwards the caller's exclusive, initialized phase.
     unsafe {
         super::swr_v1_utils_redirect_step(
             phase,
@@ -388,13 +413,16 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_config_step(
     operation: u32,
     formatted: usize,
 ) -> u32 {
+    // SAFETY: `state` is null or live and aligned for this call.
     let Some(state) = (unsafe { state.as_ref() }) else {
         return 0;
     };
     if phase.is_null() {
         return 0;
     }
+    // SAFETY: `phase` is non-null (checked above), aligned, exclusive and initialized.
     let opened = operation == 2 && unsafe { phase.read() } == 0 && state.opened.get();
+    // SAFETY: forwards the caller's exclusive, initialized phase.
     unsafe {
         super::swr_v1_utils_log_config_step(
             phase,
@@ -419,13 +447,16 @@ pub unsafe extern "C" fn swr_v1_utils_log_state_emit_step(
     acquired: u8,
     worker_pid: i32,
 ) -> u32 {
+    // SAFETY: `state` is null or live and aligned for this call.
     let Some(state) = (unsafe { state.as_ref() }) else {
         return 0;
     };
     if phase.is_null() {
         return 0;
     }
+    // SAFETY: `phase` is non-null (checked above), aligned, exclusive and initialized.
     let current = unsafe { phase.read() };
+    // SAFETY: forwards the caller's exclusive, initialized phase.
     unsafe {
         super::swr_v1_utils_log_emit_step(
             phase,

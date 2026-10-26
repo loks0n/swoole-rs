@@ -6,6 +6,13 @@
     clippy::cast_sign_loss,
     reason = "#157: casts not yet checked"
 )]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 mod bytes;
 mod frontdoor;
 pub use frontdoor::*;
@@ -128,6 +135,7 @@ pub unsafe extern "C" fn swr_v1_utils_hash(
     let bytes = if count == 0 {
         &[]
     } else {
+        // SAFETY: non-null, `count <= length <= isize::MAX` (checked above), readable bytes.
         unsafe { std::slice::from_raw_parts(data, count) }
     };
     hash(bytes, length, algorithm, signed_char != 0)
@@ -141,6 +149,7 @@ pub unsafe extern "C" fn swr_v1_utils_spinlock(lock: *mut u32, cpus: u32, backof
     if lock.is_null() || !(lock as usize).is_multiple_of(std::mem::align_of::<AtomicU32>()) {
         return;
     }
+    // SAFETY: non-null and aligned (checked above); a live u32 accessed only atomically.
     let lock = unsafe { &*lock.cast::<AtomicU32>() };
     let acquire = || {
         lock.load(Ordering::Relaxed) == 0
@@ -175,6 +184,7 @@ pub unsafe extern "C" fn swr_v1_utils_spinlock(lock: *mut u32, cpus: u32, backof
 #[cfg(target_os = "linux")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_utils_wait(word: *mut u32, timeout: f64) -> i32 {
+    // SAFETY: forwards the caller's aligned, live, atomic-only futex word.
     unsafe { swoole_rs_locks::swr_v1_locks_wait(word, timeout) }
 }
 
@@ -184,6 +194,7 @@ pub unsafe extern "C" fn swr_v1_utils_wait(word: *mut u32, timeout: f64) -> i32 
 #[cfg(target_os = "linux")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_utils_wakeup(word: *mut u32, n: i32) -> i32 {
+    // SAFETY: forwards the caller's aligned, live, atomic-only futex word.
     unsafe { swoole_rs_locks::swr_v1_locks_wakeup(word, n) }
 }
 
@@ -201,16 +212,17 @@ pub unsafe extern "C" fn swr_v1_utils_pretty_range(
     if begin.is_null() || count.is_null() {
         return -1;
     }
-    unsafe {
-        begin.write(0);
-        count.write(0);
-    }
+    // SAFETY: non-null (checked above), aligned, writable outputs.
+    unsafe { begin.write(0) };
+    // SAFETY: as above.
+    unsafe { count.write(0) };
     if length > isize::MAX as usize || (data.is_null() && length != 0) {
         return -1;
     }
     let bytes = if length == 0 {
         &[]
     } else {
+        // SAFETY: non-null, `length <= isize::MAX` (checked above), readable bytes.
         unsafe { std::slice::from_raw_parts(data, length) }
     };
     let Some(bracket) = bytes.iter().position(|b| *b == b'(') else {
@@ -229,10 +241,10 @@ pub unsafe extern "C" fn swr_v1_utils_pretty_range(
         let prior = method[..last].windows(2).rposition(|w| w == b"::");
         start += prior.unwrap_or(last) + 2;
     }
-    unsafe {
-        begin.write(start);
-        count.write(bracket - start);
-    }
+    // SAFETY: non-null (checked above), aligned, writable outputs.
+    unsafe { begin.write(start) };
+    // SAFETY: as above.
+    unsafe { count.write(bracket - start) };
     0
 }
 
@@ -313,12 +325,15 @@ unsafe fn log_bytes<'a>(data: *const u8, precision: i32) -> &'a [u8] {
         return &[];
     }
     if precision < 0 {
+        // SAFETY: negative precision requires a NUL-terminated input.
         return unsafe { std::ffi::CStr::from_ptr(data.cast()) }.to_bytes();
     }
     let mut length = 0;
-    while length < precision as usize && unsafe { data.add(length).read() } != 0 {
+    // SAFETY: the input is readable through its first NUL or `precision` bytes.
+    while length < precision as usize && unsafe { data.wrapping_add(length).read() } != 0 {
         length += 1;
     }
+    // SAFETY: the loop read exactly these `length` bytes.
     unsafe { std::slice::from_raw_parts(data, length) }
 }
 
@@ -347,6 +362,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_line(
     }
     if (date.is_null() && date_precision != 0) || (content.is_null() && content_precision != 0) {
         if capacity != 0 {
+            // SAFETY: non-null when `capacity != 0` (checked above), writable.
             unsafe { output.write(0) };
         }
         return 0;
@@ -354,10 +370,12 @@ pub unsafe extern "C" fn swr_v1_utils_log_line(
     let bytes = if capacity == 0 {
         &mut []
     } else {
+        // SAFETY: non-null, `capacity <= i32::MAX` (checked above), writable and disjoint.
         unsafe { std::slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), capacity) }
     };
     let mut sink = LogSink { bytes, required: 0 };
     sink.append(b"[");
+    // SAFETY: `date` is readable through its NUL or precision (null only at precision 0).
     sink.append(unsafe { log_bytes(date, date_precision) });
     sink.append(&[b' ', symbol]);
     #[expect(
@@ -367,6 +385,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_line(
     let _ = write!(sink, "{pid}.{worker}]\t");
     sink.append(log_label(level).to_bytes());
     sink.append(b"\t");
+    // SAFETY: as for `date`.
     sink.append(unsafe { log_bytes(content, content_precision) });
     sink.append(b"\n");
     sink.finish()
@@ -389,6 +408,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_micros(
     let bytes = if capacity == 0 {
         &mut []
     } else {
+        // SAFETY: non-null, `capacity <= i32::MAX` (checked above), writable and disjoint.
         unsafe { std::slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), capacity) }
     };
     let mut sink = LogSink { bytes, required: 0 };
@@ -437,6 +457,7 @@ pub unsafe extern "C" fn swr_v1_utils_redirect_step(
     if phase.is_null() {
         return Invalid as u32;
     }
+    // SAFETY: `phase` is non-null (checked above), aligned, initialized u32 storage.
     let (next, action) = match unsafe { phase.read() } {
         0 if enable != 0 && opened == 0 => (8, NoFile),
         0 if enable != 0 && redirected != 0 => (8, Already),
@@ -455,6 +476,7 @@ pub unsafe extern "C" fn swr_v1_utils_redirect_step(
         8 => (8, Done),
         _ => return Invalid as u32,
     };
+    // SAFETY: `phase` is non-null (checked above), aligned, initialized u32 storage.
     unsafe { phase.write(next) };
     action as u32
 }
@@ -495,6 +517,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_file_step(
     if phase.is_null() {
         return Invalid as u32;
     }
+    // SAFETY: `phase` is non-null (checked above), aligned, initialized u32 storage.
     let (next, action) = match (operation, unsafe { phase.read() }) {
         (0, 0) if opened != 0 => (1, Close),
         (0, 0 | 1) => (2, AssignPath),
@@ -514,6 +537,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_file_step(
         (0..=2, 5) => (5, Done),
         _ => return Invalid as u32,
     };
+    // SAFETY: `phase` is non-null (checked above), aligned, initialized u32 storage.
     unsafe { phase.write(next) };
     action as u32
 }
@@ -593,6 +617,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_put_step(
         return Invalid as u32;
     }
     let Some((next, action)) = log_put_next(
+        // SAFETY: `phase` is non-null (checked above), aligned, initialized u32 storage.
         unsafe { phase.read() },
         level,
         threshold,
@@ -603,6 +628,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_put_step(
     ) else {
         return Invalid as u32;
     };
+    // SAFETY: `phase` is non-null (checked above), aligned, initialized u32 storage.
     unsafe { phase.write(next) };
     action as u32
 }
@@ -630,6 +656,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_emit_step(
     if phase.is_null() {
         return Invalid as u32;
     }
+    // SAFETY: `phase` is non-null (checked above), aligned, initialized u32 storage.
     let (next, action) = match unsafe { phase.read() } {
         14 if path_changed != 0 => (15, RotationLock),
         14 => (2, Skip),
@@ -660,6 +687,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_emit_step(
             )
         }
     };
+    // SAFETY: `phase` is non-null (checked above), aligned, initialized u32 storage.
     unsafe { phase.write(next) };
     action as u32
 }
@@ -695,6 +723,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_config_step(
     if phase.is_null() {
         return 0;
     }
+    // SAFETY: `phase` is non-null (checked above), aligned, initialized u32 storage.
     let current = unsafe { phase.read() };
     let (next, action) = match (operation, current) {
         (0, 0) => {
@@ -702,6 +731,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_config_step(
                 return 0;
             }
             let (date, rotation, level, microseconds) = log_defaults();
+            // SAFETY: non-null (checked above), aligned, writable output.
             unsafe {
                 defaults.write(LogDefaults {
                     date_format: date.as_ptr(),
@@ -719,6 +749,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_config_step(
         (2, 0..=1) => (2, 7),
         _ => return 0,
     };
+    // SAFETY: `phase` is non-null (checked above), aligned, initialized u32 storage.
     unsafe { phase.write(next) };
     action
 }
