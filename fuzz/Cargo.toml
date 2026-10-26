@@ -1,0 +1,31 @@
+[package]
+name = "swoole-rs-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+swoole-rs-base64 = { path = "../crates/base64" }
+swoole-rs-oracle = { path = "../crates/oracle" }
+
+[[bin]]
+name = "base64_decode"
+path = "fuzz_targets/base64_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "base64_encode"
+path = "fuzz_targets/base64_encode.rs"
+test = false
+doc = false
+bench = false
+
+# Built only by `cargo +nightly fuzz`, outside the pinned stable workspace.
+[workspace]

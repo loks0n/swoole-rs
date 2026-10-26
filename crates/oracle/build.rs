@@ -61,15 +61,30 @@ fn original_test(file: &str, test: &str, name: &str) -> PathBuf {
     path
 }
 
+/// A C++ build that matches the Rust side's sanitizer, so `cargo fuzz`'s ASan
+/// also checks the upstream code.
+fn cpp() -> cc::Build {
+    let mut build = cc::Build::new();
+    build.cpp(true).std("c++14");
+    if env::var("CARGO_CFG_SANITIZE").is_ok_and(|s| s.split(',').any(|s| s == "address")) {
+        build.flag("-fsanitize=address");
+        // rustc links its own ASan runtime; Apple clang would require its own by name.
+        if build.get_compiler().is_like_clang() {
+            build
+                .flag("-mllvm")
+                .flag("-asan-guard-against-version-mismatch=0");
+        }
+    }
+    build
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=upstream");
     println!("cargo:rerun-if-changed=shim");
 
     // The original code: base64 under `oracle::`, crc32 renamed, so both can sit
     // beside the Rust-backed `swoole::` and `swoole_crc32`.
-    cc::Build::new()
-        .cpp(true)
-        .std("c++14")
+    cpp()
         .define("swoole", "oracle")
         .define("swoole_crc32", "oracle_swoole_crc32")
         .include("shim")
@@ -86,9 +101,7 @@ fn main() {
         "TEST(hash, crc32)",
         "crc32_test.cpp",
     );
-    cc::Build::new()
-        .cpp(true)
-        .std("c++14")
+    cpp()
         .define("SWOOLE_RS_BASE64", "1")
         .define("SWOOLE_RS_CRC32", "1")
         .include("shim")
