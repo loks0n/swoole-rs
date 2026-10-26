@@ -31,6 +31,17 @@ values in order) compare with upstream's `url_decode`, `url_encode` and
 `url_encode` writes past its allocation (#145).
 
 
+For HTTP request framing, `http_frame` runs `get_protocol`, `get_header_length`
+or `get_chunked_body_length` from a chosen offset, header length and request
+state, and `http_header` runs `has_expect_header`, `get_header(name)` and
+`get_method_string`. Both compare the pinned http.cc bodies with the same bodies
+after `migration/patches/http/0001-http-helpers.patch` (which call Rust), over a
+`Request` with upstream's field types, copied by `crates/oracle/build.rs`. Two
+upstream behaviours are excluded: a request line cut inside its URL is accepted
+8 bytes past the buffer (#177; the candidate must wait for more), and a huge or
+negated chunk size wraps upstream's pointer (#178). Seeds include the requests
+`http.client` sends for the corpus applications.
+
 For packet framing (`open_length_check`), `framing_unpack` compares
 `swr_v1_framing_unpack` with `swoole_unpack` for every length type, and
 `framing_length` compares `swr_v1_framing_default` with

@@ -11,11 +11,11 @@ class TypedBufferIdentity(unittest.TestCase):
         files[identity.SOURCES[1]]='\n'.join('pub fn swr_v1_buffer_typed_'+op+'() {}' for op in identity.OPERATIONS).encode()
         files[identity.PATCHES[1]]='\n'.join('+ check_buffer_status(swr_v1_buffer_typed_'+op+'(args));' for op in identity.OPERATIONS).encode()
         files[identity.PATCHES[2]]=b'+ buffer->typed_front();\n+ buffer->typed_consume(args);\n+ buffer->typed_sendfile(args);'
-        inputs={'buffer_typed_requested':True,'modules':['buffer','reactor'],'rust_sources_sha256':{n:hashlib.sha256(files[n]).hexdigest() for n in identity.SOURCES},'patches':[{'path':n,'sha256':hashlib.sha256(files[n]).hexdigest()} for n in identity.PATCHES]}
+        inputs={'modules':['buffer','reactor'],'rust_sources_sha256':{n:hashlib.sha256(files[n]).hexdigest() for n in identity.SOURCES},'patches':[{'path':n,'sha256':hashlib.sha256(files[n]).hexdigest()} for n in identity.PATCHES]}
         return inputs,files
-    def test_requests_are_literal_and_native_control_stays_off(self):
+    def test_typed_follows_buffer_and_reactor_and_native_control_stays_off(self):
         inputs,_=self.inputs();self.assertTrue(identity.requested(inputs,True));self.assertFalse(identity.requested({},False))
-        for bad in [{},dict(inputs,buffer_typed_requested=1),dict(inputs,buffer_typed_requested=False),dict(inputs,modules=['reactor'])]:
+        for bad in [{},dict(inputs,modules=['reactor']),dict(inputs,rust_sources_sha256={})]:
             with self.assertRaises(ValueError):identity.requested(bad,True)
         with self.assertRaises(ValueError):identity.requested(inputs,False)
     def test_configuration_is_literal_not_presence(self):

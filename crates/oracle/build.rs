@@ -5,43 +5,53 @@ fn out(name: &str) -> PathBuf {
     PathBuf::from(env::var("OUT_DIR").unwrap()).join(name)
 }
 
-/// Apply a single-hunk overlay patch to its vendored original, so the adapter
-/// compiled here is exactly the file the hybrid build compiles.
+/// An overlay patch applied to the text of its one vendored original, hunk by
+/// hunk, checking every context and removed line.
+fn apply(original: &str, patch: &str) -> String {
+    assert_eq!(patch.matches("\n+++ ").count(), 1, "one file per patch");
+    let lines: Vec<&str> = original.lines().collect();
+    let (mut output, mut cursor) = (Vec::new(), 0);
+    let mut hunks = patch
+        .lines()
+        .skip_while(|line| !line.starts_with("@@ "))
+        .peekable();
+    while let Some(header) = hunks.next() {
+        let old = header.split(' ').nth(1).unwrap().trim_start_matches('-');
+        let (start, length) = old.split_once(',').unwrap_or((old, "1"));
+        let (start, length): (usize, usize) = (start.parse().unwrap(), length.parse().unwrap());
+        let at = if length == 0 { start } else { start - 1 };
+        let mut body = Vec::new();
+        while let Some(line) = hunks.next_if(|line| !line.starts_with("@@ ")) {
+            if !line.starts_with('\\') {
+                body.push(if line.is_empty() { " " } else { line });
+            }
+        }
+        let old_side: Vec<&str> = body
+            .iter()
+            .filter(|l| !l.starts_with('+'))
+            .map(|l| &l[1..])
+            .collect();
+        assert_eq!(
+            old_side,
+            lines[at..at + length],
+            "patch context matches original at {header}"
+        );
+        output.extend_from_slice(&lines[cursor..at]);
+        output.extend(body.iter().filter(|l| !l.starts_with('-')).map(|l| &l[1..]));
+        cursor = at + length;
+    }
+    output.extend_from_slice(&lines[cursor..]);
+    output.iter().map(|line| format!("{line}\n")).collect()
+}
+
+/// Apply an overlay patch to its vendored original, so the adapter compiled here
+/// is exactly the file the hybrid build compiles.
 fn patched(original: &str, patch: &str, name: &str) -> PathBuf {
     println!("cargo:rerun-if-changed={patch}");
     let patch = fs::read_to_string(patch).expect("overlay patch");
     let original = fs::read_to_string(original).expect("vendored original");
-    let mut hunks = patch.lines().skip_while(|line| !line.starts_with("@@ "));
-    let header = hunks.next().expect("one hunk");
-    let old = header.split(' ').nth(1).unwrap().trim_start_matches('-');
-    let (start, length) = old.split_once(',').unwrap_or((old, "1"));
-    let (start, length): (usize, usize) = (start.parse().unwrap(), length.parse().unwrap());
-    let body: Vec<&str> = hunks.collect();
-    assert!(
-        !body.iter().any(|line| line.starts_with("@@ ")),
-        "single hunk"
-    );
-    let lines: Vec<&str> = original.lines().collect();
-    let old_side: Vec<&str> = body
-        .iter()
-        .filter(|l| !l.starts_with('+'))
-        .map(|l| &l[1..])
-        .collect();
-    assert_eq!(
-        old_side,
-        lines[start - 1..start - 1 + length],
-        "patch context matches original"
-    );
-    let new_side = body.iter().filter(|l| !l.starts_with('-')).map(|l| &l[1..]);
-    let source: String = lines[..start - 1]
-        .iter()
-        .copied()
-        .chain(new_side)
-        .chain(lines[start - 1 + length..].iter().copied())
-        .map(|line| format!("{line}\n"))
-        .collect();
     let path = out(name);
-    fs::write(&path, source).unwrap();
+    fs::write(&path, apply(&original, &patch)).unwrap();
     path
 }
 
@@ -85,6 +95,69 @@ fn http() {
     ]
     .concat();
     fs::write(out("http.inc"), text).unwrap();
+}
+
+/// The definition starting at `signature`, through its matching brace.
+fn definition(text: &str, signature: &str) -> String {
+    let start = text.find(signature).expect(signature);
+    let mut depth = 0;
+    for (offset, char) in text[start..].char_indices() {
+        match char {
+            '{' => depth += 1,
+            '}' if depth == 1 => {
+                let body = &text[start..start + offset + 1];
+                assert!(
+                    !body.contains("\n#"),
+                    "no preprocessor branches in {signature}"
+                );
+                return body.to_string();
+            }
+            '}' => depth -= 1,
+            _ => {}
+        }
+    }
+    panic!("unterminated {signature}");
+}
+
+/// Request framing from the pinned http.cc (upstream) and from it with the http
+/// overlay patch applied (candidate), copied unchanged for shim/http_frame.cc,
+/// with the method and version enums from the pinned swoole_http.h.
+fn http_frame() {
+    let patch = "../../migration/patches/http/0001-http-helpers.patch";
+    println!("cargo:rerun-if-changed={patch}");
+    let upstream = fs::read_to_string("upstream/src/protocol/http.cc").expect("vendored http.cc");
+    let candidate = apply(&upstream, &fs::read_to_string(patch).expect("http patch"));
+    for (name, text) in [("upstream", &upstream), ("candidate", &candidate)] {
+        let mut parts = Vec::new();
+        if text.contains("static const char *method_strings[]") {
+            parts.push(slice(text, "static const char *method_strings[]", "\n};") + "\n};");
+        }
+        if text.contains("int frame_request(") {
+            parts.push(definition(text, "int frame_request("));
+        }
+        for signature in [
+            "int Request::get_protocol(",
+            "int Request::get_header_length(",
+            "int Request::get_chunked_body_length(",
+            "bool Request::has_expect_header(",
+            "std::string Request::get_header(",
+            "const char *get_method_string(",
+        ] {
+            parts.push(definition(text, signature));
+        }
+        fs::write(
+            out(&format!("http_frame_{name}.inc")),
+            parts.join("\n") + "\n",
+        )
+        .unwrap();
+    }
+    let header =
+        fs::read_to_string("upstream/include/swoole_http.h").expect("vendored swoole_http.h");
+    let enums = [
+        slice(&header, "enum swHttpVersion {", "\n};") + "\n};\n",
+        slice(&header, "enum swHttpMethod {", "\n};") + "\n};\n",
+    ];
+    fs::write(out("http_frame_enums.inc"), enums.concat()).unwrap();
 }
 
 /// The pinned packet length function and integer unpacking, copied unchanged for
@@ -164,6 +237,14 @@ fn main() {
     websocket();
     http();
     framing();
+    http_frame();
+    cpp()
+        .define("SWR_FRAME_ENGINE", "upstream")
+        .define("SWR_FRAME_INC", "\"http_frame_upstream.inc\"")
+        .include("../../native/http")
+        .include(env::var("OUT_DIR").unwrap())
+        .file("shim/http_frame.cc")
+        .compile("swoole_oracle_http_frame");
     cpp()
         .define("swoole", "oracle")
         .define("swoole_crc32", "oracle_swoole_crc32")
@@ -205,4 +286,13 @@ fn main() {
         .file("shim/original.cc")
         .file("shim/original_crc32.cc")
         .compile("swoole_original_tests");
+
+    // The candidate framing bodies call the Rust exports, resolved by the binary.
+    cpp()
+        .define("SWR_FRAME_ENGINE", "candidate")
+        .define("SWR_FRAME_INC", "\"http_frame_candidate.inc\"")
+        .include("../../native/http")
+        .include(env::var("OUT_DIR").unwrap())
+        .file("shim/http_frame.cc")
+        .compile("swoole_candidate_http_frame");
 }

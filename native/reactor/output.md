@@ -63,7 +63,7 @@ the original warning), folds vector lengths with `size_t` wrapping reading only
 
 ## Typed server Buffer (`SWOOLE_RS_BUFFER_TYPED`)
 
-OFF by default. Socket send/sendfile, reactor writable dispatch,
+On whenever the Rust Buffer and the Rust reactor are both built. Socket send/sendfile, reactor writable dispatch,
 `BaseFactory::end` and `ReactorThread_onPipeWrite/onWrite` consume the single
 typed Rust queue. Rust owns bytes, ordered kind/token custody, current DATA
 offset, generation and byte accounting. Native send/sendfile run after copied

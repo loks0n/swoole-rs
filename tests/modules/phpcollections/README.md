@@ -15,9 +15,9 @@ Channel uses packed action plans, low byte first: phase 0 ends at native
 push/pop, phase 1 uses the fresh result. `clear_cell`, `channel_next` and
 `write_action` have no selected-facade callers.
 
-`make_patches.py --source PINNED` regenerates both overlays (inserting the
-`table_facade.inc` template); selected sources require
-`--enable-swoole-rs-phpcollections`.
+Edit both overlays in `migration/patches/phpcollections/` with `tools/patches.py`
+(see [hybrid build](../../../docs/hybrid-build.md#editing-patches)); selected sources
+require `--enable-swoole-rs-phpcollections`.
 
 ## Body and policy gate (`gate.py`)
 

@@ -124,7 +124,6 @@ All default off and get their own alias suffix and manifest input.
 | Switch | Requires | Effect |
 | --- | --- | --- |
 | `--fix-halfclose` | — | M15 native patches: drain queued output before close. No Rust feature bit. Changes behavior relative to the reference; does not make general TCP half-close work. |
-| `--buffer-typed` | `--module buffer --module reactor` | Rust Buffer cursor with converted Socket/reactor/server callers. Legacy mutable DATA front/allocation is refused in this mode, so unconverted consumers break. |
 | `--reactor-{iov,defer,sockets}-owned` | `--module reactor` | Rust-owned iov/defer/sockets storage. |
 
 ## Timer module
