@@ -1,9 +1,3 @@
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
 // SPDX-License-Identifier: Apache-2.0
 // Compatibility derived from Swoole v6.2.2 src/core/base.cc (Swoole contributors).
 //! Core numeric and byte helpers; native code retains allocation and effect custody.
@@ -49,11 +43,14 @@ pub unsafe extern "C" fn swr_v1_corebase_parse_stoi(
     let mut end = ptr::null_mut();
     // SAFETY: `input` is a non-null, NUL-terminated string; `end` is a live local.
     let value = unsafe { strtol(input, &mut end, 10) };
-    if end.cast_const() == input || value < c_int::MIN as c_long || value > c_int::MAX as c_long {
+    if end.cast_const() == input {
         return 0;
     }
+    let Ok(value) = c_int::try_from(value) else {
+        return 0;
+    };
     // SAFETY: `output` is non-null, writable and disjoint from `input`.
-    unsafe { output.write(value as c_int) };
+    unsafe { output.write(value) };
     1
 }
 
@@ -111,7 +108,13 @@ pub unsafe extern "C" fn swr_v1_corebase_itoa(output: *mut c_char, value: c_long
     unsafe { ptr::copy_nonoverlapping(bytes.as_ptr(), output.cast(), bytes.len()) };
     // SAFETY: the NUL lands at offset `bytes.len()`, inside that same extent.
     unsafe { output.wrapping_add(bytes.len()).write(0) };
-    bytes.len() as c_int
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "a c_long has at most 20 digits"
+    )]
+    let length = bytes.len() as c_int;
+    length
 }
 
 /// Format backwards into native scratch storage; return the first digit offset.
@@ -138,7 +141,12 @@ pub unsafe extern "C" fn swr_v1_corebase_radix(
     loop {
         // At least `c_ulong::BITS` digit slots precede the NUL, enough for radix 2.
         index -= 1;
-        put(index, DIGITS[(value % c_ulong::from(radix)) as usize]);
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a digit is below the radix, at most 36"
+        )]
+        let digit = (value % c_ulong::from(radix)) as usize;
+        put(index, DIGITS[digit]);
         value /= c_ulong::from(radix);
         if value == 0 {
             return index;
@@ -182,22 +190,24 @@ pub unsafe extern "C" fn swr_v1_corebase_hex_mode(
         let digit = if byte.is_ascii_digit() {
             (byte - b'0') as usize
         } else {
+            // C passes the char as the host's (un)signed char would promote it.
             let input = if native_char_signed != 0 {
-                byte as i8 as c_int
+                c_int::from(byte.cast_signed())
             } else {
-                byte as c_int
+                c_int::from(byte)
             };
             // SAFETY: the caller guarantees the host ctype precondition for these bytes.
             let upper = unsafe { toupper(input) };
+            let low = upper.to_le_bytes()[0];
             let byte = if native_char_signed != 0 {
-                upper as i8 as c_int
+                c_int::from(low.cast_signed())
             } else {
-                upper as u8 as c_int
+                c_int::from(low)
             };
             if !(c_int::from(b'A')..=c_int::from(b'Z')).contains(&byte) {
                 break;
             }
-            (byte - c_int::from(b'A')) as usize + 10
+            (byte - c_int::from(b'A')).unsigned_abs() as usize + 10
         };
         value = value.wrapping_mul(16).wrapping_add(digit);
         current = current.wrapping_add(1);
