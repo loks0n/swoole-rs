@@ -20,15 +20,15 @@ pub unsafe extern "C" fn swr_v1_utils_lowercase(data: *mut u8, length: i32, sign
         return;
     }
     // SAFETY: non-null, positive `length` (checked above); an exclusive writable range.
-    let data = unsafe { std::slice::from_raw_parts_mut(data, length as usize) };
+    let data = unsafe { std::slice::from_raw_parts_mut(data, length.unsigned_abs() as usize) };
     for byte in data {
         let value = if signed_char != 0 {
-            i32::from(*byte as i8)
+            i32::from(byte.cast_signed())
         } else {
             i32::from(*byte)
         };
         // SAFETY: the caller guarantees each promoted char is a defined tolower argument.
-        *byte = unsafe { tolower(value) } as u8;
+        *byte = unsafe { tolower(value) }.to_le_bytes()[0];
     }
 }
 
@@ -61,7 +61,7 @@ pub unsafe extern "C" fn swr_v1_utils_trim(
     };
     let whitespace = |byte: &u8| {
         let value = if signed_char != 0 {
-            i32::from(*byte as i8)
+            i32::from(byte.cast_signed())
         } else {
             i32::from(*byte)
         };
@@ -112,7 +112,7 @@ pub unsafe extern "C" fn swr_v1_utils_find(
         2 => memchr::memmem::rfind(&data[1..], needle).map(|p| p + 1),
         _ => None,
     };
-    found.map_or(-1, |p| p as isize)
+    found.map_or(-1, |p| isize::try_from(p).unwrap_or(-1))
 }
 
 /// Equality/prefix policy: C equality=0/1 (case-sensitive/libc casefold),
@@ -179,9 +179,9 @@ pub unsafe extern "C" fn swr_v1_utils_partition(
     };
     memchr::memchr(separator, data).map_or(-1, |offset| {
         if before != 0 {
-            offset as isize
+            isize::try_from(offset).unwrap_or(-1)
         } else {
-            (length - offset - 1) as isize
+            isize::try_from(length - offset - 1).unwrap_or(-1)
         }
     })
 }
