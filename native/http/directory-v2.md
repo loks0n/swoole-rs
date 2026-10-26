@@ -47,7 +47,7 @@ continuation; V2 queries again on each call.
 Known difference: allocation cadence, peak memory and destruction order differ
 from native set nodes.
 
-Tests: `tests/modules/http/directory_gate.py`, `directory_compat.py`,
+Tests: `tests/modules/http/context_gate.py`, `directory_compat.py`,
 `index_page_gate.py --positive-only`. C++20 builds of the pinned SDK fail
 `-Werror` on a deprecated volatile increment in `swoole_process_pool.h`
 (upstream). Use C++14/17.

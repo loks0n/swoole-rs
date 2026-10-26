@@ -50,7 +50,6 @@ the rest require `--archive PATH`. All take `--source PINNED_GIT --output REPORT
 | `cookie_flow_gate.py` [A\|R] (`--status-only`, `--codes-only`) | Cookie callback flow; status fallback buffer; public `int[128]` status-code array export |
 | `request_lifecycle_gate.py` [A\|R] | Request multipart init/destroy/destructor |
 | `request_v2_model.py` [A\|R] | RequestV2 metadata through the facade and Rust owner |
-| `directory_gate.py` [A\|R] (`--prepare DIR`) | Legacy scan/index/page vs StaticHandlerV2 and the Rust directory store |
 | `context_gate.py` [A\|R] | Static context/serve-path controls |
 | `boundary_rng_gate.py --export DIR` | Random-boundary overloads against a production corebase export; verifies the export's archive/header/source checksums first |
 
@@ -113,8 +112,7 @@ run uses fixed `/tmp` fixtures (`swoole.log`, `client_ca.txt`, `sendfile.txt`,
 ## Benchmark preparation
 
 `path_bench.py`, `proxy_bench.py [--positive-only]` and `index_page_bench.py`
-take `--source --archive --binary --output`; `directory_gate.py --prepare DIR`
-does the same for its workload. Preparation compiles `-O3 -DNDEBUG` consumers,
+take `--source --archive --binary --output`. Preparation compiles `-O3 -DNDEBUG` consumers,
 verifies linked Rust symbols and runs an untimed check. Timing is
 `BINARY --measure ENGINE WORKLOAD ITERATIONS` and must run on an idle host with
 an optimized, uninstrumented archive. No timings have been recorded.

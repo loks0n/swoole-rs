@@ -59,7 +59,6 @@ tests/modules/halfclose/sendfile_interrupt.cc
 tests/modules/halfclose/sendfile_interrupt.py
 tests/modules/halfclose/worker_terminal.php
 tests/modules/halfclose/worker_terminal.py
-tests/modules/http/directory_bench.cc
 tests/modules/http/index_page_bench.py
 tests/modules/http/locale_server.php
 tests/modules/http/locale_server.py
