@@ -8,8 +8,12 @@
 )]
 #[cfg(unix)]
 mod batch;
+#[cfg(target_os = "linux")]
+mod epoll_wait;
 #[cfg(unix)]
 pub use batch::*;
+#[cfg(target_os = "linux")]
+pub use epoll_wait::*;
 #[cfg(unix)]
 mod backend;
 #[cfg(unix)]

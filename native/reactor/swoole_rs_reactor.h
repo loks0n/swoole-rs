@@ -2,6 +2,7 @@
 #define SWOOLE_RS_REACTOR_H
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 #ifdef __APPLE__
 #include <TargetConditionals.h>
 #endif
@@ -111,6 +112,31 @@ swr_v1_reactor_epoll_events *swr_v1_reactor_epoll_new(size_t);
 void swr_v1_reactor_epoll_free(swr_v1_reactor_epoll_events *);
 struct epoll_event *swr_v1_reactor_epoll_data(swr_v1_reactor_epoll_events *);
 swr_v1_reactor_backend_layout swr_v1_reactor_epoll_layout(void);
+/* The whole ReactorEpoll::wait loop (#336), as swr_v1_reactor_epoll_run. Rust runs the loop and its readiness order; these
+   are the native effects, each passed `reactor` (and, for prepare/delete, the event's socket). */
+typedef struct {
+    void *reactor;
+    struct epoll_event *events;
+    int epfd;
+    const bool *running, *once;
+    const uint32_t *max_events;
+    int (*kernel_wait)(int, struct epoll_event *, int, int);
+    void (*before_wait)(void *);
+    void (*begin)(void *);
+    int (*timeout)(void *);
+    int (*catch_error)(void *);
+    void (*end)(void *, int timed_out);
+    int (*interrupted)(void *); /* nullable: io_uring builds only */
+    void (*interrupt)(void *);  /* nullable: io_uring builds only */
+    void (*wait_failed)(void *);
+    void (*prepare)(void *, void *socket, int hup);
+    int (*removed)(void *socket);
+    int (*oneshot)(void *socket);
+    int (*handle)(void *, uint32_t kind); /* 0 read, 1 write, 2 error */
+    void (*handler_failed)(void *, uint32_t kind);
+    void (*remove)(void *, void *socket);
+} swr_v1_reactor_epoll_ops;
+int32_t swr_v1_reactor_epoll_run(const swr_v1_reactor_epoll_ops *);
 #endif
 #if (defined(__APPLE__) && TARGET_OS_OSX) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
 int32_t swr_v1_reactor_kqueue_record(const struct kevent *, size_t, swr_v1_reactor_batch_cursor *, uint32_t, swr_v1_reactor_batch_record *);
