@@ -224,7 +224,7 @@ pub unsafe extern "C" fn swr_v2_http_context_range_resume(
             };
             let result = unsafe {
                 owner.tasks.prepare(
-                    owner.range.part.offset as i64,
+                    i64::try_from(owner.range.part.offset).unwrap_or(i64::MAX),
                     owner.range.part.length,
                     &format,
                     &mut owner.range.written,

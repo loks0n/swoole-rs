@@ -64,7 +64,7 @@ pub unsafe extern "C" fn swr_v1_http_conditional(state: *mut HttpConditional) ->
                 }
             } else if state.phase < 4 {
                 state.phase += 1;
-                state.phase as i32
+                state.phase.cast_signed()
             } else if state.kind == 1 {
                 state.phase = 9;
                 5

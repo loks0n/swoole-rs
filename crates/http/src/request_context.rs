@@ -89,6 +89,10 @@ impl HttpRequestContext {
     fn flag(&mut self, flag: u32, value: bool) {
         self.facts.flags = (self.facts.flags & !flag) | if value { flag } else { 0 };
     }
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "operands are native fields the ABI widens to u64; each narrows back to its own type"
+    )]
     fn control(&mut self, operation: u32, value: u64, auxiliary: u64) -> i32 {
         match operation {
             0 => {

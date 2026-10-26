@@ -67,6 +67,10 @@ impl HttpTasks {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v2_http_tasks_new() -> *mut HttpTasks {
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<HttpTasks>()"
+    )]
     let owner = unsafe { alloc(Layout::new::<HttpTasks>()).cast::<HttpTasks>() };
     if !owner.is_null() {
         unsafe { owner.write(HttpTasks::default()) };

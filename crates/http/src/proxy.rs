@@ -55,11 +55,16 @@ unsafe fn text<'a>(value: HttpProxyText) -> Result<&'a [u8], i32> {
     if value.length > isize::MAX as usize {
         return Err(OVERFLOW);
     }
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "native %.*s takes an int precision"
+    )]
     let precision = value.length as i32;
     let length = if precision < 0 {
         value.length
     } else {
-        precision as usize
+        precision.unsigned_abs() as usize
     };
     let input = unsafe { bytes(value.data, length) }?;
     Ok(&input[..input.iter().position(|&b| b == 0).unwrap_or(input.len())])
@@ -93,11 +98,16 @@ pub unsafe extern "C" fn swr_v1_http_proxy_credentials(
         }
     }
     let field_limit = |value: &HttpProxyText| {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_possible_wrap,
+            reason = "native %.*s takes an int precision"
+        )]
         let precision = value.length as i32;
         if precision < 0 {
             value.length
         } else {
-            precision as usize
+            precision.unsigned_abs() as usize
         }
     };
     // Only a potentially int-overflowing formatted count needs full C-string

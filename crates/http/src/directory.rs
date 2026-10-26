@@ -49,6 +49,10 @@ impl HttpDirectory {
 /// storage allocates no names. Native construction/exception effects follow return.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v2_http_directory_new() -> *mut HttpDirectory {
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<HttpDirectory>()"
+    )]
     let owner = unsafe { alloc(Layout::new::<HttpDirectory>()).cast::<HttpDirectory>() };
     if !owner.is_null() {
         unsafe { owner.write(HttpDirectory::default()) };
@@ -95,6 +99,10 @@ pub unsafe extern "C" fn swr_v2_http_directory_clone(
         bytes.extend_from_slice(name);
         copy.names.push(bytes);
     }
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<HttpDirectory>()"
+    )]
     let owner = unsafe { alloc(Layout::new::<HttpDirectory>()).cast::<HttpDirectory>() };
     if owner.is_null() {
         return ALLOCATION;
