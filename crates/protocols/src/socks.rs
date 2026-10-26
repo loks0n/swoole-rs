@@ -103,7 +103,7 @@ pub unsafe extern "C" fn swr_v1_socks_auth(
 
 /// Encode CONNECT with a borrowed domain (type 3), or already validated native
 /// IPv4/IPv6 bytes (types 1/4). Native address validation preserves errno/errors.
-/// Domain length truncation to one byte is a defined legacy quirk.
+/// Returns -2 for a domain over 255 bytes (upstream b58d6342e), before any write.
 ///
 /// # Safety
 /// Address is readable; output is exclusive writable and disjoint from input.
@@ -121,6 +121,9 @@ pub unsafe extern "C" fn swr_v1_socks_connect(
     };
     if !matches!((address_type, length), (1, 4) | (4, 16) | (3, _)) {
         return -1;
+    }
+    if address_type == 3 && length > usize::from(u8::MAX) {
+        return -2;
     }
     let offset = if address_type == 3 { 5usize } else { 4usize };
     let Some(size) = length.checked_add(offset + 2) else {
@@ -192,25 +195,6 @@ pub extern "C" fn swr_v1_socks_strerror(code: i32) -> *const std::ffi::c_char {
 
 /// Preserve the deferred check of proxy-host length, not destination length.
 /// -2 reports only that bound; the frozen CONNECT encoder keeps its old contract.
-/// # Safety
-/// On a valid proxy length the borrowed destination and exclusive output follow
-/// swr_v1_socks_connect's contract. A proxy over480 returns before touching them.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_socks_domain_connect(
-    proxy_length: usize,
-    destination: *const u8,
-    length: usize,
-    port: u16,
-    output: *mut u8,
-    capacity: usize,
-) -> i64 {
-    if proxy_length > 480 {
-        -2
-    } else {
-        unsafe { swr_v1_socks_connect(3, destination, length, port, output, capacity) }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,11 +224,12 @@ mod tests {
                 b"Unknown error"
             );
             let mut output = [0xa5; 512];
+            let destination = [b'x'; 256];
             assert_eq!(
-                swr_v1_socks_domain_connect(
-                    481,
-                    std::ptr::null(),
-                    usize::MAX,
+                swr_v1_socks_connect(
+                    3,
+                    destination.as_ptr(),
+                    256,
                     0,
                     output.as_mut_ptr(),
                     output.len()
@@ -252,20 +237,19 @@ mod tests {
                 -2
             );
             assert_eq!(output, [0xa5; 512]);
-            let destination = [b'x'; 505];
             assert_eq!(
-                swr_v1_socks_domain_connect(
-                    480,
+                swr_v1_socks_connect(
+                    3,
                     destination.as_ptr(),
-                    destination.len(),
+                    255,
                     u16::MAX,
                     output.as_mut_ptr(),
                     output.len()
                 ),
-                512
+                262
             );
-            assert_eq!(&output[..5], &[5, 1, 0, 3, 249]);
-            assert_eq!(&output[510..], &[255, 255]);
+            assert_eq!(&output[..5], &[5, 1, 0, 3, 255]);
+            assert_eq!(&output[260..262], &[255, 255]);
         }
     }
     #[test]

@@ -31,7 +31,6 @@ SELECTABLE = sorted(set(MODULES) - set(GRADUATED))
 
 
 REACTOR_OWNED_CAPABILITIES = ('iov', 'defer', 'sockets')
-HTTP_STORAGE_CAPABILITIES = ('rewrite-store', 'static-config', 'legacy-directory-store')
 
 
 def reactor_owned_capabilities(args):
@@ -43,13 +42,8 @@ def reactor_owned_suffix(args):
     return ''.join('-' + name + '-owned' for name in reactor_owned_capabilities(args))
 
 
-def http_storage_capabilities(args):
-    return [name for name in HTTP_STORAGE_CAPABILITIES
-            if getattr(args, 'http_' + name.replace('-', '_'), False)]
-
-
 def storage_suffix(args):
-    return reactor_owned_suffix(args) + ''.join('-http-' + name for name in http_storage_capabilities(args))
+    return reactor_owned_suffix(args)
 
 
 def profile_suffix(args):
@@ -360,9 +354,6 @@ def main():
     parser.add_argument('--backend', choices=['rust', 'upstream'], default='rust', help='Rust ABI seam enabled, or explicit upstream fallback')
     parser.add_argument('--module', choices=SELECTABLE, action='append', default=[], help='Enable a migrated kernel; graduated modules are always on')
     parser.add_argument('--fix-halfclose', action='store_true', help='Apply the opt-in native queued-close drain repair (not a Rust kernel)')
-    for name in HTTP_STORAGE_CAPABILITIES:
-        parser.add_argument('--http-' + name, action='store_true',
-                            help='Experimental Rust HTTP ' + name + '; requires Rust HTTP, default off')
     for name in REACTOR_OWNED_CAPABILITIES:
         parser.add_argument('--reactor-' + name + '-owned', action='store_true',
                             help='Experimental Rust-owned ' + name + ' storage; requires --module reactor, default off')
@@ -379,9 +370,6 @@ def main():
     for name in reactor_owned_capabilities(args):
         if 'reactor' not in args.module or args.backend != 'rust':
             parser.error('--reactor-' + name + '-owned requires --backend rust --module reactor')
-    for name in http_storage_capabilities(args):
-        if 'http' not in args.module or args.backend != 'rust':
-            parser.error('--http-' + name + ' requires --backend rust --module http')
     with exclusive(ROOT / 'target/hybrid/.builder.lock'):
         return build(args, parser)
 
@@ -421,11 +409,9 @@ def build(args, parser):
     switches = ['--with-swoole-rs={BUILD_PREFIX}'] if args.backend == 'rust' else ['--without-swoole-rs']
     switches += ['--enable-swoole-rs-' + module for module in args.module if module not in GRADUATED]
     switches += ['--enable-swoole-rs-reactor-' + name + '-owned' for name in reactor_owned_capabilities(args)]
-    switches += ['--enable-swoole-rs-http-' + name for name in http_storage_capabilities(args)]
     effective_configure, effective_env = extension_configuration(args, switches)
     headers = headers_for(args.module)
-    inputs = {'php_sockets_requested': getattr(args, 'php_sockets', False), **{'http_' + name.replace('-', '_') + '_requested': name in http_storage_capabilities(args)
-                 for name in HTTP_STORAGE_CAPABILITIES},
+    inputs = {'php_sockets_requested': getattr(args, 'php_sockets', False),
               'compiler_cache': compiler_cache_identity(args), 'fix_halfclose': getattr(args, 'fix_halfclose', False), **{'reactor_' + name + '_owned_requested': name in reactor_owned_capabilities(args)
                  for name in REACTOR_OWNED_CAPABILITIES}, 'modules': args.module, 'builder_sha256': digest(__file__), 'php_builder_sha256': digest(ROOT / 'tools/build_upstream.py'),
               'effective_configure': effective_configure, 'effective_cppflags': effective_env['CPPFLAGS'],

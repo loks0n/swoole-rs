@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 from tools.build_upstream import require_build_space
 from tools.harness import run_isolated, write_report
 from gate import sha, stage
-from make_patches import body, header_selected, HEADER_DEST, HEADER_SHA
+from overlay import body, header_selected, HEADER_DEST, HEADER_SHA
 
 SCHEDULER_EXPORTS = {'swr_v1_phpcoroutines_scheduler_' + suffix for suffix in ('prepare_slot', 'try_push_slot', 'next_slot', 'drop_slot', 'phase')} | {'swr_v1_phpcoroutines_options', 'swr_v1_phpcoroutines_configure_owned', 'swr_v1_phpcoroutines_scheduler_control', 'swr_v1_phpcoroutines_repeat'}
 

@@ -1,62 +1,21 @@
 diff --git a/include/swoole_server.h b/include/swoole_server.h
-index dee191c22..0a9602624 100644
+index dee191c22..240e22646 100644
 --- a/include/swoole_server.h
 +++ b/include/swoole_server.h
-@@ -46,2 +46,13 @@
+@@ -46,2 +46,4 @@
  
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+#ifndef SWOOLE_RS_HTTP
-+#error "Rust rewrite-rule storage requires selected HTTP"
-+#endif
-+#include "swoole_rs_http_rewrite_store.h"
-+#endif
 +
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+#include "swoole_rs_http_static_config.h"
-+#endif
 +
  //------------------------------------Server-------------------------------------------
-@@ -51,2 +62,5 @@ namespace http_server {
+@@ -51,2 +53,5 @@ namespace http_server {
  struct Request;
 +#if defined(SWOOLE_RS_HTTP_REQUEST_V2)
 +class RequestV2;
 +#endif
  struct RewriteRule;
-@@ -1062,4 +1076,6 @@ class Server {
- 
-+#if !defined(SWOOLE_RS_HTTP_STATIC_CONFIG) || !SWOOLE_RS_HTTP_STATIC_CONFIG
-     std::shared_ptr<std::unordered_set<std::string>> locations = nullptr;
-     std::shared_ptr<std::vector<std::string>> http_index_files = nullptr;
-+#endif
-     std::shared_ptr<std::unordered_set<std::string>> http_compression_types = nullptr;
-@@ -1153,2 +1169,5 @@ class Server {
+@@ -1153,2 +1158,5 @@ class Server {
      bool select_static_handler(const http_server::Request *request, const Connection *conn);
 +#if defined(SWOOLE_RS_HTTP_REQUEST_V2)
 +    bool select_static_handler(const http_server::RequestV2 *request, const Connection *conn);
 +#endif
      bool apply_rewrite_rules(http_server::StaticHandler *handler);
-@@ -1226,2 +1245,6 @@ class Server {
- 
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+    http_server::StaticConfig &static_files() { return static_config_; }
-+    const http_server::StaticConfig &static_files() const { return static_config_; }
-+#else
-     const std::string &get_document_root() {
-@@ -1229,2 +1252,3 @@ class Server {
-     }
-+#endif
- 
-@@ -1669,5 +1693,13 @@ class Server {
-      */
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+    http_server::StaticConfig static_config_;
-+#else
-     std::string document_root;
-+#endif
- 
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+    http_server::RewriteRules rewrite_rules;
-+#else
-     std::shared_ptr<std::vector<http_server::RewriteRule>> rewrite_rules;
-+#endif
-     std::mutex lock_;

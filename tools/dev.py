@@ -15,7 +15,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.harness import ROOT, write_report
-from tools.build_hybrid import GRADUATED, MODULES, SELECTABLE, REACTOR_OWNED_CAPABILITIES, HTTP_STORAGE_CAPABILITIES, reactor_owned_capabilities, http_storage_capabilities, storage_suffix, profile_suffix, build_alias
+from tools.build_hybrid import GRADUATED, MODULES, SELECTABLE, REACTOR_OWNED_CAPABILITIES, reactor_owned_capabilities, storage_suffix, profile_suffix, build_alias
 from tools.build_upstream import require_build_space
 from tools.dev_report import read_json
 from tools.private_copy import copy_private
@@ -100,8 +100,6 @@ def verify_artifact_report(args):
                 or ('--enable-swoole-stdext' in manifest['configure']) != args.stdext
                 or manifest['inputs'].get('php_sockets_requested', False) != getattr(args, 'php_sockets', False)
                 or ('--enable-sockets' in manifest['configure']) != getattr(args, 'php_sockets', False)
-                or any(manifest['inputs'].get('http_' + name.replace('-', '_') + '_requested', False)
-                       != (label == 'selected' and name in http_storage_capabilities(args)) for name in HTTP_STORAGE_CAPABILITIES)
                 or label == 'selected' and (sorted(set(manifest['inputs']['modules']) | set(GRADUATED)) != selected_modules(args)
                     or manifest['inputs']['fix_halfclose'] != args.fix_halfclose
                     or any(manifest['inputs'].get('reactor_' + name + '_owned_requested', False)
@@ -147,7 +145,7 @@ def plan(args, reports):
     variant = build_variant(args)
     manifest = ROOT / 'target/hybrid' / variant / 'build-manifest.json'
     hybrid = manifest.parent / 'modules/swoole.so'
-    captured_reference = integrate and (getattr(args, 'php_sockets', False) or bool(http_storage_capabilities(args)) or bool({'buffer', 'utilities', 'ports', 'phphelpers', 'phpevents', 'reactor', 'phpcoroutines', 'coroutine'} & set(modules)) or {'http', 'corebase'} <= set(modules))
+    captured_reference = integrate and (getattr(args, 'php_sockets', False) or bool({'buffer', 'utilities', 'ports', 'phphelpers', 'phpevents', 'reactor', 'phpcoroutines', 'coroutine'} & set(modules)) or {'http', 'corebase'} <= set(modules))
     native_variant = build_alias('upstream', [], profile_suffix(args))
     reference = (ROOT / 'target/hybrid' / native_variant / 'modules/swoole.so'
                  if captured_reference or getattr(args, 'stdext', False) or getattr(args, 'php_sockets', False) else ROOT / 'target/upstream/src/modules/swoole.so')
@@ -171,7 +169,7 @@ def plan(args, reports):
                *(['--ccache', args.ccache] if getattr(args, 'ccache', None) else ['--no-ccache']),
                *(['--native-build-root', args.native_build_root] if getattr(args, 'native_build_root', None) else []))
     selected_export = artifact_reports / 'selected-export'
-    script('build', 'tools/build_hybrid.py', *([] if integrate else ['--dev']), *flags, *repair, *['--http-' + name for name in http_storage_capabilities(args)], *['--reactor-' + name + '-owned' for name in reactor_owned_capabilities(args)], *(['--stdext'] if getattr(args, 'stdext', False) else []), *(['--php-sockets'] if getattr(args, 'php_sockets', False) else []),
+    script('build', 'tools/build_hybrid.py', *([] if integrate else ['--dev']), *flags, *repair, *['--reactor-' + name + '-owned' for name in reactor_owned_capabilities(args)], *(['--stdext'] if getattr(args, 'stdext', False) else []), *(['--php-sockets'] if getattr(args, 'php_sockets', False) else []),
            *(['--export', selected_export] if captured_reference else []), '--jobs', args.jobs,
            *(['--native-build-root', args.native_build_root] if getattr(args, 'native_build_root', None) else []),
            *(['--ccache', args.ccache] if getattr(args, 'ccache', None) else ['--no-ccache']))
@@ -207,30 +205,6 @@ def plan(args, reports):
         script('http-boundary-rng', 'tests/modules/http/boundary_rng_gate.py',
                '--source', ROOT / 'target/upstream/src', '--export', selected_export, *report('http-boundary-rng'))
     if 'http' in modules:
-        if getattr(args, 'http_legacy_directory_store', False):
-            script('http-legacy-directory-store', 'tests/modules/http/legacy_directory_gate.py',
-                   '--source', ROOT / 'target/upstream/src',
-                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-                   *report('http-legacy-directory-store'))
-            script('http-legacy-directory-sdk', 'tests/modules/http/legacy_directory_compat.py',
-                   '--source', ROOT / 'target/upstream/src', *report('http-legacy-directory-sdk'))
-        if getattr(args, 'http_static_config', False):
-            script('http-static-config-context', 'tests/modules/http/context_gate.py',
-                   '--source', ROOT / 'target/upstream/src',
-                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-                   '--static-config',
-                   *(['--rewrite-store'] if getattr(args, 'http_rewrite_store', False) else []),
-                   *report('http-static-config-context'))
-            script('http-static-config-sdk', 'tests/modules/http/static_config_compat.py',
-                   '--source', ROOT / 'target/upstream/src', *report('http-static-config-sdk'))
-        if getattr(args, 'http_rewrite_store', False):
-            for phase, runner in [('http-rewrite-store', 'rewrite_store_gate.py'),
-                                  ('http-rewrite-store-context', 'context_gate.py')]:
-                script(phase, 'tests/modules/http/' + runner, '--source', ROOT / 'target/upstream/src',
-                       '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-                       *(['--rewrite-store'] if phase.endswith('-context') else []), *report(phase))
-            script('http-rewrite-store-sdk', 'tests/modules/http/rewrite_store_compat.py',
-                   '--source', ROOT / 'target/upstream/src', *report('http-rewrite-store-sdk'))
         script('http-context', 'tests/modules/http/context_gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('http-context'))
         for name, runner in [('http-native', 'gate.py'), ('http-ranges', 'range_gate.py'), ('http-framing', 'framing_gate.py'), ('http-headers', 'headers_gate.py'), ('http-proxy', 'proxy_gate.py'), ('http-static', 'static_gate.py'), ('http-paths', 'path_gate.py'), ('http-index-pages', 'index_page_gate.py'), ('http-conditionals', 'conditional_gate.py'), ('http-multipart', 'multipart_gate.py'), ('http-rewrites', 'rewrite_gate.py'), ('http-inline', 'inline_gate.py'), ('http-dispatch', 'dispatch_gate.py'), ('http-multipart-emit', 'multipart_emit_gate.py'), ('http-locales', 'locale_gate.py')]:
@@ -982,9 +956,6 @@ def main():
     parser.add_argument('--php-sockets', action='store_true', help='Build matching Native/Rust PHP sockets-integration profiles')
     parser.add_argument('--external-network', action='store_true',
                         help='Also run original PHPTs that need internet access; without it they stay unmeasured')
-    for name in HTTP_STORAGE_CAPABILITIES:
-        parser.add_argument('--http-' + name, action='store_true',
-                            help='Experimental Rust HTTP ' + name + '; requires HTTP, default off')
     for name in REACTOR_OWNED_CAPABILITIES:
         parser.add_argument('--reactor-' + name + '-owned', action='store_true',
                             help='Experimental Rust ' + name + ' storage; requires selected reactor, default off')
@@ -1024,9 +995,6 @@ def main():
     for name in reactor_owned_capabilities(args):
         if 'reactor' not in selected_modules(args):
             parser.error('--reactor-' + name + '-owned requires --module reactor or --all-modules')
-    for name in http_storage_capabilities(args):
-        if 'http' not in selected_modules(args):
-            parser.error('--http-' + name + ' requires --module http or --all-modules')
     if args.jobs < 1 or args.test and args.lane != 'edit' or args.case and args.lane != 'candidate':
         parser.error('Positive --jobs required; --test is edit-only and --case is candidate-only')
     if args.redis_image and not args.redis_extension:

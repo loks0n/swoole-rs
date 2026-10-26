@@ -11,18 +11,8 @@ static void install_rules(std::shared_ptr<std::vector<swoole::http_server::Rewri
                           std::vector<swoole::http_server::RewriteRule> rules) {
  store=std::make_shared<std::vector<swoole::http_server::RewriteRule>>(std::move(rules));
 }
-#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-static void install_rules(swoole::http_server::RewriteRules &store,
-                          const std::vector<swoole::http_server::RewriteRule> &rules) {
- for(const auto &rule:rules)store.append(rule.is_regex ? "~"+rule.pattern+"~" : rule.pattern,rule.replacement);
-}
-#endif
 template<typename Server>static void configure_location(Server &server){server.locations->insert("/");}
 template<typename Server>static void configure_indexes(Server &server,const std::vector<std::string> &names){server.http_index_files=std::make_shared<std::vector<std::string>>(names);}
-#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-static void configure_location(candidate_context::Server &server){server.static_files().add_location("/");}
-static void configure_indexes(candidate_context::Server &server,const std::vector<std::string> &names){for(const auto &name:names)server.static_files().add_index(name);}
-#endif
 template<typename Server>static void configure_rules(Server &server,unsigned mode){
  if(!mode)return;
  using Rule=swoole::http_server::RewriteRule;

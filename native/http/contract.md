@@ -317,11 +317,8 @@ upstream.
 ## Versioned owners
 
 - [directory-v2.md](directory-v2.md): `swr_v2_http_directory_*`
-- [legacy-directory.md](legacy-directory.md): Legacy directory store
 - [static-tasks-v2.md](static-tasks-v2.md): `swr_v2_http_tasks_*`
 - [static-context-v2.md](static-context-v2.md): `swr_v2_http_context_*`
-- [static-config.md](static-config.md): `swr_v2_http_config_*`
-- [rewrite-store.md](rewrite-store.md): `swr_v2_http_rewrite_store_*`
 - [request-v2.md](request-v2.md): `swr_v2_http_request_*`
 
 Tests: `tests/modules/http/` (for example `gate.py --url-positive-only`,

@@ -1,5 +1,5 @@
 diff --git a/include/swoole_static_handler.h b/include/swoole_static_handler.h
-index 71a18bb42..0e33b75e9 100644
+index 71a18bb42..19e383e08 100644
 --- a/include/swoole_static_handler.h
 +++ b/include/swoole_static_handler.h
 @@ -21,2 +21,7 @@
@@ -10,22 +10,11 @@ index 71a18bb42..0e33b75e9 100644
 +#include "swoole_rs_http.h"
 +#include <stdexcept>
  
-@@ -25,2 +30,6 @@
+@@ -25,2 +30,3 @@
  
-+#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE
-+#include "swoole_rs_http_legacy_directory.h"
-+#endif
 +
  namespace swoole {
-@@ -40,3 +49,7 @@ class StaticHandler {
-     std::string dir_path;
-+#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE
-+    LegacyDirectory dir_files;
-+#else
-     std::set<std::string> dir_files;
-+#endif
-     std::string index_file;
-@@ -79,8 +92,3 @@ class StaticHandler {
+@@ -79,8 +85,3 @@ class StaticHandler {
      bool catch_error() {
 -        if (last) {
 -            status_code = SW_HTTP_NOT_FOUND;
@@ -35,7 +24,7 @@ index 71a18bb42..0e33b75e9 100644
 -        }
 +        return swr_v1_http_static_catch(last, &status_code) == 1;
      }
-@@ -120,5 +128,8 @@ class StaticHandler {
+@@ -120,5 +121,8 @@ class StaticHandler {
      const std::string &get_boundary() {
 -        if (boundary.empty()) {
 -            boundary = std::string(SW_HTTP_SERVER_BOUNDARY_PREKEY);
@@ -47,7 +36,7 @@ index 71a18bb42..0e33b75e9 100644
 +            boundary = std::string(reinterpret_cast<const char *>(prefix));
 +            swoole_random_string(boundary, random_length);
          }
-@@ -128,8 +139,18 @@ class StaticHandler {
+@@ -128,8 +132,18 @@ class StaticHandler {
      const std::string &get_content_type() {
 -        if (tasks.size() > 1) {
 -            content_type = std::string("multipart/byteranges; boundary=") + get_boundary();
@@ -70,16 +59,12 @@ index 71a18bb42..0e33b75e9 100644
          }
 +        return get_mimetype();
      }
-@@ -171,3 +192,3 @@ class StaticHandler {
+@@ -171,3 +185,3 @@ class StaticHandler {
      bool is_absolute_path() {
 -        return swoole_strnpos(filename, l_filename, SW_STRL("..")) == -1;
 +        return swr_v1_http_static_path_check(reinterpret_cast<const uint8_t *>(filename), l_filename, nullptr, 0, 0) == 1;
      }
-@@ -175,7 +196,9 @@ class StaticHandler {
-     bool is_located_in_document_root() {
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+        return serv->static_files().contains(filename,l_filename);
-+#else
+@@ -176,6 +190,4 @@ class StaticHandler {
          const std::string &document_root = serv->get_document_root();
 -        const size_t l_document_root = document_root.length();
 -
@@ -87,5 +72,4 @@ index 71a18bb42..0e33b75e9 100644
 -               swoole_str_starts_with(filename, l_filename, document_root.c_str(), l_document_root);
 +        return swr_v1_http_static_path_check(reinterpret_cast<const uint8_t *>(filename), l_filename,
 +            reinterpret_cast<const uint8_t *>(document_root.data()), document_root.size(), 1) == 1;
-+#endif
      }

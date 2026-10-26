@@ -2,7 +2,7 @@
 import os
 from pathlib import Path
 import unittest
-from make_patches import body, selected, coroutine_selected, system_selected
+from overlay import body, selected, coroutine_selected, system_selected
 
 
 class BootstrapFallback(unittest.TestCase):

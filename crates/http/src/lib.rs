@@ -75,8 +75,6 @@ pub use static_meta::{
 };
 mod status_buffer;
 pub use status_buffer::{NATIVE_STATUS_CODES, swr_v2_http_status_message};
-mod static_config;
-pub use static_config::*;
 mod static_headers;
 mod static_path;
 pub use maps::{swr_v1_http_method, swr_v1_http_method_string, swr_v1_http_status};
@@ -483,6 +481,3 @@ mod tests {
         }
     }
 }
-
-mod rewrite_store;
-pub use rewrite_store::*;

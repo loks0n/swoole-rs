@@ -12,8 +12,8 @@ keeps sockets, payloads and callbacks. The native fallback keeps the original
 [`native/phpevents/contract.md`](../../../native/phpevents/contract.md) for the
 ABI and open work.
 
-`make_patches.py PINNED_SOURCE` regenerates the overlay in
-`migration/patches/phpevents/`.
+Edit the overlay in `migration/patches/phpevents/` with `tools/patches.py`; see
+[hybrid build](../../../docs/hybrid-build.md#editing-patches).
 
 ## Ordinary modeled comparison (`gate.py`)
 

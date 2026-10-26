@@ -52,9 +52,7 @@ the rest require `--archive PATH`. All take `--source PINNED_GIT --output REPORT
 | `request_v2_model.py` [A\|R] | RequestV2 metadata through the facade and Rust owner |
 | `directory_gate.py` [A\|R] (`--prepare DIR`) | Legacy scan/index/page vs StaticHandlerV2 and the Rust directory store |
 | `tasks_gate.py` [A\|R] (`--prepare DIR`) | Range/content bodies vs V2 task storage |
-| `context_gate.py` [A\|R] (`--static-config`, `--rewrite-store`) | Static context/serve-path controls |
-| `rewrite_store_gate.py` (`--prepare-binary PATH`) | Rust rewrite store callers |
-| `legacy_directory_gate.py` | Legacy directory store bodies |
+| `context_gate.py` [A\|R] | Static context/serve-path controls |
 | `boundary_rng_gate.py --export DIR` | Random-boundary overloads against a production corebase export; verifies the export's archive/header/source checksums first |
 
 Locale semantic runs must be unsanitized: under ASan the macOS interceptor
@@ -70,14 +68,8 @@ These compile the real pinned and patched headers/translation units (no
   StaticHandler data declarations, layout and copy/reference traits; V2
   composition. The default also tests C++20, which fails on the pinned
   process-pool volatile increment under `-Werror`.
-- `legacy_directory_compat.py`, `static_config_compat.py`,
-  `rewrite_store_compat.py`: Server/StaticHandler layout with each capability
-  off/on, plus whole-TU syntax.
 - `request_v2_compat.py [--upstream-unused-parameter-policy]`: C++14/17 syntax
   for legacy, HTTP-only, PORTS-only and paired RequestV2 modes.
-
-Parser unit tests for the layout helpers (run from this directory):
-`python3 -m unittest test_legacy_directory.py test_rewrite_store.py`.
 
 ## PHP checks
 
@@ -122,9 +114,8 @@ run uses fixed `/tmp` fixtures (`swoole.log`, `client_ca.txt`, `sendfile.txt`,
 ## Benchmark preparation
 
 `path_bench.py`, `proxy_bench.py [--positive-only]` and `index_page_bench.py`
-take `--source --archive --binary --output`; `directory_gate.py --prepare DIR`,
-`tasks_gate.py --prepare DIR` and `rewrite_store_gate.py --prepare-binary PATH`
-do the same for their workloads. Preparation compiles `-O3 -DNDEBUG` consumers,
+take `--source --archive --binary --output`; `directory_gate.py --prepare DIR`
+and `tasks_gate.py --prepare DIR` do the same for their workloads. Preparation compiles `-O3 -DNDEBUG` consumers,
 verifies linked Rust symbols and runs an untimed check. Timing is
 `BINARY --measure ENGINE WORKLOAD ITERATIONS` and must run on an idle host with
 an optimized, uninstrumented archive. No timings have been recorded.

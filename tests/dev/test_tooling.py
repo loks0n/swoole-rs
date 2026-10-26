@@ -462,66 +462,6 @@ class Lanes(unittest.TestCase):
         self.assertEqual(build_alias('rust', ['reactor'], '-iov-owned-stdext'),
                          'rust-reactor-iov-owned-stdext')
 
-    def test_http_rewrite_storage_variants_keep_native_and_original_gates(self):
-        from itertools import product
-        variants = set()
-        for rewrite, iov, defer, sockets, repair, stdext in product([False, True], repeat=6):
-            args = SimpleNamespace(lane='integrate', module=['http', 'reactor'], all_modules=False,
-                                   php='php', php_extension=[], jobs=2, test=None, case=None,
-                                   benchmark=False, compare=False, stdext=stdext,
-                                   fix_halfclose=repair, reactor_iov_owned=iov, reactor_defer_owned=defer,
-                                   reactor_sockets_owned=sockets, http_rewrite_store=rewrite)
-            commands = dict(dev.plan(args, ROOT / 'target/reports/http-owned-config'))
-            self.assertEqual('--http-rewrite-store' in commands['build'], rewrite)
-            self.assertNotIn('--http-rewrite-store', commands['stdext-reference-build' if stdext else 'reference-build'])
-            for phase in ['http-rewrite-store', 'http-rewrite-store-context', 'http-rewrite-store-sdk']:
-                self.assertEqual(phase in commands, rewrite)
-            if rewrite:
-                self.assertIn('--archive', commands['http-rewrite-store'])
-                self.assertIn('--rewrite-store', commands['http-rewrite-store-context'])
-                self.assertNotIn('--rewrite-store', commands['http-context'])
-            self.assertIn('http-rewrites', commands)
-            self.assertNotIn('--positive-only', commands['http-rewrites'])
-            variants.add(dev.build_variant(args))
-        self.assertEqual(len(variants), 64)
-
-    def test_http_rewrite_artifact_reuse_requires_exact_selection(self):
-        import hashlib
-        for requested, stored, native, accepted in [(False, False, False, True),
-                                                    (True, True, False, True),
-                                                    (True, False, False, False),
-                                                    (False, True, False, False),
-                                                    (True, True, True, False)]:
-            with self.subTest(requested=requested, stored=stored, native=native), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                args = SimpleNamespace(lane='integrate', module=['http'], all_modules=False,
-                                       stdext=False, fix_halfclose=False, http_rewrite_store=requested,
-                                       artifacts_from=root/'exports')
-                for label, variant in [('selected', dev.build_variant(args)), ('native', 'upstream')]:
-                    folder=args.artifacts_from/(label+'-export');folder.mkdir(parents=True)
-                    manifest=json.dumps(dict(build_mode='immutable', configure=[],
-                        inputs=dict(modules=['http'], fix_halfclose=False,
-                                    http_rewrite_store_requested=stored if label=='selected' else native))).encode()
-                    files={}
-                    for name,data in [('build-manifest.json',manifest),('swoole.so',b'unit fixture only')]:
-                        (folder/name).write_bytes(data);files[name]={'sha256':hashlib.sha256(data).hexdigest()}
-                        target=root/'target/hybrid'/variant/('modules/swoole.so' if name=='swoole.so' else name)
-                        target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
-                    (folder/'export.json').write_text(json.dumps(dict(source_ref='fixture',files=files)))
-                with patch.object(dev,'ROOT',root),patch.object(dev.subprocess,'check_output',return_value='fixture'):
-                    if accepted:self.assertEqual(set(dev.verify_artifact_report(args)),{'selected','native'})
-                    else:
-                        with self.assertRaisesRegex(ValueError,'Artifact configuration differs'):dev.verify_artifact_report(args)
-
-    def test_http_rewrite_storage_dependency_refused_before_build(self):
-        commands = [[sys.executable, 'tools/dev.py', 'integrate', '--module', 'reactor', '--http-rewrite-store', '--plan'],
-                    [sys.executable, 'tools/build_hybrid.py', '--module', 'reactor', '--http-rewrite-store'],
-                    [sys.executable, 'tools/build_hybrid.py', '--backend', 'upstream', '--module', 'http', '--http-rewrite-store']]
-        for command in commands:
-            result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
-            self.assertEqual(result.returncode, 2)
-            self.assertIn('--http-rewrite-store requires', result.stderr)
-
     def test_owned_reactor_storage_is_explicit_and_independent_of_native_repair(self):
         from itertools import product
         variants = set()
@@ -994,17 +934,16 @@ class Lanes(unittest.TestCase):
             args = SimpleNamespace(lane='integrate', all_modules=True, module=None, php='php',
                                    php_extension=[], jobs=2, test=None, case=None, benchmark=False,
                                    compare=False, fix_halfclose=False, php_sockets=sockets,
-                                   stdext=stdext, http_rewrite_store=True)
+                                   stdext=stdext)
             commands = dict(dev.plan(args, ROOT / 'target/reports/php-sockets'))
             native = commands['stdext-reference-build' if stdext else 'reference-build']
             for command in [commands['build'], native]:
                 self.assertEqual('--php-sockets' in command, sockets)
-            self.assertNotIn('--http-rewrite-store', native)
             self.assertNotIn('--module', native)
             suffix = ('-php-sockets' if sockets else '') + ('-stdext' if stdext else '')
             self.assertIn('upstream=' + str(ROOT / ('target/hybrid/upstream' + suffix) / 'modules/swoole.so'),
                           commands['api-surface'])
-            self.assertTrue(dev.build_variant(args).endswith('-http-rewrite-store' + suffix))
+            self.assertTrue(dev.build_variant(args).endswith(suffix))
             self.assertEqual('php-sockets-sendfile-original' in commands, sockets)
             if sockets:
                 original = commands['php-sockets-sendfile-original']

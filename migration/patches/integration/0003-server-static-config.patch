@@ -1,45 +1,8 @@
 diff --git a/src/server/master.cc b/src/server/master.cc
-index 29e9f7212..aa7a73a1f 100644
+index 29e9f7212..188990f71 100644
 --- a/src/server/master.cc
 +++ b/src/server/master.cc
-@@ -329,2 +329,20 @@ void Server::set_max_connection(uint32_t _max_connection) {
- 
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+bool Server::set_document_root(const std::string &path) {
-+    int32_t action = static_files().root_begin(path.length(), PATH_MAX);
-+    if (action == SWR_HTTP_CONFIG_ROOT_WARN_LENGTH) {
-+        swoole_error_log(
-+            SW_LOG_WARNING, SW_ERROR_NAME_TOO_LONG, "The length of document_root must be less than %d", PATH_MAX);
-+        return false;
-+    }
-+    char _realpath[PATH_MAX];
-+    const char *canonical = realpath(path.c_str(), _realpath);
-+    action = static_files().root_finish(canonical);
-+    if (action == SWR_HTTP_CONFIG_ROOT_WARN_DIRECTORY) {
-+        swoole_error_log(SW_LOG_WARNING, SW_ERROR_DIR_NOT_EXIST, "document_root[%s] does not exist", path.c_str());
-+        return false;
-+    }
-+    return true;
-+}
-+#else
- bool Server::set_document_root(const std::string &path) {
-@@ -345,2 +363,3 @@ bool Server::set_document_root(const std::string &path) {
- }
-+#endif
- 
-@@ -850,2 +869,7 @@ int Server::create() {
- 
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+    if (enable_static_handler) {
-+        static_files().initialize();
-+    }
-+#else
-     if (enable_static_handler and locations == nullptr) {
-@@ -853,2 +877,3 @@ int Server::create() {
-     }
-+#endif
- 
-@@ -1548,3 +1573,7 @@ int Server::send_to_connection(const SendData *_send) const {
+@@ -1548,3 +1548,7 @@ int Server::send_to_connection(const SendData *_send) const {
      if (_send->info.type == SW_SERVER_EVENT_CLOSE) {
 +#if defined(SWOOLE_RS_BUFFER_TYPED) && SWOOLE_RS_BUFFER_TYPED
 +        _socket->out_buffer->typed_close();

@@ -1,5 +1,4 @@
 """Typed Buffer is selected by building both the Rust Buffer and the Rust reactor; there is no switch."""
-from itertools import product
 from pathlib import Path
 import subprocess
 import sys
@@ -14,13 +13,11 @@ ROOT = Path(__file__).resolve().parents[2]
 class TypedBufferSelection(unittest.TestCase):
     def test_typed_phases_follow_buffer_and_reactor_independently_of_http(self):
         variants = set()
-        for modules, static, rewrite in product([['buffer', 'http'], ['reactor', 'http'], ['buffer', 'reactor', 'http']],
-                                                [False, True], [False, True]):
+        for modules in [['buffer', 'http'], ['reactor', 'http'], ['buffer', 'reactor', 'http']]:
             typed = {'buffer', 'reactor'} <= set(modules)
             args = SimpleNamespace(lane='integrate', module=modules, all_modules=False,
                                    php='php', php_extension=[], jobs=2, test=None, case=None,
-                                   benchmark=False, compare=False, fix_halfclose=False,
-                                   http_static_config=static, http_rewrite_store=rewrite)
+                                   benchmark=False, compare=False, fix_halfclose=False)
             commands = dict(dev.plan(args, ROOT/'target/reports/typed-unit'))
             self.assertTrue(all('--buffer-typed' not in command for command in commands.values()))
             for name, command in commands.items():
@@ -37,7 +34,7 @@ class TypedBufferSelection(unittest.TestCase):
                 self.assertEqual(compile_command[compile_command.index('--master-patch')+1],
                                  str(ROOT/'migration/patches/integration/0003-server-static-config.patch'))
             variants.add(dev.build_variant(args))
-        self.assertEqual(len(variants), 12)
+        self.assertEqual(len(variants), 3)
 
     def test_the_old_switch_is_gone(self):
         for command in [[sys.executable, 'tools/dev.py', 'integrate', '--module', 'buffer', '--module', 'reactor', '--buffer-typed', '--plan'],

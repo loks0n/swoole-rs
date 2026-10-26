@@ -1,5 +1,5 @@
 diff --git a/src/server/static_handler.cc b/src/server/static_handler.cc
-index 0614fcfef..06562760d 100644
+index 0614fcfef..bad6db9b7 100644
 --- a/src/server/static_handler.cc
 +++ b/src/server/static_handler.cc
 @@ -17,2 +17,8 @@
@@ -15,64 +15,12 @@ index 0614fcfef..06562760d 100644
  #include <algorithm>
 -#include <sstream>
  #include <regex>
-@@ -27,24 +32,91 @@ namespace swoole {
+@@ -27,24 +32,39 @@ namespace swoole {
  namespace http_server {
 -bool StaticHandler::is_modified(const std::string &date_if_modified_since) const {
 -    char date_tmp[64];
 -    if (date_if_modified_since.empty() || date_if_modified_since.length() > sizeof(date_tmp) - 1) {
 -        return false;
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+void RewriteRules::append(const std::string &pattern, const std::string &replacement) {
-+    if (swr_v2_http_rewrite_store_add(&owner_, reinterpret_cast<const uint8_t *>(pattern.data()), pattern.size(),
-+                                   reinterpret_cast<const uint8_t *>(replacement.data()), replacement.size()) < 0)
-+        throw std::bad_alloc();
-+}
-+swr_v2_http_rewrite_record RewriteRules::inspect(size_t index) const {
-+    swr_v2_http_rewrite_record observed{};
-+    if (swr_v2_http_rewrite_store_read(owner_, index, &observed, nullptr, 0, nullptr, 0) < 0)
-+        throw std::logic_error("Invalid HTTP rewrite rule");
-+    return observed;
-+}
-+int32_t RewriteRules::advance(swr_v2_http_rewrite_state *state, int32_t action, const std::string &url,
-+                             size_t *index, size_t *required) const {
-+    const swr_v1_http_proxy_text input{reinterpret_cast<const uint8_t *>(url.data()),url.size()};
-+    return swr_v2_http_rewrite_store_advance(owner_,state,action,&input,index,required);
-+}
-+int32_t RewriteRules::advance(swr_v2_http_context *context, int32_t action, size_t *index) const {
-+    return swr_v2_http_rewrite_store_context_advance(owner_,context,action,index);
-+}
-+std::string RewriteRules::text(size_t index, uint32_t kind) const {
-+    size_t length=0;
-+    if (swr_v2_http_rewrite_store_text(owner_,index,kind,nullptr,0,&length) < 0)
-+        throw std::logic_error("Invalid HTTP rewrite text");
-+    std::string value(length,'\0');
-+    if (length && swr_v2_http_rewrite_store_text(owner_,index,kind,
-+            reinterpret_cast<uint8_t *>(&value[0]),value.size(),&length) < 0)
-+        throw std::logic_error("Invalid HTTP rewrite text snapshot");
-+    return value;
-+}
-+int32_t RewriteRules::literal(size_t index, const std::string &url, uint8_t *output, size_t capacity, size_t *written) const {
-+    const swr_v1_http_proxy_text input{reinterpret_cast<const uint8_t *>(url.data()),url.size()};
-+    return swr_v2_http_rewrite_store_literal(owner_,index,&input,output,capacity,written);
-+}
-+int32_t RewriteRules::literal(size_t index, swr_v2_http_context *context) const {
-+    return swr_v2_http_rewrite_store_context_literal(owner_,index,context);
-+}
-+RewriteRule RewriteRules::at(size_t index) const {
-+    auto observed=inspect(index);
-+    // Native owns only this scoped immutable IO snapshot. Allocations happen
-+    // between Rust calls; regex execution follows the complete copy.
-+    RewriteRule rule;
-+    rule.pattern.resize(observed.pattern_length);
-+    rule.replacement.resize(observed.replacement_length);
-+    if (swr_v2_http_rewrite_store_read(owner_, index, &observed,
-+            rule.pattern.empty() ? nullptr : reinterpret_cast<uint8_t *>(&rule.pattern[0]), rule.pattern.size(),
-+            rule.replacement.empty() ? nullptr : reinterpret_cast<uint8_t *>(&rule.replacement[0]), rule.replacement.size()) < 0)
-+        throw std::logic_error("Invalid HTTP rewrite snapshot");
-+    rule.is_regex = observed.regex != 0;
-+    return rule;
-+}
-+#endif
 +template<typename Handler>
 +static bool conditional_file_date(const Handler &handler, Server *server, const std::string &date, uint32_t kind) {
 +    swr_v1_http_conditional_state state{};
@@ -127,7 +75,7 @@ index 0614fcfef..06562760d 100644
 +bool StaticHandler::is_modified(const std::string &date_if_modified_since) const {
 +    return conditional_file_date(*this, serv, date_if_modified_since, 0);
  }
-@@ -52,21 +124,3 @@ bool StaticHandler::is_modified(const std::string &date_if_modified_since) const
+@@ -52,21 +72,3 @@ bool StaticHandler::is_modified(const std::string &date_if_modified_since) const
  bool StaticHandler::is_modified_range(const std::string &date_range) const {
 -    if (date_range.empty()) {
 -        return false;
@@ -150,7 +98,7 @@ index 0614fcfef..06562760d 100644
 -    return date_format && mktime(&tm3) != mktime(tm_file_mtime);
 +    return conditional_file_date(*this, serv, date_range, 1);
  }
-@@ -106,88 +160,66 @@ bool StaticHandler::try_serve() {
+@@ -106,88 +108,53 @@ bool StaticHandler::try_serve() {
      serv->apply_rewrite_rules(this);
 -
 -    char *p = filename;
@@ -177,32 +125,20 @@ index 0614fcfef..06562760d 100644
 -            if (swoole_str_istarts_with(url, url_length, i.c_str(), i.size())) {
 -                last = true;
 +    const char *url = request_url.data();
-+#if !defined(SWOOLE_RS_HTTP_STATIC_CONFIG) || !SWOOLE_RS_HTTP_STATIC_CONFIG
 +    const auto &root = serv->get_document_root();
-+#endif
 +    swr_v1_http_static_path_state state{0, last, 0, l_filename};
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+    uint32_t facts = serv->http_autoindex ? uint32_t(SWR_HTTP_PATH_AUTOINDEX) : 0u;
-+#else
 +    uint32_t facts = (!serv->locations->empty() ? uint32_t(SWR_HTTP_PATH_HAS_LOCATIONS) : 0u) |
 +                     (serv->http_index_files && !serv->http_index_files->empty() ? uint32_t(SWR_HTTP_PATH_INDEX) : 0u) |
 +                     (serv->http_autoindex ? uint32_t(SWR_HTTP_PATH_AUTOINDEX) : 0u);
-+#endif
 +    for (;;) {
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+        const swr_v1_http_proxy_text input{reinterpret_cast<const uint8_t *>(url),request_url.size()};
-+        int32_t action = serv->static_files().path(input,reinterpret_cast<uint8_t *>(filename),sizeof(filename),&state,&facts);
-+#else
 +        int32_t action = swr_v1_http_static_path(reinterpret_cast<const uint8_t *>(url), request_url.size(),
 +                                               reinterpret_cast<const uint8_t *>(root.data()), root.size(),
 +                                               reinterpret_cast<uint8_t *>(filename), sizeof(filename), &state, facts);
-+#endif
 +        last = state.last != 0;
 +        l_filename = state.filename_length;
 +        switch (action) {
 +        case SWR_HTTP_PATH_SKIP: return false;
 +        case SWR_HTTP_PATH_SERVE: return true;
-+#if !defined(SWOOLE_RS_HTTP_STATIC_CONFIG) || !SWOOLE_RS_HTTP_STATIC_CONFIG
 +        case SWR_HTTP_PATH_LOCATIONS:
 +            for (const auto &location : *serv->locations) {
 +                swr_v1_http_static_location(reinterpret_cast<const uint8_t *>(url), request_url.size(),
@@ -243,7 +179,6 @@ index 0614fcfef..06562760d 100644
 -            if (!get_absolute_path()) {
 -                return catch_error();
 +            break;
-+#endif
 +        case SWR_HTTP_PATH_DIRECTORY:
 +            if (!dir_path.empty()) {
 +                dir_path.clear();
@@ -298,7 +233,7 @@ index 0614fcfef..06562760d 100644
 -
 -    return true;
  }
-@@ -195,48 +227,92 @@ bool StaticHandler::try_serve() {
+@@ -195,48 +162,46 @@ bool StaticHandler::try_serve() {
  bool StaticHandler::try_serve_index_file() {
 -    if (serv->http_index_files && !serv->http_index_files->empty() && is_dir()) {
 -        if (!get_dir_files()) {
@@ -312,37 +247,18 @@ index 0614fcfef..06562760d 100644
 -        if (!has_index_file() && !is_enabled_auto_index()) {
 -            return false;
 +    uint32_t phase = 0;
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+    uint32_t facts = 0;
-+#else
 +    uint32_t facts = serv->http_index_files && !serv->http_index_files->empty() ? 1u : 0u;
 +    if (facts && is_dir()) facts |= 2u;
-+#endif
 +    for (;;) {
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+        switch (serv->static_files().legacy_index(&phase,facts)) {
-+#else
 +        switch (swr_v1_http_index_file(&phase, facts)) {
-+#endif
 +        case 0: return false;
 +        case 1: return true;
 +        case 2: facts = get_dir_files() ? 4u : 0u; break;
 +        case 3:
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+            index_file = serv->static_files().select_index(dir_files);
-+#else
-+#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE
-+            index_file = dir_files.intersection(*serv->http_index_files);
-+#else
 +            index_file = intersection(*serv->http_index_files, dir_files);
-+#endif
-+#endif
 +            facts = has_index_file() ? 8u : (is_enabled_auto_index() ? 16u : 0u);
 +            break;
 +        case 4: facts = set_filename(index_file) ? 32u : 0u; break;
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+        case 5: facts = is_dir() ? 2u : 0u; break;
-+#endif
 +        default: throw std::logic_error("Invalid HTTP index selection phase");
          }
      }
@@ -354,6 +270,21 @@ index 0614fcfef..06562760d 100644
 -
 -    if (dir_path.back() != '/') {
 -        dir_path.append("/");
+-    }
+-
+-    buffer->format_impl(String::FORMAT_APPEND | String::FORMAT_GROW,
+-                        "<html>\n"
+-                        "<head>\n"
+-                        "\t<meta charset='UTF-8'>\n<title>Index of %s</title>"
+-                        "</head>\n"
+-                        "<body>\n" SW_HTTP_PAGE_CSS "<h1>Index of %s</h1>"
+-                        "\t<ul>\n",
+-                        dir_path.c_str(),
+-                        dir_path.c_str());
+-
+-    for (const auto &dir_file : dir_files) {
+-        if (dir_file == "." || (dir_path == "/" && dir_file == "..")) {
+-            continue;
 +static void append_index_part(String *buffer, const std::string &path, const std::string &entry, uint32_t part) {
 +    swr_v1_http_index_page_input input{{reinterpret_cast<const uint8_t *>(path.data()), path.size()},
 +                                     {reinterpret_cast<const uint8_t *>(entry.data()), entry.size()},
@@ -369,38 +300,6 @@ index 0614fcfef..06562760d 100644
 +        case 2: buffer->extend_align(result.required); break;
 +        case 3: buffer->length = result.length; return;
 +        default: return;
-+        }
-     }
-+}
- 
--    buffer->format_impl(String::FORMAT_APPEND | String::FORMAT_GROW,
--                        "<html>\n"
--                        "<head>\n"
--                        "\t<meta charset='UTF-8'>\n<title>Index of %s</title>"
--                        "</head>\n"
--                        "<body>\n" SW_HTTP_PAGE_CSS "<h1>Index of %s</h1>"
--                        "\t<ul>\n",
--                        dir_path.c_str(),
--                        dir_path.c_str());
--
--    for (const auto &dir_file : dir_files) {
--        if (dir_file == "." || (dir_path == "/" && dir_file == "..")) {
--            continue;
-+#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE
-+static void append_legacy_directory_part(String *buffer, const LegacyDirectory &directory,
-+        const std::string &path, size_t index, uint32_t part) {
-+    const swr_v1_http_index_page_input input{
-+        {reinterpret_cast<const uint8_t *>(path.data()),path.size()}, {nullptr,0},
-+        {reinterpret_cast<const uint8_t *>(SW_HTTP_PAGE_CSS),sizeof(SW_HTTP_PAGE_CSS)-1},
-+        {reinterpret_cast<const uint8_t *>(SW_HTTP_POWER_BY),sizeof(SW_HTTP_POWER_BY)-1},part};
-+    swr_v2_http_page_buffer result{};
-+    for (;;) {
-+        switch (directory.emit(index,input,reinterpret_cast<uint8_t *>(buffer->str),
-+                               buffer->length,buffer->size,&result)) {
-+        case 1: buffer->reserve(result.required); break;
-+        case 2: buffer->extend_align(result.required); break;
-+        case 3: buffer->length=result.length; return;
-+        default: return;
          }
 -        buffer->format_impl(String::FORMAT_APPEND | String::FORMAT_GROW,
 -                            "\t\t<li><a href=%s%s>%s</a></li>\n",
@@ -409,40 +308,17 @@ index 0614fcfef..06562760d 100644
 -                            dir_file.c_str());
      }
 +}
-+#endif
  
 -    buffer->append(SW_STRL("\t</ul>\n" SW_HTTP_POWER_BY "</body>\n</html>\n"));
--
+ 
 +size_t StaticHandler::make_index_page(String *buffer) {
 +    get_dir_files();
 +    if (dir_path.back() != '/') dir_path.append("/");
-+#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE
-+    append_legacy_directory_part(buffer,dir_files,dir_path,0,0);
-+    const size_t count=dir_files.size();
-+    for (size_t index=0;index<count;++index)
-+        append_legacy_directory_part(buffer,dir_files,dir_path,index,1);
-+    append_legacy_directory_part(buffer,dir_files,dir_path,0,2);
-+#else
 +    append_index_part(buffer, dir_path, "", 0);
 +    for (const auto &entry : dir_files) append_index_part(buffer, dir_path, entry, 1);
 +    append_index_part(buffer, dir_path, "", 2);
-+#endif
      return buffer->length;
-@@ -260,3 +336,7 @@ bool StaticHandler::get_dir_files() {
-     while ((ptr = readdir(dir)) != nullptr) {
-+#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE
-+        dir_files.scan_append(ptr->d_name);
-+#else
-         dir_files.insert(ptr->d_name);
-+#endif
-     }
-@@ -264,2 +344,5 @@ bool StaticHandler::get_dir_files() {
-     closedir(dir);
-+#if defined(SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE) && SWOOLE_RS_HTTP_LEGACY_DIRECTORY_STORE
-+    dir_files.scan_finish();
-+#endif
- 
-@@ -268,176 +351,430 @@ bool StaticHandler::get_dir_files() {
+@@ -268,176 +233,368 @@ bool StaticHandler::get_dir_files() {
  
 -bool StaticHandler::set_filename(const std::string &_filename) {
 -    char *p = filename + l_filename;
@@ -560,21 +436,13 @@ index 0614fcfef..06562760d 100644
 +bool StaticHandlerV2::is_modified_range(const std::string &date) const { return conditional_file_date(*this,serv_,date,1); }
 +
 +static int32_t resume_static_path(
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+        const StaticConfig &config, swr_v2_http_context *context,
-+#else
 +        swr_v2_http_context *context, const swr_v1_http_proxy_text &root,
-+#endif
 +        uint32_t event, uint32_t observed, const char *value=nullptr, size_t length=0) {
 +    swr_v2_http_serve_observation observation{};
 +    observation.event = event;
 +    observation.observed = observed;
 +    observation.value = {reinterpret_cast<const uint8_t *>(value),length};
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+    return config.serve(context,observation);
-+#else
 +    return swr_v2_http_context_serve(context,&root,&observation);
-+#endif
 +}
  
 -void StaticHandler::parse_range(const char *range, const char *if_range) {
@@ -603,26 +471,15 @@ index 0614fcfef..06562760d 100644
 -                p++;
 +bool StaticHandlerV2::try_serve() {
 +    // Observe the actual field freshly at the original rewrite boundary.
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+    const size_t rule_count = rules_ ? rules_->size() : 0;
-+#else
 +    const size_t rule_count = rules_ && *rules_ ? (*rules_)->size() : 0;
-+#endif
 +    if (rule_count) {
 +        const auto current=text(SWR_HTTP_CONTEXT_URL);
 +        size_t cursor=0;
 +        int32_t action=swr_v2_http_context_rewrite_step(context_,rule_count,SWR_HTTP_REWRITE_BEGIN,&cursor);
 +        while (action != SWR_HTTP_REWRITE_DONE) {
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+            action=rules_->advance(context_,action,&cursor);
-+            if (action == SWR_HTTP_REWRITE_DONE) break;
-+            if (action == -3) throw std::bad_alloc();
-+#else
 +            const auto &rule=(**rules_)[cursor];
-+#endif
 +            if (action < 0) throw std::logic_error("Invalid HTTP rewrite state");
 +            switch (action) {
-+#if !defined(SWOOLE_RS_HTTP_REWRITE_STORE) || !SWOOLE_RS_HTTP_REWRITE_STORE
 +            case SWR_HTTP_REWRITE_READ:
 +                action=swr_v2_http_context_rewrite_step(context_,0,
 +                    rule.is_regex ? SWR_HTTP_REWRITE_REGEX : SWR_HTTP_REWRITE_LITERAL,&cursor);
@@ -647,22 +504,13 @@ index 0614fcfef..06562760d 100644
 -                    if (start >= cutoff && (start > cutoff || (size_t) (*p - '0') > cutlim)) {
 -                        status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
 -                        return;
-+#endif
 +            case SWR_HTTP_REWRITE_SEARCH: {
 +                try {
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+                    std::regex pattern(rules_->text(cursor,0));
-+#else
 +                    std::regex pattern(rule.pattern);
-+#endif
 +                    action=swr_v2_http_context_rewrite_step(context_,0,
 +                        std::regex_search(current,pattern) ? SWR_HTTP_REWRITE_MATCH : SWR_HTTP_REWRITE_UNCHANGED,&cursor);
 +                    if (action == SWR_HTTP_REWRITE_REPLACE) {
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+                        auto rewritten=std::regex_replace(current,pattern,rules_->text(cursor,1));
-+#else
 +                        auto rewritten=std::regex_replace(current,pattern,rule.replacement);
-+#endif
 +                        const int32_t result=swr_v2_http_context_rewrite_regex(context_,
 +                            reinterpret_cast<const uint8_t *>(rewritten.data()),rewritten.size());
 +                        if (result < 0) throw std::bad_alloc();
@@ -680,7 +528,9 @@ index 0614fcfef..06562760d 100644
 -                if (*p++ != '-') {
 -                    status_code = SW_HTTP_RANGE_NOT_SATISFIABLE;
 -                    return;
--                }
++                } catch (const std::regex_error &) {
++                    action=swr_v2_http_context_rewrite_step(context_,0,SWR_HTTP_REWRITE_UNCHANGED,&cursor);
+                 }
 -
 -                while (*p == ' ') {
 -                    p++;
@@ -689,9 +539,7 @@ index 0614fcfef..06562760d 100644
 -                if (*p == ',' || *p == '\0') {
 -                    end = _content_length;
 -                    goto found;
-+                } catch (const std::regex_error &) {
-+                    action=swr_v2_http_context_rewrite_step(context_,0,SWR_HTTP_REWRITE_UNCHANGED,&cursor);
-                 }
+-                }
 -
 -            } else {
 -                suffix = 1;
@@ -706,42 +554,26 @@ index 0614fcfef..06562760d 100644
              }
 +        }
 +    }
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+    const auto &config=serv_->static_files();
-+#else
 +    const auto &root=serv_->get_document_root();
 +    const swr_v1_http_proxy_text root_input{reinterpret_cast<const uint8_t *>(root.data()),root.size()};
-+#endif
 +    swr_v2_http_serve_observation initial{};
-+#if !defined(SWOOLE_RS_HTTP_STATIC_CONFIG) || !SWOOLE_RS_HTTP_STATIC_CONFIG
 +    initial.has_locations = !serv_->locations->empty();
 +    initial.has_index = serv_->http_index_files && !serv_->http_index_files->empty();
-+#endif
 +    initial.autoindex = serv_->http_autoindex;
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+    int32_t action = config.serve(context_,initial);
-+#else
 +    int32_t action = swr_v2_http_context_serve(context_,&root_input,&initial);
-+#endif
 +    auto resume_path = [&](uint32_t event, uint32_t observed, const char *value=nullptr, size_t length=0) {
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+        return resume_static_path(config,context_,event,observed,value,length);
-+#else
 +        return resume_static_path(context_,root_input,event,observed,value,length);
-+#endif
 +    };
 +    for (;;) {
 +        switch (action) {
 +        case SWR_HTTP_PATH_SKIP: return false;
 +        case SWR_HTTP_PATH_SERVE: return true;
-+#if !defined(SWOOLE_RS_HTTP_STATIC_CONFIG) || !SWOOLE_RS_HTTP_STATIC_CONFIG
 +        case SWR_HTTP_PATH_LOCATIONS:
 +            // Existing protected configuration container; no mirrored owner.
 +            for (const auto &location : *serv_->locations)
 +                swr_v2_http_context_path(context_,1,reinterpret_cast<const uint8_t *>(location.data()),location.size(),0);
 +            action = resume_path(1,0);
 +            break;
-+#endif
 +        case SWR_HTTP_PATH_STAT:
 +            action = resume_path(2,stat_file());
 +            break;
@@ -804,47 +636,29 @@ index 0614fcfef..06562760d 100644
 -            }
 +bool StaticHandlerV2::try_serve_index_file() {
 +    size_t cursor = 0;
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+    int32_t action = serv_->static_files().index(context_,0,0,&cursor);
-+#else
 +    int32_t action = swr_v2_http_context_index(context_, 0,
 +        serv_->http_index_files ? serv_->http_index_files->size() : 0, nullptr, 0, &cursor);
-+#endif
 +    for (;;) {
 +        switch (action) {
 +        case 0: return false;
 +        case 1: return true;
 +        case 2: {
 +            const bool scanned = get_dir_files();
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+            action = serv_->static_files().index(context_,scanned ? 1u : 6u,0,&cursor);
-+#else
 +            action = swr_v2_http_context_index(context_, scanned ? 1u : 6u,
 +                scanned ? serv_->http_index_files->size() : 0, nullptr, 0, &cursor);
-+#endif
 +            break;
 +        }
-+#if !defined(SWOOLE_RS_HTTP_STATIC_CONFIG) || !SWOOLE_RS_HTTP_STATIC_CONFIG
 +        case 3: {
 +            const auto &name = (*serv_->http_index_files)[cursor];
 +            action = swr_v2_http_context_index(context_, 2, 0,
 +                reinterpret_cast<const uint8_t *>(name.data()), name.size(), &cursor);
 +            break;
 +        }
-+#endif
 +        case 4:
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+            action = serv_->static_files().index(context_,4,set_filename(),&cursor);
-+#else
 +            action = swr_v2_http_context_index(context_, 4, set_filename(), nullptr, 0, &cursor);
-+#endif
 +            break;
 +        case 5:
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+            action = serv_->static_files().index(context_,3,is_enabled_auto_index(),&cursor);
-+#else
 +            action = swr_v2_http_context_index(context_, 3, is_enabled_auto_index(), nullptr, 0, &cursor);
-+#endif
 +            break;
 +        default: throw std::bad_alloc();
 +        }
@@ -1024,7 +838,7 @@ index 0614fcfef..06562760d 100644
 +        case 4: tasks.clear(); break;
 +        default: throw std::logic_error("Invalid HTTP range finalization state");
          }
-@@ -445,20 +782,78 @@ void StaticHandler::parse_range(const char *range, const char *if_range) {
+@@ -445,19 +602,73 @@ void StaticHandler::parse_range(const char *range, const char *if_range) {
  }
 -}  // namespace http_server
 +static int32_t resume_range_header(swr_v2_http_context *owner, uint32_t boundary_ready,
@@ -1101,9 +915,6 @@ index 0614fcfef..06562760d 100644
 +}  // namespace http_server
 +
 +void Server::add_rewrite_rule(const std::string &pattern, const std::string &replacement) {
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+    rewrite_rules.append(pattern, replacement);
-+#else
 +    if (rewrite_rules == nullptr) rewrite_rules = std::make_shared<std::vector<http_server::RewriteRule>>();
 +    http_server::RewriteRule rule;
 +    rule.replacement = replacement;
@@ -1113,29 +924,11 @@ index 0614fcfef..06562760d 100644
 +    rule.pattern.assign(pattern.data() + source.offset, source.length);
 +    rule.is_regex = regex != 0;
      rewrite_rules->emplace_back(rule);
-+#endif
- }
-@@ -466,2 +861,5 @@ void Server::add_rewrite_rule(const std::string &pattern, const std::string &rep
- void Server::add_static_handler_location(const std::string &location) {
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+    static_files().add_location(location);
-+#else
-     if (locations == nullptr) {
-@@ -470,2 +868,3 @@ void Server::add_static_handler_location(const std::string &location) {
-     locations->emplace(location);
-+#endif
- }
-@@ -473,2 +872,5 @@ void Server::add_static_handler_location(const std::string &location) {
- void Server::add_static_handler_index_files(const std::string &file) {
-+#if defined(SWOOLE_RS_HTTP_STATIC_CONFIG) && SWOOLE_RS_HTTP_STATIC_CONFIG
-+    static_files().add_index(file);
-+#else
-     if (http_index_files == nullptr) {
-@@ -481,10 +883,25 @@ void Server::add_static_handler_index_files(const std::string &file) {
-     }
-+#endif
-+}
-+
+@@ -483,8 +694,22 @@ void Server::add_static_handler_index_files(const std::string &file) {
+ 
+-bool Server::select_static_handler(const http_server::Request *request, const Connection *conn) {
+-    const char *url = request->buffer_->str + request->url_offset_;
+-    size_t url_length = request->url_length_;
 +static swr_v1_http_proxy_text static_header_text(const char *value) {
 +    return {reinterpret_cast<const uint8_t *>(value), strlen(value)};
 +}
@@ -1145,11 +938,8 @@ index 0614fcfef..06562760d 100644
 +    size_t written = 0;
 +    swr_v1_http_static_headers(&header, reinterpret_cast<uint8_t *>(output), capacity, &written);
 +    return written;
- }
- 
--bool Server::select_static_handler(const http_server::Request *request, const Connection *conn) {
--    const char *url = request->buffer_->str + request->url_offset_;
--    size_t url_length = request->url_length_;
++}
++
 +template<class RequestView>
 +static bool select_static_handler_impl(Server *server,const RequestView &request,const Connection *conn,
 +    const http_server::RewriteRulesField *rules) {
@@ -1162,7 +952,7 @@ index 0614fcfef..06562760d 100644
 +    swr_v1_http_static_selection selection{};
 +    if (swr_v1_http_static_select(&selection, handler.try_serve(), 0) == SWR_HTTP_SELECT_SKIP) {
          return false;
-@@ -497,14 +914,12 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+@@ -497,14 +722,12 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
  
 -    if (handler.status_code == SW_HTTP_NOT_FOUND) {
 -        response.info.len = sw_snprintf(header_buffer,
@@ -1186,7 +976,7 @@ index 0614fcfef..06562760d 100644
 -        send_to_connection(&response);
 +        server->send_to_connection(&response);
  
-@@ -516,17 +931,17 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+@@ -516,17 +739,17 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
  
 -    std::string date_if_modified_since = request->get_header("If-Modified-Since");
 -    if (!date_if_modified_since.empty() && handler.is_modified(date_if_modified_since)) {
@@ -1218,12 +1008,12 @@ index 0614fcfef..06562760d 100644
 -        send_to_connection(&response);
 +        server->send_to_connection(&response);
  
-@@ -539,3 +954,3 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+@@ -539,3 +762,3 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
       */
 -    if (!handler.try_serve_index_file()) {
 +    if (swr_v1_http_static_select(&selection, handler.try_serve_index_file(), 0) == SWR_HTTP_SELECT_SKIP) {
          return false;
-@@ -547,3 +962,7 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+@@ -547,3 +770,7 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
       */
 -    if (!handler.has_index_file() && handler.is_enabled_auto_index() && handler.is_dir()) {
 +    // These getters only read initialized handler/server fields; effects resume after Rust returns.
@@ -1232,7 +1022,7 @@ index 0614fcfef..06562760d 100644
 +                               (size_t(handler.is_dir()) << 2);
 +    if (swr_v1_http_static_select(&selection, index_facts, 0) == SWR_HTTP_SELECT_AUTOINDEX) {
          sw_tg_buffer()->clear();
-@@ -551,18 +970,7 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+@@ -551,18 +778,7 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
  
 -        response.info.len = sw_snprintf(header_buffer,
 -                                        sizeof(header_buffer),
@@ -1255,12 +1045,12 @@ index 0614fcfef..06562760d 100644
 -        send_to_connection(&response);
 +        server->send_to_connection(&response);
  
-@@ -570,3 +978,3 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+@@ -570,3 +786,3 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
          response.data = sw_tg_buffer()->str;
 -        send_to_connection(&response);
 +        server->send_to_connection(&response);
          return true;
-@@ -574,34 +982,23 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+@@ -574,34 +790,23 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
  
 -    handler.parse_range(request->get_header("Range").c_str(), request->get_header("If-Range").c_str());
 -    auto tasks = handler.get_tasks();
@@ -1273,26 +1063,7 @@ index 0614fcfef..06562760d 100644
 -        } else {
 -            header_stream << "Accept-Ranges: bytes\r\n";
 -        }
-+    handler.parse_range(request.get_header("Range").c_str(), request.get_header("If-Range").c_str());
-+    auto tasks = handler.copy_tasks();
-+
-+    header.variant = 3;
-+    header.status = static_header_text(http_server::get_status_message(handler.get_status()));
-+    swr_v1_http_static_select(&selection, request.method(), 0);
-+    header.content_length = selection.head ? 0 : static_cast<long>(handler.get_content_length());
-+    // Native IO scratch remains live through header encoding and send. The
-+    // MIME getter itself still returns the unchanged global reference.
-+    std::string content_type_scratch;
-+    const auto &content_type = selection.head ? handler.get_mimetype() : handler.get_content_type(content_type_scratch);
-+    header.content_type = static_header_text(content_type.c_str());
-+    // Status is observed after the native MIME/content-type effect, not cached before it.
-+    swr_v1_http_static_select(&selection, tasks.size(), handler.get_status());
-+    header.range_kind = selection.range_kind;
-+    if (selection.range_kind != 0) {
-+        header.range_offset = tasks[0].offset;
-+        header.range_length = tasks[0].length;
-+        header.filesize = handler.get_filesize();
-     }
+-    }
 -
 -    response.info.len = sw_snprintf(
 -        header_buffer,
@@ -1313,9 +1084,29 @@ index 0614fcfef..06562760d 100644
 -        date_str.c_str(),
 -        date_str_last_modified.c_str(),
 -        SW_HTTP_SERVER_SOFTWARE);
++    handler.parse_range(request.get_header("Range").c_str(), request.get_header("If-Range").c_str());
++    auto tasks = handler.copy_tasks();
++
++    header.variant = 3;
++    header.status = static_header_text(http_server::get_status_message(handler.get_status()));
++    swr_v1_http_static_select(&selection, request.method(), 0);
++    header.content_length = selection.head ? 0 : static_cast<long>(handler.get_content_length());
++    // Native IO scratch remains live through header encoding and send. The
++    // MIME getter itself still returns the unchanged global reference.
++    std::string content_type_scratch;
++    const auto &content_type = selection.head ? handler.get_mimetype() : handler.get_content_type(content_type_scratch);
++    header.content_type = static_header_text(content_type.c_str());
++    // Status is observed after the native MIME/content-type effect, not cached before it.
++    swr_v1_http_static_select(&selection, tasks.size(), handler.get_status());
++    header.range_kind = selection.range_kind;
++    if (selection.range_kind != 0) {
++        header.range_offset = tasks[0].offset;
++        header.range_length = tasks[0].length;
++        header.filesize = handler.get_filesize();
++    }
 +    response.info.len = encode_static_headers(header_buffer, sizeof(header_buffer), header);
  
-@@ -613,38 +1010,55 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+@@ -613,38 +818,55 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
      // Send HTTP header
 -    send_to_connection(&response);
 -
@@ -1407,7 +1198,7 @@ index 0614fcfef..06562760d 100644
 +            break;
 +        default: throw std::logic_error("Invalid HTTP static body state");
          }
-@@ -652,49 +1066,90 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
+@@ -652,49 +874,67 @@ bool Server::select_static_handler(const http_server::Request *request, const Co
  
 -    // Close the connection if keepalive is not used
 -    if (!request->keep_alive) {
@@ -1440,11 +1231,7 @@ index 0614fcfef..06562760d 100644
 -        if (rule.is_regex) {
 +    swr_v2_http_rewrite_state state{};
 +    size_t cursor = 0;
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+    const size_t rule_count = rewrite_rules.size();
-+#else
 +    const size_t rule_count = rewrite_rules ? rewrite_rules->size() : 0;
-+#endif
 +    int32_t action = swr_v2_http_rewrite_step(&state, rule_count,
 +        0, nullptr, nullptr, &cursor);
 +    if (action == 0) return false; // Original null/empty configuration short circuit.
@@ -1456,16 +1243,10 @@ index 0614fcfef..06562760d 100644
 +        return swr_v2_http_rewrite_step(&state, 0, event, &before, &after, &cursor);
 +    };
 +    for (;;) {
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+        action=rewrite_rules.advance(&state,action,current,&cursor,&required);
-+#endif
 +        if (action == 0) return false;
 +        if (action < 0) throw std::logic_error("Invalid HTTP rewrite state");
-+#if !defined(SWOOLE_RS_HTTP_REWRITE_STORE) || !SWOOLE_RS_HTTP_REWRITE_STORE
 +        const auto &rule = (*rewrite_rules)[cursor];
-+#endif
 +        switch (action) {
-+#if !defined(SWOOLE_RS_HTTP_REWRITE_STORE) || !SWOOLE_RS_HTTP_REWRITE_STORE
 +        case 1: action = resume(rule.is_regex ? 2 : 1); break;
 +        case 2: {
 +            swr_v1_http_rewrite_input input{{reinterpret_cast<const uint8_t *>(current.data()), current.size()},
@@ -1474,17 +1255,12 @@ index 0614fcfef..06562760d 100644
 +            action = resume(swr_v1_http_rewrite_literal(&input, nullptr, 0, &required) == 1 ? 7 : 3);
 +            break;
 +        }
-+#endif
 +        case 6: {
 +            std::string rewritten(required, '\0');
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+            if (rewrite_rules.literal(cursor,current,reinterpret_cast<uint8_t *>(&rewritten[0]),rewritten.size(),&required) < 0)
-+#else
 +            swr_v1_http_rewrite_input input{{reinterpret_cast<const uint8_t *>(current.data()), current.size()},
 +                {reinterpret_cast<const uint8_t *>(rule.pattern.data()), rule.pattern.size()},
 +                {reinterpret_cast<const uint8_t *>(rule.replacement.data()), rule.replacement.size()}};
 +            if (swr_v1_http_rewrite_literal(&input, reinterpret_cast<uint8_t *>(&rewritten[0]), rewritten.size(), &required) < 0)
-+#endif
 +                return false;
 +            action = resume(4);
 +            if (action == 5) { handler->set_request_url(rewritten); return true; }
@@ -1492,9 +1268,6 @@ index 0614fcfef..06562760d 100644
 +        }
 +        case 3: {
              try {
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+                std::regex pattern(rewrite_rules.text(cursor,0));
-+#else
                  std::regex pattern(rule.pattern);
 -                std::string rewritten_url;
 -
@@ -1505,15 +1278,10 @@ index 0614fcfef..06562760d 100644
 -                        rewritten = true;
 -                        break;
 -                    }
-+#endif
 +                std::string rewritten;
 +                action = resume(std::regex_search(current, pattern) ? 5 : 3);
 +                if (action == 4) {
-+#if defined(SWOOLE_RS_HTTP_REWRITE_STORE) && SWOOLE_RS_HTTP_REWRITE_STORE
-+                    rewritten = std::regex_replace(current, pattern, rewrite_rules.text(cursor,1));
-+#else
 +                    rewritten = std::regex_replace(current, pattern, rule.replacement);
-+#endif
 +                    action = resume(6, &rewritten);
 +                    if (action == 5) { handler->set_request_url(rewritten); return true; }
                  }
