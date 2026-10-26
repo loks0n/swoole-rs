@@ -2,6 +2,8 @@
 declare(strict_types=1);
 use Swoole\WebSocket\Frame;
 
+// Rejected control frames log a Swoole warning to stdout, which carries the JSON result.
+swoole_async_set(['log_level' => SWOOLE_LOG_ERROR]);
 set_error_handler(static function (int $severity, string $message): never {
     throw new ErrorException($message, 0, $severity);
 });
