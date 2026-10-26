@@ -29,7 +29,7 @@ int64_t swr_v1_locks_atomic64(int64_t *, uint32_t operation, int64_t value, int6
 void swr_v1_locks_barrier_init(uint32_t *count, uint32_t *arrived, uint32_t parties);
 void swr_v1_locks_barrier_wait(uint32_t *count, uint32_t *arrived);
 int32_t swr_v1_locks_pthread_barrier(void *, size_t, void *, size_t, uint32_t operation, int32_t shared, uint32_t parties);
-#ifdef HAVE_FUTEX
+#ifdef __linux__ /* matches the Rust cfg(target_os = "linux") */
 /* Futex wait/wake; non-futex builds use upstream's C++ registry. */
 int32_t swr_v1_locks_wait(uint32_t *, double timeout);
 int32_t swr_v1_locks_wakeup(uint32_t *, int32_t count);

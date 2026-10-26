@@ -23,7 +23,7 @@ uint32_t swr_v2_utils_log_hex_step(struct SwrLogHex *, size_t, int32_t);
 uint64_t swr_v1_utils_hash(const uint8_t *, size_t, uint32_t algorithm, uint8_t signed_char);
 /* Native-compatible aligned shared u32 atomic, native release store remains outside Rust. */
 void swr_v1_utils_spinlock(uint32_t *, uint32_t cpus, uint32_t backoff_limit);
-#ifdef HAVE_FUTEX
+#ifdef __linux__ /* matches the Rust cfg(target_os = "linux") */
 /* Futex wait/wake on a shared aligned native u32 atomic.
  * Caller owns lifetime; no callback or allocation; preserves native errno. */
 int32_t swr_v1_utils_wait(uint32_t *, double timeout);
