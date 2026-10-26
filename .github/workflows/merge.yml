@@ -219,6 +219,31 @@ jobs:
     needs: phpt
     if: always()
     runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    # Same services as the shards: flagged tests are re-run here (#174).
+    services:
+      httpbin:
+        image: kennethreitz/httpbin
+        ports: ['80:80']
+      pgsql:
+        image: postgres:14
+        env:
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: root
+          POSTGRES_DB: test
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 2s --health-retries 30
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: test
+        ports: ['3306:3306']
+        options: --health-cmd "mysqladmin ping -proot" --health-interval 2s --health-retries 60
+      redis:
+        image: redis:7.4
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 2s --health-retries 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -226,7 +251,47 @@ jobs:
           pattern: phpt-*-*
           merge-multiple: true
           path: shards
-      - run: python3 corpus/upstream/gate.py shards/*.json --output phpt.json >> "$GITHUB_STEP_SUMMARY"
+      # Tests that pass on upstream but not on the hybrid get 3 re-runs per engine, unless
+      # more than 20 are flagged: that is a broad breakage, not flakiness.
+      - id: flagged
+        run: |
+          python3 corpus/upstream/gate.py shards/*.json --print-regressions > flagged.txt
+          count=$(grep -c . flagged.txt || true)
+          echo "rerun=$([ "$count" -gt 0 ] && [ "$count" -le 20 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+      - if: steps.flagged.outputs.rerun == 'true'
+        uses: ./.github/actions/install
+        with:
+          packages: php-gmp php-bcmath php-mysql php-pgsql
+      - if: steps.flagged.outputs.rerun == 'true'
+        run: echo '127.0.0.1 httpbin pgsql mysql redis' | sudo tee -a /etc/hosts
+      - if: steps.flagged.outputs.rerun == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: target/upstream
+          key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
+          fail-on-cache-miss: true
+      - if: steps.flagged.outputs.rerun == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: phpt-engines
+          path: target/phpt
+      - if: steps.flagged.outputs.rerun == 'true'
+        run: |
+          python3 corpus/upstream/inventory.py --output target/phpt/all.json
+          extensions=$(sed -n 's/^extension=\(.*\)/--php-extension \1/p' /etc/php/*/cli/conf.d/*.ini | sed 's/\.so$//' | tr '\n' ' ')
+          cases=$(sed 's/^/--case /' flagged.txt | tr '\n' ' ')
+          mkdir -p recheck
+          for attempt in 1 2 3; do
+            for engine in upstream hybrid; do
+              python3 corpus/upstream/run.py --manifest target/phpt/all.json --timeout 30 --external-network \
+                $extensions $cases --engine $engine=target/phpt/$engine.so \
+                --output recheck/$engine-$attempt.json || [ $? -eq 1 ]
+            done
+          done
+      - run: |
+          set -- shards/*.json
+          if [ -d recheck ]; then set -- "$@" --recheck recheck/*.json; fi
+          python3 corpus/upstream/gate.py "$@" --output phpt.json >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
