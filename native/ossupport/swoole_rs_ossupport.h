@@ -9,7 +9,7 @@ extern "C" {
 #endif
 typedef struct { size_t core; size_t workers; double wait; double idle; } swr_v1_os_pool_config_t;
 swr_v1_os_pool_config_t swr_v1_os_pool_config(size_t cpu, size_t core, size_t workers, double wait, double idle);
-size_t swr_v1_os_pool_expand(size_t waiting, size_t threads, size_t workers, double threshold, double age);
+size_t swr_v1_os_pool_expand(size_t idle, size_t queued, size_t threads, size_t workers, double threshold, double age);
 int32_t swr_v1_os_event_action(bool handler, bool canceled);
 int32_t swr_v1_os_worker_action(bool event, bool handler, bool canceled, bool timeout, size_t closing);
 int32_t swr_v1_os_fs_error(int64_t result, bool retry);

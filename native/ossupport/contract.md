@@ -16,8 +16,9 @@ native effect (IO, logging, warnings, callbacks) runs after Rust returns.
   `size_t` and `double`. Pinned defaults: multiplier 8, wait 0.001, idle 1.0.
   Native integer wrap is retained; fractional idle truncation stays in the native
   chrono wait expression.
-- `swr_v1_os_pool_expand`: number of workers to create (0 or 1), with strict
-  positive threshold/age comparison, zero waiting workers and the worker limit.
+- `swr_v1_os_pool_expand`: number of workers to create: queued tasks beyond the
+  idle workers, or one once the oldest task waited past a strictly positive
+  threshold, capped at the free worker slots (upstream v6.2.4).
   The native caller keeps the outer short-circuit guard (so the queue-age clock is
   read in original order) and calls it while holding the queue mutex, before
   dispatch publishes a new task.
