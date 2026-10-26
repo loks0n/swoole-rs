@@ -1,12 +1,4 @@
 //! Allocation-free Swoole base64, including its permissive decoder write semantics.
-#![expect(
-    clippy::cast_possible_truncation,
-    reason = "#157: casts not yet checked"
-)]
-#![cfg_attr(
-    test,
-    expect(clippy::cast_sign_loss, reason = "#157: casts not yet checked")
-)]
 // Ported from Swoole src/core/base64.cc, Copyright (c) 2012-2017 The Swoole Group.
 // Original author: Tianfeng Han <rango@swoole.com>. Apache License, Version 2.0.
 #![cfg_attr(
@@ -189,7 +181,9 @@ const fn decoding_table() -> [u8; 256] {
     let mut table = [u8::MAX; 256];
     let mut index = 0;
     while index < ALPHABET.len() {
-        table[ALPHABET[index] as usize] = index as u8;
+        #[expect(clippy::cast_possible_truncation, reason = "index < 64")]
+        let value = index as u8;
+        table[ALPHABET[index] as usize] = value;
         index += 1;
     }
     table
@@ -384,7 +378,7 @@ mod tests {
                     for seed in [0u8, 1, 127, 255] {
                         let mut actual = [0u8; 512];
                         for (i, byte) in actual.iter_mut().enumerate() {
-                            *byte = (i as u8).wrapping_mul(37).wrapping_add(seed);
+                            *byte = i.to_le_bytes()[0].wrapping_mul(37).wrapping_add(seed);
                         }
                         let mut expected = actual;
                         let n = source_order_model(&mut expected, input, length, output);
@@ -446,7 +440,9 @@ mod tests {
     fn encode_blocks_tails_and_canaries_match_bitstream_oracle() {
         // Independent bitstream extraction, without the triplet implementation.
         for length in (0..130).chain([255, 256, 257, 1023, 1024, 1025, 65536]) {
-            let input: Vec<_> = (0..length).map(|i| (i * 37 + 19) as u8).collect();
+            let input: Vec<_> = (0..length)
+                .map(|i: usize| (i * 37 + 19).to_le_bytes()[0])
+                .collect();
             let mut expected = Vec::new();
             let (mut accumulator, mut bits) = (0u32, 0u32);
             for &byte in &input {
@@ -522,7 +518,10 @@ mod tests {
         for byte in 0..=u8::MAX {
             assert_eq!(
                 sextet(byte),
-                ALPHABET.iter().position(|&b| b == byte).map(|i| i as u8)
+                ALPHABET
+                    .iter()
+                    .position(|&b| b == byte)
+                    .map(|i| u8::try_from(i).unwrap())
             );
         }
     }
@@ -530,7 +529,9 @@ mod tests {
     #[test]
     fn canonical_decode_preserves_full_output_and_canaries() {
         for length in (1..130).chain([255, 256, 257, 1023, 1024, 1025, 65536]) {
-            let input: Vec<_> = (0..length).map(|i| (i * 37 + 19) as u8).collect();
+            let input: Vec<_> = (0..length)
+                .map(|i: usize| (i * 37 + 19).to_le_bytes()[0])
+                .collect();
             let mut coded = vec![0; encoded_size(length).unwrap()];
             let size = encode(&input, slots(&mut coded));
             for offset in 0..16 {
