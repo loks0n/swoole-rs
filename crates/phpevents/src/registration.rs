@@ -37,6 +37,7 @@ pub unsafe extern "C" fn swr_v1_phpevents_add(
     observation: i64,
 ) -> u32 {
     use AddAction::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase word.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return False as u32;
     };

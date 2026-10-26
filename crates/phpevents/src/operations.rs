@@ -23,6 +23,7 @@ pub unsafe extern "C" fn swr_v1_phpevents_write(
     observation: i64,
 ) -> u32 {
     use Write::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase word.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return False as u32;
     };
@@ -67,6 +68,7 @@ enum Delete {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_delete(phase: *mut u32, observation: i64) -> u32 {
     use Delete::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase word.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return False as u32;
     };
@@ -116,6 +118,7 @@ pub unsafe extern "C" fn swr_v1_phpevents_cycle(
     observation: u8,
 ) -> u32 {
     use Cycle::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase word.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return False as u32;
     };

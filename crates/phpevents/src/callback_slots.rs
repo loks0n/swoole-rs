@@ -1,20 +1,20 @@
 //! Sole inline callback identities. Pointees and every effect remain Native.
-use core::{cell::UnsafeCell, ptr};
+use core::cell::UnsafeCell;
 
 #[repr(transparent)]
 pub struct SwrPhpEventCallback {
     identity: UnsafeCell<usize>,
 }
 
+// The struct and its `UnsafeCell` are `repr(transparent)` over `usize`, so a cell
+// pointer is also a pointer to its identity word.
 unsafe fn read(cell: *mut SwrPhpEventCallback) -> usize {
-    unsafe { ptr::addr_of!((*cell).identity).cast::<usize>().read() }
+    // SAFETY: the caller passes a non-null, aligned, initialized cell.
+    unsafe { cell.cast::<usize>().read() }
 }
 unsafe fn write(cell: *mut SwrPhpEventCallback, identity: usize) {
-    unsafe {
-        ptr::addr_of_mut!((*cell).identity)
-            .cast::<usize>()
-            .write(identity)
-    }
+    // SAFETY: the caller passes a non-null, aligned, writable cell.
+    unsafe { cell.cast::<usize>().write(identity) }
 }
 
 /// Seed, obtain the invocation identity, or sequence the original two releases.
@@ -36,32 +36,41 @@ pub unsafe extern "C" fn swr_v1_phpevents_callbacks(
     if phase.is_null() || readable.is_null() || writable.is_null() || identity.is_null() {
         return 0;
     }
-    unsafe {
-        match mode {
+    // Every pointer is non-null (checked above), aligned, valid and disjoint per the
+    // contract; cells are initialized in every mode except seed (0), which only writes.
+    // SAFETY: as above.
+    let get = |cell| unsafe { read(cell) };
+    // SAFETY: as above.
+    let set = |cell, value| unsafe { write(cell, value) };
+    // SAFETY: as above.
+    let publish = |value| unsafe { identity.write(value) };
+    // SAFETY: as above.
+    let set_phase = |value| unsafe { phase.write(value) };
+    match mode {
+        0 => {
+            set(readable, new_read);
+            set(writable, new_write);
+            0
+        }
+        1 | 2 => {
+            publish(get(if mode == 1 { readable } else { writable }));
+            2
+        }
+        // SAFETY: as above.
+        3 => match unsafe { phase.read() } {
             0 => {
-                write(readable, new_read);
-                write(writable, new_write);
-                0
+                publish(get(readable));
+                set_phase(1);
+                1
             }
-            1 | 2 => {
-                identity.write(read(if mode == 1 { readable } else { writable }));
+            1 => {
+                publish(get(writable));
+                set_phase(2);
                 2
             }
-            3 => match phase.read() {
-                0 => {
-                    identity.write(read(readable));
-                    phase.write(1);
-                    1
-                }
-                1 => {
-                    identity.write(read(writable));
-                    phase.write(2);
-                    2
-                }
-                _ => 0,
-            },
             _ => 0,
-        }
+        },
+        _ => 0,
     }
 }
 
@@ -84,26 +93,33 @@ pub unsafe extern "C" fn swr_v1_phpevents_update_owned(
     if phase.is_null() || readable.is_null() || writable.is_null() || identity.is_null() {
         return 0;
     }
+    // Non-null (checked above), aligned, initialized, disjoint cells and output per the
+    // contract.
+    // SAFETY: as above.
+    let get = |cell| unsafe { read(cell) };
+    // SAFETY: as above.
+    let set = |cell, value| unsafe { write(cell, value) };
+    // SAFETY: as above.
+    let publish = |value| unsafe { identity.write(value) };
     loop {
+        // SAFETY: `phase` is the caller's non-null phase word, starting at 0.
         let action = unsafe { crate::swr_v1_phpevents_update(phase, events, observation) };
-        unsafe {
-            match action {
-                4 => observation = i64::from(new_read != 0),
-                5 | 12 => observation = i64::from(read(readable) != 0),
-                8 => observation = i64::from(new_write != 0),
-                9 | 13 => observation = i64::from(read(writable) != 0),
-                6 => {
-                    identity.write(read(readable));
-                    return action;
-                }
-                10 => {
-                    identity.write(read(writable));
-                    return action;
-                }
-                7 => write(readable, new_read),
-                11 => write(writable, new_write),
-                _ => return action,
+        match action {
+            4 => observation = i64::from(new_read != 0),
+            5 | 12 => observation = i64::from(get(readable) != 0),
+            8 => observation = i64::from(new_write != 0),
+            9 | 13 => observation = i64::from(get(writable) != 0),
+            6 => {
+                publish(get(readable));
+                return action;
             }
+            10 => {
+                publish(get(writable));
+                return action;
+            }
+            7 => set(readable, new_read),
+            11 => set(writable, new_write),
+            _ => return action,
         }
     }
 }

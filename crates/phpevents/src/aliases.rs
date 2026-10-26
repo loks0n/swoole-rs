@@ -74,6 +74,7 @@ pub unsafe extern "C" fn swr_v1_phpevents_catalogue(
     }
     method.flags = public_flag | static_flag;
     // Native output may be uninitialized: write the POD without borrowing it.
+    // SAFETY: non-null (checked above), aligned, independent writable storage.
     unsafe { output.write(method) };
     1
 }
@@ -89,6 +90,7 @@ pub unsafe extern "C" fn swr_v1_phpevents_alias(index: usize, output: *mut PhpEv
     if output.is_null() {
         return 0;
     }
+    // SAFETY: non-null (checked above), aligned, independent writable POD storage.
     unsafe { output.write(method.alias) };
     1
 }

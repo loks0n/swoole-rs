@@ -20,6 +20,7 @@ enum DispatchAction {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_dispatch(phase: *mut u32, mode: u32, success: u8) -> u32 {
     use DispatchAction::*;
+    // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase word.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
     };
