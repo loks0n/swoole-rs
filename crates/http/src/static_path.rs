@@ -52,9 +52,11 @@ pub unsafe extern "C" fn swr_v1_http_static_location(
     if state.is_null() {
         return INVALID;
     }
-    let (url, location) = match (unsafe { bytes(url, url_length) }, unsafe {
-        bytes(location, location_length)
-    }) {
+    // SAFETY: the caller lends `url_length` initialized URL bytes.
+    let url = unsafe { bytes(url, url_length) };
+    // SAFETY: the caller lends `location_length` initialized location bytes.
+    let location = unsafe { bytes(location, location_length) };
+    let (url, location) = match (url, location) {
         (Ok(a), Ok(b)) => (a, b),
         (Err(e), _) | (_, Err(e)) => return e,
     };
@@ -112,13 +114,19 @@ pub unsafe extern "C" fn swr_v1_http_static_path(
     if capacity > isize::MAX as usize {
         return OVERFLOW;
     }
-    let (url, root) = match (unsafe { bytes(url, url_length) }, unsafe {
-        bytes(root, root_length)
-    }) {
+    // SAFETY: the caller lends `url_length` initialized URL bytes.
+    let url = unsafe { bytes(url, url_length) };
+    // SAFETY: the caller lends `root_length` initialized root bytes.
+    let root = unsafe { bytes(root, root_length) };
+    let (url, root) = match (url, root) {
         (Ok(a), Ok(b)) => (a, b),
         (Err(e), _) | (_, Err(e)) => return e,
     };
-    unsafe { path_step(url, root, output, capacity, &mut *state, facts) }
+    // SAFETY: `state` is non-null (checked above), aligned and exclusive.
+    let state = unsafe { &mut *state };
+    // SAFETY: `output` is non-null and writable through `capacity <= isize::MAX`, disjoint
+    // from the inputs and state; the phase contract is static_path's.
+    unsafe { path_step(url, root, output, capacity, state, facts) }
 }
 
 // Inputs and state are already typed and checked by the public C boundary or
@@ -145,6 +153,7 @@ pub(crate) unsafe fn path_step(
                 .position(|&b| b == b'?')
                 .or_else(|| url.iter().position(|&b| b == b'#'))
                 .unwrap_or(url.len());
+            // SAFETY: `root.len() <= capacity` writable output bytes, disjoint from `root`.
             unsafe { std::ptr::copy_nonoverlapping(root.as_ptr(), output, root.len()) };
             state.phase = 1;
             return 2;
@@ -165,14 +174,17 @@ pub(crate) unsafe fn path_step(
                 state.phase = 8;
                 return 7;
             };
+            // `root.len() + url_length == length < capacity` writable output bytes.
+            // SAFETY: as above; `url_length <= url.len()` readable bytes.
             unsafe {
                 std::ptr::copy_nonoverlapping(
                     url.as_ptr(),
-                    output.add(root.len()),
+                    output.wrapping_add(root.len()),
                     state.url_length,
-                );
-                output.add(length).write(0);
-            }
+                )
+            };
+            // SAFETY: as above.
+            unsafe { output.wrapping_add(length).write(0) };
             state.phase = 2;
             return 3;
         }
@@ -187,6 +199,7 @@ pub(crate) unsafe fn path_step(
             else {
                 return INVALID;
             };
+            // SAFETY: phase 1 initialized `length + 1 <= capacity` output bytes.
             let result =
                 unsafe { swr_v1_http_url_decode(output, length, &mut state.filename_length) };
             if result != 0 {
@@ -201,6 +214,8 @@ pub(crate) unsafe fn path_step(
     if state.filename_length >= capacity {
         return INVALID;
     }
+    // SAFETY: `filename_length < capacity`, and earlier phases (or native canonicalization)
+    // initialized those bytes.
     let filename = unsafe { std::slice::from_raw_parts(output, state.filename_length) };
     match state.phase {
         3 => {
@@ -279,7 +294,8 @@ pub unsafe extern "C" fn swr_v1_http_static_index_path(
         Ok(v) => v,
         Err(e) => return e,
     };
-    let slash = unsafe { output.add(logical_length).read() } != b'/';
+    // SAFETY: `logical_length < capacity`, and the contract makes that byte initialized.
+    let slash = unsafe { output.wrapping_add(logical_length).read() } != b'/';
     let Some(end) = logical_length
         .checked_add(usize::from(slash))
         .and_then(|n| n.checked_add(name.len()))
@@ -288,16 +304,21 @@ pub unsafe extern "C" fn swr_v1_http_static_index_path(
         return OVERFLOW;
     };
     if slash {
-        unsafe { output.add(logical_length).write(b'/') };
+        // SAFETY: as above; writable.
+        unsafe { output.wrapping_add(logical_length).write(b'/') };
     }
+    // `logical_length + slash + name.len() == end < capacity` writable bytes, disjoint
+    // from `name`.
+    // SAFETY: as above.
     unsafe {
         std::ptr::copy_nonoverlapping(
             name.as_ptr(),
-            output.add(logical_length + usize::from(slash)),
+            output.wrapping_add(logical_length + usize::from(slash)),
             name.len(),
-        );
-        output.add(end).write(0);
-    }
+        )
+    };
+    // SAFETY: as above.
+    unsafe { output.wrapping_add(end).write(0) };
     0
 }
 

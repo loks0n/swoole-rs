@@ -39,10 +39,10 @@ pub unsafe extern "C" fn swr_v1_http_rewrite_rule(
         Err(error) => return error,
     };
     let (classified, is_regex) = classify(input);
-    unsafe {
-        span.write(classified);
-        regex.write(u32::from(is_regex));
-    }
+    // SAFETY: both are non-null (checked above), aligned, writable and disjoint.
+    unsafe { span.write(classified) };
+    // SAFETY: as above.
+    unsafe { regex.write(u32::from(is_regex)) };
     0
 }
 // Shared safe byte policy for the public query/fill ABI and owned publication.
@@ -83,13 +83,15 @@ pub unsafe extern "C" fn swr_v1_http_rewrite_literal(
     }
     // SAFETY: `request` is non-null (checked above), aligned and initialized per the caller contract.
     let request = unsafe { &*request };
-    let inputs = unsafe {
-        [
-            bytes(request.url.data, request.url.length),
-            bytes(request.pattern.data, request.pattern.length),
-            bytes(request.replacement.data, request.replacement.length),
-        ]
-    };
+    // Every request span is readable and initialized (see the contract).
+    let inputs = [
+        // SAFETY: as above.
+        unsafe { bytes(request.url.data, request.url.length) },
+        // SAFETY: as above.
+        unsafe { bytes(request.pattern.data, request.pattern.length) },
+        // SAFETY: as above.
+        unsafe { bytes(request.replacement.data, request.replacement.length) },
+    ];
     let [url, pattern, replacement] = match inputs {
         [Ok(a), Ok(b), Ok(c)] => [a, b, c],
         values => return values.into_iter().find_map(Result::err).unwrap_or(INVALID),
@@ -103,10 +105,18 @@ pub unsafe extern "C" fn swr_v1_http_rewrite_literal(
         return INVALID;
     }
     if capacity != 0 {
+        // `replacement.len() + suffix.len() == required <= capacity` writable output bytes,
+        // disjoint from every input span.
+        // SAFETY: as above.
+        unsafe { ptr::copy_nonoverlapping(replacement.as_ptr(), output, replacement.len()) };
+        // SAFETY: as above.
         unsafe {
-            ptr::copy_nonoverlapping(replacement.as_ptr(), output, replacement.len());
-            ptr::copy_nonoverlapping(suffix.as_ptr(), output.add(replacement.len()), suffix.len());
-        }
+            ptr::copy_nonoverlapping(
+                suffix.as_ptr(),
+                output.wrapping_add(replacement.len()),
+                suffix.len(),
+            )
+        };
     }
     // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(required) };
@@ -209,16 +219,18 @@ pub unsafe extern "C" fn swr_v2_http_rewrite_step(
         return INVALID;
     };
     let observed = if observed == 6 {
-        let (Some(current), Some(replacement)) =
-            (unsafe { current.as_ref() }, unsafe { replacement.as_ref() })
-        else {
+        // SAFETY: `current` is null or a live, aligned text descriptor.
+        let current = unsafe { current.as_ref() };
+        // SAFETY: `replacement` is null or a live, aligned text descriptor.
+        let replacement = unsafe { replacement.as_ref() };
+        let (Some(current), Some(replacement)) = (current, replacement) else {
             return INVALID;
         };
-        let (Ok(current), Ok(replacement)) =
-            (unsafe { bytes(current.data, current.length) }, unsafe {
-                bytes(replacement.data, replacement.length)
-            })
-        else {
+        // SAFETY: each descriptor names `length` initialized bytes.
+        let current = unsafe { bytes(current.data, current.length) };
+        // SAFETY: as above.
+        let replacement = unsafe { bytes(replacement.data, replacement.length) };
+        let (Ok(current), Ok(replacement)) = (current, replacement) else {
             return INVALID;
         };
         if current == replacement { 3 } else { 4 }

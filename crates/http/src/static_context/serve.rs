@@ -35,11 +35,14 @@ pub unsafe extern "C" fn swr_v2_http_context_serve(
     let Some(owner) = (unsafe { owner.as_mut() }) else {
         return INVALID;
     };
-    let (Some(root), Some(observation)) =
-        (unsafe { root.as_ref() }, unsafe { observation.as_ref() })
-    else {
+    // SAFETY: `root` is null or a live, aligned text descriptor.
+    let root = unsafe { root.as_ref() };
+    // SAFETY: `observation` is null or a live, aligned observation.
+    let observation = unsafe { observation.as_ref() };
+    let (Some(root), Some(observation)) = (root, observation) else {
         return INVALID;
     };
+    // SAFETY: the root descriptor names `length` initialized bytes.
     let root = match unsafe { bytes(root.data, root.length) } {
         Ok(root) => root,
         Err(error) => return error,
@@ -72,6 +75,7 @@ pub unsafe extern "C" fn swr_v2_http_context_serve(
         3 if owner.serve.pending == 5 => {
             owner.serve.facts &= !path::CANONICAL_OK;
             if observation.observed != 0 {
+                // SAFETY: an observed value names `length` initialized bytes.
                 let value = match unsafe { bytes(observation.value.data, observation.value.length) }
                 {
                     Ok(value) => value,
@@ -99,6 +103,7 @@ pub unsafe extern "C" fn swr_v2_http_context_serve(
         match action {
             3 => continue, // Directory bytes were published by the owned path step.
             7 => {
+                // SAFETY: `owner.facts.status` is a live, exclusive field.
                 let result =
                     unsafe { swr_v1_http_static_catch(owner.path.last, &mut owner.facts.status) };
                 owner.serve.pending = result;

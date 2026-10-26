@@ -40,14 +40,17 @@ pub unsafe extern "C" fn swr_v1_http_index_page(
     if page.part > 2 {
         return INVALID;
     }
-    let inputs = unsafe {
-        [
-            bytes(page.path.data, page.path.length),
-            bytes(page.entry.data, page.entry.length),
-            bytes(page.css.data, page.css.length),
-            bytes(page.powered.data, page.powered.length),
-        ]
-    };
+    // Every page span is readable and initialized (see the contract).
+    let inputs = [
+        // SAFETY: as above.
+        unsafe { bytes(page.path.data, page.path.length) },
+        // SAFETY: as above.
+        unsafe { bytes(page.entry.data, page.entry.length) },
+        // SAFETY: as above.
+        unsafe { bytes(page.css.data, page.css.length) },
+        // SAFETY: as above.
+        unsafe { bytes(page.powered.data, page.powered.length) },
+    ];
     let [path, entry, css, powered] = match inputs {
         [Ok(a), Ok(b), Ok(c), Ok(d)] => [a, b, c, d],
         values => return values.into_iter().find_map(Result::err).unwrap_or(INVALID),
@@ -86,6 +89,8 @@ pub unsafe extern "C" fn swr_v1_http_index_page(
     let buffer = if capacity == 0 {
         &mut []
     } else {
+        // SAFETY: non-null when `capacity != 0` (checked above), `capacity <= isize::MAX`,
+        // writable and disjoint from the inputs.
         unsafe { slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), capacity) }
     };
     let mut sink = Prefix {
@@ -118,6 +123,11 @@ pub unsafe extern "C" fn swr_v2_http_index_page_emit(
     capacity: usize,
     output: *mut crate::HttpContextPageBuffer,
 ) -> i32 {
+    let render = |data, size, written| {
+        // SAFETY: `page` follows index_page's contract; emit_page passes a writable span.
+        unsafe { swr_v1_http_index_page(page, data, size, written) }
+    };
+    // SAFETY: forwards the caller's page, buffer and output under emit_page's contract.
     unsafe {
         emit_page(
             page,
@@ -126,7 +136,7 @@ pub unsafe extern "C" fn swr_v2_http_index_page_emit(
             length,
             capacity,
             output,
-            |data, size, written| swr_v1_http_index_page(page, data, size, written),
+            render,
         )
     }
 }
@@ -188,7 +198,8 @@ pub(crate) unsafe fn emit_page(
         return INVALID;
     }
     let mut written = 0;
-    let result = render(unsafe { buffer.add(length) }, count, &mut written);
+    // In range: `length + count + terminator == required <= capacity`.
+    let result = render(buffer.wrapping_add(length), count, &mut written);
     if result < 0 {
         return result;
     }
@@ -201,7 +212,8 @@ pub(crate) unsafe fn emit_page(
     };
     output.length = published;
     if terminator != 0 {
-        unsafe { buffer.add(published).write(0) };
+        // SAFETY: `published + terminator <= capacity`, inside the writable buffer.
+        unsafe { buffer.wrapping_add(published).write(0) };
     }
     3
 }

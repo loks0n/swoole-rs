@@ -1,4 +1,11 @@
 //! HTTP policy and private directory storage. Native effects run after Rust returns.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 use std::{mem::MaybeUninit, slice};
 const INVALID: i32 = -1;
 const OVERFLOW: i32 = -2;

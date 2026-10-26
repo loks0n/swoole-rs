@@ -83,6 +83,7 @@ pub unsafe extern "C" fn swr_v1_http_range_format(
     if input.part > 1 {
         return INVALID;
     }
+    // SAFETY: the boundary span names `length` initialized bytes.
     let boundary = match unsafe { bytes(input.boundary.data, input.boundary.length) } {
         Ok(value) => value,
         Err(error) => return error,
@@ -91,6 +92,7 @@ pub unsafe extern "C" fn swr_v1_http_range_format(
         return OVERFLOW;
     }
     let (boundary, mime) = if input.part == 0 {
+        // SAFETY: the MIME span names `length` initialized bytes.
         let mime = match unsafe { bytes(input.mime.data, input.mime.length) } {
             Ok(value) => value,
             Err(error) => return error,
@@ -109,6 +111,7 @@ pub unsafe extern "C" fn swr_v1_http_range_format(
     let count = if capacity == 0 {
         if libc_overflow { usize::MAX } else { required }
     } else {
+        // SAFETY: non-null when `capacity != 0` (checked above), writable, disjoint from inputs.
         let output_slice =
             unsafe { slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), capacity - 1) };
         let mut sink = Prefix {
@@ -119,7 +122,8 @@ pub unsafe extern "C" fn swr_v1_http_range_format(
             return OVERFLOW;
         }
         let count = sink.length.min(capacity - 1);
-        unsafe { output.add(count).write(0) };
+        // SAFETY: `count <= capacity - 1`, inside the writable output.
+        unsafe { output.wrapping_add(count).write(0) };
         if libc_overflow {
             // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
             unsafe { output.write(0) };
