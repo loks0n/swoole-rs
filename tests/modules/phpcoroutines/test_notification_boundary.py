@@ -19,7 +19,7 @@ class NotificationBoundary(unittest.TestCase):
             active, fallback = after.split('#else', 1)
             self.assertEqual(fallback.rsplit('#endif', 1)[0], before)
             self.assertIn(before[:before.index('    fiber_context_switch_try_notify(')], active)
-            self.assertIn('swr_v1_phpcoroutines_transfer(&stage,', active)
+            self.assertIn('swr_coro_transfer_next(&stage,', active)
             for line in before.splitlines():
                 statement = line.strip()
                 if statement.startswith(('fiber_context_switch_try_notify(', 'save_context(', 'restore_context(',

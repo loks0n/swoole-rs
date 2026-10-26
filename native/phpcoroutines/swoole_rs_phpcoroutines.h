@@ -165,6 +165,17 @@ enum { SWR_CORO_LIFECYCLE_DONE,
        SWR_CORO_LIFECYCLE_REGISTER_PUSH };
 enum { SWR_CORO_LIFECYCLE_CTOR, SWR_CORO_LIFECYCLE_MAIN, SWR_CORO_LIFECYCLE_DEFER, SWR_CORO_LIFECYCLE_DESTROY, SWR_CORO_LIFECYCLE_POST, SWR_CORO_LIFECYCLE_REGISTER };
 uint32_t swr_v1_phpcoroutines_lifecycle(uint32_t *, uint32_t, int64_t);
+/* Rust-built step tables: native code steps with a load instead of a call. */
+typedef struct { uint8_t action, next; } swr_phpcoroutines_step;
+extern const swr_phpcoroutines_step swr_v1_phpcoroutines_lifecycle_table[6 * 16 * 2];
+static inline uint32_t swr_coro_lifecycle_next(uint32_t *stage, uint32_t kind, int64_t observation) {
+    if (kind >= 6 || *stage >= 16) {
+        return SWR_CORO_LIFECYCLE_DONE;
+    }
+    const swr_phpcoroutines_step step = swr_v1_phpcoroutines_lifecycle_table[(kind * 16 + *stage) * 2 + (observation != 0)];
+    *stage = step.next;
+    return step.action;
+}
 typedef struct swr_phpcoroutines_join_owner swr_phpcoroutines_join_owner;
 swr_phpcoroutines_join_owner *swr_v1_phpcoroutines_join_try_new(void);
 uint8_t swr_v1_phpcoroutines_join_clone(const swr_phpcoroutines_join_owner *);
@@ -198,6 +209,16 @@ enum { SWR_CORO_TRANSFER_DONE, SWR_CORO_TRANSFER_VM, SWR_CORO_TRANSFER_SILENCE_P
        SWR_CORO_TRANSFER_TASK_PRESENCE, SWR_CORO_TRANSFER_TASK_CO_PRESENCE,
        SWR_CORO_TRANSFER_SCHEDULABLE, SWR_CORO_TRANSFER_DEFER, SWR_CORO_TRANSFER_YIELD };
 uint32_t swr_v1_phpcoroutines_transfer(uint32_t *, uint32_t, uint8_t, uint8_t);
+extern const swr_phpcoroutines_step swr_v1_phpcoroutines_transfer_table[14 * 8 * 4];
+static inline uint32_t swr_coro_transfer_next(uint32_t *stage, uint32_t kind, uint8_t observation, uint8_t stack_limit) {
+    if (kind >= 14 || *stage >= 8) {
+        return SWR_CORO_TRANSFER_DONE;
+    }
+    const swr_phpcoroutines_step step =
+        swr_v1_phpcoroutines_transfer_table[((kind * 8 + *stage) * 2 + (observation != 0)) * 2 + (stack_limit != 0)];
+    *stage = step.next;
+    return step.action;
+}
 struct swr_phpcoroutines_scheduler_queue;
 typedef struct { uint8_t started; } swr_phpcoroutines_scheduler_phase;
 typedef swr_phpcoroutines_scheduler_phase swr_phpcoroutines_activation_state;

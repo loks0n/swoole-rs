@@ -22,6 +22,6 @@ def cases(entries, indent='    '):
 
 
 def drive(kind, entries, indent='    '):
-    return indent + 'uint32_t stage = 0;\n' + indent + 'int64_t observation = 0;\n' + indent + 'for (;;) {\n' + indent + '    switch (swr_v1_phpcoroutines_lifecycle(&stage, SWR_CORO_LIFECYCLE_' + kind + ', observation)) {\n' + cases(entries, indent) + indent + '    }\n' + indent + '}\n'
+    return indent + 'uint32_t stage = 0;\n' + indent + 'int64_t observation = 0;\n' + indent + 'for (;;) {\n' + indent + '    switch (swr_coro_lifecycle_next(&stage, SWR_CORO_LIFECYCLE_' + kind + ', observation)) {\n' + cases(entries, indent) + indent + '    }\n' + indent + '}\n'
 
 

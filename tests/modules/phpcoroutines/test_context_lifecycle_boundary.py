@@ -15,7 +15,7 @@ class ContextLifecycleBoundary(unittest.TestCase):
             before, after = body(source, signature), body(selected, signature)
             suffix = '#else' + before + '#endif\n'; self.assertTrue(after.endswith(suffix))
             active[signature] = after[:-len(suffix)]
-            self.assertIn('swr_v1_phpcoroutines_lifecycle(', active[signature])
+            self.assertIn('swr_coro_lifecycle_next(', active[signature])
         ctor = active[CTOR]
         self.assertLess(ctor.index('ctx->co->set_task((void *) ctx);'), ctor.index('SWR_CORO_LIFECYCLE_CTOR_FIBER:'))
         self.assertIn('ctx->fci.function_name = *args->callable;', ctor)
@@ -55,7 +55,7 @@ class ContextLifecycleBoundary(unittest.TestCase):
         self.assertIn('ctx = get_context();', register)
         self.assertIn('ctx->defer_tasks = new PHPCoroutineDeferredTasks;', register)
         self.assertIn('ctx->defer_tasks->push(fci);', register)
-        self.assertNotIn('swr_v1_phpcoroutines_lifecycle(ctx', ''.join(active.values()))
+        self.assertNotIn('swr_coro_lifecycle_next(ctx', ''.join(active.values()))
 
 
 if __name__ == '__main__': unittest.main()

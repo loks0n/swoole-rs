@@ -33,9 +33,9 @@ class InterruptBoundary(unittest.TestCase):
                 self.assertEqual(active.count(statement), 1)
             for expression in observations:
                 self.assertIn('observation = ' + expression + ';', active)
-            self.assertIn('swr_v1_phpcoroutines_transfer(&stage,', active)
-            self.assertNotIn('swr_v1_phpcoroutines_transfer(task', active)
-            self.assertNotIn('swr_v1_phpcoroutines_transfer(co', active)
+            self.assertIn('swr_coro_transfer_next(&stage,', active)
+            self.assertNotIn('swr_coro_transfer_next(task', active)
+            self.assertNotIn('swr_coro_transfer_next(co', active)
 
 
 if __name__ == '__main__':

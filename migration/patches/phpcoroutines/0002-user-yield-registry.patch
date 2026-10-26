@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_coroutine.cc b/ext-src/swoole_coroutine.cc
-index daecf43c2..c2e07045c 100644
+index daecf43..b728df4 100644
 --- a/ext-src/swoole_coroutine.cc
 +++ b/ext-src/swoole_coroutine.cc
 @@ -35,3 +35,10 @@ END_EXTERN_C()
@@ -394,7 +394,7 @@ index daecf43c2..c2e07045c 100644
 +    uint32_t stage = 0;
 +    uint8_t observation = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_transfer(&stage, SWR_CORO_TRANSFER_INTERRUPT_RESUME, observation, 0)) {
++        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_INTERRUPT_RESUME, observation, 0)) {
 +        case SWR_CORO_TRANSFER_DONE: return;
 +        case SWR_CORO_TRANSFER_CO_PRESENCE: observation = co != nullptr; break;
 +        case SWR_CORO_TRANSFER_CO_ENDED: observation = co->is_end(); break;
@@ -416,7 +416,7 @@ index daecf43c2..c2e07045c 100644
 +    uint32_t stage = 0;
 +    uint8_t observation = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_transfer(&stage, SWR_CORO_TRANSFER_INTERRUPT_FUNCTION, observation, 0)) {
++        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_INTERRUPT_FUNCTION, observation, 0)) {
 +        case SWR_CORO_TRANSFER_DONE: return;
 +        case SWR_CORO_TRANSFER_TASK_PRESENCE: observation = task != nullptr; break;
 +        case SWR_CORO_TRANSFER_TASK_CO_PRESENCE: observation = task->co != nullptr; break;
@@ -440,7 +440,7 @@ index daecf43c2..c2e07045c 100644
 +    uint32_t stage = 0;
 +    int64_t observation = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_lifecycle(&stage, SWR_CORO_LIFECYCLE_CTOR, observation)) {
++        switch (swr_coro_lifecycle_next(&stage, SWR_CORO_LIFECYCLE_CTOR, observation)) {
 +        case SWR_CORO_LIFECYCLE_CTOR_INIT: {
 +            ctx = static_cast<PHPContext *>(emalloc(sizeof(PHPContext)));
 +            ctx->output_ptr = nullptr;
@@ -801,7 +801,7 @@ index daecf43c2..c2e07045c 100644
 +    stack_limit = 1;
 +#endif
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_transfer(&stage, SWR_CORO_TRANSFER_SAVE_VM_METADATA, observation, stack_limit)) {
++        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_SAVE_VM_METADATA, observation, stack_limit)) {
 +        case SWR_CORO_TRANSFER_DONE: {
 +return;
 +        }
@@ -861,7 +861,7 @@ index daecf43c2..c2e07045c 100644
 +    stack_limit = 1;
 +#endif
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_transfer(&stage, SWR_CORO_TRANSFER_RESTORE_VM_METADATA, observation, stack_limit)) {
++        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_RESTORE_VM_METADATA, observation, stack_limit)) {
 +        case SWR_CORO_TRANSFER_DONE: {
 +return;
 +        }
@@ -919,7 +919,7 @@ index daecf43c2..c2e07045c 100644
 +    uint8_t observation = 0;
 +    constexpr uint8_t stack_limit = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_transfer(&stage, SWR_CORO_TRANSFER_SAVE_OUTPUT, observation, stack_limit)) {
++        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_SAVE_OUTPUT, observation, stack_limit)) {
 +        case SWR_CORO_TRANSFER_DONE: {
 +return;
 +        }
@@ -961,7 +961,7 @@ index daecf43c2..c2e07045c 100644
 +    uint8_t observation = 0;
 +    constexpr uint8_t stack_limit = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_transfer(&stage, SWR_CORO_TRANSFER_RESTORE_OUTPUT, observation, stack_limit)) {
++        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_RESTORE_OUTPUT, observation, stack_limit)) {
 +        case SWR_CORO_TRANSFER_DONE: {
 +return;
 +        }
@@ -993,7 +993,7 @@ index daecf43c2..c2e07045c 100644
 +    uint8_t observation = 0;
 +    constexpr uint8_t stack_limit = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_transfer(&stage, SWR_CORO_TRANSFER_SAVE_BASIC, observation, stack_limit)) {
++        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_SAVE_BASIC, observation, stack_limit)) {
 +        case SWR_CORO_TRANSFER_DONE: {
 +return;
 +        }
@@ -1041,7 +1041,7 @@ index daecf43c2..c2e07045c 100644
 +    uint8_t observation = 0;
 +    constexpr uint8_t stack_limit = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_transfer(&stage, SWR_CORO_TRANSFER_RESTORE_BASIC, observation, stack_limit)) {
++        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_RESTORE_BASIC, observation, stack_limit)) {
 +        case SWR_CORO_TRANSFER_DONE: {
 +return;
 +        }
@@ -1113,7 +1113,7 @@ index daecf43c2..c2e07045c 100644
 +    uint8_t observation = 0;
 +    constexpr uint8_t stack_limit = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_transfer(&stage, SWR_CORO_TRANSFER_SAVE_CONTEXT, observation, stack_limit)) {
++        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_SAVE_CONTEXT, observation, stack_limit)) {
 +        case SWR_CORO_TRANSFER_DONE: {
 +return;
 +        }
@@ -1146,7 +1146,7 @@ index daecf43c2..c2e07045c 100644
 +    uint8_t observation = 0;
 +    constexpr uint8_t stack_limit = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_transfer(&stage, SWR_CORO_TRANSFER_RESTORE_CONTEXT, observation, stack_limit)) {
++        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_RESTORE_CONTEXT, observation, stack_limit)) {
 +        case SWR_CORO_TRANSFER_DONE: {
 +return;
 +        }
@@ -1181,7 +1181,7 @@ index daecf43c2..c2e07045c 100644
 +    uint32_t stage = 0;
 +    uint8_t observation = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_transfer(&stage, SWR_CORO_TRANSFER_ON_YIELD, observation, 0)) {
++        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_ON_YIELD, observation, 0)) {
 +        case SWR_CORO_TRANSFER_DONE: return;
 +        case SWR_CORO_TRANSFER_FIBER: fiber_context_switch_try_notify(ctx, origin_ctx); break;
 +        case SWR_CORO_TRANSFER_SAVE: save_context(ctx); break;
@@ -1207,7 +1207,7 @@ index daecf43c2..c2e07045c 100644
 +    uint32_t stage = 0;
 +    uint8_t observation = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_transfer(&stage, SWR_CORO_TRANSFER_ON_RESUME, observation, 0)) {
++        switch (swr_coro_transfer_next(&stage, SWR_CORO_TRANSFER_ON_RESUME, observation, 0)) {
 +        case SWR_CORO_TRANSFER_DONE: return;
 +        case SWR_CORO_TRANSFER_FIBER: fiber_context_switch_try_notify(current_ctx, ctx); break;
 +        case SWR_CORO_TRANSFER_SAVE: save_context(current_ctx); break;
@@ -1258,7 +1258,7 @@ index daecf43c2..c2e07045c 100644
 +    uint32_t stage = 0;
 +    int64_t observation = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_lifecycle(&stage, SWR_CORO_LIFECYCLE_DESTROY, observation)) {
++        switch (swr_coro_lifecycle_next(&stage, SWR_CORO_LIFECYCLE_DESTROY, observation)) {
 +        case SWR_CORO_LIFECYCLE_DONE: {
 +            return;
 +        }
@@ -1369,9 +1369,9 @@ index daecf43c2..c2e07045c 100644
 +    zend_first_try {
 +        uint32_t stage = 0;
 +        int64_t observation = 0;
-+        for (uint32_t action = swr_v1_phpcoroutines_lifecycle(&stage, SWR_CORO_LIFECYCLE_MAIN, observation);
++        for (uint32_t action = swr_coro_lifecycle_next(&stage, SWR_CORO_LIFECYCLE_MAIN, observation);
 +             action != SWR_CORO_LIFECYCLE_DONE;
-+             action = swr_v1_phpcoroutines_lifecycle(&stage, SWR_CORO_LIFECYCLE_MAIN, observation)) {
++             action = swr_coro_lifecycle_next(&stage, SWR_CORO_LIFECYCLE_MAIN, observation)) {
 +            switch (action) {
 +                case SWR_CORO_LIFECYCLE_MAIN_TRACE: {
 +                    swoole_trace_log(SW_TRACE_COROUTINE,
@@ -1425,9 +1425,9 @@ index daecf43c2..c2e07045c 100644
 +                    while (tasks->pop(&defer_fci)) {
 +                        uint32_t stage = 0;
 +                        int64_t observation = 0;
-+                        for (uint32_t action = swr_v1_phpcoroutines_lifecycle(&stage, SWR_CORO_LIFECYCLE_DEFER, observation);
++                        for (uint32_t action = swr_coro_lifecycle_next(&stage, SWR_CORO_LIFECYCLE_DEFER, observation);
 +                             action != SWR_CORO_LIFECYCLE_DONE;
-+                             action = swr_v1_phpcoroutines_lifecycle(&stage, SWR_CORO_LIFECYCLE_DEFER, observation)) {
++                             action = swr_coro_lifecycle_next(&stage, SWR_CORO_LIFECYCLE_DEFER, observation)) {
 +                            switch (action) {
 +                                case SWR_CORO_LIFECYCLE_DEFER_VALUE: {
 +                                    observation = Z_TYPE_P(&ctx->return_value) != IS_UNDEF;
@@ -1478,7 +1478,7 @@ index daecf43c2..c2e07045c 100644
 +    uint32_t stage = 0;
 +    int64_t observation = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_lifecycle(&stage, SWR_CORO_LIFECYCLE_POST, observation)) {
++        switch (swr_coro_lifecycle_next(&stage, SWR_CORO_LIFECYCLE_POST, observation)) {
 +        case SWR_CORO_LIFECYCLE_DONE: {
 +            return;
 +        }
@@ -1550,7 +1550,7 @@ index daecf43c2..c2e07045c 100644
 +    uint32_t stage = 0;
 +    int64_t observation = 0;
 +    for (;;) {
-+        switch (swr_v1_phpcoroutines_lifecycle(&stage, SWR_CORO_LIFECYCLE_REGISTER, observation)) {
++        switch (swr_coro_lifecycle_next(&stage, SWR_CORO_LIFECYCLE_REGISTER, observation)) {
 +        case SWR_CORO_LIFECYCLE_DONE: {
 +            return;
 +        }
