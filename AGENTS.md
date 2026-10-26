@@ -17,6 +17,10 @@ Rust lint levels live only in the root `Cargo.toml` (`[workspace.lints]`) and
 `clippy.toml`. Never lower one in a PR that also changes code; lowering one needs
 `needs:decision`. Suppress with `#[expect(lint, reason = "...")]`, never `#[allow]`,
 and give a reason a reviewer can judge. Deny a lint once its count reaches zero.
+The one per-crate exception: each `lib.rs` denies `undocumented_unsafe_blocks` and
+`multiple_unsafe_ops_per_block` under `cfg_attr(not(test), ...)`. Every non-test
+unsafe block states its invariant in a `// SAFETY:` comment and does one operation;
+test code is exempt.
 
 Benchmarks use optimized builds and run without concurrent build or test load.
 See corpus/README.md, corpus/upstream/README.md and benchmarks/README.md.
