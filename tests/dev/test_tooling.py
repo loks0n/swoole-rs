@@ -617,7 +617,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('--random-only', commands['string-random'])
         self.assertNotIn('--standard', commands['http-directory-compatibility'])
         self.assertEqual(commands['http-directory-compatibility-cxx14-17'].count('--standard'), 2)
-        self.assertIn('--archive', commands['http-directory'])
         self.assertIn('--source', commands['http-request-lifecycle'])
         self.assertIn('--archive', commands['http-request-lifecycle'])
         self.assertIn('--source', commands['memory-fixed-native-construction'])

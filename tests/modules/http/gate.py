@@ -175,42 +175,4 @@ def main():
         report['passed'] = True
         write_report(args.output, report); print(json.dumps(report['outcome']))
     return 0
-def prepare_workload(args, tree, flags, report, name, generated):
-    """Create a new immutable optimized caller artifact; execute verification only."""
-    local = Path(__file__).resolve().parent
-    optimized = [flag for flag in flags if flag not in ['-O1', '-g', '-fsanitize=address,undefined', '-fno-sanitize-recover=all']] + ['-O3', '-DNDEBUG']
-    prepared_binary = tree/(name+'-bench')
-    command = ['c++', *optimized, str(tree/('upstream_'+name+'.cc')), str(tree/('candidate_'+name+'.cc')), str(tree/'dependencies.cc'), str(local/(name+'_bench.cc')), str(args.archive.resolve()), '-lm', '-o', str(prepared_binary)]
-    if sys.platform.startswith('linux'): command += ['-ldl', '-lpthread', '-lrt', '-lutil']
-    compiled = run_isolated(command, timeout=60)
-    report['optimized_compile'] = {'command': command, 'returncode': compiled.returncode, 'stderr': compiled.stderr}
-    if compiled.returncode: report['passed'] = False; print(compiled.stderr, file=sys.stderr); return False
-    expected = sha(prepared_binary)
-    checked = run_isolated([str(prepared_binary), '--verify-only'], timeout=30)
-    report['untimed_preflight'] = {'returncode': checked.returncode, 'stdout': checked.stdout, 'stderr': checked.stderr}
-    if checked.returncode or sha(prepared_binary) != expected: report['passed'] = False; return False
-    outcome = json.loads(checked.stdout)
-    if outcome.get('timed') is not False or outcome.get('verified') is not True: raise ValueError('Expected untimed verification')
-    args.prepare.mkdir(parents=True)
-    shutil.copy2(prepared_binary, args.prepare/(name+'-bench'))
-    shutil.copy2(args.archive, args.prepare/'libhttp.a')
-    source_archive = args.prepare/'compiled-sources.tar.gz'
-    with tarfile.open(source_archive, 'w:gz') as archive:
-        archive.add(tree/'include', arcname='include')
-        for filename in ['upstream_'+name+'.cc','candidate_'+name+'.cc','dependencies.cc',*generated]:
-            archive.add(tree/filename, arcname=filename)
-        for filename in [name+'_oracle.h',name+'_bench.cc']:
-            archive.add(local/filename, arcname=filename)
-        for header in sorted((ROOT/'native/http').glob('*.h')): archive.add(header, arcname=header.name)
-        for rust in sorted((ROOT/'crates/http/src').rglob('*.rs')): archive.add(rust, arcname='rust/'+str(rust.relative_to(ROOT/'crates/http/src')))
-    manifest = {'pin': PIN, 'verified': True, 'measured': False, 'full_module_parity_passed': False, 'performance_qualified': False,
-                'scope': report['scope']+'; optimized counted facade workload, trace disabled only here; no production/performance/allocator/lifetime qualification',
-                'binary_sha256': expected, 'archive_sha256': sha(args.prepare/'libhttp.a'),
-                'compiler': subprocess.check_output(['c++','--version'], text=True), 'compile_command': command,
-                'preflight': outcome, 'requires': 'An actually acknowledged host-wide exclusive benchmark lease before any --measure invocation; this preparation acquired none.',
-                'recipe': name+'-bench --measure ENGINE WORKLOAD ITERATIONS; engines=native/selected, workloads from preflight; identical iterations and checksum required; preserve raw per-engine receipts.'}
-    (args.prepare/'manifest.json').write_text(json.dumps(manifest, indent=2)+'\n')
-    report['prepared'] = {'path': str(args.prepare.resolve()), 'verified': True, 'measured': False}
-    return True
-
 if __name__ == '__main__': sys.exit(main())

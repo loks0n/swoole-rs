@@ -86,5 +86,4 @@ operation after Rust returns. No Rust frame or borrow spans an effect.
 Known difference: allocation, publication and destruction order differ from the
 legacy handler.
 
-Tests: `tests/modules/http/context_gate.py`. `directory_gate.py` still targets
-the removed private core API and does not cover this context.
+Tests: `tests/modules/http/context_gate.py`.
