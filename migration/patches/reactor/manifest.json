@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-readiness-policy.patch",
-      "sha256": "25f36f11c6ad5639d553c7a7509390c3cf84c76d66d51638e114e3ed58cc4115",
+      "sha256": "f36d5bd0cf3381905fff9da818d00303ec15d2b91bb71a21c521030e5d9772b2",
       "upstream_paths": [
         "include/swoole_reactor.h",
         "src/reactor/epoll.cc",

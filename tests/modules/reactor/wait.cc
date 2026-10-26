@@ -37,7 +37,8 @@ static std::vector<std::string> effects;
 static int kernel_result=1, readiness=1, cycles=0;
 static bool initial_running=true, begin_stops=false, end_sets_once=false;
 struct Reactor {
-    int id=1,max_event_num=1,timeout_msec=17;
+    int id=1,timeout_msec=17;
+    uint32_t max_event_num=1;
     bool running=true,once=false;
     void *defer_tasks=nullptr;
     Socket *socket;

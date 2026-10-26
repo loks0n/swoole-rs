@@ -1,5 +1,5 @@
 diff --git a/include/swoole_reactor.h b/include/swoole_reactor.h
-index 238c0e6d1..8123f9272 100644
+index 238c0e6..8123f92 100644
 --- a/include/swoole_reactor.h
 +++ b/include/swoole_reactor.h
 @@ -20,2 +20,8 @@
@@ -124,7 +124,7 @@ index 238c0e6d1..8123f9272 100644
 +        return swr_reactor_resolve_handler(this, fd_type, 0, 3);
      }
 diff --git a/src/reactor/epoll.cc b/src/reactor/epoll.cc
-index cc871e391..418c9e5f9 100644
+index cc871e3..a1dbd96 100644
 --- a/src/reactor/epoll.cc
 +++ b/src/reactor/epoll.cc
 @@ -18,2 +18,5 @@
@@ -301,8 +301,10 @@ index cc871e391..418c9e5f9 100644
 +        }
 +    }
  }
-@@ -179,33 +202,26 @@ int ReactorEpoll::wait() {
-     ReactorHandler handler;
+@@ -177,79 +200,73 @@ int ReactorEpoll::set(Socket *socket, int events) {
+ int ReactorEpoll::wait() {
+-    Event event;
+-    ReactorHandler handler;
 -    int n, ret;
 -
 -    reactor_->before_wait();
@@ -320,47 +322,70 @@ index cc871e391..418c9e5f9 100644
 -                                   reactor_->get_timeout_msec());
 -                return SW_ERR;
 -            } else {
--#ifdef SW_USE_IOURING
++    // Rust runs upstream's loop (swr_v1_reactor_epoll_run); these are its native effects.
++    struct Context {
++        Reactor *reactor;
++        int epfd;
++        Event event;
++    } context{reactor_, epfd_, {}};
++    const swr_v1_reactor_epoll_ops ops{
++        &context,
++        events_,
++        epfd_,
++        &reactor_->running,
++        &reactor_->once,
++        &reactor_->max_event_num,
++        [](int epfd, epoll_event *events, int max_events, int timeout) {
++            return epoll_wait(epfd, events, max_events, timeout);
++        },
++        [](void *ctx) { static_cast<Context *>(ctx)->reactor->before_wait(); },
++        [](void *ctx) { static_cast<Context *>(ctx)->reactor->execute_begin_callback(); },
++        [](void *ctx) { return static_cast<Context *>(ctx)->reactor->get_timeout_msec(); },
++        [](void *ctx) { return static_cast<int>(static_cast<Context *>(ctx)->reactor->catch_error()); },
++        [](void *ctx, int timed_out) { static_cast<Context *>(ctx)->reactor->execute_end_callbacks(timed_out != 0); },
+ #ifdef SW_USE_IOURING
 -                if (sw_likely(errno == EINTR && reactor_->iouring_interrupt_handler)) {
 -                    reactor_->iouring_interrupt_handler(reactor_);
 -                }
--#endif
++        [](void *ctx) {
++            return static_cast<int>(errno == EINTR && static_cast<Context *>(ctx)->reactor->iouring_interrupt_handler);
++        },
++        [](void *ctx) {
++            Reactor *reactor = static_cast<Context *>(ctx)->reactor;
++            reactor->iouring_interrupt_handler(reactor);
++        },
++#else
++        nullptr,
++        nullptr,
+ #endif
 -                goto _continue;
-+    int n = 0;
-+    swr_v1_reactor_wait_state loop{};
-+    int wait_result = 0;
-+    int observed = 0;
-+    for (;;) {
-+        switch (swr_v1_reactor_wait_workflow(&loop, 1, observed)) {
-+        case 0: return SW_OK;
-+        case 1: reactor_->before_wait(); break;
-+        case 2: reactor_->execute_begin_callback(); break;
-+        case 3: {
-+                n = epoll_wait(epfd_, events_, reactor_->max_event_num, reactor_->get_timeout_msec());
-+                wait_result = n;
-+                observed = wait_result;
-+                break;
-             }
+-            }
 -        } else if (n == 0) {
 -            reactor_->execute_end_callbacks(true);
 -            SW_REACTOR_CONTINUE;
 -        }
 -        for (int i = 0; i < n; i++) {
-+        case 4: observed = reactor_->catch_error(); break;
-+        case 5: reactor_->execute_end_callbacks(true); break;
-+        case 6: {
-+                swr_v1_reactor_batch_cursor batch{};
-+                swr_v1_reactor_batch_record record{};
-+                int32_t batch_result;
-+                while ((batch_result = swr_v1_reactor_epoll_record(events_, n, &batch, 1, &record)) > 0) {
-             event.reactor_id = reactor_->id;
+-            event.reactor_id = reactor_->id;
 -            event.socket = static_cast<Socket *>(events_[i].data.ptr);
-+            event.socket = reinterpret_cast<Socket *>(record.token);
++        [](void *ctx) {
++            auto context = static_cast<Context *>(ctx);
++            Reactor *reactor = context->reactor;
++            swoole_sys_warning("[Reactor#%d] epoll_wait(epfd=%d, max_events=%d, timeout=%d) failed",
++                               reactor->id,
++                               context->epfd,
++                               reactor->max_event_num,
++                               reactor->get_timeout_msec());
++        },
++        [](void *ctx, void *socket, int hup) {
++            auto context = static_cast<Context *>(ctx);
++            Event &event = context->event;
++            event.reactor_id = context->reactor->id;
++            event.socket = static_cast<Socket *>(socket);
              event.type = event.socket->fd_type;
-@@ -213,43 +229,84 @@ int ReactorEpoll::wait() {
- 
+             event.fd = event.socket->fd;
+-
 -            if (events_[i].events & (EPOLLRDHUP | EPOLLERR | EPOLLHUP)) {
-+            if (record.mask & 4) {
++            if (hup) {
                  event.socket->event_hup = 1;
              }
 -            // read
@@ -369,47 +394,7 @@ index cc871e391..418c9e5f9 100644
 -                ret = handler(reactor_, &event);
 -                if (ret < 0) {
 -                    swoole_sys_warning("EPOLLIN handle failed [fd=%d, type=%d]", event.fd, event.type);
-+            swr_v1_reactor_ready_workflow_state ready{};
-+                int ready_observed = 0;
-+                for (;;) {
-+                    int32_t ready_action = swr_v1_reactor_ready_workflow(&ready, 0, ready_observed);
-+                    if (ready_action <= 0) break;
-+                    switch (ready_action) {
-+                    case 10:
-+                        if (swr_v1_reactor_epoll_record(events_, n, &batch, 0, &record) != 1) return SW_ERR;
-+                        ready_observed = record.mask;
-+                        break;
-+                    case 11: ready_observed = event.socket->removed; break;
-+                    case 12: ready_observed = (event.socket->events & SW_EVENT_ONCE) != 0; break;
-+                    case 1:
-+                    handler = reactor_->get_handler(event.type, SW_EVENT_READ);
-+                    ready_observed = handler(reactor_, &event);
-+                    
-+                    break;
-+case 2:
-+                    handler = reactor_->get_handler(event.type, SW_EVENT_WRITE);
-+                    ready_observed = handler(reactor_, &event);
-+                    
-+                    break;
-+case 3:
-+                    handler = reactor_->get_error_handler(event.type);
-+                    ready_observed = handler(reactor_, &event);
-+                    
-+                    break;
-+case 4: reactor_->_del(event.socket); break;
-+case 6: 
-+                        swoole_sys_warning("EPOLLIN handle failed [fd=%d, type=%d]", event.fd, event.type);
-+                     break;
-+case 7: 
-+                        swoole_sys_warning("EPOLLOUT handle failed [fd=%d, type=%d]", event.fd, event.type);
-+                     break;
-+case 8: 
-+                        swoole_sys_warning("EPOLLERR handle failed [fd=%d, type=%d]", event.fd, event.type);
-+                     break;
-+                    default: return SW_ERR;
-+                    }
-+                    if (ready_action == 4) break;
-                 }
+-                }
 -            }
 -            // write
 -            if ((events_[i].events & EPOLLOUT) && !event.socket->removed) {
@@ -429,54 +414,40 @@ index cc871e391..418c9e5f9 100644
 -                ret = handler(reactor_, &event);
 -                if (ret < 0) {
 -                    swoole_sys_warning("EPOLLERR handle failed [fd=%d, type=%d]", event.fd, event.type);
-+
-                 }
-+                if (batch_result < 0) return SW_ERR;
-+                break;
-             }
+-                }
+-            }
 -            if (!event.socket->removed && (event.socket->events & SW_EVENT_ONCE)) {
 -                reactor_->_del(event.socket);
-+        case 7: {
-+                swoole_sys_warning("[Reactor#%d] epoll_wait(epfd=%d, max_events=%d, timeout=%d) failed",
-+                                   reactor_->id,
-+                                   epfd_,
-+                                   reactor_->max_event_num,
-+                                   reactor_->get_timeout_msec());
-+                break;
-             }
-+        case 8:
-+#ifdef SW_USE_IOURING
-+            reactor_->iouring_interrupt_handler(reactor_);
-+#endif
-+            break;
-+        case 9: reactor_->execute_end_callbacks(false); break;
-+        case 10: observed = reactor_->running; break;
-+        case 11:
-+#ifdef SW_USE_IOURING
-+            observed = errno == EINTR;
-+#else
-+            observed = 0;
-+#endif
-+            break;
-+        case 12:
-+#ifdef SW_USE_IOURING
-+            observed = reactor_->iouring_interrupt_handler != nullptr;
-+#else
-+            observed = 0;
-+#endif
-+            break;
-+        case 13: observed = reactor_->once; break;
-+        default: return SW_ERR;
-         }
+-            }
+-        }
 -
 -    _continue:
 -        reactor_->execute_end_callbacks(false);
 -        SW_REACTOR_CONTINUE;
-     }
+-    }
 -    return 0;
++        },
++        [](void *socket) { return static_cast<int>(static_cast<Socket *>(socket)->removed); },
++        [](void *socket) { return static_cast<int>((static_cast<Socket *>(socket)->events & SW_EVENT_ONCE) != 0); },
++        [](void *ctx, uint32_t kind) {
++            auto context = static_cast<Context *>(ctx);
++            Reactor *reactor = context->reactor;
++            ReactorHandler handler = kind == 2 ? reactor->get_error_handler(context->event.type)
++                                               : reactor->get_handler(context->event.type,
++                                                                      kind == 0 ? SW_EVENT_READ : SW_EVENT_WRITE);
++            return handler(reactor, &context->event);
++        },
++        [](void *ctx, uint32_t kind) {
++            const Event &event = static_cast<Context *>(ctx)->event;
++            static const char *const names[] = {"EPOLLIN", "EPOLLOUT", "EPOLLERR"};
++            swoole_sys_warning("%s handle failed [fd=%d, type=%d]", names[kind], event.fd, event.type);
++        },
++        [](void *ctx, void *socket) { static_cast<Context *>(ctx)->reactor->_del(static_cast<Socket *>(socket)); },
++    };
++    return swr_v1_reactor_epoll_run(&ops) < 0 ? SW_ERR : SW_OK;
  }
 diff --git a/src/reactor/kqueue.cc b/src/reactor/kqueue.cc
-index 6ebce456a..cd8dfd158 100644
+index 6ebce45..cd8dfd1 100644
 --- a/src/reactor/kqueue.cc
 +++ b/src/reactor/kqueue.cc
 @@ -18,2 +18,5 @@
@@ -962,7 +933,7 @@ index 6ebce456a..cd8dfd158 100644
 -    return 0;
  }
 diff --git a/src/reactor/poll.cc b/src/reactor/poll.cc
-index e65b2c6e9..1ec3a7ddf 100644
+index e65b2c6..1ec3a7d 100644
 --- a/src/reactor/poll.cc
 +++ b/src/reactor/poll.cc
 @@ -18,2 +18,5 @@
