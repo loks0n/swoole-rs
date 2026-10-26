@@ -37,7 +37,8 @@ elif args[:2] == ['run', 'download']:
     for index, shard in enumerate(shards, 1):
         loop = Path(args[args.index('-D') + 1]) / f'phases-{index}/target/reports/dev/x/loop.json'
         loop.parent.mkdir(parents=True)
-        loop.write_text(json.dumps({'phases': [{'phase': name, 'failed': not passed} for name, passed in shard]}))
+        loop.write_text(json.dumps({'phases': [{'phase': row[0], 'failed': not row[1], **({'log_tail': row[2]} if len(row) > 2 else {})}
+                                               for row in shard]}))
 elif args[:2] == ['run', 'list']:
     sha = args[args.index('--commit') + 1]
     queue = data['runs'].get(sha, [])
@@ -108,6 +109,14 @@ class Ci(unittest.TestCase):
         # build passed in one shard and failed in the other, so it failed.
         self.assertEqual(result['failed_phases'], ['build', 'timer-model'])
         self.assertEqual(result['new_failures'], ['build', 'timer-model'])
+
+    def test_new_failures_bring_their_log_tails(self):
+        history = [{'databaseId': 7, 'conclusion': 'failure', 'url': 'u7'}, {'databaseId': 4, 'conclusion': 'failure', 'url': 'u4'}]
+        phases = {'7': [['old', False, ['still broken']], ['new', False, ['first line', 'why it broke']]],
+                  '4': [['old', False], ['new', True]]}
+        code, result, _ = self.ci('status', runs={'c' * 40: ['failure']}, history=history, phases=phases)
+        self.assertEqual(result['new_failures'], ['new'])
+        self.assertEqual(result['phase_logs'], {'new': ['first line', 'why it broke']})
 
     def test_runs_without_phases_keep_the_log_tail(self):
         code, result, _ = self.ci('status', runs={'c' * 40: ['failure']})

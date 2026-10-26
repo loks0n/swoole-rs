@@ -51,6 +51,9 @@ class PhaseTimeout(unittest.TestCase):
         self.assertTrue(rows['slow']['failed'])
         self.assertTrue(rows['slow']['timed_out'])
         self.assertFalse(rows['quick']['failed'])
+        # A failed phase keeps the end of its log in loop.json; a passing one doesn't.
+        self.assertIn('timed out after 1s', rows['slow']['log_tail'][-1])
+        self.assertNotIn('log_tail', rows['quick'])
 
     def test_a_crashing_phase_fails_instead_of_hanging(self):
         def execute(command, **options):
