@@ -24,7 +24,7 @@ The ABI has no decoded Frame struct or fragmentation state.
 
 ## Pinned invalid-frame policy
 
-From Swoole v6.2.4 (`tests/modules/websocket/invalid.py` checks these on both
+From Swoole v6.2.4 (`tests/modules/websocket/test_invalid.py` checks these on both
 engines, 20 scenarios):
 
 - `dispatch_frame` rejects a continuation with no fragment buffer, and a second
@@ -52,9 +52,9 @@ engines, 20 scenarios):
   0/1/125/126/127/65,535/65,536) plus PHP string/object lifetime and pack-only
   RSV1 control cases (778 total): packed bytes, payloads, flags, close fields.
   No invalid frames.
-- `close_probe.py`: coalesced frames, header/body write splits at 125/126/65,535/
+- `test_close.py`: coalesced frames, header/body write splits at 125/126/65,535/
   65,536, fragmented text with interleaved ping/pong, close and EOF. Write splits
-  do not guarantee receive splits; `prefix.py` is the deterministic length check.
+  do not guarantee receive splits; `test_prefix.py` is the deterministic length check.
 - Corpus `06-websocket`: handshake accept hash, broadcast to two clients, masked
   close; requires an unmasked two-byte FIN+CLOSE reply with status 1000 and EOF.
 - Original PHPTs: 15 of 34 in `tests/swoole_websocket_server/` are selected.

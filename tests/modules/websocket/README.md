@@ -11,7 +11,7 @@ upstream. The kernel ABI is in `docs/abi-v1.md` and
 ```sh
 cargo test -p swoole-rs-websocket
 cargo build --release -p swoole-rs-ffi --features websocket
-python3 tests/modules/websocket/test_kernel.py --sanitize
+python3 -m pytest tests/modules/websocket/test_kernel.py --sanitize --archive target/release/libswoole_rs_ffi.a
 ```
 
 `test_kernel.py` calls the C exports and checks every opcode/flags combination at
@@ -26,26 +26,26 @@ build. The default `target/release/libswoole_rs_ffi.a` is overwritten by builds
 with other feature flags; rebuild it with `--features websocket` first. A
 bridge-only archive has no kernel exports and must fail to link.
 
-`prefix.py` compares the pinned C++ `get_package_length` with Rust for all valid
-header prefixes. It reads a hybrid `--build-manifest` and refuses an archive or
+`test_prefix.py` compares the pinned C++ `get_package_length` with Rust for all valid
+header prefixes. It reads a hybrid `--manifest` and refuses an archive or
 ABI header whose checksum differs from that manifest:
 
 ```sh
-python3 tests/modules/websocket/prefix.py --sanitize \
-  --build-manifest target/hybrid/rust-buffer-websocket/build-manifest.json
+python3 -m pytest tests/modules/websocket/test_prefix.py --sanitize \
+  --manifest target/hybrid/rust-buffer-websocket/build-manifest.json
 ```
 
-`codec.py` is the differential for the codec/policy seam; see [codec.md](codec.md).
+`test_codec.py` is the differential for the codec/policy seam; see [codec.md](codec.md).
 
 ## PHP behaviour
 
 ```sh
-python3 tests/modules/websocket/differential.py \
+python3 -m pytest tests/modules/websocket/test_differential.py \
   --engine upstream=target/upstream/src/modules/swoole.so \
   --engine hybrid=target/hybrid/rust-websocket/modules/swoole.so
 ```
 
-`differential.py` compares 778 PHP frame outcomes between two engines: 58 valid
+`test_differential.py` compares 778 PHP frame outcomes with the first engine: 58 valid
 FIN/mask/opcode/length cases including close-frame fields, 576 compression,
 continuation, control-normalization and PHP object lifetime cases (finish
 property precedence, source destruction/GC, cloning, input mutation during
@@ -66,26 +66,24 @@ so a new platform where setup fails or pack returns reports a failure. Linux PHP
 preserved as-is.
 
 ```sh
-python3 tests/modules/websocket/invalid.py --engine hybrid=/absolute/hybrid/swoole.so
-python3 tests/modules/websocket/close_probe.py --engine hybrid=/absolute/hybrid/swoole.so
+python3 -m pytest tests/modules/websocket/test_invalid.py tests/modules/websocket/test_close.py \
+  --engine hybrid=/absolute/hybrid/swoole.so
 ```
 
-`invalid.py` sends malformed and boundary frames on fresh sockets against pinned
+`test_invalid.py` sends malformed and boundary frames on fresh sockets against pinned
 policy: rejected connections must terminate (timeout fails), accepted controls
-need a text reply, and HTTP health is checked after every case. `close_probe.py`
+need a text reply, and HTTP health is checked after every case. `test_close.py`
 sends close and text frames with a response barrier and checks post-close health.
 
 ## Original PHPTs and conformance
 
-```sh
-python3 tests/modules/websocket/upstream.py --engine upstream=/absolute/reference.so \
-  --engine hybrid=/absolute/hybrid.so
-```
+All 36 pinned `tests/swoole_websocket_server` originals are in the `websocket` and
+`websocket-network` groups of `corpus/upstream/manifest.json`:
 
-`upstream.py` runs all 34 pinned `tests/swoole_websocket_server` originals
-serially through PHP's official runner; `--case NAME` selects a subset. Ports
-are checked before the two tests that need fixed listeners. Skips and failures
-fail the run.
+```sh
+python3 corpus/upstream/run.py --module websocket --module websocket-network --require-all \
+  --engine upstream=/absolute/reference.so --engine hybrid=/absolute/hybrid.so
+```
 
 `autobahn.py` runs the Autobahn fuzzing client in Docker against each engine
 (bounded profile by default, `--full` or `--cases GLOB` to change it). It tests
@@ -123,9 +121,9 @@ Instrument the Rust module itself and rerun the native gates:
 RUSTC_BOOTSTRAP=1 RUSTFLAGS='-Zsanitizer=address -Zexternal-clangrt=yes' \
   cargo rustc -p swoole-rs-websocket --release --offline --locked \
   --target-dir target/websocket-rust-asan --crate-type staticlib -v
-python3 tests/modules/websocket/test_kernel.py --sanitize \
+python3 -m pytest tests/modules/websocket/test_kernel.py --sanitize \
   --archive target/websocket-rust-asan/release/libswoole_rs_websocket.a
-python3 tests/modules/websocket/codec.py --sanitize --rust-asan \
+python3 -m pytest tests/modules/websocket/test_codec.py --sanitize --rust-asan \
   --archive target/websocket-rust-asan/release/libswoole_rs_websocket.a
 ```
 
@@ -141,5 +139,5 @@ inside `swr_v1_ws_mask` (deliberately invalid calls, not ABI bugs).
   the server with no receive barrier. Its assertion stays unchanged.
 - On macOS, the instrumented Rust archive compiles but fails to link because the
   runtime lacks `___asan_version_mismatch_check_v8`.
-- The C++ oracle in `codec.py` excludes alignment sanitizing because the upstream
+- The C++ oracle in `test_codec.py` excludes alignment sanitizing because the upstream
   codec does unaligned integer loads. Rust stdlib stays uninstrumented.

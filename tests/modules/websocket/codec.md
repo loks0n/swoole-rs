@@ -65,8 +65,8 @@ Run the real ABI differential against unchanged pinned C++ codec bodies:
 ```sh
 cargo test -p swoole-rs-websocket
 cargo build --release -p swoole-rs-ffi --features websocket
-python3 tests/modules/websocket/codec.py --source /path/to/pinned/reference \
-  --archive target/release/libswoole_rs_ffi.a --sanitize
+python3 -m pytest tests/modules/websocket/test_codec.py \
+  --archive target/release/libswoole_rs_ffi.a --sanitize   # reads target/upstream/src
 ```
 
 The oracle takes exact function bodies and frame/flag definitions from pinned
