@@ -86,12 +86,7 @@ bytes, return values and published state.
 
 ## Original PHPTs
 
-`full_originals.py --source DIR --output manifest.json` writes a
-`corpus/upstream/run.py` manifest of the 70 pinned HTTP/2 PHPTs listed in
-`inventory.json`, verifying each blob hash against the pinned source.
-`tools/dev.py` runs it as `http2-full-originals`. Three of those PHPTs skip
-unconditionally upstream; others need remote services, CLI tools or platform
-features. Skips and unsupported cases are not passes.
+Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
 ## Not covered
 

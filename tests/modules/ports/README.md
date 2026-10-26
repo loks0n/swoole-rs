@@ -80,7 +80,6 @@ python3 tests/modules/ports/configuration.py --engine ... --build-manifest MANIF
 python3 tests/modules/ports/callback_php.py --engine ... --build-manifest MANIFEST --archive SELECTED_ARCHIVE --source-ref REF --output REPORT
 python3 tests/modules/ports/php.py --engine ... --output REPORT
 python3 tests/modules/ports/class_properties_loaded.py --source PINNED_REFERENCE --native NATIVE_EXPORT --selected SELECTED_EXPORT --output REPORT
-python3 tests/modules/ports/upstream.py --source CONFIGURED_CORE --engine ... --inventory direct|framing --output REPORT
 ```
 
 - `server.py`: starts a listener on an ephemeral port per protocol (length, EOF,
@@ -96,8 +95,7 @@ python3 tests/modules/ports/upstream.py --source CONFIGURED_CORE --engine ... --
   reentry and callback replacement lifetime across engines.
 - `class_properties_loaded.py`: reflection of all 19 Port properties in both
   exported DSOs against the pinned declarations.
-- `upstream.py`: original PHPTs under the official runner. `direct` is
-  `tests/swoole_server_port`; `framing` is seven Server length/EOF PHPTs.
+- Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
 Unit tests (no native build):
 

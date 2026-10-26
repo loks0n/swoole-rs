@@ -91,22 +91,7 @@ These take `--engine NAME=/abs/swoole.so` (first `upstream=`), optional
 
 ### Original PHPTs
 
-`upstream.json` is a manifest of 30 curated pinned PHPTs plus support blobs.
-`full_originals.py --source PINNED_GIT [--group swoole_http_server_coro] --output M.json`
-generates a manifest of the complete `tests/swoole_http_server` (138 cases) or
-coroutine server (56 cases) tree. Run either with the official runner:
-
-```sh
-python3 corpus/upstream/run.py --source /path/to/phpized/pinned/source \
-  --manifest target/http-check/full-originals.json \
-  --engine upstream=/abs/reference.so --engine hybrid=/abs/candidate.so \
-  --isolate-cases --timeout 90 --output target/http-check/full-originals-report.json
-```
-
-Linux minimal PHP needs `--php-extension sockets curl mbstring posix` (one flag
-each). On macOS use `TMPDIR=/tmp` so the original Unix socket path fits, and the
-run uses fixed `/tmp` fixtures (`swoole.log`, `client_ca.txt`, `sendfile.txt`,
-`unix-sock-test.sock`), so do not run two at once.
+Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
 ## Benchmark preparation
 

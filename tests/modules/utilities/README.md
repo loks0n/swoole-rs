@@ -109,8 +109,6 @@ Other consumers:
 - `lowercase_runtime.py` (`utilities-lowercase-runtime`, same pair arguments plus
   `--source`): the unchanged trailer PHPT from `lowercase-originals.json` and the
   raw HTTP/1 wire fixture `lowercase_wire.py`. Linux needs `--php-extension sockets`.
-- `originals.json` lists `swoole_error_log.phpt` for `corpus/upstream/run.py`
-  (`utilities-originals`).
 
 ## Logging macros (`macro_profile.py`)
 

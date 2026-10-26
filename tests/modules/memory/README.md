@@ -32,28 +32,17 @@ Known differences: shrinking `realloc` copies `min(old, new)` payload instead of
 upstream's header-inclusive overrun; odd-width native rows use aligned physical
 storage with unchanged logical byte accounting.
 
-## Original table PHPTs
+## Table witnesses
+
+Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
 ```
-python3 tests/modules/memory/upstream.py --source /absolute/pinned/upstream \
-  --inventory-only --output target/reports/memory/table-inventory.json
-python3 tests/modules/memory/upstream.py --source /absolute/pinned/upstream \
-  --engine upstream=/absolute/reference/swoole.so \
-  --engine hybrid=/absolute/immutable-prefix/modules/swoole.so \
-  --require-memory-bridge hybrid \
-  --output target/reports/memory/table-original.json
+python3 tests/modules/memory/witnesses.py --engine upstream=/absolute/reference/swoole.so \
+  --engine hybrid=/absolute/immutable-prefix/modules/swoole.so --require-memory-bridge hybrid \
+  --output target/reports/memory/table-witnesses.json
 ```
 
-Runs the 19 pinned `tests/swoole_table/*.phpt` cases unchanged through the shared
-official runner (`corpus/upstream/run.py`). Only PASSED counts; skips, missing
-APIs, timeouts and failures fail the gate. `bug_2290` and `random_bytes` are
-high-memory and skipped unless `--include-heavy` or named with `--case`;
-`whole_inventory_passed` stays false when anything is skipped.
-`--require-memory-bridge ENGINE` rejects an engine that does not advertise
-memory feature bit 64. `--php-extension` loads extra modules.
-
-It also runs four new PHP witnesses per engine and, with more than one engine,
-requires their observations to match:
+`witnesses.py` (`memory-table-witnesses`) runs four PHP witnesses, not upstream PHPTs, on every engine and requires their observations to match. `--require-memory-bridge ENGINE` rejects an engine that does not advertise memory feature bit 64:
 
 - `table_state.php`: duplicate-column first lookup, binary names/keys, iteration,
   increment after delete, memory sizes.
@@ -70,8 +59,8 @@ expected dead-owner warning never appears. macOS emits the warning.
 `force_unlock_diagnostic.py` investigates this. It builds a modified copy of the
 pinned test (child body unchanged) that reports the child's output and, on Linux,
 reads the shared row's lock/PID from `/proc/self/mem`. It never runs or
-reclassifies the original PHPT. Same `--source`, `--engine`, `--php-extension`
-and `--output` arguments as `upstream.py`; `--native-trace` (Linux NTS only,
+reclassifies the original PHPT. It takes `--source`, `--engine`, `--php-extension`
+and `--output`; `--native-trace` (Linux NTS only,
 uses `--php-config` and `--cc`) also compiles `force_unlock_native.c` to trace
 the get handler, the row lock and Zend's delayed-OOM state.
 

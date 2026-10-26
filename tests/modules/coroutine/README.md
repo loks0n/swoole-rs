@@ -7,16 +7,11 @@ Rust FFI static archive. Most gates refuse an existing `--report` path.
 ## Original tests
 
 ```
-python3 tests/modules/coroutine/upstream.py --source PINNED_TREE --engine NAME=SO [--group G] [--case tests/...] --output OUT.json
 python3 tests/modules/coroutine/core.py --source PINNED_TREE --config CONFIG_H --archive ARCHIVE \
   --build-root PRIVATE_DIR [--sanitize] [--ucontext] [--rust-asan] [--lifetime-only] --output OUT.json
 ```
 
-`upstream.py` runs all 201 pinned PHPT originals (130 coroutine, 44 channel, 27
-scheduler) with PHP's official runner and the shared support adapter. `--group`
-or `--case` selects a subset; the gate only passes when no case is left
-unmeasured. `tests/swoole_coroutine/cancel/socket.phpt` needs a free UDP 9601.
-Route/DNS-dependent cases need `--external-network`.
+Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
 `core.py` builds full native reference and coroutine-only libraries and runs the
 32 unchanged GoogleTests, plus three supplemental real-context tests from

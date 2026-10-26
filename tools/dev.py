@@ -190,9 +190,6 @@ def plan(args, reports):
                     name = module + '-consumers-' + label
                     script(name, 'tests/modules/' + module + '/' + runner, '--extension', extension,
                            '--manifest', identity, *consumer_php, *report(name))
-        if 'base64' in modules:
-            script('base64-originals', 'tests/modules/base64/original.py', '--source', ROOT / 'target/upstream/src',
-                   *php, *engines, *report('base64-originals'))
     if 'error' in modules:
         script('error-native', 'tools/core_check.py', '--module', 'error',
                '--build-manifest', manifest, '--sanitize', *report('error-native'))
@@ -239,9 +236,6 @@ def plan(args, reports):
     if 'locks' in modules:
         script('locks-native', 'tests/modules/locks/gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report('locks-native'))
-    if 'locks' in modules and integrate:
-        script('locks-originals', 'tests/modules/locks/upstream.py', '--source', ROOT / 'target/upstream/src',
-               *php_for('posix'), *engines, *report('locks-originals'))
     if 'wrappers' in modules:
         script('wrappers-native', 'tests/modules/wrappers/gate.py', '--archive',
                manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report('wrappers-native'))
@@ -252,10 +246,6 @@ def plan(args, reports):
             script(name, 'tests/modules/wrappers/' + consumer + '.py', '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--core', manifest.parent / 'src',
                    '--sanitize', *wrapper_includes, *report(name))
-    if 'wrappers' in modules and integrate:
-        script('wrappers-originals', 'tests/modules/wrappers/upstream.py', '--source', ROOT / 'target/upstream/src',
-               *php_for('posix', 'mbstring'), *engines,
-               *(['--external-network'] if getattr(args, 'external_network', False) else []), *report('wrappers-originals'))
     if 'reactor' in modules:
         if integrate:
             for phase, extra in [('reactor-production-supported', []), ('reactor-production-callbacks', ['--callbacks']),
@@ -374,9 +364,6 @@ def plan(args, reports):
                    '--report', reports / (name + '.json'))
         script('hooks-compile', 'tests/modules/hooks/compile_gate.py', '--source', ROOT / 'target/upstream/src',
                '--config', manifest.parent / 'src/config.h', '--report', reports / 'hooks-compile.json')
-    if 'hooks' in modules and integrate:
-        script('hooks-originals', 'tests/modules/hooks/upstream.py', '--source', ROOT / 'target/upstream/src',
-               *php_for('posix', 'mbstring'), *engines, *report('hooks-originals'))
     if 'httpbindings' in modules:
         for family in ['cookie', 'server']:
             name = 'httpbindings-' + family
@@ -485,13 +472,6 @@ def plan(args, reports):
                        '--redis-extension', args.redis_extension,
                        *(['--redis-image', args.redis_image] if getattr(args, 'redis_image', None) else []),
                        *report('phpcollections-prerequisites'))
-            for group, capability in [('swoole_table', 'table'), ('swoole_channel_coro', 'coroutines')]:
-                name = 'phpcollections-' + group
-                inventory = reports / (name + '-manifest.json')
-                script(name + '-manifest', 'corpus/upstream/tree.py', '--source', ROOT / 'target/upstream/src',
-                       '--group', group, '--module', 'phpcollections', '--requires', capability, '--output', inventory)
-                script(name, 'corpus/upstream/run.py', '--source', ROOT / 'target/upstream/src', '--manifest', inventory,
-                       *php_for('sockets', 'posix', 'mbstring', *(['curl'] if group == 'swoole_channel_coro' else [])), *engines, '--require-all', '--isolate-cases', *report(name))
     if 'phphelpers' in modules:
         script('phphelpers-async', 'tests/modules/phphelpers/async_gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('phphelpers-async'))
@@ -515,11 +495,6 @@ def plan(args, reports):
             script('phphelpers-runtime', 'tests/modules/phphelpers/runtime.py', *php, *engines,
                    '--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                    '--source-ref', 'HEAD', *report('phphelpers-runtime'))
-            inventory = reports / 'phphelpers-full-originals-manifest.json'
-            script('phphelpers-full-originals-manifest', 'corpus/upstream/tree.py', '--source', ROOT / 'target/upstream/src',
-                   '--group', 'swoole_stdext', '--module', 'phphelpers', '--requires', 'stdext', '--output', inventory)
-            script('phphelpers-full-originals', 'corpus/upstream/run.py', '--source', manifest.parent / 'src',
-                   '--manifest', inventory, *php_for('mbstring'), *engines, '--require-all', '--isolate-cases', *report('phphelpers-full-originals'))
     if 'phpevents' in modules:
         script('phpevents-policy', 'tests/modules/phpevents/gate.py', '--source', ROOT / 'target/upstream/src',
                '--sanitize', *report('phpevents-policy'))
@@ -532,14 +507,6 @@ def plan(args, reports):
                    '--sdk-report', reports / 'phphelpers-sdk.json', *php_for('curl'), *engines,
                    '--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                    '--source-ref', 'HEAD', *report('phpevents-descriptors'))
-        if integrate:
-            inventory = reports / 'phpevents-originals-manifest.json'
-            script('phpevents-originals-manifest', 'corpus/upstream/tree.py', '--source', ROOT / 'target/upstream/src',
-                   '--group', 'swoole_event', '--module', 'phpevents', '--requires', 'event_loop',
-                   *report('phpevents-originals-manifest'))
-            script('phpevents-alias-original', 'corpus/upstream/run.py', '--source', manifest.parent / 'src',
-                   '--manifest', inventory, '--case', 'tests/swoole_event/function_alias.phpt',
-                   *php_for('mbstring'), *engines, '--require-all', '--isolate-cases', *report('phpevents-alias-original'))
     if 'phpcoroutines' in modules:
         for suffix, options in [('', []), ('-native-sanitized', ['--sanitize'])]:
             name = 'phpcoroutines-method-catalogue' + suffix
@@ -577,10 +544,6 @@ def plan(args, reports):
                        '--profile', profile, *php_for('curl'), *engines, '--build-manifest', manifest,
                        '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                        '--source-ref', 'HEAD', *report(phase))
-            for group in ['swoole_coroutine', 'swoole_coroutine_system', 'swoole_coroutine_scheduler']:
-                phase = 'phpcoroutines-' + group + '-originals-manifest'
-                script(phase, 'corpus/upstream/tree.py', '--source', ROOT / 'target/upstream/src',
-                       '--group', group, '--module', 'phpcoroutines', '--requires', 'coroutines', *report(phase))
     if 'ports' in modules:
         if integrate:
             for name, runner in [('ports-php', 'server.py'), ('ports-configuration', 'configuration.py'),
@@ -588,12 +551,6 @@ def plan(args, reports):
                 script(name, 'tests/modules/ports/' + runner, *php_for('curl', 'sockets'), *engines,
                        '--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                        '--source-ref', 'HEAD', *report(name))
-        if integrate:
-            for inventory in ['direct', 'framing']:
-                name = 'ports-' + inventory + '-originals'
-                script(name, 'tests/modules/ports/upstream.py', '--source', manifest.parent / 'src',
-                       '--inventory', inventory, *php_for('curl', 'sockets', 'posix', 'mbstring'),
-                       *engines, *report(name))
         script('ports-socket', 'tests/modules/ports/socket_workflow.py', '--source', ROOT / 'target/upstream/src',
                '--core', manifest.parent / 'src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('ports-socket'))
@@ -618,8 +575,6 @@ def plan(args, reports):
         script('ossupport-php', 'tests/modules/ossupport/php.py', '--manifest', manifest,
                '--source', ROOT / 'target/upstream/src', *php, *engines, *report('ossupport-php'))
     if 'coroutine' in modules and integrate:
-        script('coroutine-originals', 'tests/modules/coroutine/upstream.py', '--source', ROOT / 'target/upstream/src',
-               *php_for('posix', 'mbstring'), *engines, *report('coroutine-originals'))
         native_options = ['--php-prefix', subprocess.check_output(['php-config', '--prefix'], text=True).strip()] if sys.platform == 'darwin' else []
         if getattr(args, 'gtest_prefix', None):
             native_options += ['--gtest-prefix', args.gtest_prefix]
@@ -664,8 +619,6 @@ def plan(args, reports):
                manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report('framing-native'))
         script('framing-traces', 'tests/modules/framing/trace.py', *report('framing-traces'))
         if integrate:
-            script('framing-originals', 'tests/modules/framing/upstream.py', '--source', ROOT / 'target/upstream/src',
-                   *php_for('mbstring'), *engines, *report('framing-originals'))
             script('framing-versioned-expectation', 'corpus/upstream/versioned.py',
                    '--source', ROOT / 'target/upstream/src', '--case', 'tests/swoole_server/wrong_eof_setting.phpt',
                    *php_for('mbstring'), *engines, *report('framing-versioned-expectation'))
@@ -708,9 +661,6 @@ def plan(args, reports):
                *php, *utility_engines, '--build-manifest', manifest,
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                '--source-ref', utility_source, *report('utilities-public-storage'))
-        script('utilities-originals', 'corpus/upstream/run.py', '--source', manifest.parent / 'src',
-               *php, *engines, '--manifest', 'tests/modules/utilities/originals.json', '--require-all',
-               '--isolate-cases', *report('utilities-originals'))
     if 'memory' in modules:
         script('memory-fixed-native-construction', 'tests/modules/memory/fixed_native_construction.py',
                '--source', ROOT / 'target/upstream/src',
@@ -728,8 +678,8 @@ def plan(args, reports):
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                *(['--sanitize'] if sys.platform == 'darwin' else []), *report('memory-native'))
     if 'memory' in modules and integrate:
-        script('memory-table-originals', 'tests/modules/memory/upstream.py', '--source', ROOT / 'target/upstream/src',
-               *php, *engines, '--require-memory-bridge', 'hybrid', '--include-heavy', *report('memory-table-originals'))
+        script('memory-table-witnesses', 'tests/modules/memory/witnesses.py', *php, *engines,
+               '--require-memory-bridge', 'hybrid', *report('memory-table-witnesses'))
     if 'protocols' in modules:
         script('protocols-native', 'tests/modules/protocols/native.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
@@ -743,8 +693,6 @@ def plan(args, reports):
                        *php, *reference_first, *report('protocols-' + name))
             script('protocols-lifecycle', 'tests/modules/protocols/lifecycle.py',
                    *php, *reference_first, *report('protocols-lifecycle'))
-            script('protocols-originals', 'tests/modules/protocols/phpt.py', '--source', ROOT / 'target/upstream/src',
-                   *php, *engines, '--require-all', *report('protocols-originals'))
     if 'timer' in modules:
         pytest('timer-fork-active', 'tests/modules/timer/test_fork.py', *php, *engines)
         if integrate:
@@ -845,28 +793,6 @@ def plan(args, reports):
                            '--engine', f'hybrid={hybrid}']
         script('http-binding-reflection', 'tests/modules/http/binding_reflection.py',
                *php, *reference_first, *report('http-binding-reflection'))
-        for group, name in [('swoole_http_server', 'http-full-originals'),
-                            ('swoole_http_server_coro', 'http-coro-full-originals')]:
-            inventory = reports / (name + '-manifest.json')
-            script(name + '-manifest', 'tests/modules/http/full_originals.py',
-                   '--source', ROOT / 'target/upstream/src', '--group', group, '--output', inventory)
-            script(name, 'corpus/upstream/run.py', '--source', ROOT / 'target/upstream/src',
-                   '--manifest', inventory, *php_for('posix', 'mbstring', 'sockets'), *reference_first,
-                   '--require-all', '--isolate-cases', '--timeout', '90', *report(name))
-    if integrate and 'http2' in modules:
-        inventory = reports / 'http2-full-originals-manifest.json'
-        script('http2-full-originals-manifest', 'tests/modules/http2/full_originals.py',
-               '--source', ROOT / 'target/upstream/src', '--output', inventory)
-        script('http2-full-originals', 'corpus/upstream/run.py', '--source', ROOT / 'target/upstream/src',
-               '--manifest', inventory, *php_for('posix', 'mbstring', 'sockets'), *engines,
-               '--require-all', '--isolate-cases', '--timeout', '90', *report('http2-full-originals'))
-    if integrate and 'clients' in modules:
-        inventory = reports / 'clients-full-originals-manifest.json'
-        script('clients-full-originals-manifest', 'tests/modules/clients/full_originals.py',
-               '--source', ROOT / 'target/upstream/src', '--output', inventory)
-        script('clients-full-originals', 'corpus/upstream/run.py', '--source', ROOT / 'target/upstream/src',
-               '--manifest', inventory, *php_for('posix', 'mbstring', 'sockets'), *engines,
-               '--require-all', '--isolate-cases', '--timeout', '90', *report('clients-full-originals'))
     if integrate:
         script('applications', 'corpus/run.py', *php, *engines, '--require-all', *report('applications'))
     phpt = []
@@ -877,8 +803,9 @@ def plan(args, reports):
             phpt += ['--module', 'timers']
     if args.case and not integrate:
         phpt = [arg for case in args.case for arg in ['--case', case]]
+    # The merge tier's phpt-* jobs run every pinned PHPT; this is for local runs only.
     # Buffer changes affect all queued network output; retain all PHPTs for it.
-    if integrate or 'buffer' in modules or phpt:
+    if not integrate and ('buffer' in modules or phpt):
         script('phpt', 'corpus/upstream/run.py', '--source', manifest.parent / 'src', *php, *engines, *phpt, '--jobs', args.jobs,
                '--require-all', *(['--external-network'] if getattr(args, 'external_network', False) else []), *report('phpt'))
     if args.benchmark:

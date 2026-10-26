@@ -72,10 +72,7 @@ the manifest. Linux builds with native curl hooks need `--php-extension curl`.
 The proxy path keeps its native `%.*s` embedded-NUL truncation and 255-byte
 bound; the checks expect that behavior.
 
-`original.py --source PINNED_SOURCE --engine NAME=EXTENSION --output REPORT`
-runs the unchanged original `set_basic_auth.phpt` with PHP's official runner
-against a loopback HTTPBin-compatible fixture selected through the test's own
-`HTTPBIN_SERVER_HOST/PORT` variables.
+Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
 ## Other probes
 

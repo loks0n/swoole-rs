@@ -155,3 +155,21 @@ missing, and refuses interrupted shards. Tests failing on both are listed, not
 hidden. It records each result and, for skips, the SKIPIF reason and a category
 (service, network, ZTS, stdext, platform, extension, other). Only the runner's
 PASSED counts as passed.
+
+## Attributing a regression
+
+The gate runs every PHPT once against the all-modules hybrid; there are no
+standing per-module PHPT runs. When it reports a test that passes on upstream but
+not on the hybrid, find the module by building single-module hybrids and running
+just that test (graduated modules are always on):
+
+```sh
+python3 tools/build_hybrid.py --module http
+python3 corpus/upstream/run.py --source target/upstream/src \
+  --case tests/swoole_http_server/example.phpt \
+  --engine upstream=target/upstream/src/modules/swoole.so \
+  --engine hybrid=target/hybrid/rust-http/modules/swoole.so
+```
+
+Add `--external-network` for tests that need outside services, and repeat with
+the next candidate module until the failure follows one.
