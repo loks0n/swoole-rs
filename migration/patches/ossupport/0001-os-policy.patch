@@ -1,5 +1,5 @@
 diff --git a/src/os/async_thread.cc b/src/os/async_thread.cc
-index 096c5f5d0..9f299b5a6 100644
+index 096c5f5d0..c67e0761a 100644
 --- a/src/os/async_thread.cc
 +++ b/src/os/async_thread.cc
 @@ -17,2 +17,9 @@
@@ -82,16 +82,24 @@ index 096c5f5d0..9f299b5a6 100644
          max_idle_time = _max_idle_time == 0 ? SW_AIO_THREAD_MAX_IDLE_TIME : _max_idle_time;
 +#endif
      }
-@@ -142,3 +203,8 @@ class ThreadPool {
+@@ -140,4 +201,11 @@ class ThreadPool {
+         const size_t queue_size = queue_.count();
+-        const bool insufficient_idle_workers = queue_size > idle_worker_num;
          const double queue_wait_time = queue_.get_max_wait_time();
 +#ifdef SWOOLE_RS_OSSUPPORT
-+        const bool waited_too_long =
-+            swr_v1_os_pool_expand(0, thread_count, worker_num, max_wait_time, queue_wait_time) != 0;
++        size_t n = swr_v1_os_pool_expand(idle_worker_num, queue_size, thread_count, worker_num, max_wait_time,
++                                         queue_wait_time);
++        if (n == 0) {
++            return;
++        }
 +#else
++        const bool insufficient_idle_workers = queue_size > idle_worker_num;
          const bool waited_too_long = max_wait_time > 0 && queue_wait_time > max_wait_time;
+@@ -149,2 +217,3 @@ class ThreadPool {
+         n = SW_MIN(n, worker_num - thread_count);
 +#endif
-         if (!insufficient_idle_workers && !waited_too_long) {
-@@ -265,7 +331,19 @@ void ThreadPool::main_func(const bool is_core_worker) {
+         swoole_trace_log(SW_TRACE_AIO,
+@@ -265,7 +334,19 @@ void ThreadPool::main_func(const bool is_core_worker) {
          swoole_debug("%s: %f", event ? "pop 1 event" : "no event", microtime());
 +#ifdef SWOOLE_RS_OSSUPPORT
 +        const auto action = swr_v1_os_worker_action(event != nullptr,
@@ -111,13 +119,13 @@ index 096c5f5d0..9f299b5a6 100644
              } else if (sw_unlikely(event->canceled)) {
 +#endif
                  event->error = SW_ERROR_AIO_CANCELED;
-@@ -292,2 +370,5 @@ void ThreadPool::main_func(const bool is_core_worker) {
+@@ -292,2 +373,5 @@ void ThreadPool::main_func(const bool is_core_worker) {
              }
 +#ifdef SWOOLE_RS_OSSUPPORT
 +        } else if (action == 4) {
 +#else
          } else if (timeout) {
-@@ -297,2 +378,3 @@ void ThreadPool::main_func(const bool is_core_worker) {
+@@ -297,2 +381,3 @@ void ThreadPool::main_func(const bool is_core_worker) {
              }
 +#endif
              /* notifies the main thread to release this thread */

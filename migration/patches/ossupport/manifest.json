@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-os-policy.patch",
-      "sha256": "3fe4b35fb4e3b27d97868b7af088b7063e9ff273d2161b91f74b88893548da07",
+      "sha256": "2b6e750fd8901cc661f62ef3d6c9a30f0f1cb9abb6f1c88d509e3d52a0ace99b",
       "upstream_paths": [
         "src/os/async_thread.cc",
         "src/os/base.cc",
