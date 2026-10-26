@@ -50,7 +50,7 @@ Feature values come from `MODULES` in `tools/build_hybrid.py`.
 | M15 | `--fix-halfclose` | — | patches (applied first) on `src/server/{base,master,reactor_thread}.cc`, `src/network/socket.cc` | Native (not Rust) correction: drain queued output before close, keep pre-queue responses, send TLS close_notify. |
 | M16 | `locks` | 1024 | `src/lock/*.cc`, `ext-src/swoole_{lock,atomic,thread_lock,thread_atomic}.cc` (+ headers) | Native locks and PHP lock/atomic. [Contract](../native/locks/contract.md). |
 | M17 | `wrappers` | 2048 | `src/wrapper/{event,http}.cc` | Event, timer and HTTP wrapper policy. [Contract](../native/wrappers/contract.md). |
-| M18 | `framing` | 4096 | `src/protocol/{base,mime_type}.cc` | Packet framing and MIME lookup. |
+| M18 | `framing` | 4096 | `src/protocol/{base,mime_type}.cc` | Packet framing and MIME lookup. Graduated: always on. |
 | M19 | `corebase` | 8192 | `src/core/base.cc` | Core base utilities and lifecycle policy. |
 | M20 | `ossupport` | 131072 | `src/os/{async_thread,base,file,msg_queue,sendfile,unix_socket}.cc` | OS helpers and async worker pool. [Boundary](os-support-abi-v1.md). |
 | M21 | `tls` | 262144 | `src/protocol/{ssl,dtls}.cc` | TLS/DTLS setup and BIO policy; OpenSSL unchanged. [Boundary](tls-dtls-abi-v1.md). |

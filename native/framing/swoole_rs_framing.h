@@ -1,8 +1,5 @@
 #ifndef SWOOLE_RS_FRAMING_H
 #define SWOOLE_RS_FRAMING_H
-#ifndef SWOOLE_RS_FRAMING
-#error "Framing overlay requires --enable-swoole-rs-framing"
-#endif
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus

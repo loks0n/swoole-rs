@@ -32,7 +32,7 @@ def main():
             source = directory / (engine + '.cc')
             source.write_text(overlay.original('src/protocol/mime_type.cc') if engine == 'upstream' else overlay.generated()['src/protocol/mime_type.cc'])
             binary = directory / engine
-            command = ['c++', '-std=c++14', '-O2', '-UNDEBUG', '-DHAVE_CONFIG_H', '-DSWOOLE_RS_FRAMING',
+            command = ['c++', '-std=c++14', '-O2', '-UNDEBUG', '-DHAVE_CONFIG_H',
                        '-I' + str(tree), '-I' + str(tree / 'include'), '-I' + str(ROOT / 'native/framing'),
                        str(Path(__file__).with_suffix('.cc')), str(source), '-o', str(binary)]
             if args.openssl_root: command[1:1] = ['-I' + str(args.openssl_root / 'include')]
