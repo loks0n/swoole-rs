@@ -29,7 +29,7 @@ class ParallelPhases(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
-                 patch.object(dev.subprocess, 'run', side_effect=fake), \
+                 patch.object(dev, 'execute', side_effect=fake), \
                  patch('sys.argv', ['dev.py', 'integrate', '--module', 'buffer', '--jobs', str(jobs)]):
                 self.assertEqual(dev.main(), 0)
             report = json.loads(next(root.glob('target/reports/dev/*/loop.json')).read_text())
