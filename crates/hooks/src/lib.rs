@@ -1,5 +1,12 @@
 //! Coroutine I/O policy over copied scalars. No native callbacks, storage,
 //! syscalls, errno, allocation, retained borrows or context switching.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 
 /// The original per-hook guard. Some DNS hooks intentionally do not use it.
 #[unsafe(no_mangle)]

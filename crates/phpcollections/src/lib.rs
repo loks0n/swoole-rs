@@ -1,5 +1,12 @@
 //! PHP collection decisions over copied metadata. Native storage and all effects
 //! remain in the facade; no Rust call allocates, invokes Zend or suspends.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_phpcollections_capacity(capacity: isize) -> isize {

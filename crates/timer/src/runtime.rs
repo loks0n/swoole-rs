@@ -106,6 +106,7 @@ pub unsafe extern "C" fn swr_v1_timer_delay_deadline(
     if deadline.is_null() {
         return 0;
     }
+    // SAFETY: non-null (checked above), aligned, writable output.
     unsafe { deadline.write(value) };
     1
 }
