@@ -43,7 +43,7 @@ Feature values come from `MODULES` in `tools/build_hybrid.py`.
 | M06 | `coroutine` | 32768 | `src/coroutine/{base,context,thread_context,channel}.cc` (+ headers) | Scheduler transitions, channel fairness/storage. [Boundary](coroutine-abi-v1.md). |
 | M07 | `hooks` | 65536 | `src/coroutine/{hook,socket,system,file,file_lock,iouring,uring_socket}.cc`, `ext-src/swoole_runtime.cc`, `include/swoole_coroutine_socket.h` | Coroutine I/O and runtime hooks. [Boundary](hooks-abi-v1.md). |
 | M08 | `process` | 524288 | `src/server/{worker,task_worker,process,manager,reactor_process}.cc`, `src/os/{process_pool,pipe,signal,wait}.cc` | Workers, process pool, IPC, signals. [Boundary](process-abi-v1.md). |
-| M09 | `base64` | 8 | `src/core/base64.cc` | [Contract](core-abi-v1.md). |
+| M09 | `base64` | 8 | `src/core/base64.cc` | [Contract](core-abi-v1.md). Graduated: always on. |
 | M10 | `crc32` | 16 | `src/core/crc32.cc` | [Contract](core-abi-v1.md). Graduated: always on. |
 | M11 | `error` | 32 | `src/core/error.cc` | Known error strings and formatting. [Contract](core-abi-v1.md). |
 | M12 | `memory` | 64 | `src/memory/`, `src/core/{heap,channel}.cc` (+ headers) | Memory pools, shared storage, core collections. `native/memory/swoole_rs_memory.h`. |

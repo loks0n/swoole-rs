@@ -42,7 +42,7 @@ cargo feature. Reference builds (`tools/build_upstream.py`,
 `build_hybrid.py --backend upstream`) stay pristine: they are the oracle that
 differential tests compare against, not a fallback.
 
-Graduated: crc32.
+Graduated: base64, crc32.
 
 ## Roadmap
 

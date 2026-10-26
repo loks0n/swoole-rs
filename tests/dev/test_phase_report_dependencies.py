@@ -14,7 +14,7 @@ class PhaseReports(unittest.TestCase):
             ('phphelpers','phphelpers-async-sqlite-sdk','phphelpers-sdk'),
             ('phphelpers','phphelpers-async-odbc-sdk','phphelpers-sdk'),
             ('phpevents','phpevents-alias-original','phpevents-originals-manifest'),
-            ('base64','base64-consumers-upstream','reference-identity')]:
+            ('buffer','base64-consumers-upstream','reference-identity')]:  # base64 is graduated, so always selected
             with self.subTest(child=child):
                 command=[sys.executable,'tools/dev.py','integrate','--module',module,'--phase',child,'--plan']
                 failed=subprocess.run(command,cwd=ROOT,capture_output=True,text=True)

@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-rust-base64.patch",
-      "sha256": "4cc0b75c437f2609c148a59ec20b192adeedfe1f3243c831fa1232680d97a8a6",
+      "sha256": "bd2189feb37971e1580b372aed210117c1c94ecb9cf6a91b4fcd92ffc8414870",
       "upstream_paths": [
         "src/core/base64.cc"
       ]

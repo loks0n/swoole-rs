@@ -1,8 +1,8 @@
 diff --git a/config.m4 b/config.m4
-index 230b1c09a..fea70c969 100644
+index 230b1c09a..4eb9ddd6f 100644
 --- a/config.m4
 +++ b/config.m4
-@@ -38,2 +38,142 @@ PHP_ARG_ENABLE([swoole],
+@@ -38,2 +38,137 @@ PHP_ARG_ENABLE([swoole],
  
 +PHP_ARG_WITH([swoole-rs],
 +  [Rust migration bridge prefix],
@@ -23,11 +23,6 @@ index 230b1c09a..fea70c969 100644
 +  [Rust timer queue],
 +  [AS_HELP_STRING([--enable-swoole-rs-timer],
 +    [Use the Rust timer queue (requires --with-swoole-rs)])], [no], [no])
-+
-+PHP_ARG_ENABLE([swoole-rs-base64],
-+  [Rust base64 primitive],
-+  [AS_HELP_STRING([--enable-swoole-rs-base64],
-+    [Use the Rust base64 primitive (requires --with-swoole-rs)])], [no], [no])
 +
 +PHP_ARG_ENABLE([swoole-rs-error],
 +  [Rust error primitive],
@@ -145,7 +140,7 @@ index 230b1c09a..fea70c969 100644
 +    [Use Rust PHP Coroutine policy (requires --with-swoole-rs)])], [no], [no])
 +
  PHP_ARG_ENABLE([mysqlnd],
-@@ -1301,2 +1441,202 @@ EOF
+@@ -1301,2 +1436,196 @@ EOF
  
 +    if test "$PHP_SWOOLE_RS_WEBSOCKET" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust WebSocket kernel requires --with-swoole-rs=DIR])
@@ -155,9 +150,6 @@ index 230b1c09a..fea70c969 100644
 +    fi
 +    if test "$PHP_SWOOLE_RS_TIMER" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust timer queue requires --with-swoole-rs=DIR])
-+    fi
-+    if test "$PHP_SWOOLE_RS_BASE64" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
-+        AC_MSG_ERROR([Rust base64 primitive requires --with-swoole-rs=DIR])
 +    fi
 +    if test "$PHP_SWOOLE_RS_ERROR" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust error primitive requires --with-swoole-rs=DIR])
@@ -336,9 +328,6 @@ index 230b1c09a..fea70c969 100644
 +        AS_CASE([$host_os], [linux*], [PHP_ADD_LIBRARY(dl, 1, SWOOLE_SHARED_LIBADD)])
 +        PHP_ADD_LIBRARY_WITH_PATH(swoole_rs_ffi, [$PHP_SWOOLE_RS/lib], SWOOLE_SHARED_LIBADD)
 +        AC_DEFINE(SWOOLE_RS_BRIDGE, 1, [Link the Rust migration bridge])
-+        if test "$PHP_SWOOLE_RS_BASE64" != "no"; then
-+            AC_DEFINE(SWOOLE_RS_BASE64, 1, [Use the Rust base64 primitive])
-+        fi
 +        if test "$PHP_SWOOLE_RS_ERROR" != "no"; then
 +            AC_DEFINE(SWOOLE_RS_ERROR, 1, [Use the Rust error primitive])
 +        fi
@@ -349,7 +338,7 @@ index 230b1c09a..fea70c969 100644
 +
      if test "$PHP_MYSQLND" = "yes"; then
 diff --git a/ext-src/php_swoole.cc b/ext-src/php_swoole.cc
-index 66f2386f2..89195ebbb 100644
+index 66f2386f2..8b16789f6 100644
 --- a/ext-src/php_swoole.cc
 +++ b/ext-src/php_swoole.cc
 @@ -21,2 +21,7 @@
@@ -360,7 +349,7 @@ index 66f2386f2..89195ebbb 100644
 +#endif
 +
  BEGIN_EXTERN_C()
-@@ -614,2 +619,175 @@ static void sw_after_fork(void *args) {
+@@ -614,2 +619,169 @@ static void sw_after_fork(void *args) {
  PHP_MINIT_FUNCTION(swoole) {
 +#ifdef SWOOLE_RS_BRIDGE
 +    const uint32_t rust_abi = swr_v1_abi_version();
@@ -385,12 +374,6 @@ index 66f2386f2..89195ebbb 100644
 +#ifdef SWOOLE_RS_TIMER
 +    if ((rust_features & 4) == 0) {
 +        php_error_docref(nullptr, E_WARNING, "Rust bridge missing timer feature");
-+        return FAILURE;
-+    }
-+#endif
-+#ifdef SWOOLE_RS_BASE64
-+    if ((rust_features & 8) == 0) {
-+        php_error_docref(nullptr, E_WARNING, "Rust bridge missing base64 feature");
 +        return FAILURE;
 +    }
 +#endif
@@ -536,7 +519,7 @@ index 66f2386f2..89195ebbb 100644
 +    SW_REGISTER_LONG_CONSTANT("SWOOLE_RS_FEATURE_BITS", rust_features);
 +#endif
      ZEND_INIT_MODULE_GLOBALS(swoole, php_swoole_init_globals, nullptr);
-@@ -1106,2 +1284,7 @@ PHP_MINFO_FUNCTION(swoole) {
+@@ -1106,2 +1278,7 @@ PHP_MINFO_FUNCTION(swoole) {
      php_info_print_table_row(2, "Version", SWOOLE_VERSION);
 +#ifdef SWOOLE_RS_BRIDGE
 +    snprintf(buf, sizeof(buf), "ABI %u, features %llu", static_cast<unsigned>(swr_v1_abi_version()),

@@ -12,7 +12,6 @@ default = []
 websocket = ["dep:swoole-rs-websocket"]
 buffer = ["dep:swoole-rs-buffer"]
 timer = ["dep:swoole-rs-timer"]
-base64 = ["dep:swoole-rs-base64"]
 error = ["dep:swoole-rs-error"]
 
 protocols = ["dep:swoole-rs-protocols"]
@@ -49,7 +48,7 @@ phpcoroutines = ["dep:swoole-rs-phpcoroutines"]
 swoole-rs-websocket = { path = "../websocket", optional = true }
 swoole-rs-buffer = { path = "../buffer", optional = true }
 swoole-rs-timer = { path = "../timer", optional = true }
-swoole-rs-base64 = { path = "../base64", optional = true }
+swoole-rs-base64 = { path = "../base64" }
 swoole-rs-crc32 = { path = "../crc32" }
 swoole-rs-error = { path = "../error", optional = true }
 swoole-rs-protocols = { path = "../protocols", optional = true }
