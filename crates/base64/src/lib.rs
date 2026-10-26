@@ -1,6 +1,13 @@
 //! Allocation-free Swoole base64, including its permissive decoder write semantics.
 // Ported from Swoole src/core/base64.cc, Copyright (c) 2012-2017 The Swoole Group.
 // Original author: Tianfeng Han <rango@swoole.com>. Apache License, Version 2.0.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 
 use std::mem::MaybeUninit;
 
@@ -57,16 +64,13 @@ fn encode(input: &[u8], output: &mut [MaybeUninit<u8>]) -> usize {
 #[target_feature(enable = "neon")]
 unsafe fn encode_neon(input: &[u8], output: &mut [MaybeUninit<u8>]) {
     use core::arch::aarch64::*;
-    // One immutable alphabet, not four persistent copies. Every load is
-    // within its initialized 64-byte extent.
-    let table = unsafe {
-        uint8x16x4_t(
-            vld1q_u8(ALPHABET.as_ptr()),
-            vld1q_u8(ALPHABET.as_ptr().add(16)),
-            vld1q_u8(ALPHABET.as_ptr().add(32)),
-            vld1q_u8(ALPHABET.as_ptr().add(48)),
-        )
+    // One immutable alphabet, not four persistent copies.
+    let quarter = |offset: usize| {
+        // SAFETY: `offset` is 0, 16, 32 or 48, so these 16 bytes lie inside the
+        // initialized 64-byte `ALPHABET`.
+        unsafe { vld1q_u8(ALPHABET.as_ptr().wrapping_add(offset)) }
     };
+    let table = uint8x16x4_t(quarter(0), quarter(16), quarter(32), quarter(48));
     for (bytes, slots) in input
         .as_chunks::<48>()
         .0
@@ -75,6 +79,7 @@ unsafe fn encode_neon(input: &[u8], output: &mut [MaybeUninit<u8>]) {
     {
         // Deinterleave sixteen complete triples, calculate their sextets, and
         // interleave four encoded characters per triple into exactly 64 slots.
+        // SAFETY: `bytes` is a complete 48-byte chunk.
         let uint8x16x3_t(a, b, c) = unsafe { vld3q_u8(bytes.as_ptr()) };
         let encoded = uint8x16x4_t(
             vqtbl4q_u8(table, vshrq_n_u8::<2>(a)),
@@ -94,7 +99,8 @@ unsafe fn encode_neon(input: &[u8], output: &mut [MaybeUninit<u8>]) {
             ),
             vqtbl4q_u8(table, vandq_u8(c, vdupq_n_u8(63))),
         );
-        // MaybeUninit permits this complete write without reading old output.
+        // SAFETY: `slots` is a complete, exclusive 64-slot chunk; MaybeUninit permits
+        // this full write without reading old output.
         unsafe { vst4q_u8(slots.as_mut_ptr().cast(), encoded) };
     }
 }
@@ -127,44 +133,47 @@ fn encode_scalar(input: &[u8], output: &mut [MaybeUninit<u8>]) -> usize {
 // SAFETY: positive length, initialized readable input, writable full encoded
 // output extent, valid pointer arithmetic; the extents may overlap.
 unsafe fn encode_overlapping(input: *const u8, length: usize, output: *mut u8) -> usize {
+    // One raw read or store per call, in the C++ order; `wrapping_add` keeps the
+    // original provenance without forming references.
+    let get = |i: usize| {
+        // SAFETY: every caller passes `i < length`, inside the readable input.
+        unsafe { input.wrapping_add(i).read() }
+    };
+    let put = |at: usize, byte: u8| {
+        // SAFETY: `at` stays below the encoded size, inside the writable output.
+        unsafe { output.wrapping_add(at).write(byte) }
+    };
     let mut written = 0;
     for i in 0..length {
         let sextet = match i % 3 {
-            0 => unsafe { input.add(i).read() >> 2 },
-            1 => unsafe { ((input.add(i - 1).read() & 3) << 4) + (input.add(i).read() >> 4) },
-            _ => unsafe { ((input.add(i - 1).read() & 15) << 2) + (input.add(i).read() >> 6) },
+            0 => get(i) >> 2,
+            1 => ((get(i - 1) & 3) << 4) + (get(i) >> 4),
+            _ => ((get(i - 1) & 15) << 2) + (get(i) >> 6),
         };
-        unsafe { output.add(written).write(ALPHABET[sextet as usize]) };
+        put(written, ALPHABET[sextet as usize]);
         written += 1;
         if i % 3 == 2 {
             // This reread must occur after the preceding store, just as in C++.
-            let sextet = unsafe { input.add(i).read() & 63 };
-            unsafe { output.add(written).write(ALPHABET[sextet as usize]) };
+            put(written, ALPHABET[(get(i) & 63) as usize]);
             written += 1;
         }
     }
     let last = length - 1;
     match last % 3 {
         0 => {
-            let sextet = unsafe { (input.add(last).read() & 3) << 4 };
-            unsafe {
-                output.add(written).write(ALPHABET[sextet as usize]);
-                output.add(written + 1).write(b'=');
-                output.add(written + 2).write(b'=');
-            }
+            put(written, ALPHABET[((get(last) & 3) << 4) as usize]);
+            put(written + 1, b'=');
+            put(written + 2, b'=');
             written += 3;
         }
         1 => {
-            let sextet = unsafe { (input.add(last).read() & 15) << 2 };
-            unsafe {
-                output.add(written).write(ALPHABET[sextet as usize]);
-                output.add(written + 1).write(b'=');
-            }
+            put(written, ALPHABET[((get(last) & 15) << 2) as usize]);
+            put(written + 1, b'=');
             written += 2;
         }
         _ => {}
     }
-    unsafe { output.add(written).write(0) };
+    put(written, 0);
     written
 }
 
@@ -268,12 +277,14 @@ pub unsafe extern "C" fn swr_v1_base64_encode(
         // positive length satisfy the raw source-ordered encoder's contract.
         return unsafe { encode_overlapping(input, length, output) };
     }
-    // SAFETY: validated extents do not overlap (or input is empty).
+    // Validated extents do not overlap (or input is empty).
     let input = if length == 0 {
         &[]
     } else {
+        // SAFETY: the caller lends `length` readable bytes, disjoint from the output.
         unsafe { std::slice::from_raw_parts(input, length) }
     };
+    // SAFETY: the caller lends `size` writable bytes, disjoint from the input.
     let output = unsafe { std::slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), size) };
     encode(input, output)
 }
@@ -296,12 +307,13 @@ pub unsafe extern "C" fn swr_v1_base64_decode(
     if output.is_null() || !valid_range(input, length) || !valid_range(output, size) {
         return 0;
     }
-    // SAFETY: caller provides valid disjoint allocations; bounds were checked.
     let input = if length == 0 {
         &[]
     } else {
+        // SAFETY: the caller lends `length` readable bytes, disjoint from the output.
         unsafe { std::slice::from_raw_parts(input, length) }
     };
+    // SAFETY: the caller lends `length + 1` writable bytes, disjoint from the input.
     let output = unsafe { std::slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), size) };
     decode(input, output)
 }
