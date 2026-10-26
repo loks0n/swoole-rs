@@ -101,6 +101,47 @@ jobs:
           name: phpt-engines
           path: target/phpt/
 
+  # swoole_stdext needs the experimental --stdext build, which changes PHP itself
+  # (typed arrays, methods on scalars), so it gets its own engines and its own gate.
+  phpt-stdext:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: .devcontainer/install.sh
+      - uses: actions/cache/restore@v4
+        with:
+          path: target/upstream
+          key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
+      - if: hashFiles('target/upstream/src/run-tests.php') == ''
+        run: python3 tools/build_upstream.py
+      - uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-
+      - run: cargo fetch --locked
+      - run: |
+          python3 tools/build_hybrid.py --backend upstream --stdext | tee upstream.log
+          python3 tools/build_hybrid.py --stdext $(python3 -c 'from tools.build_hybrid import SELECTABLE; print(*(f"--module {m}" for m in SELECTABLE))') | tee hybrid.log
+          mkdir -p target/phpt
+          cp -L "$(sed -n 's/^\(Built\|Cached\) upstream: //p' upstream.log)" target/phpt/upstream.so
+          cp -L "$(sed -n 's/^\(Built\|Cached\) rust: //p' hybrid.log)" target/phpt/hybrid.so
+          python3 corpus/upstream/inventory.py --output target/phpt/manifest.json
+      - id: extensions
+        run: echo "args=$(sed -n 's/^extension=\(.*\)/--php-extension \1/p' /etc/php/*/cli/conf.d/*.ini | sed 's/\.so$//' | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+      - run: |
+          for engine in upstream hybrid; do
+            python3 corpus/upstream/run.py --manifest target/phpt/manifest.json --module swoole_stdext --timeout 30 \
+              ${{ steps.extensions.outputs.args }} --engine $engine=target/phpt/$engine.so \
+              --output target/phpt/stdext-$engine.json || [ $? -eq 1 ]
+          done
+      - run: python3 corpus/upstream/gate.py target/phpt/stdext-*.json --output phpt-stdext.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phpt-stdext
+          path: phpt-stdext.json
+
   phpt:
     needs: phpt-build
     runs-on: ubuntu-24.04
