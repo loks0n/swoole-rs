@@ -16,6 +16,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--engine', action='append', required=True, help='First engine is the reference')
     parser.add_argument('--php', default='php')
+    parser.add_argument('--php-extension', action='append', default=[], help='PHP module loaded before Swoole')
     parser.add_argument('--output', type=Path, default=ROOT / 'target/reports/protocols-reply.json')
     args = parser.parse_args()
     script = Path(__file__).with_suffix('.php')
@@ -24,7 +25,7 @@ def main():
               'scope': 'Actual Zend Redis formatting, nested lists/maps, binary/empty replies, scalar conversions, exception and callback order. Invalid non-array SET/MAP is excluded because original dereferences after throwing.',
               'engines': [], 'results': []}
     reference = None
-    for engine in parse_engines(args.engine, args.php):
+    for engine in parse_engines(args.engine, args.php, args.php_extension):
         report['engines'].append(engine.metadata())
         run = subprocess.run(engine.command(str(script)), capture_output=True, text=True, timeout=30)
         row = {'engine': engine.name, 'returncode': run.returncode, 'stderr': run.stderr, 'passed': False}
