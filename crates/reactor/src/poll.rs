@@ -127,6 +127,10 @@ pub extern "C" fn swr_v1_reactor_poll_from(events: i16) -> i32 {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "tests drive the native integer interfaces with literal and loop values"
+)]
 mod tests {
     use super::*;
     #[test]

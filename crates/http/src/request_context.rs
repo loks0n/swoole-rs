@@ -258,10 +258,10 @@ pub(crate) fn try_boxed<T>(value: T) -> Option<Box<T>> {
     if storage.is_null() {
         return None;
     }
-    unsafe {
-        storage.write(value);
-        Some(Box::from_raw(storage))
-    }
+    // SAFETY: a fresh, non-null allocation with `T`'s layout.
+    unsafe { storage.write(value) };
+    // SAFETY: a global allocation with `Box`'s layout, initialized above.
+    Some(unsafe { Box::from_raw(storage) })
 }
 /// Allocate only Rust metadata. Native maps null to its exception after return;
 /// no external parser/String/FILE or callback is created through Rust.
@@ -274,6 +274,7 @@ pub extern "C" fn swr_v2_http_request_new() -> *mut HttpRequestContext {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_request_drop(owner: *mut HttpRequestContext) {
     if !owner.is_null() {
+        // SAFETY: a unique, live owner from `request_new`, dropped once.
         drop(unsafe { Box::from_raw(owner) });
     }
 }
@@ -556,6 +557,8 @@ pub unsafe extern "C" fn swr_v2_http_request_text_copy(
         if output.is_null() || capacity < text.len() || capacity > isize::MAX as usize {
             return INVALID;
         }
+        // SAFETY: non-null, `text.len() <= capacity <= isize::MAX` writable bytes, disjoint
+        // from the owner's text.
         unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), output, text.len()) };
     }
     *written = text.len();
@@ -603,10 +606,11 @@ pub unsafe extern "C" fn swr_v2_http_request_text_snapshot_new(
         return OVERFLOW;
     };
     if capacity >= length {
-        unsafe {
-            std::ptr::copy_nonoverlapping(text.as_ptr(), scratch, text.len());
-            scratch.add(text.len()).write(0);
-        }
+        // `text.len() + 1 <= capacity` writable scratch bytes, disjoint from the owner's text.
+        // SAFETY: as above.
+        unsafe { std::ptr::copy_nonoverlapping(text.as_ptr(), scratch, text.len()) };
+        // SAFETY: as above.
+        unsafe { scratch.wrapping_add(text.len()).write(0) };
         *output = crate::HttpProxyText {
             data: scratch,
             length: text.len(),
@@ -639,6 +643,7 @@ pub unsafe extern "C" fn swr_v2_http_request_text_snapshot_drop(
     lease: *mut HttpRequestTextSnapshot,
 ) {
     if !lease.is_null() {
+        // SAFETY: one live, uniquely owned snapshot from `text_snapshot`, dropped once.
         drop(unsafe { Box::from_raw(lease) });
     }
 }
@@ -661,6 +666,7 @@ pub unsafe extern "C" fn swr_v2_http_request_upload_plan(
     let Ok(name) = owner.text(1) else {
         return std::ptr::null();
     };
+    // SAFETY: `name` is the owner's live text; `count` is the caller's writable output.
     unsafe {
         crate::swr_v2_http_multipart_upload(stage, observed, name.as_ptr(), name.len(), count)
     }
@@ -683,10 +689,11 @@ pub unsafe extern "C" fn swr_v2_http_request_upload_template(
     if output.is_null() || capacity <= form.template.len() || capacity > isize::MAX as usize {
         return INVALID;
     }
-    unsafe {
-        std::ptr::copy_nonoverlapping(form.template.as_ptr(), output, form.template.len());
-        output.add(form.template.len()).write(0);
-    }
+    // `template.len() < capacity` writable output bytes, disjoint from the owner.
+    // SAFETY: as above.
+    unsafe { std::ptr::copy_nonoverlapping(form.template.as_ptr(), output, form.template.len()) };
+    // SAFETY: as above.
+    unsafe { output.wrapping_add(form.template.len()).write(0) };
     form.uploaded = 0;
     0
 }

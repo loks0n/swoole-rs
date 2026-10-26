@@ -18,6 +18,12 @@ pub struct SwrLogAction {
 /// # Safety
 /// `state` is a unique live aligned caller-owned context for this call only.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "reproduces C's unsigned comparisons at each operand width"
+)]
 pub unsafe extern "C" fn swr_v2_utils_log_frontdoor_step(
     state: *mut SwrLogFrontdoor,
     operation: u32,
@@ -143,6 +149,10 @@ pub struct SwrLogHex {
 /// `state` is a unique live aligned context for this call only. `length` remains
 /// the original captured length. `previous` is the last requested effect result.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "native size_t += int of the last effect's result"
+)]
 pub unsafe extern "C" fn swr_v2_utils_log_hex_step(
     state: *mut SwrLogHex,
     length: usize,

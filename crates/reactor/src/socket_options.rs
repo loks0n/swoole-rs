@@ -42,6 +42,10 @@ fn timeout(phase: u32, action: i32, value: i32) -> ReactorSocketTimeoutReply {
         microseconds: 0,
     }
 }
+#[expect(
+    clippy::cast_possible_wrap,
+    reason = "native timeval from a double timeout, as upstream"
+)]
 fn publish_timeout(phase: u32, kind: i32) -> ReactorSocketTimeoutReply {
     for index in phase..4 {
         if kind & (1 << index) != 0 {
@@ -57,6 +61,10 @@ fn publish_timeout(phase: u32, kind: i32) -> ReactorSocketTimeoutReply {
 /// Floating conversion matches pinned C int casts only in their defined finite
 /// representable domain. NaN/out-of-range conversion parity is not asserted.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "native timeval from a double timeout, as upstream"
+)]
 pub extern "C" fn swr_v1_reactor_socket_timeout(
     operation: u32,
     phase: u32,

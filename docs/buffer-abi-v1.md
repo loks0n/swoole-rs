@@ -101,5 +101,6 @@ and the Rust reactor are built, removes the facade's embedded cached
 `rs_front_` chunk and flag, leaving only the Rust owner pointer. Without it the
 layout above is unchanged. Public `BufferChunk` and native CLOSE/sendfile objects
 are unchanged; legacy mutable DATA front/allocation is refused in typed mode.
+External code that mutates Buffer internals is supported only without typed mode.
 The Rust owner allocation is larger even with typed mode off (Rust Buffer without
 the Rust reactor).

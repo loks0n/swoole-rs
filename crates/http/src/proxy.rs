@@ -66,6 +66,7 @@ unsafe fn text<'a>(value: HttpProxyText) -> Result<&'a [u8], i32> {
     } else {
         precision.unsigned_abs() as usize
     };
+    // SAFETY: callers pass a text span whose `length` (or precision) bytes are initialized.
     let input = unsafe { bytes(value.data, length) }?;
     Ok(&input[..input.iter().position(|&b| b == 0).unwrap_or(input.len())])
 }
@@ -85,6 +86,7 @@ pub unsafe extern "C" fn swr_v1_http_proxy_credentials(
     if credentials.is_null() || output.is_null() || written.is_null() {
         return INVALID;
     }
+    // SAFETY: non-null (checked above); the caller lends two initialized spans.
     let credentials = unsafe { slice::from_raw_parts(credentials, 2) };
     for value in credentials {
         if value.length > isize::MAX as usize {
@@ -117,9 +119,12 @@ pub unsafe extern "C" fn swr_v1_http_proxy_credentials(
         .try_fold(1usize, |sum, value| sum.checked_add(field_limit(value)))
         .is_none_or(|length| length > i32::MAX as usize)
     {
-        let lengths = [unsafe { text(credentials[0]) }, unsafe {
-            text(credentials[1])
-        }];
+        // Both credential spans are initialized (see the contract).
+        // SAFETY: as above.
+        let user = unsafe { text(credentials[0]) };
+        // SAFETY: as above.
+        let password = unsafe { text(credentials[1]) };
+        let lengths = [user, password];
         let [Ok(user), Ok(password)] = lengths else {
             return OVERFLOW;
         };
@@ -129,13 +134,14 @@ pub unsafe extern "C" fn swr_v1_http_proxy_credentials(
             .and_then(|length| length.checked_add(1))
             .is_none_or(|length| length > i32::MAX as usize)
         {
-            unsafe {
-                output.write(0);
-                written.write(0);
-            }
+            // SAFETY: both are non-null (checked above), writable and disjoint.
+            unsafe { output.write(0) };
+            // SAFETY: as above.
+            unsafe { written.write(0) };
             return 1; // Native publishes the platform EOVERFLOW errno.
         }
     }
+    // SAFETY: non-null (checked above); the caller lends 256 writable bytes, disjoint from inputs.
     let buffer = unsafe { slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), 255) };
     let mut sink = Prefix {
         output: buffer,
@@ -151,6 +157,7 @@ pub unsafe extern "C" fn swr_v1_http_proxy_credentials(
         }
         let limit = field_limit(value).min(255 - sink.length);
         // Validated metadata and a capped native precision bound the only read.
+        // SAFETY: validated span metadata; `limit` never exceeds the native precision.
         let input = match unsafe { bytes(value.data, limit) } {
             Ok(input) => input,
             Err(error) => return error,
@@ -162,10 +169,10 @@ pub unsafe extern "C" fn swr_v1_http_proxy_credentials(
         )]
         let _ = sink.append(input);
     }
-    unsafe {
-        output.add(sink.length).write(0);
-        written.write(sink.length);
-    }
+    // SAFETY: `sink.length <= 255`, inside the 256 writable output bytes.
+    unsafe { output.wrapping_add(sink.length).write(0) };
+    // SAFETY: non-null (checked above), aligned and writable.
+    unsafe { written.write(sink.length) };
     0
 }
 
@@ -186,12 +193,15 @@ pub unsafe extern "C" fn swr_v2_http_proxy_authorization(
     }
     let mut plain = [0u8; 256];
     let mut count = 0;
+    // SAFETY: forwards the caller's credentials; `plain` and `count` are disjoint locals.
     let status =
         unsafe { swr_v1_http_proxy_credentials(credentials, plain.as_mut_ptr(), &mut count) };
     if status < 0 {
         return status;
     }
     // At most 255 bytes plus terminator: the fixed 512-byte output is ample.
+    // SAFETY: `count <= 255` initialized bytes in `plain`; `output` is non-null with 512
+    // writable bytes, enough for the encoding plus NUL, and disjoint from `plain`.
     let encoded = unsafe { swoole_rs_base64::swr_v1_base64_encode(plain.as_ptr(), count, output) };
     // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(encoded) };
@@ -219,14 +229,17 @@ pub unsafe extern "C" fn swr_v1_http_proxy_pack(
     }
     // SAFETY: `request` is non-null (checked above), aligned and initialized per the caller contract.
     let request = unsafe { &*request };
-    let inputs = unsafe {
-        [
-            text(request.target),
-            text(request.host),
-            text(request.version),
-            text(request.authorization),
-        ]
-    };
+    // Every request text span is initialized (see the contract).
+    let inputs = [
+        // SAFETY: as above.
+        unsafe { text(request.target) },
+        // SAFETY: as above.
+        unsafe { text(request.host) },
+        // SAFETY: as above.
+        unsafe { text(request.version) },
+        // SAFETY: as above.
+        unsafe { text(request.authorization) },
+    ];
     let [target, host, version, authorization] = match inputs {
         [Ok(a), Ok(b), Ok(c), Ok(d)] => [a, b, c, d],
         values => return values.into_iter().find_map(Result::err).unwrap_or(INVALID),
@@ -257,6 +270,7 @@ pub unsafe extern "C" fn swr_v1_http_proxy_pack(
     let buffer = if capacity == 0 {
         &mut []
     } else {
+        // SAFETY: non-null when `capacity != 0` (checked above), `capacity <= i32::MAX`, writable.
         unsafe { slice::from_raw_parts_mut(output.cast::<MaybeUninit<u8>>(), capacity - 1) }
     };
     let mut prefix = Prefix {
@@ -287,7 +301,8 @@ pub unsafe extern "C" fn swr_v1_http_proxy_pack(
         prefix.length.min(capacity - 1)
     };
     if capacity != 0 {
-        unsafe { output.add(length).write(0) };
+        // SAFETY: `length <= capacity - 1`, inside the writable output.
+        unsafe { output.wrapping_add(length).write(0) };
     }
     // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { written.write(length) };

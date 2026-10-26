@@ -1,11 +1,4 @@
 //! Pinned utility arithmetic and logging byte policy; no native callbacks.
-#![expect(
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap,
-    clippy::cast_ptr_alignment,
-    clippy::cast_sign_loss,
-    reason = "#157: casts not yet checked"
-)]
 #![cfg_attr(
     not(test),
     deny(
@@ -25,16 +18,24 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 fn promoted(byte: u8, signed: bool) -> u64 {
     if signed {
-        (byte as i8 as i64) as u64
+        i64::from(byte.cast_signed()).cast_unsigned()
     } else {
         u64::from(byte)
     }
 }
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the native hashes' 32-bit mixing truncates and reinterprets by design"
+)]
 fn word(bytes: &[u8], signed: bool) -> u32 {
     bytes.iter().enumerate().fold(0u32, |sum, (i, byte)| {
         sum.wrapping_add((promoted(*byte, signed) as u32).wrapping_shl((8 * i) as u32))
     })
 }
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "the native hashes' 32-bit mixing truncates and reinterprets by design"
+)]
 fn mix(a: &mut u32, b: &mut u32, c: &mut u64) {
     *a = a.wrapping_sub(*b).wrapping_sub(*c as u32);
     *a ^= (*c >> 13) as u32;
@@ -55,6 +56,12 @@ fn mix(a: &mut u32, b: &mut u32, c: &mut u64) {
     *c = c.wrapping_sub(u64::from(*a)).wrapping_sub(u64::from(*b));
     *c ^= u64::from(*b >> 15);
 }
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "the native hashes' 32-bit mixing truncates and reinterprets by design"
+)]
 fn hash(bytes: &[u8], length: usize, algorithm: u32, signed: bool) -> u64 {
     match algorithm {
         0 => bytes.iter().fold(5381u64, |h, b| {
@@ -128,7 +135,12 @@ pub unsafe extern "C" fn swr_v1_utils_hash(
     }
     // Native Jenkins consumes an unsigned-width prefix but mixes the full length.
     let count = if algorithm == 1 {
-        length as u32 as usize
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "native Jenkins' unsigned-width prefix"
+        )]
+        let prefix = length as u32 as usize;
+        prefix
     } else {
         length
     };
@@ -328,9 +340,9 @@ unsafe fn log_bytes<'a>(data: *const u8, precision: i32) -> &'a [u8] {
         // SAFETY: negative precision requires a NUL-terminated input.
         return unsafe { std::ffi::CStr::from_ptr(data.cast()) }.to_bytes();
     }
-    let mut length = 0;
+    let (mut length, limit) = (0, precision.unsigned_abs() as usize);
     // SAFETY: the input is readable through its first NUL or `precision` bytes.
-    while length < precision as usize && unsafe { data.wrapping_add(length).read() } != 0 {
+    while length < limit && unsafe { data.wrapping_add(length).read() } != 0 {
         length += 1;
     }
     // SAFETY: the loop read exactly these `length` bytes.

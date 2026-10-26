@@ -765,14 +765,26 @@ def plan(args, reports):
         pytest('buffer-callbacks', 'tests/modules/buffer/test_callbacks.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a')
         pytest('buffer-posix-iovec', 'tests/modules/buffer/test_iovec.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize')
         if integrate:
+            # Typed Buffer refuses the mutable legacy front that the facade and storage consumers
+            # use, so they run on a Buffer-only build, where the legacy facade still applies (#207).
+            legacy_export = artifact_reports / 'legacy-buffer-export'
+            if typed_buffer(args):
+                script('buffer-legacy-build', 'tools/build_hybrid.py', '--module', 'buffer',
+                       *(['--php-sockets'] if getattr(args, 'php_sockets', False) else []),
+                       '--export', legacy_export, '--jobs', args.jobs,
+                       *(['--native-build-root', args.native_build_root] if getattr(args, 'native_build_root', None) else []),
+                       *(['--ccache', args.ccache] if getattr(args, 'ccache', None) else ['--no-ccache']))
             for consumer in ['random', 'storage', 'metadata', 'facade', 'copy', 'split', 'integer', 'ownership', 'allocation', 'format', 'compatibility']:
                 name = 'string-production-' + consumer
+                legacy = typed_buffer(args) and consumer in ('facade', 'storage')
+                export = legacy_export if legacy else selected_export
+                build = (['--build-manifest', export / 'build-manifest.json', '--archive', export / 'libswoole_rs_ffi.a'] if legacy else
+                         ['--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a'])
                 script(name, 'tests/modules/buffer/string/production.py', '--source', ROOT / 'target/upstream/src',
-                       *php, '--engine', f'hybrid={selected_export / "swoole.so"}',
+                       *php, '--engine', f'hybrid={export / "swoole.so"}',
                        '--engine', f'upstream={native_export / "swoole.so"}',
-                       '--borrow-immutable-exports', '--build-manifest', manifest,
-                       '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--source-ref', 'HEAD',
-                       '--selected-export', selected_export / 'export.json',
+                       '--borrow-immutable-exports', *build, '--source-ref', 'HEAD',
+                       '--selected-export', export / 'export.json',
                        '--native-export', native_export / 'export.json', '--consumer', consumer, *report(name))
         for phase, profile in [('string-originals', '--original-only'), ('string-split', '--split-only'),
                                ('string-integer', '--integer-only'), ('string-ownership', '--ownership-only'),
@@ -959,7 +971,7 @@ def main():
         parser.error('--phase requires candidate/integrate and cannot qualify a benchmark run')
     artifact_identity = None
     if args.artifacts_from:
-        if args.lane != 'integrate' or not args.phase or set(args.phase) & {'build', 'reference-build', 'stdext-reference-build'}:
+        if args.lane != 'integrate' or not args.phase or set(args.phase) & {'build', 'reference-build', 'stdext-reference-build', 'buffer-legacy-build'}:
             parser.error('--artifacts-from requires explicit integration phases without builds')
         try:
             args.artifacts_from = args.artifacts_from.resolve()

@@ -64,6 +64,10 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_create(
         Ok(text) => text,
         Err(status) => return status,
     };
+    #[expect(
+        clippy::cast_ptr_alignment,
+        reason = "alloc honours Layout::new::<LogPath>()"
+    )]
     // SAFETY: `LogPath` is not zero-sized; null is handled below.
     let path = unsafe { alloc(Layout::new::<LogPath>()) }.cast::<LogPath>();
     if path.is_null() {

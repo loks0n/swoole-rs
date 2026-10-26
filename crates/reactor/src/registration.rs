@@ -11,6 +11,7 @@ pub struct RegistrationState {
 /// Poll operation0add/1set/2del. Return0publication;1alreadyexists;2capacity;
 ///3missing-set;4alreadyremoved;5missing-delete. Native retains exact log formats.
 #[unsafe(no_mangle)]
+#[expect(clippy::cast_sign_loss, reason = "native int count compared as size_t")]
 pub extern "C" fn swr_v1_reactor_poll_registration(
     operation: u32,
     exists: u32,
@@ -99,7 +100,7 @@ pub extern "C" fn swr_v1_reactor_epoll_mask(events: i32) -> u32 {
     if events & (1 << 11) != 0 {
         mask |= libc::EPOLLRDHUP | libc::EPOLLHUP | libc::EPOLLERR;
     }
-    mask as u32
+    mask.cast_unsigned()
 }
 
 /// Kqueue actions0publish,1removed-warning,2removal-observer,5filter-warning,

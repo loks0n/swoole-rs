@@ -6,7 +6,7 @@ unsafe extern "C" {
 
 fn whitespace(byte: u8, signed_char: u8) -> bool {
     let promoted = if signed_char != 0 {
-        i32::from(byte as i8)
+        i32::from(byte.cast_signed())
     } else {
         i32::from(byte)
     };
@@ -104,7 +104,13 @@ pub unsafe extern "C" fn swr_v2_utils_search(
 ) -> SwrUtilsSearchResult {
     let needle_length = if mode == 2 {
         // SAFETY: mode 2 requires a valid NUL-terminated needle.
-        unsafe { CStr::from_ptr(needle) }.to_bytes().len() as u32
+        let needle = unsafe { CStr::from_ptr(needle) };
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the native uint32_t needle length"
+        )]
+        let length = needle.to_bytes().len() as u32;
+        length
     } else {
         needle_length
     };
@@ -135,7 +141,7 @@ pub unsafe extern "C" fn swr_v2_utils_search(
                     unsafe { memcmp(current.cast(), needle.cast(), count) == 0 }
                 };
             if matched {
-                offset = position as isize;
+                offset = isize::try_from(position).unwrap_or(-1);
                 break;
             }
             if mode == 2 {
@@ -149,7 +155,7 @@ pub unsafe extern "C" fn swr_v2_utils_search(
         pointer: if offset < 0 {
             std::ptr::null()
         } else {
-            data.wrapping_add(offset as usize)
+            data.wrapping_add(offset.unsigned_abs())
         },
         offset,
         needle_length,
