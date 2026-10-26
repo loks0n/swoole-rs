@@ -19,6 +19,8 @@ FIXTURES = ['examples/test.jpg', 'examples/http/moc.moc', 'examples/http/empty.t
 def blob(source, path):
     return subprocess.check_output(['git', '-C', str(source), 'show', COMMIT+':'+path])
 
+# tests/swoole_server/wrong_eof_setting.phpt has an --EXPECTF_85-- section that PHP's official
+# runner cannot select; the framing-versioned-expectation phase runs it with upstream's rules.
 def inventory(source):
     paths = subprocess.check_output(['git','-C',str(source),'ls-tree','-r','--name-only',COMMIT,'tests'],text=True).splitlines()
     def selected(p):
@@ -28,7 +30,7 @@ def inventory(source):
             p.startswith('tests/swoole_socket_coro/protocol/') or
             p.startswith('tests/swoole_http_server/static_handler/') or
             (p.startswith(('tests/swoole_client_async/', 'tests/swoole_client_coro/', 'tests/swoole_client_sync/')) and (name.startswith(('eof', 'length', 'recv_with_open_eof')) or name in {'recv_bad_packet', 'fixed_package'})) or
-            p in {'tests/swoole_server/eof_protocol.phpt', 'tests/swoole_server/eof_server.phpt', 'tests/swoole_server/wrong_eof_setting.phpt', 'tests/swoole_server_coro/length_1.phpt', 'tests/swoole_server_port/tcp_eof.phpt', 'tests/swoole_http_server/static_handler.phpt', 'tests/swoole_http_server/If_Modified_Since.phpt', 'tests/swoole_http_server/range.phpt', 'tests/swoole_http_server/range2.phpt'}
+            p in {'tests/swoole_server/eof_protocol.phpt', 'tests/swoole_server/eof_server.phpt', 'tests/swoole_server_coro/length_1.phpt', 'tests/swoole_server_port/tcp_eof.phpt', 'tests/swoole_http_server/static_handler.phpt', 'tests/swoole_http_server/If_Modified_Since.phpt', 'tests/swoole_http_server/range.phpt', 'tests/swoole_http_server/range2.phpt'}
         )
     return [{'path': p, 'module': 'framing', 'sha256': hashlib.sha256(blob(source,p)).hexdigest(), 'requires': ['upstream_test_bootstrap']} for p in sorted(paths) if selected(p)]
 
