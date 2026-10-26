@@ -138,7 +138,6 @@ int main(void) {
             (2, 'include/swoole_buffer.h', 'Buffer overlay requires --enable-swoole-rs-buffer'),
             (1, 'src/protocol/websocket.cc', 'WebSocket overlay requires --enable-swoole-rs-websocket'),
             (4, 'include/swoole_timer.h', 'Timer overlay requires --enable-swoole-rs-timer'),
-            (8, 'src/core/base64.cc', 'Base64 overlay requires --enable-swoole-rs-base64'),
             (32, 'src/core/error.cc', 'Error overlay requires --enable-swoole-rs-error'),
             (64, 'src/memory/fixed_pool.cc', 'Memory overlay requires --enable-swoole-rs-memory'),
             (128, 'src/protocol/mqtt.cc', 'Packet protocols overlay requires --enable-swoole-rs-protocols'),
@@ -162,7 +161,7 @@ int main(void) {
             if not ARGS.feature_bits & bit:
                 continue
             macros = {1: 'SWOOLE_RS_WEBSOCKET', 2: 'SWOOLE_RS_BUFFER', 4: 'SWOOLE_RS_TIMER',
-                      8: 'SWOOLE_RS_BASE64', 32: 'SWOOLE_RS_ERROR',
+                      32: 'SWOOLE_RS_ERROR',
                       64: 'SWOOLE_RS_MEMORY', 128: 'SWOOLE_RS_PROTOCOLS', 256: 'SWOOLE_RS_HTTP', 512: 'SWOOLE_RS_UTILITIES', 1024: 'SWOOLE_RS_LOCKS', 2048: 'SWOOLE_RS_WRAPPERS', 4096: 'SWOOLE_RS_FRAMING', 8192: 'SWOOLE_RS_COREBASE', 16384: 'SWOOLE_RS_REACTOR', 32768: 'SWOOLE_RS_COROUTINE', 65536: 'SWOOLE_RS_HOOKS', 131072: 'SWOOLE_RS_OSSUPPORT', 262144: 'SWOOLE_RS_TLS', 524288: 'SWOOLE_RS_PROCESS', 1048576: 'SWOOLE_RS_CLIENTS', 2097152: 'SWOOLE_RS_HTTPBINDINGS', 4194304: 'SW_USE_RUST_HTTP2', 8388608: 'SWOOLE_RS_PORTS', 33554432: 'SWOOLE_RS_PHPCOLLECTIONS'}
             defines = ['-D' + macro for flag, macro in macros.items() if flag != bit and ARGS.feature_bits & flag]
             php_includes = (shlex.split(next(line.split('=', 1)[1]
@@ -216,7 +215,7 @@ int main(void) {
             cases.append((1, ARGS.feature_bits & ~2, 'Rust bridge missing buffer feature'))
         if ARGS.feature_bits & 4:
             cases.append((1, ARGS.feature_bits & ~4, 'Rust bridge missing timer feature'))
-        for bit, name in [(8, 'base64'), (32, 'error'), (64, 'memory'), (128, 'protocols'), (256, 'http'), (512, 'utilities'), (1024, 'locks'), (2048, 'wrappers'), (4096, 'framing'), (8192, 'corebase'), (16384, 'reactor'), (32768, 'coroutine'), (65536, 'hooks'), (131072, 'ossupport'), (262144, 'tls'), (524288, 'process'), (1048576, 'clients'), (2097152, 'httpbindings'), (4194304, 'http2'), (8388608, 'ports'), (16777216, 'phphelpers'), (33554432, 'phpcollections'), (67108864, 'phpevents'), (134217728, 'phpcoroutines')]:
+        for bit, name in [(32, 'error'), (64, 'memory'), (128, 'protocols'), (256, 'http'), (512, 'utilities'), (1024, 'locks'), (2048, 'wrappers'), (4096, 'framing'), (8192, 'corebase'), (16384, 'reactor'), (32768, 'coroutine'), (65536, 'hooks'), (131072, 'ossupport'), (262144, 'tls'), (524288, 'process'), (1048576, 'clients'), (2097152, 'httpbindings'), (4194304, 'http2'), (8388608, 'ports'), (16777216, 'phphelpers'), (33554432, 'phpcollections'), (67108864, 'phpevents'), (134217728, 'phpcoroutines')]:
             if ARGS.feature_bits & bit:
                 cases.append((1, ARGS.feature_bits & ~bit, f'Rust bridge missing {name} feature'))
         # Discover and remove invariant real query members once. Each case gets

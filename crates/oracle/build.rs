@@ -341,7 +341,6 @@ fn main() {
         "crc32_test.cpp",
     );
     cpp()
-        .define("SWOOLE_RS_BASE64", "1")
         .include("shim")
         .include("upstream")
         .include("upstream/include")

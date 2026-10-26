@@ -1,8 +1,8 @@
 diff --git a/src/core/base64.cc b/src/core/base64.cc
-index 81e74175a..dd57af3a3 100644
+index 81e74175a..8c90ae871 100644
 --- a/src/core/base64.cc
 +++ b/src/core/base64.cc
-@@ -1,134 +1,18 @@
+@@ -1,134 +1,15 @@
 -/*
 - +----------------------------------------------------------------------+
 - | Swoole                                                               |
@@ -24,9 +24,6 @@ index 81e74175a..dd57af3a3 100644
 +// Optional replacement for pinned src/core/base64.cc. Caller ownership stays native.
 +#ifdef HAVE_CONFIG_H
 +#include "config.h"
-+#endif
-+#ifndef SWOOLE_RS_BASE64
-+#error "Base64 overlay requires --enable-swoole-rs-base64"
 +#endif
  #include "swoole_base64.h"
 +#include "swoole_rs_base64.h"
