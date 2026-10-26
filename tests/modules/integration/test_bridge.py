@@ -31,7 +31,8 @@ def run(command, *, cwd=ROOT, check=True):
 
 class BridgeTests(unittest.TestCase):
     def php(self, extension, *arguments):
-        return run([ARGS.php, '-n', '-d', f'extension={extension}', *arguments], check=False)
+        dependencies = [argument for name in ARGS.php_extension for argument in ['-d', f'extension={name}']]
+        return run([ARGS.php, '-n', *dependencies, '-d', f'extension={extension}', *arguments], check=False)
 
     def test_c_and_cpp_consumers(self):
         source = '''#include "swoole_rs.h"
@@ -268,6 +269,7 @@ int main(void) {
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--php', default='php')
+    parser.add_argument('--php-extension', action='append', default=[], help='Load before swoole, e.g. sockets')
     parser.add_argument('--php-config', default=os.environ.get('PHP_CONFIG', 'php-config'))
     parser.add_argument('--reference', type=Path, default=ROOT / 'target/upstream/src/modules/swoole.so')
     parser.add_argument('--hybrid', type=Path, default=ROOT / 'target/hybrid/rust/modules/swoole.so')
