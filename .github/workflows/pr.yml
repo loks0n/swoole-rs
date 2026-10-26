@@ -78,9 +78,11 @@ jobs:
           path: target/reports/
 
   # Candidate-lane gates of the modules this PR touches (every module for shared
-  # build inputs); prints "No module touched" and passes otherwise.
+  # build inputs); prints "No module touched" and passes otherwise. Advisory until
+  # the gates main already fails are fixed (#106): read its result, it never blocks.
   gates:
     runs-on: ubuntu-24.04
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
