@@ -8,9 +8,8 @@ foreach(['repeat_image','write_image','copy_image','integer_image','reduce_image
     $images[$key]=realpath($r[$key]);
 }
 if(defined('SWOOLE_RS_FEATURE_BITS') && (SWOOLE_RS_FEATURE_BITS & 2)) {
-    $controller=$r['direct_fields']?'fields_image':'compat_image';
-    if(!is_string($r[$controller])||!realpath($r[$controller])) throw new RuntimeException('Actual selected continuation unavailable');
-    $images[$controller]=realpath($r[$controller]);++$selectedOriginChecks;
+    if(!is_string($r['compat_image'])||!realpath($r['compat_image'])) throw new RuntimeException('Actual selected continuation unavailable');
+    $images['compat_image']=realpath($r['compat_image']);++$selectedOriginChecks;
 }
-echo json_encode(['direct_fields'=>$r['direct_fields'],'checks'=>$r['checks'],'selected_origin_checks'=>$selectedOriginChecks,'method_image'=>realpath($r['method_image']),
+echo json_encode(['checks'=>$r['checks'],'selected_origin_checks'=>$selectedOriginChecks,'method_image'=>realpath($r['method_image']),
     'additional_method_images'=>(object)$images,'scope'=>'Exact44ordinaryappend/write/i32/repeat/copy/termination/reduce loaded caller; no custom allocator/callback/failure/POP/destruction/lifetime probe or full parity/performance claim']),"\n";

@@ -93,11 +93,6 @@ Module-local operations in `native/buffer/` extend this contract for `String`
   termination): public `String` fields stay authoritative; Rust publishes only
   explicit per-phase writes and keeps the original per-append repeat cadence.
   The v1 direct prepare/apply exports keep their fused-repeat behavior.
-- `--string-direct-fields` (`SWOOLE_RS_STRING_DIRECT_FIELDS`): Rust reads and
-  writes the five `String` member fields in place. Layout, field types/offsets,
-  `size_t`/`off_t` width and signedness must match a known target; others are
-  refused. Rust touches only those five cells, never the whole object, and only
-  inside legal constructor/destructor windows.
 
 ## Typed mode
 

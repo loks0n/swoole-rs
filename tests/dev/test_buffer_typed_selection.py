@@ -18,26 +18,14 @@ ROOT = Path(__file__).resolve().parents[2]
 class TypedBufferSelection(unittest.TestCase):
     def test_typed_and_http_capabilities_remain_independent(self):
         variants = set()
-        for typed, fields, static, rewrite in product([False, True], repeat=4):
+        for typed, static, rewrite in product([False, True], repeat=3):
             args = SimpleNamespace(lane='integrate', module=['buffer', 'reactor', 'http'], all_modules=False,
                                    php='php', php_extension=[], jobs=2, test=None, case=None,
                                    benchmark=False, compare=False, fix_halfclose=False,
-                                   buffer_typed=typed, string_direct_fields=fields, http_static_config=static, http_rewrite_store=rewrite)
+                                   buffer_typed=typed, http_static_config=static, http_rewrite_store=rewrite)
             commands = dict(dev.plan(args, ROOT/'target/reports/typed-unit'))
             self.assertEqual('--buffer-typed' in commands['build'], typed)
             self.assertNotIn('--buffer-typed', commands['reference-build'])
-            self.assertEqual('--string-direct-fields' in commands['build'], fields)
-            self.assertNotIn('--string-direct-fields', commands['reference-build'])
-            loaded=commands['string-production-compatibility']
-            self.assertEqual('--require-direct-fields' in loaded,fields)
-            if fields:
-                self.assertRegex(loaded[loaded.index('--source-ref')+1], r'^[0-9a-f]{40}$')
-            self.assertEqual('buffer-string-direct-fields' in commands, fields)
-            if fields:
-                gate = commands['buffer-string-direct-fields']
-                self.assertIn('--direct-fields', gate)
-                self.assertIn('--sanitize', gate)
-                self.assertIn('--archive', gate)
             for name, command in commands.items():
                 if 'tests/modules/reactor/production_supported.py' in command:
                     self.assertEqual('--require-typed-buffer' in command, typed, name)
@@ -54,10 +42,10 @@ class TypedBufferSelection(unittest.TestCase):
             for phase in ['reactor-ordered', 'http-full-originals']:
                 self.assertIn(phase, commands)
             variants.add(dev.build_variant(args))
-        self.assertEqual(len(variants), 16)
+        self.assertEqual(len(variants), 8)
 
     def test_reuse_requires_exact_native_and_selected_configuration(self):
-        for capability in ['buffer_typed', 'string_direct_fields']:
+        for capability in ['buffer_typed']:
             for requested, stored, native, accepted in [(False, False, False, True),
                                                         (True, True, False, True),
                                                         (True, False, False, False),
@@ -92,28 +80,3 @@ class TypedBufferSelection(unittest.TestCase):
             result=subprocess.run(command,cwd=ROOT,capture_output=True,text=True)
             self.assertEqual(result.returncode,2,result.stdout+result.stderr)
             self.assertIn('--buffer-typed requires',result.stderr)
-
-
-class StringFieldsSelection(unittest.TestCase):
-    def test_dependency_and_unqualified_loaded_profiles_refuse_before_work(self):
-        for command, message in [
-            ([sys.executable,'tools/build_hybrid.py','--backend','upstream','--module','buffer'], 'requires --backend rust'),
-            ([sys.executable,'tools/build_hybrid.py','--module','reactor'], 'requires --backend rust'),
-            ([sys.executable,'tools/dev.py','integrate','--module','reactor','--plan'], 'requires --module buffer'),
-            ([sys.executable,'tools/dev.py','integrate','--module','buffer','--plan'], 'loaded String profiles other than compatibility are not qualified'),
-            ([sys.executable,'tools/dev.py','integrate','--module','buffer','--phase','string-production-random','--plan'], 'loaded String profiles other than compatibility are not qualified')]:
-            result=subprocess.run(command+['--string-direct-fields'],cwd=ROOT,capture_output=True,text=True)
-            self.assertEqual(result.returncode,2,result.stdout+result.stderr)
-            self.assertIn(message,result.stderr)
-        result=subprocess.run([sys.executable,'tools/dev.py','integrate','--module','buffer',
-            '--string-direct-fields','--phase','buffer-string-direct-fields','--plan'],cwd=ROOT,capture_output=True,text=True)
-        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        phases=json.loads(result.stdout)
-        self.assertEqual([p['phase'] for p in phases],['buffer-string-direct-fields'])
-        self.assertIn('--direct-fields',phases[0]['command'])
-        result=subprocess.run([sys.executable,'tools/dev.py','integrate','--module','buffer',
-            '--string-direct-fields','--phase','string-production-compatibility','--plan'],cwd=ROOT,capture_output=True,text=True)
-        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
-        command=json.loads(result.stdout)[0]['command']
-        self.assertIn('--require-direct-fields',command)
-        self.assertRegex(command[command.index('--source-ref')+1], r'^[0-9a-f]{40}$')

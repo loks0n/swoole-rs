@@ -31,14 +31,6 @@ PHP_FUNCTION(swr_compatibility_production) {
         if(symbol && dladdr(symbol,&info))add_assoc_string(return_value,keys[i],const_cast<char *>(info.dli_fname));
         else add_assoc_null(return_value,keys[i]);
     }
-#if defined(SWOOLE_RS_STRING_DIRECT_FIELDS) && SWOOLE_RS_STRING_DIRECT_FIELDS
-    add_assoc_bool(return_value,"direct_fields",true);
-    Dl_info fields_info{};auto *fields_symbol=dlsym(RTLD_DEFAULT,"swr_v1_string_fields_step");
-    if(fields_symbol && dladdr(fields_symbol,&fields_info))add_assoc_string(return_value,"fields_image",const_cast<char *>(fields_info.dli_fname));
-    else add_assoc_null(return_value,"fields_image");
-#else
-    add_assoc_bool(return_value,"direct_fields",false);
-#endif
     try {
     unsigned checks=0;
     auto check=[&](bool value){if(!value)throw std::runtime_error("Positive compatibility assertion");++checks;};

@@ -134,7 +134,6 @@ observations back in:
   append per element (original allocation cadence). POP captures owner and suffix
   length, mallocs, publishes pointer/capacity/length, copies at the fresh offset,
   then resets the offset.
-- `swr_v1_string_fields_step`: see [direct-fields-core.md](direct-fields-core.md).
 
 ## Performance
 

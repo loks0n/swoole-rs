@@ -94,7 +94,6 @@ def verify_artifact_report(args):
         if (manifest['build_mode'] != 'immutable'
                 or ('--enable-swoole-stdext' in manifest['configure']) != args.stdext
                 or manifest['inputs'].get('php_sockets_requested', False) != getattr(args, 'php_sockets', False)
-                or manifest['inputs'].get('string_direct_fields_requested', False) != (label == 'selected' and getattr(args, 'string_direct_fields', False))
                 or manifest['inputs'].get('buffer_typed_requested', False) != (label == 'selected' and getattr(args, 'buffer_typed', False))
                 or ('--enable-sockets' in manifest['configure']) != getattr(args, 'php_sockets', False)
                 or any(manifest['inputs'].get('http_' + name.replace('-', '_') + '_requested', False)
@@ -142,9 +141,6 @@ def plan(args, reports):
     integrate = args.lane == 'integrate'
     repair = ['--fix-halfclose'] if getattr(args, 'fix_halfclose', False) else []
     variant = build_variant(args)
-    string_source_ref = ((getattr(args, 'frozen_source', None) or subprocess.check_output(
-        ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip())
-        if getattr(args, 'string_direct_fields', False) else 'HEAD')
     manifest = ROOT / 'target/hybrid' / variant / 'build-manifest.json'
     hybrid = manifest.parent / 'modules/swoole.so'
     captured_reference = integrate and (getattr(args, 'php_sockets', False) or bool(http_storage_capabilities(args)) or bool({'buffer', 'utilities', 'ports', 'phphelpers', 'phpevents', 'reactor', 'phpcoroutines', 'coroutine'} & set(modules)) or {'http', 'corebase'} <= set(modules))
@@ -171,7 +167,7 @@ def plan(args, reports):
                *(['--ccache', args.ccache] if getattr(args, 'ccache', None) else ['--no-ccache']),
                *(['--native-build-root', args.native_build_root] if getattr(args, 'native_build_root', None) else []))
     selected_export = artifact_reports / 'selected-export'
-    script('build', 'tools/build_hybrid.py', *([] if integrate else ['--dev']), *flags, *repair, *['--http-' + name for name in http_storage_capabilities(args)], *(['--buffer-typed'] if getattr(args, 'buffer_typed', False) else []), *(['--string-direct-fields'] if getattr(args, 'string_direct_fields', False) else []), *['--reactor-' + name + '-owned' for name in reactor_owned_capabilities(args)], *(['--stdext'] if getattr(args, 'stdext', False) else []), *(['--php-sockets'] if getattr(args, 'php_sockets', False) else []),
+    script('build', 'tools/build_hybrid.py', *([] if integrate else ['--dev']), *flags, *repair, *['--http-' + name for name in http_storage_capabilities(args)], *(['--buffer-typed'] if getattr(args, 'buffer_typed', False) else []), *['--reactor-' + name + '-owned' for name in reactor_owned_capabilities(args)], *(['--stdext'] if getattr(args, 'stdext', False) else []), *(['--php-sockets'] if getattr(args, 'php_sockets', False) else []),
            *(['--export', selected_export] if captured_reference else []), '--jobs', args.jobs,
            *(['--native-build-root', args.native_build_root] if getattr(args, 'native_build_root', None) else []),
            *(['--ccache', args.ccache] if getattr(args, 'ccache', None) else ['--no-ccache']))
@@ -808,11 +804,6 @@ def plan(args, reports):
             pytest('timer-native', 'tests/modules/timer/test_adapter.py', '--manifest', manifest, *php,
                    *(['--sanitize'] if sys.platform == 'darwin' else []))
     if 'buffer' in modules:
-        if getattr(args, 'string_direct_fields', False):
-            script('buffer-string-direct-fields', 'tests/modules/buffer/string/compatibility.py',
-                   '--source', ROOT / 'target/upstream/src',
-                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-                   '--direct-fields', '--sanitize', *report('buffer-string-direct-fields'))
         script('buffer-string-compatibility', 'tests/modules/buffer/string/compatibility.py',
                '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
@@ -837,8 +828,7 @@ def plan(args, reports):
                        *php, '--engine', f'hybrid={selected_export / "swoole.so"}',
                        '--engine', f'upstream={native_export / "swoole.so"}',
                        '--borrow-immutable-exports', '--build-manifest', manifest,
-                       '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--source-ref', string_source_ref,
-                       *(['--require-direct-fields'] if getattr(args, 'string_direct_fields', False) and consumer == 'compatibility' else []),
+                       '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--source-ref', 'HEAD',
                        '--selected-export', selected_export / 'export.json',
                        '--native-export', native_export / 'export.json', '--consumer', consumer, *report(name))
         for phase, profile in [('string-originals', '--original-only'), ('string-split', '--split-only'),
@@ -990,8 +980,6 @@ def main():
                         help='Also run original PHPTs that need internet access; without it they stay unmeasured')
     parser.add_argument('--buffer-typed', action='store_true',
                         help='Experimental sole Rust Buffer cursor; requires Buffer/Reactor, default off')
-    parser.add_argument('--string-direct-fields', action='store_true',
-                        help='Experimental same-storage String field operations; requires Buffer, default off')
     for name in HTTP_STORAGE_CAPABILITIES:
         parser.add_argument('--http-' + name, action='store_true',
                             help='Experimental Rust HTTP ' + name + '; requires HTTP, default off')
@@ -1039,11 +1027,6 @@ def main():
             parser.error('--http-' + name + ' requires --module http or --all-modules')
     if args.buffer_typed and not {'buffer', 'reactor'} <= set(selected_modules(args)):
         parser.error('--buffer-typed requires --module buffer --module reactor or --all-modules')
-    if args.string_direct_fields and 'buffer' not in selected_modules(args):
-        parser.error('--string-direct-fields requires --module buffer or --all-modules')
-    if args.string_direct_fields and args.lane == 'integrate' and (not args.phase or any(
-            name.startswith('string-production-') and name != 'string-production-compatibility' for name in args.phase)):
-        parser.error('--string-direct-fields loaded String profiles other than compatibility are not qualified; select explicit qualified phases')
     if args.jobs < 1 or args.test and args.lane != 'edit' or args.case and args.lane != 'candidate':
         parser.error('Positive --jobs required; --test is edit-only and --case is candidate-only')
     if args.redis_image and not args.redis_extension:

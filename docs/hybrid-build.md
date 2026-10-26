@@ -128,7 +128,6 @@ All default off and get their own alias suffix and manifest input.
 | `--http-static-config` | `--module http` | Rust-owned `StaticConfig` and static consumers. Changes the public Server configuration fields and layout; rebuild SDK consumers. |
 | `--http-legacy-directory-store` | `--module http` | Rust-owned legacy StaticHandler directory catalog. Old compiled `std::set` callers are not compatible; rebuild consumers. |
 | `--buffer-typed` | `--module buffer --module reactor` | Rust Buffer cursor with converted Socket/reactor/server callers. Legacy mutable DATA front/allocation is refused in this mode, so unconverted consumers break. |
-| `--string-direct-fields` | `--module buffer` | Rust operates directly on the five `String` member fields. Only arm64 Darwin with the Apple compiler is accepted. |
 | `--reactor-{iov,defer,sockets}-owned` | `--module reactor` | Rust-owned iov/defer/sockets storage. |
 
 ## Timer module

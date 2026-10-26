@@ -481,11 +481,7 @@ pub unsafe extern "C" fn swr_v1_string_append_in_place(
 }
 
 mod compatibility;
-#[cfg(all(unix, target_pointer_width = "64"))]
-mod fields;
 pub use compatibility::*;
-#[cfg(all(unix, target_pointer_width = "64"))]
-pub use fields::*;
 mod random;
 pub use random::*;
 mod formatting;

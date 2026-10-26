@@ -31,12 +31,11 @@ the Rust symbols in the linked binary and runs the consumer.
 ## Compatibility step: `compatibility.py`
 
 ```sh
-python3 tests/modules/buffer/string/compatibility.py --source S --archive A --sanitize [--direct-fields] --output R
+python3 tests/modules/buffer/string/compatibility.py --source S --archive A --sanitize --output R
 ```
 
 Ordinary append/write/i32/repeat/copy/termination/reduce, 44 checks per engine,
 plus C11 layout asserts and selected whole-TU syntax under C++14/17/20.
-`--direct-fields` also checks the `SWOOLE_RS_STRING_DIRECT_FIELDS` refusals.
 The output path must not exist.
 
 ## Loaded PHP consumers: `production.py`
@@ -58,8 +57,7 @@ them inside the loaded extension. Consumers: `random`, `compatibility`, `format`
 `metadata`, `terminator`, `iovec`. Native and selected assertion counts must
 match. `--borrow-immutable-exports` uses the export `swoole.so` in place instead of
 copying it, and verifies the export files are unchanged before and after the run.
-`--require-direct-fields` applies to the `compatibility` consumer. Optional
-`--php`, `--php-config` and `--php-extension` select the PHP SDK.
+Optional `--php`, `--php-config` and `--php-extension` select the PHP SDK.
 
 `tests/modules/coroutine/production_stack.py` and
 `tests/modules/reactor/production_supported.py` import its header helpers.
