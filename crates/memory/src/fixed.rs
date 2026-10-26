@@ -1,5 +1,11 @@
 use std::ffi::c_void;
+use std::mem::offset_of;
 use std::{mem, ptr};
+
+// Slice invariant: every slice pointer reachable from a pool's `head`, `tail` or a
+// slice's links is one of `slice_num` slices, each `size_of::<Slice>() + slice_size`
+// bytes, laid out inside `memory` by `fixed_init`. Strides may be odd, so slice headers
+// are only read and written unaligned, through `field` addresses.
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -22,16 +28,32 @@ pub struct Fixed {
     allocated: u8,
 }
 
+// The address of one field at `offset` inside `base`, computed without dereferencing it.
+fn field<B, T>(base: *mut B, offset: usize) -> *mut T {
+    base.wrapping_byte_add(offset).cast()
+}
+fn next(node: *mut Slice) -> *mut *mut Slice {
+    field(node, offset_of!(Slice, next))
+}
+fn prev(node: *mut Slice) -> *mut *mut Slice {
+    field(node, offset_of!(Slice, prev))
+}
+fn lock(node: *mut Slice) -> *mut u8 {
+    field(node, offset_of!(Slice, lock))
+}
+
 impl Fixed {
     // Allocation/release are externally serialized, but immutable ABI getters
     // may observe configuration. Never give Rust an exclusive whole-header
     // reference or rewrite those immutable fields during a queue operation.
     unsafe fn publish_queue(&self, target: *mut Fixed) {
-        unsafe {
-            ptr::addr_of_mut!((*target).head).write(self.head);
-            ptr::addr_of_mut!((*target).tail).write(self.tail);
-            ptr::addr_of_mut!((*target).slice_use).write(self.slice_use);
-        }
+        // Callers pass the live, aligned pool header; only the queue fields are written.
+        // SAFETY: as above.
+        unsafe { field::<_, *mut Slice>(target, offset_of!(Fixed, head)).write(self.head) };
+        // SAFETY: as above.
+        unsafe { field::<_, *mut Slice>(target, offset_of!(Fixed, tail)).write(self.tail) };
+        // SAFETY: as above.
+        unsafe { field::<_, u32>(target, offset_of!(Fixed, slice_use)).write(self.slice_use) };
     }
 }
 
@@ -48,11 +70,14 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_usage(pool: *const Fixed, output: *
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(Usage::default()) };
     if pool.is_null() {
         return -1;
     }
+    // SAFETY: `pool` is non-null (checked above), aligned and initialized per the caller contract.
     let pool = unsafe { &*pool };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(Usage {
             spare: pool.slice_num.wrapping_sub(pool.slice_use),
@@ -106,12 +131,15 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_debug_step(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(DebugRecord::default()) };
     if pool.is_null() || cursor.is_null() {
         return -1;
     }
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let cursor = unsafe { &mut *cursor };
     let slice = if cursor.line == 0 {
+        // SAFETY: `pool` is non-null (checked above), aligned and initialized per the caller contract.
         unsafe { (*pool).head }
     } else {
         cursor.next
@@ -119,6 +147,7 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_debug_step(
     if slice.is_null() {
         return 0;
     }
+    // SAFETY: a slice of this pool (see the slice invariant), read unaligned.
     let node = unsafe { slice.read_unaligned() };
     let Some(next_line) = cursor.line.checked_add(1) else {
         return -1;
@@ -127,7 +156,7 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_debug_step(
         slice,
         prev: node.prev,
         next: node.next,
-        data: unsafe { slice.cast::<u8>().add(mem::size_of::<Slice>()) },
+        data: slice.cast::<u8>().wrapping_add(mem::size_of::<Slice>()),
         line: cursor.line,
         lock: node.lock,
         self_link: u8::from(node.next == slice),
@@ -139,6 +168,7 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_debug_step(
         node.next
     };
     cursor.line = next_line;
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(record) };
     1
 }
@@ -196,12 +226,14 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_layout(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(Layout::default());
     }
     let Some(layout) = Layout::new(count, width, available, owned) else {
         return -1;
     };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(layout);
     }
@@ -223,6 +255,7 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_construct(
     {
         return -1;
     }
+    // SAFETY: `layout` is non-null (checked above), aligned and initialized per the caller contract.
     let plan = unsafe { layout.read() };
     let expected = Layout::new(
         if owned == 1 { plan.slices } else { 0 },
@@ -233,18 +266,26 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_construct(
     if expected != Some(plan) || arena.addr().checked_add(plan.total).is_none() {
         return -1;
     }
-    unsafe {
-        // Preserve original whole-header zeroing, including ABI padding.
-        // Whole repr(C) value writes can copy uninitialized Rust padding.
-        ptr::write_bytes(arena.cast::<u8>(), 0, mem::size_of::<Fixed>());
-        ptr::addr_of_mut!((*arena).memory).write(arena.cast::<u8>().add(mem::size_of::<Fixed>()));
-        ptr::addr_of_mut!((*arena).size).write(plan.usable);
-        ptr::addr_of_mut!((*arena).slice_num).write(plan.slices);
-        ptr::addr_of_mut!((*arena).slice_size).write(plan.width);
-        ptr::addr_of_mut!((*arena).shared).write(shared as u8);
-        ptr::addr_of_mut!((*arena).allocated).write(owned as u8);
-        swr_v1_memory_fixed_init(arena)
-    }
+    // `arena` is non-null, aligned and covers `plan.total` exclusive bytes (checked above).
+    // Preserve original whole-header zeroing, including ABI padding.
+    // Whole repr(C) value writes can copy uninitialized Rust padding.
+    // SAFETY: as above.
+    unsafe { ptr::write_bytes(arena.cast::<u8>(), 0, mem::size_of::<Fixed>()) };
+    let memory = arena.cast::<u8>().wrapping_add(mem::size_of::<Fixed>());
+    // SAFETY: as above.
+    unsafe { field::<_, *mut u8>(arena, offset_of!(Fixed, memory)).write(memory) };
+    // SAFETY: as above.
+    unsafe { field::<_, usize>(arena, offset_of!(Fixed, size)).write(plan.usable) };
+    // SAFETY: as above.
+    unsafe { field::<_, u32>(arena, offset_of!(Fixed, slice_num)).write(plan.slices) };
+    // SAFETY: as above.
+    unsafe { field::<_, u32>(arena, offset_of!(Fixed, slice_size)).write(plan.width) };
+    // SAFETY: as above.
+    unsafe { field::<_, u8>(arena, offset_of!(Fixed, shared)).write(shared as u8) };
+    // SAFETY: as above.
+    unsafe { field::<_, u8>(arena, offset_of!(Fixed, allocated)).write(owned as u8) };
+    // SAFETY: the header is fully initialized and `memory` holds `plan.usable` bytes.
+    unsafe { swr_v1_memory_fixed_init(arena) }
 }
 
 #[unsafe(no_mangle)]
@@ -252,6 +293,7 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_init(pool: *mut Fixed) -> i32 {
     if pool.is_null() {
         return -1;
     }
+    // SAFETY: `pool` is non-null (checked above), aligned and exclusive per the caller contract.
     let p = unsafe { &mut *pool };
     let Some(stride) = mem::size_of::<Slice>().checked_add(p.slice_size as usize) else {
         return -1;
@@ -268,15 +310,15 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_init(pool: *mut Fixed) -> i32 {
     p.head = ptr::null_mut();
     p.tail = p.memory.cast();
     for i in 0..p.slice_num as usize {
-        let node = unsafe { p.memory.add(i * stride).cast::<Slice>() };
-        unsafe {
-            ptr::write_bytes(node.cast::<u8>(), 0, mem::size_of::<Slice>());
-            ptr::addr_of_mut!((*node).next).write_unaligned(p.head);
-        }
+        // `slice_num * stride <= size` (checked above), so slice `i` lies inside `memory`.
+        let node = p.memory.wrapping_add(i * stride).cast::<Slice>();
+        // SAFETY: as above; the pool is exclusive during init.
+        unsafe { ptr::write_bytes(node.cast::<u8>(), 0, mem::size_of::<Slice>()) };
+        // SAFETY: as above.
+        unsafe { next(node).write_unaligned(p.head) };
         if !p.head.is_null() {
-            unsafe {
-                ptr::addr_of_mut!((*p.head).prev).write_unaligned(node);
-            }
+            // SAFETY: `head` is the previously initialized slice.
+            unsafe { prev(p.head).write_unaligned(node) };
         }
         p.head = node;
     }
@@ -289,25 +331,36 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_alloc(pool: *mut Fixed) -> *mut c_v
     if pool.is_null() {
         return ptr::null_mut();
     }
+    // SAFETY: `pool` is non-null (checked above), aligned and initialized per the caller contract.
     let mut p = unsafe { pool.read() };
     let node = p.head;
+    // Every slice touched below is a slice of this pool (see the slice invariant);
+    // allocation is externally serialized.
+    // SAFETY: as above.
     if node.is_null() || unsafe { node.read_unaligned().lock } != 0 {
         return ptr::null_mut();
     }
     // At least two nodes always remain in the combined idle/busy list.
-    unsafe {
-        let value = node.read_unaligned();
-        p.slice_use += 1;
-        p.head = value.next;
-        ptr::addr_of_mut!((*p.head).prev).write_unaligned(ptr::null_mut());
-        ptr::addr_of_mut!((*p.tail).next).write_unaligned(node);
-        ptr::addr_of_mut!((*node).lock).write(1);
-        ptr::addr_of_mut!((*node).next).write_unaligned(ptr::null_mut());
-        ptr::addr_of_mut!((*node).prev).write_unaligned(p.tail);
-        p.tail = node;
-        p.publish_queue(pool);
-        node.cast::<u8>().add(mem::size_of::<Slice>()).cast()
-    }
+    // SAFETY: as above.
+    let value = unsafe { node.read_unaligned() };
+    p.slice_use += 1;
+    p.head = value.next;
+    // SAFETY: as above.
+    unsafe { prev(p.head).write_unaligned(ptr::null_mut()) };
+    // SAFETY: as above.
+    unsafe { next(p.tail).write_unaligned(node) };
+    // SAFETY: as above.
+    unsafe { lock(node).write(1) };
+    // SAFETY: as above.
+    unsafe { next(node).write_unaligned(ptr::null_mut()) };
+    // SAFETY: as above.
+    unsafe { prev(node).write_unaligned(p.tail) };
+    p.tail = node;
+    // SAFETY: `pool` is the live, aligned header read above.
+    unsafe { p.publish_queue(pool) };
+    node.cast::<u8>()
+        .wrapping_add(mem::size_of::<Slice>())
+        .cast()
 }
 
 #[unsafe(no_mangle)]
@@ -315,6 +368,7 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_free(pool: *mut Fixed, data: *mut c
     if pool.is_null() || data.is_null() {
         return -1;
     }
+    // SAFETY: `pool` is non-null (checked above), aligned and initialized per the caller contract.
     let mut p = unsafe { pool.read() };
     let Some(offset) = data
         .addr()
@@ -326,28 +380,38 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_free(pool: *mut Fixed, data: *mut c
     if offset % stride != 0 || offset / stride >= p.slice_num as usize {
         return -1;
     }
-    let node = unsafe { p.memory.add(offset).cast::<Slice>() };
+    // `offset` is a whole number of strides below `slice_num` (checked above), so `node` is a
+    // slice of this pool (see the slice invariant); release is externally serialized.
+    let node = p.memory.wrapping_add(offset).cast::<Slice>();
+    // SAFETY: as above.
     let value = unsafe { node.read_unaligned() };
     if value.lock != 1 || p.slice_use == 0 {
         return -1;
     }
-    unsafe {
-        ptr::addr_of_mut!((*node).lock).write_unaligned(0);
-        p.slice_use -= 1;
-        if node != p.head {
-            if node == p.tail {
-                ptr::addr_of_mut!((*value.prev).next).write_unaligned(ptr::null_mut());
-                p.tail = value.prev;
-            } else {
-                ptr::addr_of_mut!((*value.prev).next).write_unaligned(value.next);
-                ptr::addr_of_mut!((*value.next).prev).write_unaligned(value.prev);
-            }
-            ptr::addr_of_mut!((*node).next).write_unaligned(p.head);
-            ptr::addr_of_mut!((*node).prev).write_unaligned(ptr::null_mut());
-            ptr::addr_of_mut!((*p.head).prev).write_unaligned(node);
-            p.head = node;
+    // Every link below is a slice of this pool (see the slice invariant).
+    // SAFETY: as above.
+    unsafe { lock(node).write_unaligned(0) };
+    p.slice_use -= 1;
+    if node != p.head {
+        if node == p.tail {
+            // SAFETY: as above.
+            unsafe { next(value.prev).write_unaligned(ptr::null_mut()) };
+            p.tail = value.prev;
+        } else {
+            // SAFETY: as above.
+            unsafe { next(value.prev).write_unaligned(value.next) };
+            // SAFETY: as above.
+            unsafe { prev(value.next).write_unaligned(value.prev) };
         }
+        // SAFETY: as above.
+        unsafe { next(node).write_unaligned(p.head) };
+        // SAFETY: as above.
+        unsafe { prev(node).write_unaligned(ptr::null_mut()) };
+        // SAFETY: as above.
+        unsafe { prev(p.head).write_unaligned(node) };
+        p.head = node;
     }
+    // SAFETY: `pool` is the live, aligned header read above.
     unsafe { p.publish_queue(pool) };
     0
 }

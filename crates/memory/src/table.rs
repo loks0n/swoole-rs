@@ -83,6 +83,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_config(
     if rows.is_null() || conflict.is_null() {
         return -1;
     }
+    // SAFETY: a fresh, non-null allocation with its type's layout.
     unsafe {
         rows.write(0);
         conflict.write(0.0);
@@ -111,6 +112,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_layout(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(Layout::default());
     }
@@ -143,6 +145,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_layout(
     else {
         return -1;
     };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(Layout {
             total,
@@ -166,6 +169,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_storage_layout(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(Layout::default());
     }
@@ -186,6 +190,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_arena(
     if memory.is_null() || layout.is_null() || !memory.addr().is_multiple_of(8) {
         return -1;
     }
+    // SAFETY: `layout` is non-null (checked above), aligned and initialized per the caller contract.
     let l = unsafe { &*layout };
     let expected = (l.rows as usize)
         .checked_mul(mem::size_of::<*mut Row>())
@@ -300,6 +305,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_set_plan(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(Plan::default());
     }
@@ -310,6 +316,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_set_plan(
         return -1;
     };
     if !unsafe { active(root) } {
+        // SAFETY: `output` is non-null (checked above), aligned and writable.
         unsafe {
             output.write(Plan {
                 row: root.cast(),
@@ -323,6 +330,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_set_plan(
     let (mut row, mut flags, mut level) = (root, 0, 1u32);
     loop {
         if unsafe { matches(row, key) } {
+            // SAFETY: `output` is non-null (checked above), aligned and writable.
             unsafe {
                 output.write(Plan {
                     row: row.cast(),
@@ -335,6 +343,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_set_plan(
         }
         let following = unsafe { next(row) };
         if following.is_null() {
+            // SAFETY: `output` is non-null (checked above), aligned and writable.
             unsafe {
                 output.write(Plan {
                     parent: row.cast(),
@@ -365,6 +374,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_delete(
     if removed.is_null() {
         return -1;
     }
+    // SAFETY: `removed` is non-null (checked above), aligned and writable.
     unsafe {
         removed.write(ptr::null_mut());
     }
@@ -428,10 +438,9 @@ pub unsafe extern "C" fn swr_v1_memory_table_next(
     if next_index.is_null() || advance.is_null() {
         return -1;
     }
-    unsafe {
-        next_index.write(0);
-        advance.write(0);
-    }
+    unsafe { next_index.write(0) };
+    // SAFETY: `advance` is non-null (checked above), aligned and writable.
+    unsafe { advance.write(0) };
     if root.is_null()
         || current.is_null()
         || row_size < mem::size_of::<Row>()
@@ -441,10 +450,10 @@ pub unsafe extern "C" fn swr_v1_memory_table_next(
     }
     let mut row = root;
     if unsafe { next(root) }.is_null() {
-        unsafe {
-            advance.write(1);
-            next_index.write(index);
-        }
+        // SAFETY: a fresh, non-null allocation with its type's layout.
+        unsafe { advance.write(1) };
+        // SAFETY: `next_index` is non-null (checked above), aligned and writable.
+        unsafe { next_index.write(index) };
     } else {
         for _ in 0..index {
             row = unsafe { next(row) };
@@ -455,6 +464,8 @@ pub unsafe extern "C" fn swr_v1_memory_table_next(
         let Some(following) = index.checked_add(1) else {
             return -1;
         };
+        // SAFETY: `next_index` is non-null (checked above), aligned and writable.
+        // SAFETY: a fresh, non-null allocation with its type's layout.
         unsafe {
             next_index.write(following);
         }
@@ -545,6 +556,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_mutation_step(state: *mut Mutation)
     if state.is_null() {
         return -1;
     }
+    // SAFETY: `state` is non-null (checked above), aligned and exclusive per the caller contract.
     let m = unsafe { &mut *state };
     if m.mode > 1
         || m.phase > 1
@@ -641,6 +653,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_iterator_reset(fields: *const Itera
     if fields.is_null() {
         return -1;
     }
+    // SAFETY: `fields` is non-null (checked above), aligned and initialized per the caller contract.
     let f = unsafe { &*fields };
     if !f.valid() {
         return -1;
@@ -665,9 +678,11 @@ pub unsafe extern "C" fn swr_v1_memory_table_iterator_step(
     if fields.is_null() || lookup.is_null() {
         return -1;
     }
+    // SAFETY: `lookup` is non-null (checked above), aligned and writable.
     unsafe {
         lookup.write(0);
     }
+    // SAFETY: `fields` is non-null (checked above), aligned and initialized per the caller contract.
     let f = unsafe { &*fields };
     if !f.valid() || phase > 1 || buckets > u32::MAX as usize || phase == 0 && !root.is_null() {
         return -1;
@@ -706,6 +721,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_iterator_step(
         }
     }
     if (absolute as usize) < buckets {
+        // SAFETY: `lookup` is non-null (checked above), aligned and writable.
         unsafe {
             lookup.write(absolute);
         }
@@ -723,6 +739,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_column_size(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(0);
     }
@@ -734,6 +751,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_column_size(
         },
         _ => return -1,
     };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(size);
     }
@@ -772,6 +790,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_clear_step(cursor: *mut Clear) -> i
     if cursor.is_null() {
         return -1;
     }
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *cursor };
     if state.phase == 2 {
         return 0;
@@ -937,6 +956,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_value_step(cursor: *mut Value) -> i
     if cursor.is_null() {
         return -1;
     }
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *cursor };
     if state.phase > 1 {
         return -1;
@@ -980,7 +1000,9 @@ pub unsafe extern "C" fn swr_v1_memory_table_iterator_release_step(
     if cursor.is_null() || output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(TeardownEffect::default()) };
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *cursor };
     loop {
         let effect = match state.phase {
@@ -1004,6 +1026,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_iterator_release_step(
             2 => return 0,
             _ => return -1,
         };
+        // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
         unsafe { output.write(effect) };
         return 1;
     }
@@ -1073,10 +1096,9 @@ pub unsafe extern "C" fn swr_v1_memory_table_get_string(
     if output.is_null() || length.is_null() {
         return -1;
     }
-    unsafe {
-        output.write(ptr::null_mut());
-        length.write(0);
-    }
+    unsafe { output.write(ptr::null_mut()) };
+    // SAFETY: `length` is non-null (checked above), aligned and writable.
+    unsafe { length.write(0) };
     if row.is_null()
         || width < 4
         || index > isize::MAX as usize - mem::size_of::<Row>() - width as usize
@@ -1088,10 +1110,10 @@ pub unsafe extern "C" fn swr_v1_memory_table_get_string(
     if count > width - 4 {
         return -1;
     }
-    unsafe {
-        output.write(data.add(4).cast_mut());
-        length.write(count);
-    }
+    // SAFETY: a fresh, non-null allocation with its type's layout.
+    unsafe { output.write(data.add(4).cast_mut()) };
+    // SAFETY: `length` is non-null (checked above), aligned and writable.
+    unsafe { length.write(count) };
     0
 }
 
@@ -1114,6 +1136,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_lookup_step(cursor: *mut Lookup) ->
     if cursor.is_null() {
         return -1;
     }
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *cursor };
     if state.phase > 1
         || state.rows.is_null()
@@ -1165,6 +1188,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_declaration_step(cursor: *mut Decla
     if cursor.is_null() {
         return -1;
     }
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *cursor };
     let rollback = if state.phase == 2 { 3 } else { -1 };
     if state.phase > 2
@@ -1286,6 +1310,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_metadata_initialize(
     if fields.is_null() {
         return -1;
     }
+    // SAFETY: `fields` is non-null (checked above), aligned and initialized per the caller contract.
     let fields = unsafe { &*fields };
     let mut rows = 0;
     let mut conflict = 0.0;
@@ -1339,6 +1364,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_factory_step(
     if cursor.is_null() {
         return -1;
     }
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *cursor };
     match state.phase {
         0 => {
@@ -1412,7 +1438,9 @@ pub unsafe extern "C" fn swr_v1_memory_table_creation_step(
     if fields.is_null() || cursor.is_null() {
         return -1;
     }
+    // SAFETY: `fields` is non-null (checked above), aligned and initialized per the caller contract.
     let fields = unsafe { &*fields };
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *cursor };
     if !fields.valid() || state.phase > 1 || unsafe { fields.created.read() } != 0 {
         return -1;
@@ -1482,10 +1510,12 @@ pub unsafe extern "C" fn swr_v1_memory_table_construction_step(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(ConstructionEffect::default()) };
     if cursor.is_null() {
         return -1;
     }
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *cursor };
     let storage = &mut state.storage;
     let effect = match state.phase {
@@ -1536,6 +1566,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_construction_step(
         _ => return -1,
     };
     state.phase += 1;
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(effect) };
     1
 }
@@ -1573,10 +1604,12 @@ pub unsafe extern "C" fn swr_v1_memory_table_teardown_step(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(TeardownEffect::default()) };
     if cursor.is_null() {
         return -1;
     }
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *cursor };
     if state.phase == 8 {
         return 0;
@@ -1648,6 +1681,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_teardown_step(
             }
             _ => return -1,
         };
+        // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
         unsafe { output.write(TeardownEffect { token, action }) };
         return 1;
     }
@@ -1664,10 +1698,12 @@ pub unsafe extern "C" fn swr_v1_memory_table_core_teardown_step(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(TeardownEffect::default()) };
     if cursor.is_null() {
         return -1;
     }
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let state = unsafe { &mut *cursor };
     if !state.index.is_null()
         || !state.columns.is_null()

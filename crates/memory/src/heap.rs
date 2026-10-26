@@ -18,6 +18,7 @@ pub unsafe extern "C" fn swr_v1_memory_heap_debug_step(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(Node {
             priority: 0,
@@ -28,16 +29,24 @@ pub unsafe extern "C" fn swr_v1_memory_heap_debug_step(
     if state.is_null() || index.is_null() {
         return -1;
     }
+    // SAFETY: `state` is non-null (checked above), aligned and initialized per the caller contract.
     let state = unsafe { &*state.cast::<Heap>() };
+    // SAFETY: `index` is non-null (checked above), aligned and exclusive per the caller contract.
     let index = unsafe { &mut *index };
     let Some(node) = state.nodes.get(*index) else {
         return 0;
     };
-    unsafe { output.write(node.as_ptr().read()) };
+    // SAFETY: `node` is a live node of this heap (see `Heap`).
+    let snapshot = unsafe { node.as_ptr().read() };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
+    unsafe { output.write(snapshot) };
     *index += 1;
     1
 }
 
+/// Node invariant: every pointer in `nodes` and `spare` is a live `Node` allocation
+/// (global allocator, `Node` layout) owned by this heap, freed only by `retire` (for
+/// the previous spare) and `Drop`. `&mut self` makes node updates exclusive.
 struct Heap {
     nodes: Vec<NonNull<Node>>,
     // Bound retained storage to one removed node; live node addresses never move.
@@ -50,9 +59,8 @@ impl Heap {
     }
     fn place(&mut self, index: usize, node: NonNull<Node>) {
         self.nodes[index] = node;
-        unsafe {
-            (*node.as_ptr()).position = index as u32 + 1;
-        }
+        // SAFETY: a node owned by this heap (see `Heap`).
+        unsafe { (*node.as_ptr()).position = index as u32 + 1 };
     }
     fn up(&mut self, index: usize) {
         if self.max {
@@ -64,9 +72,11 @@ impl Heap {
     fn up_ordered<const MAX: bool>(&mut self, mut index: usize) {
         let node = self.nodes[index];
         // Placement changes positions, never the moving node's priority.
+        // SAFETY: a node owned by this heap (see `Heap`).
         let priority = unsafe { node.as_ref().priority };
         while index > 0 {
             let parent = (index - 1) / 2;
+            // SAFETY: a node owned by this heap (see `Heap`).
             if !worse_ordered::<MAX>(unsafe { self.nodes[parent].as_ref().priority }, priority) {
                 break;
             }
@@ -84,6 +94,7 @@ impl Heap {
     }
     fn down_ordered<const MAX: bool>(&mut self, mut index: usize) {
         let node = self.nodes[index];
+        // SAFETY: a node owned by this heap (see `Heap`).
         let priority = unsafe { node.as_ref().priority };
         loop {
             let left = index * 2 + 1;
@@ -91,14 +102,18 @@ impl Heap {
                 break;
             }
             let right = left + 1;
+            // SAFETY: a node owned by this heap (see `Heap`).
+            let left_priority = unsafe { self.nodes[left].as_ref().priority };
             let child = if right < self.nodes.len()
-                && worse_ordered::<MAX>(unsafe { self.nodes[left].as_ref().priority }, unsafe {
+                // SAFETY: a node owned by this heap (see `Heap`).
+                && worse_ordered::<MAX>(left_priority, unsafe {
                     self.nodes[right].as_ref().priority
                 }) {
                 right
             } else {
                 left
             };
+            // SAFETY: a node owned by this heap (see `Heap`).
             if !worse_ordered::<MAX>(priority, unsafe { self.nodes[child].as_ref().priority }) {
                 break;
             }
@@ -108,15 +123,17 @@ impl Heap {
         self.place(index, node);
     }
     fn index(&self, node: NonNull<Node>) -> Option<usize> {
+        // SAFETY: callers pass a node returned by `push` and still live (see the exports).
         let index = unsafe { node.as_ref().position }.checked_sub(1)? as usize;
         (self.nodes.get(index) == Some(&node)).then_some(index)
     }
     fn remove(&mut self, index: usize) -> *mut c_void {
         let node = self.nodes.swap_remove(index);
         if index < self.nodes.len() {
-            if self.worse(unsafe { node.as_ref().priority }, unsafe {
-                self.nodes[index].as_ref().priority
-            }) {
+            // SAFETY: the removed node is still allocated until `retire`.
+            let removed = unsafe { node.as_ref().priority };
+            // SAFETY: a node owned by this heap (see `Heap`).
+            if self.worse(removed, unsafe { self.nodes[index].as_ref().priority }) {
                 self.up(index);
             } else {
                 self.down(index);
@@ -141,9 +158,12 @@ impl Heap {
         self.retire(root)
     }
     fn retire(&mut self, node: NonNull<Node>) -> *mut c_void {
+        // SAFETY: a node this heap owns, now detached from `nodes`.
         let data = unsafe { node.as_ref().data };
+        // SAFETY: as above.
         unsafe { (*node.as_ptr()).position = 0 };
         if let Some(previous) = self.spare.replace(node) {
+            // SAFETY: the previous spare was owned by this heap and nothing refers to it.
             unsafe { dealloc(previous.as_ptr().cast(), Layout::new::<Node>()) };
         }
         data
@@ -157,9 +177,8 @@ fn worse_ordered<const MAX: bool>(a: u64, b: u64) -> bool {
 impl Drop for Heap {
     fn drop(&mut self) {
         for node in self.nodes.iter().chain(self.spare.iter()) {
-            unsafe {
-                dealloc(node.as_ptr().cast(), Layout::new::<Node>());
-            }
+            // SAFETY: every owned node is freed exactly once, here.
+            unsafe { dealloc(node.as_ptr().cast(), Layout::new::<Node>()) };
         }
     }
 }
@@ -173,6 +192,7 @@ pub unsafe extern "C" fn swr_v1_memory_heap_create(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe {
         output.write(ptr::null_mut());
     }
@@ -187,23 +207,24 @@ pub unsafe extern "C" fn swr_v1_memory_heap_create(
     if heap.nodes.try_reserve_exact(capacity).is_err() {
         return -1;
     }
+    // SAFETY: `Heap` is not zero-sized; null is handled below.
     let result = unsafe { alloc(Layout::new::<Heap>()).cast::<Heap>() };
     if result.is_null() {
         return -1;
     }
-    unsafe {
-        result.write(heap);
-        output.write(result.cast());
-    }
+    // SAFETY: a fresh, non-null allocation with `Heap`'s layout.
+    unsafe { result.write(heap) };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
+    unsafe { output.write(result.cast()) };
     0
 }
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_memory_heap_release(heap: *mut c_void) {
     if !heap.is_null() {
-        unsafe {
-            ptr::drop_in_place(heap.cast::<Heap>());
-            dealloc(heap.cast(), Layout::new::<Heap>());
-        }
+        // SAFETY: a live heap from `heap_create`, released exactly once.
+        unsafe { ptr::drop_in_place(heap.cast::<Heap>()) };
+        // SAFETY: allocated with this layout by create; its value was just dropped.
+        unsafe { dealloc(heap.cast(), Layout::new::<Heap>()) };
     }
 }
 #[unsafe(no_mangle)]
@@ -211,6 +232,7 @@ pub unsafe extern "C" fn swr_v1_memory_heap_count(heap: *const c_void) -> usize 
     if heap.is_null() {
         0
     } else {
+        // SAFETY: `heap` is non-null (checked above), aligned and initialized per the caller contract.
         unsafe { &*heap.cast::<Heap>() }.nodes.len()
     }
 }
@@ -219,6 +241,7 @@ pub unsafe extern "C" fn swr_v1_memory_heap_at(heap: *const c_void, index: usize
     if heap.is_null() {
         return ptr::null_mut();
     }
+    // SAFETY: `heap` is non-null (checked above), aligned and initialized per the caller contract.
     unsafe { &*heap.cast::<Heap>() }
         .nodes
         .get(index)
@@ -229,6 +252,7 @@ pub unsafe extern "C" fn swr_v1_memory_heap_compare(heap: *const c_void, a: u64,
     if heap.is_null() {
         0
     } else {
+        // SAFETY: `heap` is non-null (checked above), aligned and initialized per the caller contract.
         i32::from(unsafe { &*heap.cast::<Heap>() }.worse(a, b))
     }
 }
@@ -241,6 +265,7 @@ pub unsafe extern "C" fn swr_v1_memory_heap_push(
     if heap.is_null() {
         return ptr::null_mut();
     }
+    // SAFETY: `heap` is non-null (checked above), aligned and exclusive per the caller contract.
     let heap = unsafe { &mut *heap.cast::<Heap>() };
     if heap.nodes.len() >= u32::MAX as usize - 1 || heap.nodes.try_reserve(1).is_err() {
         return ptr::null_mut();
@@ -248,18 +273,20 @@ pub unsafe extern "C" fn swr_v1_memory_heap_push(
     let Some(node) = heap
         .spare
         .take()
+        // SAFETY: `Node` is not zero-sized; null becomes `None`.
         .or_else(|| NonNull::new(unsafe { alloc(Layout::new::<Node>()).cast::<Node>() }))
     else {
         return ptr::null_mut();
     };
     let index = heap.nodes.len();
+    // SAFETY: a spare or fresh `Node` allocation this heap now owns.
     unsafe {
         node.as_ptr().write(Node {
             priority,
             position: index as u32 + 1,
             data,
-        });
-    }
+        })
+    };
     heap.nodes.push(node);
     heap.up(index);
     node.as_ptr()
@@ -276,14 +303,15 @@ pub unsafe extern "C" fn swr_v1_memory_heap_update(
     let Some(mut node) = NonNull::new(node) else {
         return -1;
     };
+    // SAFETY: `heap` is non-null (checked above), aligned and exclusive per the caller contract.
     let heap = unsafe { &mut *heap.cast::<Heap>() };
     let Some(index) = heap.index(node) else {
         return -1;
     };
+    // SAFETY: `index` confirmed `node` belongs to this heap.
     let old = unsafe { node.as_ref().priority };
-    unsafe {
-        node.as_mut().priority = priority;
-    }
+    // SAFETY: as above; `&mut` heap access is exclusive.
+    unsafe { node.as_mut().priority = priority };
     if heap.worse(old, priority) {
         heap.up(index);
     } else {
@@ -299,6 +327,7 @@ pub unsafe extern "C" fn swr_v1_memory_heap_remove(heap: *mut c_void, node: *mut
     let Some(node) = NonNull::new(node) else {
         return -1;
     };
+    // SAFETY: `heap` is non-null (checked above), aligned and exclusive per the caller contract.
     let heap = unsafe { &mut *heap.cast::<Heap>() };
     let Some(index) = heap.index(node) else {
         return -1;
@@ -311,6 +340,7 @@ pub unsafe extern "C" fn swr_v1_memory_heap_pop(heap: *mut c_void) -> *mut c_voi
     if heap.is_null() {
         return ptr::null_mut();
     }
+    // SAFETY: `heap` is non-null (checked above), aligned and exclusive per the caller contract.
     let heap = unsafe { &mut *heap.cast::<Heap>() };
     heap.pop()
 }

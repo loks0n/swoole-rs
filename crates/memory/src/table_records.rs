@@ -54,15 +54,17 @@ pub unsafe extern "C" fn swr_v1_memory_records_open(output: *mut *mut Records) -
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(ptr::null_mut()) };
+    // SAFETY: a non-zero-sized layout; null is handled below.
     let owner = unsafe { alloc(Layout::new::<Records>()).cast::<Records>() };
     if owner.is_null() {
         return -1;
     }
-    unsafe {
-        owner.write(Records::default());
-        output.write(owner);
-    }
+    // SAFETY: a fresh, non-null allocation with its type's layout.
+    unsafe { owner.write(Records::default()) };
+    // SAFETY: `output` is non-null (checked above), aligned and writable.
+    unsafe { output.write(owner) };
     0
 }
 /// No native column construction, callbacks or partial logical publication.
@@ -83,14 +85,17 @@ pub unsafe extern "C" fn swr_v1_memory_records_declare(
         || !item_size
             .addr()
             .is_multiple_of(std::mem::align_of::<usize>())
+        // SAFETY: `created` is non-null (checked above), aligned and initialized per the caller contract.
         || unsafe { created.read() } != 0
     {
         return -1;
     }
+    // SAFETY: `owner` is non-null (checked above), aligned and exclusive per the caller contract.
     let owner = unsafe { &mut *owner };
     if owner.generation == u64::MAX {
         return -1;
     }
+    // SAFETY: the caller lends `length` initialized name bytes at `bytes` (null only when empty).
     let Some(bytes) = (unsafe { name(bytes, length) }) else {
         return -1;
     };
@@ -98,9 +103,11 @@ pub unsafe extern "C" fn swr_v1_memory_records_declare(
         return -2;
     }
     let mut width = 0;
+    // SAFETY: `width` is a writable local.
     if unsafe { swr_v1_memory_table_column_size(kind, requested, &mut width) } != 0 {
         return -1;
     }
+    // SAFETY: `item_size` is non-null (checked above), aligned and initialized per the caller contract.
     let index = unsafe { item_size.read() };
     let Some(next) = index
         .checked_add(width as usize)
@@ -128,6 +135,7 @@ pub unsafe extern "C" fn swr_v1_memory_records_declare(
         kind,
     });
     owner.generation += 1;
+    // SAFETY: `item_size` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { item_size.write(next) };
     0
 }
@@ -141,13 +149,16 @@ pub unsafe extern "C" fn swr_v1_memory_records_get(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(View::default()) };
     if owner.is_null() {
         return -1;
     }
+    // SAFETY: the caller lends `length` initialized name bytes at `bytes` (null only when empty).
     let Some(bytes) = (unsafe { name(bytes, length) }) else {
         return -1;
     };
+    // SAFETY: `owner` is non-null (checked above), aligned and initialized per the caller contract.
     let owner = unsafe { &*owner };
     let Some(&ordinal) = owner.first.get(bytes) else {
         return 0;
@@ -155,6 +166,7 @@ pub unsafe extern "C" fn swr_v1_memory_records_get(
     let Some(view) = owner.view(ordinal) else {
         return 0;
     };
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(view) };
     1
 }
@@ -166,11 +178,14 @@ pub unsafe extern "C" fn swr_v1_memory_records_cursor_open(
     if cursor.is_null() {
         return -1;
     }
+    // SAFETY: `cursor` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { cursor.write(Cursor::default()) };
     if owner.is_null() {
         return -1;
     }
+    // SAFETY: `owner` is non-null (checked above), aligned and initialized per the caller contract.
     let owner = unsafe { &*owner };
+    // SAFETY: `cursor` is non-null (checked above), aligned and writable.
     unsafe {
         cursor.write(Cursor {
             count: owner.order.len(),
@@ -190,11 +205,14 @@ pub unsafe extern "C" fn swr_v1_memory_records_cursor_next(
     if output.is_null() {
         return -1;
     }
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(View::default()) };
     if owner.is_null() || cursor.is_null() {
         return -1;
     }
+    // SAFETY: `owner` is non-null (checked above), aligned and initialized per the caller contract.
     let owner = unsafe { &*owner };
+    // SAFETY: `cursor` is non-null (checked above), aligned and exclusive per the caller contract.
     let cursor = unsafe { &mut *cursor };
     if cursor.generation != owner.generation
         || cursor.count != owner.order.len()
@@ -207,6 +225,7 @@ pub unsafe extern "C" fn swr_v1_memory_records_cursor_next(
         return 0;
     };
     cursor.position += 1;
+    // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(view) };
     1
 }
@@ -222,7 +241,9 @@ pub unsafe extern "C" fn swr_v1_memory_records_copy_name(
     if owner.is_null() || view.is_null() {
         return -1;
     }
+    // SAFETY: `owner` is non-null (checked above), aligned and initialized per the caller contract.
     let owner = unsafe { &*owner };
+    // SAFETY: `view` is non-null (checked above), aligned and initialized per the caller contract.
     let view = unsafe { view.read() };
     if owner.view(view.ordinal) != Some(view)
         || capacity < view.name_length
@@ -231,6 +252,8 @@ pub unsafe extern "C" fn swr_v1_memory_records_copy_name(
         return -1;
     }
     if view.name_length != 0 {
+        // SAFETY: the validated view's name has `name_length <= capacity` bytes; `output` is
+        // non-null here and disjoint from the owner.
         unsafe {
             ptr::copy_nonoverlapping(
                 owner.order[view.ordinal].name.as_ptr(),
@@ -246,10 +269,12 @@ pub unsafe extern "C" fn swr_v1_memory_records_clear(owner: *const Records, row:
     if owner.is_null() {
         return -1;
     }
+    // SAFETY: `owner` is non-null (checked above), aligned and initialized per the caller contract.
     let owner = unsafe { &*owner };
     // Metadata can only be published through checked declaration. No native
     // metadata loads or effects are needed while Rust clears the row fields.
     for record in &owner.order {
+        // SAFETY: `row` is the caller's live row; each record's span was checked at declaration.
         if unsafe { swr_v1_memory_table_clear_value(row, record.index, record.width, record.kind) }
             != 0
         {
@@ -263,13 +288,15 @@ pub unsafe extern "C" fn swr_v1_memory_records_close(field: *mut *mut Records) -
     if field.is_null() {
         return -1;
     }
+    // SAFETY: `field` is non-null (checked above), aligned and initialized per the caller contract.
     let owner = unsafe { field.read() };
     if !owner.is_null() {
-        unsafe {
-            field.write(ptr::null_mut());
-            ptr::drop_in_place(owner);
-            dealloc(owner.cast(), Layout::new::<Records>());
-        }
+        // SAFETY: `field` is non-null (checked above), the caller's live slot.
+        unsafe { field.write(ptr::null_mut()) };
+        // SAFETY: the owner from this module's create, unpublished above, freed once.
+        unsafe { ptr::drop_in_place(owner) };
+        // SAFETY: allocated with this layout by create; its value was just dropped.
+        unsafe { dealloc(owner.cast(), Layout::new::<Records>()) };
     }
     0
 }

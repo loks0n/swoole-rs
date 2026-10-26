@@ -73,15 +73,18 @@ pub unsafe extern "C" fn swr_v2_memory_mapping_step(
     state: *mut MappingOperation,
     output: *mut MappingEffect,
 ) -> i32 {
+    // SAFETY: `output` is null or live, aligned and exclusively lent for this call.
     let Some(output) = (unsafe { output.as_mut() }) else {
         return -1;
     };
     *output = MappingEffect::default();
+    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return -1;
     };
     match (state.kind, state.phase) {
         (ALLOCATE, 0) => {
+            // SAFETY: `state.total` is a writable field of the caller's exclusive state.
             if unsafe { swr_v1_memory_mapping_size(state.requested, &mut state.total) } != 0 {
                 return finish(state, output, ptr::null_mut(), -1);
             }
@@ -107,6 +110,7 @@ pub unsafe extern "C" fn swr_v2_memory_mapping_step(
                 state.phase = 3;
                 return effect(state, output, 3);
             }
+            // SAFETY: the native mmap returned `memory` covering `total` bytes; initialize checks the rest.
             let payload = unsafe { swr_v1_memory_mapping_initialize(state.memory, state.total) };
             if payload.is_null() {
                 state.phase = 4;
@@ -117,6 +121,7 @@ pub unsafe extern "C" fn swr_v2_memory_mapping_step(
         }
         (ALLOCATE, 3 | 4) => finish(state, output, ptr::null_mut(), -1),
         (RELEASE | PROTECT, 0) => {
+            // SAFETY: `source` is the caller's live mapping payload.
             let Some(value) = (unsafe { extent(state.source) }) else {
                 if state.kind == PROTECT {
                     state.phase = 2;
@@ -152,6 +157,7 @@ pub unsafe extern "C" fn swr_v2_memory_mapping_step(
             if state.memory.is_null() {
                 return finish(state, output, ptr::null_mut(), -1);
             }
+            // SAFETY: both are live mapping payloads; relocate rejects overlap.
             if unsafe { swr_v1_memory_mapping_relocate(state.source, state.memory) } != 0 {
                 state.phase = 2;
                 effect(state, output, 9)
