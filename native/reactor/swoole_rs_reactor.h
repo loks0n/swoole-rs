@@ -191,10 +191,25 @@ swr_v1_socket_ssl_handshake_result swr_v1_socket_ssl_connect(struct ssl_st *ssl)
  * rejects the peer, or X509_V_OK (a self-signed leaf passes when allowed). */
 int swr_v1_socket_ssl_check_host(struct x509_st *cert, const char *name, size_t length);
 long swr_v1_socket_ssl_verify(const struct ssl_st *ssl, bool allow_self_signed);
+/* PEM export of a certificate into at most length bytes (-1 BIO_new failed, -2
+ * PEM_write_bio_X509 failed; frees cert when consume); the oldest queued error's
+ * reason string (popped) and reason code (peeked); a new SSL on fd from context
+ * (0, or 1 SSL_new, 2 SSL_set_fd with *error, 3 SSL_set_ex_data failed). */
+int swr_v1_socket_ssl_pem(struct x509_st *cert, char *buffer, size_t length, bool consume);
+const char *swr_v1_socket_ssl_error_reason(int *reason);
+int swr_v1_socket_ssl_peek_reason(void);
+int swr_v1_socket_ssl_new(struct ssl_ctx_st *context, int fd, int flags, int index, void *socket, struct ssl_st **ssl, unsigned long *error);
 /* network::Socket's per-request reads and writes: recv/send/peek with EINTR and
  * dont_restart, driving `tls` (ssl_recv/ssl_send/SSL_peek on `socket`) when set;
  * catch_error's classification (swReturnCode). */
 typedef ssize_t (*swr_v1_socket_tls_io)(void *socket, void *buffer, size_t length);
+/* Socket::ssl_sendfile: pread up to SW_BUFFER_SIZE_BIG bytes at *offset, send them
+ * once through send, advance *offset. warn: 1 write() failed, 2 pread() failed. */
+typedef struct {
+    ssize_t value;
+    int warn;
+} swr_v1_socket_ssl_sendfile_result;
+swr_v1_socket_ssl_sendfile_result swr_v1_socket_ssl_sendfile(int file_fd, off_t *offset, size_t size, swr_v1_socket_tls_io send, void *socket, bool *kernel_nobufs);
 ssize_t swr_v1_socket_recv(int fd, void *buffer, size_t length, int flags, bool nonblock, bool dont_restart, swr_v1_socket_tls_io tls, void *socket);
 ssize_t swr_v1_socket_send(int fd, const void *buffer, size_t length, int flags, bool dont_restart, swr_v1_socket_tls_io tls, void *socket);
 ssize_t swr_v1_socket_peek(int fd, void *buffer, size_t length, int flags, swr_v1_socket_tls_io tls, void *socket);
@@ -209,6 +224,28 @@ typedef struct {
     size_t offset_bytes;
 } swr_v1_socket_iov_state;
 ssize_t swr_v1_socket_iov(int fd, bool write, swr_v1_socket_iov_state *state, swr_v1_socket_tls_io tls, void *socket);
+/* Socket::wait_for and the *_sync methods: Rust runs the loop (prepare, retry
+ * classification, ENOBUFS backoff, poll, timeout) and each kind's progress rule;
+ * native code gives the socket's flags and performs each I/O call. Returns the
+ * bytes moved or -1 with the last error and errno set. */
+enum {
+    SWR_SOCKET_SYNC_SEND = 0,     /* all of length, retrying short writes */
+    SWR_SOCKET_SYNC_RECV = 1,     /* once, or all of length under MSG_WAITALL */
+    SWR_SOCKET_SYNC_ONCE = 2,     /* one call that moves bytes */
+    SWR_SOCKET_SYNC_SENDFILE = 3, /* all of length; a zero return is an error */
+};
+typedef struct {
+    void *socket;
+    int fd;
+    bool dont_restart;
+    bool *kernel_nobufs;
+    void (*prepare)(void *socket);
+    int16_t (*events)(void *socket, int event);
+    ssize_t (*io)(void *socket, void *buffer, size_t length, int flags);
+    void (*set_last_error)(int error);
+    void (*dispatch)(void);
+} swr_v1_socket_sync_hooks;
+ssize_t swr_v1_socket_sync(const swr_v1_socket_sync_hooks *hooks, int kind, void *buffer, size_t length, int flags, int event, int timeout_ms);
 int swr_v1_socket_catch_error(int error, bool *kernel_nobufs);
 /* network::Socket's swSocketType <-> (domain, type), and the type a host names
  * with how many leading bytes convert_to_type erases. */

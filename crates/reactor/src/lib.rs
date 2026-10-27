@@ -58,6 +58,10 @@ mod socket_rw;
 #[cfg(unix)]
 pub use socket_rw::*;
 #[cfg(unix)]
+mod socket_sync;
+#[cfg(unix)]
+pub use socket_sync::*;
+#[cfg(unix)]
 mod socket_types;
 #[cfg(unix)]
 pub use socket_types::*;
