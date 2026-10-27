@@ -186,6 +186,11 @@ typedef struct {
 } swr_v1_socket_ssl_handshake_result;
 swr_v1_socket_ssl_handshake_result swr_v1_socket_ssl_accept(struct ssl_st *ssl, bool dtls);
 swr_v1_socket_ssl_handshake_result swr_v1_socket_ssl_connect(struct ssl_st *ssl);
+/* Socket::ssl_check_host: X509_check_host on the peer certificate (consumed; may be
+ * null): 0 none, 1 match, 2 no match. Socket::ssl_verify: the verify error that
+ * rejects the peer, or X509_V_OK (a self-signed leaf passes when allowed). */
+int swr_v1_socket_ssl_check_host(struct x509_st *cert, const char *name, size_t length);
+long swr_v1_socket_ssl_verify(const struct ssl_st *ssl, bool allow_self_signed);
 /* network::Socket's per-request reads and writes: recv/send/peek with EINTR and
  * dont_restart, driving `tls` (ssl_recv/ssl_send/SSL_peek on `socket`) when set;
  * catch_error's classification (swReturnCode). */
