@@ -1,24 +1,19 @@
 diff --git a/include/swoole_buffer.h b/include/swoole_buffer.h
-index 5d0dd5800..74b866fb4 100644
+index 5d0dd58..1400def 100644
 --- a/include/swoole_buffer.h
 +++ b/include/swoole_buffer.h
-@@ -18,3 +18,11 @@
- 
-+#ifndef SWOOLE_RS_BUFFER
-+#error "Buffer overlay requires --enable-swoole-rs-buffer"
-+#endif
-+
+@@ -19,2 +19,6 @@
  #include <queue>
 +#include "swoole_rs_buffer.h"
 +#if defined(SWOOLE_RS_BUFFER_TYPED) && SWOOLE_RS_BUFFER_TYPED
 +#include "swoole_rs_buffer_typed.h"
 +#endif
  #include <sys/uio.h>
-@@ -31,2 +39,3 @@ struct BufferChunk {
+@@ -31,2 +35,3 @@ struct BufferChunk {
      Type type;
 +    bool rs_borrowed_ = false;
      uint32_t length = 0;
-@@ -48,6 +57,8 @@ struct BufferChunk {
+@@ -48,6 +53,8 @@ struct BufferChunk {
  class Buffer {
 -    // 0: don't use chunk
 -    uint32_t chunk_size;
@@ -31,7 +26,7 @@ index 5d0dd5800..74b866fb4 100644
 +#endif
 +    void advance(bool drain);
  
-@@ -59,5 +70,10 @@ class Buffer {
+@@ -59,5 +66,10 @@ class Buffer {
  
 -    BufferChunk *front() const {
 -        return queue_.front();
@@ -45,7 +40,7 @@ index 5d0dd5800..74b866fb4 100644
 +    void typed_sendfile(void *token, swr_v1_buffer_dispose dispose);
 +#endif
  
-@@ -67,16 +83,8 @@ class Buffer {
+@@ -67,16 +79,8 @@ class Buffer {
  
 -    uint32_t length() const {
 -        return total_length;

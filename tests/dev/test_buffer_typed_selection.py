@@ -1,4 +1,4 @@
-"""Typed Buffer is selected by building both the Rust Buffer and the Rust reactor; there is no switch."""
+"""Buffer is graduated, so typed Buffer is selected by building the Rust reactor; there is no switch."""
 from pathlib import Path
 import subprocess
 import sys
@@ -11,10 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class TypedBufferSelection(unittest.TestCase):
-    def test_typed_phases_follow_buffer_and_reactor_independently_of_http(self):
+    def test_typed_phases_follow_the_reactor(self):
         variants = set()
-        for modules in [['buffer', 'http'], ['reactor', 'http'], ['buffer', 'reactor', 'http']]:
-            typed = {'buffer', 'reactor'} <= set(modules)
+        for modules in [['timer'], ['reactor']]:
+            typed = 'reactor' in modules
             args = SimpleNamespace(lane='integrate', module=modules, all_modules=False,
                                    php='php', php_extension=[], jobs=2, test=None, case=None,
                                    benchmark=False, compare=False, fix_halfclose=False)
@@ -34,11 +34,11 @@ class TypedBufferSelection(unittest.TestCase):
                 self.assertEqual(compile_command[compile_command.index('--master-patch')+1],
                                  str(ROOT/'migration/patches/integration/0003-server-static-config.patch'))
             variants.add(dev.build_variant(args))
-        self.assertEqual(len(variants), 3)
+        self.assertEqual(len(variants), 2)
 
     def test_the_old_switch_is_gone(self):
-        for command in [[sys.executable, 'tools/dev.py', 'integrate', '--module', 'buffer', '--module', 'reactor', '--buffer-typed', '--plan'],
-                        [sys.executable, 'tools/build_hybrid.py', '--module', 'buffer', '--module', 'reactor', '--buffer-typed']]:
+        for command in [[sys.executable, 'tools/dev.py', 'integrate', '--module', 'reactor', '--buffer-typed', '--plan'],
+                        [sys.executable, 'tools/build_hybrid.py', '--module', 'reactor', '--buffer-typed']]:
             result=subprocess.run(command,cwd=ROOT,capture_output=True,text=True)
             self.assertEqual(result.returncode,2,result.stdout+result.stderr)
             self.assertIn('unrecognized arguments: --buffer-typed',result.stderr)

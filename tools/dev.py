@@ -67,13 +67,13 @@ def changed_modules(base):
 
 
 def selected_modules(args):
-    chosen = MODULES if getattr(args, 'all_modules', False) else args.module or ['buffer', 'websocket']
+    chosen = MODULES if getattr(args, 'all_modules', False) else args.module or ['websocket']
     return sorted(set(chosen) | set(GRADUATED))
 
 
 def typed_buffer(args):
-    """Configure enables the typed Buffer queue whenever both Rust Buffer and Rust reactor are built."""
-    return {'buffer', 'reactor'} <= set(selected_modules(args))
+    """Configure enables the typed Buffer queue whenever the Rust reactor is built (buffer is graduated)."""
+    return 'reactor' in selected_modules(args)
 
 
 def build_variant(args):
@@ -695,10 +695,10 @@ def plan(args, reports):
         pytest('buffer-posix-iovec', 'tests/modules/buffer/test_iovec.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize')
         if integrate:
             # Typed Buffer refuses the mutable legacy front that the facade and storage consumers
-            # use, so they run on a Buffer-only build, where the legacy facade still applies (#207).
+            # use, so they run on a build without the Rust reactor, where the legacy facade still applies (#207).
             legacy_export = artifact_reports / 'legacy-buffer-export'
             if typed_buffer(args):
-                script('buffer-legacy-build', 'tools/build_hybrid.py', '--module', 'buffer',
+                script('buffer-legacy-build', 'tools/build_hybrid.py',
                        *(['--php-sockets'] if getattr(args, 'php_sockets', False) else []),
                        '--export', legacy_export, '--jobs', args.jobs,
                        *(['--native-build-root', args.native_build_root] if getattr(args, 'native_build_root', None) else []),
