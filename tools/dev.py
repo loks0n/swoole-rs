@@ -787,19 +787,19 @@ def plan(args, reports):
             arg for project in json.loads((ROOT / 'corpus/manifest.json').read_text())
             if project['id'] != '11-buffer-lifecycle' for arg in ['--project', project['id']]]
         script('applications', 'corpus/run.py', *php, *engines, *projects, '--require-all', *report('applications'))
-    phpt = []
-    if not integrate:
-        if 'websocket' in modules:
-            phpt += ['--module', 'websocket', '--module', 'websocket-network']
-        if 'timer' in modules:
-            phpt += ['--module', 'timers']
+    network = ['--external-network'] if getattr(args, 'external_network', False) else []
     if args.case and not integrate:
-        phpt = [arg for case in args.case for arg in ['--case', case]]
-    # The merge tier's phpt-* jobs run every pinned PHPT; this is for local runs only.
-    # Buffer changes affect all queued network output; retain all PHPTs for it.
-    if not integrate and ('buffer' in modules or phpt):
-        script('phpt', 'corpus/upstream/run.py', '--source', manifest.parent / 'src', *php, *engines, *phpt, '--jobs', args.jobs,
-               '--require-all', *(['--external-network'] if getattr(args, 'external_network', False) else []), *report('phpt'))
+        script('phpt', 'corpus/upstream/run.py', '--source', manifest.parent / 'src', *php, *engines, '--jobs', args.jobs,
+               *[arg for case in args.case for arg in ['--case', case]], '--require-all', *network, *report('phpt'))
+    elif not integrate and not getattr(args, 'all_modules', False) and set(args.module or ['websocket']) < set(MODULES):
+        # The original PHPT families of the chosen modules, gated on upstream like the merge
+        # tier's phpt jobs, which run every family (and so cover a change to all modules).
+        ids = {MODULES[module][0] for module in args.module or ['websocket']}
+        families = sorted({family for module in json.loads((ROOT / 'migration/modules.json').read_text())['modules']
+                           if module['id'] in ids for family in module.get('phpt_families', [])})
+        if families:
+            add('phpt', 'corpus/upstream/families.sh', reports / 'phpt', reference, hybrid, *php,
+                *[arg for family in families for arg in ['--module', family]], *network)
     if args.benchmark:
         # These phases are strictly after correctness checks and never concurrent.
         if 'timer' in modules:

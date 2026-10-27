@@ -43,6 +43,10 @@
         "migration/patches/buffer/",
         "tests/modules/buffer/"
       ],
+      "phpt_families": [
+        "swoole_socket_coro",
+        "swoole_server_port"
+      ],
       "upstream_patch_targets": [
         "src/core/buffer.cc",
         "include/swoole_buffer.h",
@@ -64,6 +68,9 @@
         "migration/patches/websocket/",
         "tests/modules/websocket/"
       ],
+      "phpt_families": [
+        "swoole_websocket_server"
+      ],
       "upstream_patch_targets": [
         "src/protocol/websocket.cc",
         "include/swoole_websocket.h",
@@ -82,6 +89,9 @@
         "native/timer/",
         "migration/patches/timer/",
         "tests/modules/timer/"
+      ],
+      "phpt_families": [
+        "swoole_timer"
       ],
       "upstream_patch_targets": [
         "src/core/timer.cc",
@@ -107,6 +117,9 @@
         "migration/patches/http/",
         "tests/modules/http/"
       ],
+      "phpt_families": [
+        "swoole_http_server"
+      ],
       "upstream_patch_targets": [
         "src/protocol/http.cc",
         "src/server/static_handler.cc",
@@ -129,6 +142,10 @@
         "native/reactor/",
         "migration/patches/reactor/",
         "tests/modules/reactor/"
+      ],
+      "phpt_families": [
+        "swoole_event",
+        "swoole_socket_coro"
       ],
       "upstream_patch_targets": [
         "src/reactor/",
@@ -157,6 +174,10 @@
         "migration/patches/coroutine/",
         "tests/modules/coroutine/"
       ],
+      "phpt_families": [
+        "swoole_coroutine",
+        "swoole_channel_coro"
+      ],
       "upstream_patch_targets": [
         "src/coroutine/base.cc",
         "src/coroutine/context.cc",
@@ -183,6 +204,9 @@
         "native/hooks/",
         "migration/patches/hooks/",
         "tests/modules/hooks/"
+      ],
+      "phpt_families": [
+        "swoole_runtime"
       ],
       "upstream_patch_targets": [
         "src/coroutine/hook.cc",
@@ -216,6 +240,10 @@
         "migration/patches/process/",
         "tests/modules/process/"
       ],
+      "phpt_families": [
+        "swoole_process",
+        "swoole_process_pool"
+      ],
       "upstream_patch_targets": [
         "src/server/worker.cc",
         "src/server/task_worker.cc",
@@ -243,6 +271,9 @@
         "migration/patches/base64/",
         "tests/modules/base64/"
       ],
+      "phpt_families": [
+        "swoole_websocket_server"
+      ],
       "upstream_patch_targets": [
         "src/core/base64.cc"
       ],
@@ -259,6 +290,9 @@
         "crates/crc32/",
         "migration/patches/crc32/",
         "tests/modules/crc32/"
+      ],
+      "phpt_families": [
+        "swoole_thread"
       ],
       "upstream_patch_targets": [
         "src/core/crc32.cc"
@@ -278,6 +312,9 @@
         "migration/patches/error/",
         "tests/modules/error/"
       ],
+      "phpt_families": [
+        "swoole_http2_server"
+      ],
       "upstream_patch_targets": [
         "src/core/error.cc"
       ],
@@ -295,6 +332,9 @@
         "native/memory/",
         "migration/patches/memory/",
         "tests/modules/memory/"
+      ],
+      "phpt_families": [
+        "swoole_table"
       ],
       "upstream_patch_targets": [
         "src/memory/",
@@ -319,6 +359,10 @@
         "native/protocols/",
         "migration/patches/protocols/",
         "tests/modules/protocols/"
+      ],
+      "phpt_families": [
+        "swoole_redis_server",
+        "swoole_client_sync"
       ],
       "upstream_patch_targets": [
         "src/protocol/mqtt.cc",
@@ -347,6 +391,10 @@
         "migration/patches/utilities/",
         "tests/modules/utilities/"
       ],
+      "phpt_families": [
+        "swoole_global",
+        "swoole_function"
+      ],
       "upstream_patch_targets": [
         "src/core/misc.cc",
         "src/core/log.cc",
@@ -368,6 +416,9 @@
         "migration/patches/halfclose/",
         "tests/modules/halfclose/"
       ],
+      "phpt_families": [
+        "swoole_server_port"
+      ],
       "upstream_patch_targets": [],
       "applies_first": true
     },
@@ -383,6 +434,11 @@
         "native/locks/",
         "migration/patches/locks/",
         "tests/modules/locks/"
+      ],
+      "phpt_families": [
+        "swoole_lock",
+        "swoole_atomic",
+        "swoole_coroutine_lock"
       ],
       "upstream_patch_targets": [
         "src/lock/mutex.cc",
@@ -414,6 +470,10 @@
         "migration/patches/wrappers/",
         "tests/modules/wrappers/"
       ],
+      "phpt_families": [
+        "swoole_event",
+        "swoole_timer"
+      ],
       "upstream_patch_targets": [
         "src/wrapper/event.cc",
         "src/wrapper/http.cc"
@@ -436,6 +496,9 @@
         "native/framing/",
         "migration/patches/framing/",
         "tests/modules/framing/"
+      ],
+      "phpt_families": [
+        "swoole_client_coro"
       ],
       "upstream_patch_targets": [
         "src/protocol/base.cc",
@@ -460,6 +523,10 @@
         "migration/patches/corebase/",
         "tests/modules/corebase/"
       ],
+      "phpt_families": [
+        "swoole_global",
+        "swoole_function"
+      ],
       "upstream_patch_targets": [
         "src/core/base.cc"
       ],
@@ -483,6 +550,9 @@
         "native/ossupport/",
         "migration/patches/ossupport/",
         "tests/modules/ossupport/"
+      ],
+      "phpt_families": [
+        "swoole_coroutine_system"
       ],
       "upstream_patch_targets": [
         "src/os/async_thread.cc",
@@ -509,6 +579,9 @@
         "native/tls/",
         "migration/patches/tls/",
         "tests/modules/tls/"
+      ],
+      "phpt_families": [
+        "swoole_socket_coro"
       ],
       "upstream_patch_targets": [
         "src/protocol/ssl.cc",
@@ -540,6 +613,12 @@
         "migration/patches/clients/",
         "tests/modules/clients/"
       ],
+      "phpt_families": [
+        "swoole_client_coro",
+        "swoole_client_sync",
+        "swoole_client_async",
+        "swoole_http_client_coro"
+      ],
       "upstream_patch_targets": [
         "src/network/address.cc",
         "src/network/client.cc",
@@ -569,6 +648,10 @@
         "native/httpbindings/",
         "migration/patches/httpbindings/",
         "tests/modules/httpbindings/"
+      ],
+      "phpt_families": [
+        "swoole_http_server",
+        "swoole_http_server_coro"
       ],
       "upstream_patch_targets": [
         "ext-src/swoole_http_cookie.cc",
@@ -600,6 +683,11 @@
         "native/http2/",
         "migration/patches/http2/",
         "tests/modules/http2/"
+      ],
+      "phpt_families": [
+        "swoole_http2_server",
+        "swoole_http2_client_coro",
+        "swoole_http2_server_coro"
       ],
       "upstream_patch_targets": [
         "src/protocol/http2.cc",
@@ -637,6 +725,9 @@
         "migration/patches/ports/",
         "tests/modules/ports/"
       ],
+      "phpt_families": [
+        "swoole_server_port"
+      ],
       "upstream_patch_targets": [
         "src/server/port.cc",
         "ext-src/swoole_server_port.cc"
@@ -658,6 +749,10 @@
         "native/phphelpers/",
         "migration/patches/phphelpers/",
         "tests/modules/phphelpers/"
+      ],
+      "phpt_families": [
+        "swoole_library",
+        "swoole_stdext"
       ],
       "upstream_patch_targets": [
         "ext-src/php_swoole_cxx.cc",
@@ -683,6 +778,10 @@
         "migration/patches/phpcollections/",
         "tests/modules/phpcollections/"
       ],
+      "phpt_families": [
+        "swoole_table",
+        "swoole_channel_coro"
+      ],
       "upstream_patch_targets": [
         "ext-src/swoole_table.cc",
         "ext-src/swoole_channel_coro.cc"
@@ -706,6 +805,9 @@
         "native/phpevents/",
         "migration/patches/phpevents/",
         "tests/modules/phpevents/"
+      ],
+      "phpt_families": [
+        "swoole_event"
       ],
       "upstream_patch_targets": [
         "ext-src/swoole_event.cc"
@@ -731,6 +833,13 @@
         "native/phpcoroutines/",
         "migration/patches/phpcoroutines/",
         "tests/modules/phpcoroutines/"
+      ],
+      "phpt_families": [
+        "swoole_coroutine",
+        "swoole_coroutine_system",
+        "swoole_coroutine_scheduler",
+        "swoole_coroutine_util",
+        "swoole_coroutine_wait_group"
       ],
       "upstream_patch_targets": [
         "ext-src/swoole_coroutine.cc",
