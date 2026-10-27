@@ -466,38 +466,6 @@ pub extern "C" fn swr_v1_hook_sleep_timeout(seconds: f64, minimum: f64) -> f64 {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_cancel_action(bound: bool, event: u32, read: u32, write: u32) -> u32 {
-    if !bound {
-        0
-    } else if event == read {
-        1
-    } else if event == write {
-        2
-    } else {
-        3
-    }
-}
-
-/// Stateless selectors over the existing native close fields. Stage1 facts are
-/// acquired only after the native shutdown has returned; no shadow close state.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_close_action(
-    stage: u32,
-    closed: bool,
-    connected: bool,
-    bound: bool,
-) -> i32 {
-    match stage {
-        0 if closed => -1,
-        0 if connected => 1,
-        0 => 0,
-        1 if bound => 2,
-        1 => 3,
-        _ => -2,
-    }
-}
-
-#[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_connect_action(
     result: i32,
     interrupted: bool,
