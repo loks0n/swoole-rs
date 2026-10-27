@@ -513,7 +513,7 @@ index a4a523e..f192fb6 100644
 +    return swr_v1_wait_count();
  }
 diff --git a/src/server/manager.cc b/src/server/manager.cc
-index ee4229d..e611104 100644
+index ee4229d..7b493ce 100644
 --- a/src/server/manager.cc
 +++ b/src/server/manager.cc
 @@ -17,2 +17,7 @@
@@ -536,6 +536,43 @@ index ee4229d..e611104 100644
 -            } else if (reload_task_worker) {  // only reload task workers
 +            } else if (reload_action == 2) {  // only reload task workers
                  pool->reload_init = reload_task_worker = false;
+@@ -352,14 +359,16 @@ void Manager::signal_handler(int signo) {
+ 
+-    switch (signo) {
+-    case SIGTERM:
++    switch (swr_v1_process_manager_signal_action(signo)) {
++    case 1:
+         _server->running = false;
+         break;
+-    case SIGUSR1:
+-    case SIGUSR2:
+-        _server->reload(signo == SIGUSR1);
++    case 2:
++        _server->reload(true);
++        break;
++    case 3:
++        _server->reload(false);
+         break;
+-    case SIGIO:
++    case 4:
+         pool->read_message = true;
+         break;
+-    case SIGALRM:
++    case 5:
+         if (manager->force_kill) {
+@@ -368,3 +377,3 @@ void Manager::signal_handler(int signo) {
+         break;
+-    case SIGWINCH:
++    case 6:
+         manager->reopen_logger();
+@@ -372,7 +381,2 @@ void Manager::signal_handler(int signo) {
+     default:
+-#ifdef SIGRTMIN
+-        if (signo == SIGRTMIN) {
+-            manager->reopen_logger();
+-        }
+-#endif
+         break;
 diff --git a/src/server/task_worker.cc b/src/server/task_worker.cc
 index 324abb3..cfa34a0 100644
 --- a/src/server/task_worker.cc

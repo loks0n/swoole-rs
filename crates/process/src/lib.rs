@@ -12,6 +12,7 @@ pub mod signal;
 pub mod signalfd;
 pub mod task_file;
 pub mod wait;
+use std::ffi::c_int;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExitObservation {
@@ -152,6 +153,38 @@ pub extern "C" fn swr_v1_process_reload_kill(
         1
     } else {
         2
+    }
+}
+/// SIGRTMIN is a runtime value on Linux and undefined elsewhere (upstream guards
+/// it with `#ifdef SIGRTMIN`).
+#[cfg(target_os = "linux")]
+fn is_sigrtmin(signo: c_int) -> bool {
+    signo == libc::SIGRTMIN()
+}
+#[cfg(not(target_os = "linux"))]
+fn is_sigrtmin(_signo: c_int) -> bool {
+    false
+}
+/// `Manager::signal_handler`'s action for `signo`:0 none,1 stop (SIGTERM),
+/// 2 reload all workers (SIGUSR1),3 reload workers only (SIGUSR2),4 read a worker
+/// message (SIGIO),5 force-kill if armed (SIGALRM),6 reopen the logger (SIGWINCH or
+/// SIGRTMIN). The manager-pid guard and every effect stay native.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_process_manager_signal_action(signo: c_int) -> u32 {
+    if signo == libc::SIGTERM {
+        1
+    } else if signo == libc::SIGUSR1 {
+        2
+    } else if signo == libc::SIGUSR2 {
+        3
+    } else if signo == libc::SIGIO {
+        4
+    } else if signo == libc::SIGALRM {
+        5
+    } else if signo == libc::SIGWINCH || is_sigrtmin(signo) {
+        6
+    } else {
+        0
     }
 }
 /// Held by tests that install process-wide signal state (handlers, the signalfd
