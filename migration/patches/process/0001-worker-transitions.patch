@@ -357,6 +357,161 @@ index e05a2d9..1e4b22e 100644
 -    sw_memset_zero(signals, sizeof(signals));
 +    swr_v1_signal_reset();
  }
+diff --git a/src/os/wait.cc b/src/os/wait.cc
+index a4a523e..f192fb6 100644
+--- a/src/os/wait.cc
++++ b/src/os/wait.cc
+@@ -23,4 +23,7 @@
+ 
+-#include <list>
+-#include <unordered_map>
++#ifndef SWOOLE_RS_PROCESS
++#error "Process overlay requires --enable-swoole-rs-process"
++#endif
++#include "swoole_rs_process.h"
++
+ 
+@@ -29,15 +32,2 @@ using swoole::coroutine::System;
+ 
+-struct WaitTask {
+-    Coroutine *co;
+-    pid_t pid;
+-    int status;
+-};
+-
+-/**
+- * Wait, waitpid, and signal cannot be used in a multithreaded environment;
+- * they are only applicable to the main thread. There is no need to treat them as thread-local variables.
+- */
+-static std::list<WaitTask *> wait_list;
+-static std::unordered_map<pid_t, WaitTask *> waitpid_map;
+-static std::unordered_map<pid_t, int> child_processes;
+ 
+@@ -45,28 +35,8 @@ bool signal_ready = false;
+ 
+-static void signal_handler(int signo) {
+-    if (signo != SIGCHLD) {
+-        return;
+-    }
+-
+-    while (true) {
+-        auto exit_status = swoole::wait_process(-1, WNOHANG);
+-        if (exit_status.get_pid() <= 0) {
+-            break;
+-        }
+-
+-        WaitTask *task = nullptr;
+-        if (waitpid_map.find(exit_status.get_pid()) != waitpid_map.end()) {
+-            task = waitpid_map[exit_status.get_pid()];
+-        } else if (!wait_list.empty()) {
+-            task = wait_list.front();
+-        } else {
+-            child_processes[exit_status.get_pid()] = exit_status.get_status();
+-        }
++static void wait_resume(void *co) {
++    static_cast<Coroutine *>(co)->resume();
++}
+ 
+-        if (task) {
+-            task->status = exit_status.get_status();
+-            task->pid = exit_status.get_pid();
+-            task->co->resume();
+-        }
+-    }
++static void signal_handler(int signo) {
++    swr_v1_wait_reap(signo, wait_resume);
+ }
+@@ -91,2 +61,14 @@ static void signal_init() {
+ 
++static void *wait_current() {
++    return SwooleTG.reactor ? Coroutine::get_current() : nullptr;
++}
++
++static void wait_yield(void *co, double timeout) {
++    static_cast<Coroutine *>(co)->yield_ex(timeout);
++}
++
++static bool wait_timed_out(void *co) {
++    return static_cast<Coroutine *>(co)->is_timedout();
++}
++
+ #if SW_USE_IOURING
+@@ -130,61 +112,5 @@ pid_t System::waitpid(pid_t _pid, int *_stat_loc, int _options, double timeout)
+ #endif
+-    if (_pid < 0) {
+-        if (!child_processes.empty()) {
+-            auto i = child_processes.begin();
+-            pid_t pid = i->first;
+-            *_stat_loc = i->second;
+-            child_processes.erase(i);
+-            return pid;
+-        }
+-    } else {
+-        auto i = child_processes.find(_pid);
+-        if (i != child_processes.end()) {
+-            *_stat_loc = i->second;
+-            child_processes.erase(i);
+-            return _pid;
+-        }
+-    }
+-
+-    if (sw_unlikely(SwooleTG.reactor == nullptr || !Coroutine::get_current() || (_options & WNOHANG))) {
+-        return ::waitpid(_pid, _stat_loc, _options);
+-    }
+-
+-    /* try once if failed to init the task, and must register SIGCHLD before try waitpid, or may lose the SIGCHLD
+-     */
+-    WaitTask task;
+-    signal_init();
+-    task.pid = ::waitpid(_pid, _stat_loc, _options | WNOHANG);
+-    if (task.pid != 0) {
+-        return task.pid;
+-    }
+-
+-    task.pid = -1;
+-    task.status = 0;
+-    task.co = Coroutine::get_current();
+-
+-    /* enqueue */
+-    if (_pid < 0) {
+-        wait_list.push_back(&task);
+-    } else {
+-        waitpid_map[_pid] = &task;
+-    }
+-
+-    task.co->yield_ex(timeout);
+-
+-    /* dequeue */
+-    if (_pid < 0) {
+-        if (task.pid > 0) {
+-            wait_list.pop_front();
+-        } else {
+-            /* timeout so we should remove it from the list */
+-            wait_list.remove(&task);
+-        }
+-    } else {
+-        waitpid_map.erase(_pid);
+-    }
+-
+-    /* clear and assign result */
+-    if (task.pid > 0) {
+-        *_stat_loc = task.status;
+-    } else if (task.co->is_timedout()) {
++    static const swr_v1_wait_coroutines coroutines = {wait_current, signal_init, wait_yield, wait_resume, wait_timed_out};
++    const auto waited = swr_v1_wait_pid(_pid, _stat_loc, _options, timeout, &coroutines);
++    if (waited.timed_out) {
+         errno = ETIMEDOUT;
+@@ -192,4 +118,3 @@ pid_t System::waitpid(pid_t _pid, int *_stat_loc, int _options, double timeout)
+     }
+-
+-    return task.pid;
++    return waited.pid;
+ }
+@@ -198,3 +123,3 @@ extern "C" {
+ size_t swoole_coroutine_wait_count() {
+-    return wait_list.size() + waitpid_map.size();
++    return swr_v1_wait_count();
+ }
 diff --git a/src/server/manager.cc b/src/server/manager.cc
 index ee4229d..e611104 100644
 --- a/src/server/manager.cc
