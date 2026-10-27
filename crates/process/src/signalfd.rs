@@ -236,6 +236,7 @@ mod tests {
 
     #[test]
     fn registers_reads_and_clears() {
+        let _state = crate::signal_state_lock();
         let handler = handler as *const () as usize;
         swr_v1_signalfd_init();
         assert_eq!(swr_v1_signalfd_set(libc::SIGURG, handler), 0);
