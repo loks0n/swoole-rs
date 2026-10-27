@@ -306,7 +306,8 @@ def plan(args, reports):
                    '--source', ROOT / 'target/upstream/src', '--source-ref', 'HEAD', *php,
                    '--selected-export', selected_export / 'export.json',
                    '--native-export', native_export / 'export.json', *report('coroutine-production-stack'))
-        for name in ['tokens', 'stack', 'timing', 'scheduler']:
+        # tokens.py runs inside coroutine-channel-state, with and without sanitizers.
+        for name in ['stack', 'timing', 'scheduler']:
             phase = 'coroutine-' + name
             script(phase, 'tests/modules/coroutine/' + name + '.py', '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
