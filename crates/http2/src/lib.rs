@@ -468,12 +468,12 @@ pub unsafe extern "C" fn sw_rs_http2_decode_frame(
     ptr::write(
         out,
         Http2FrameFacts {
-            length: ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32,
-            kind: b[3] as u32,
-            flags: b[4] as u32,
+            length: (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]),
+            kind: u32::from(b[3]),
+            flags: u32::from(b[4]),
             stream_id: id,
             publish_last_id: u32::from(id > previous_last_id),
-            action: frame_action(client, b[3] as u32, b[4] as u32),
+            action: frame_action(client, u32::from(b[3]), u32::from(b[4])),
         },
     );
     1

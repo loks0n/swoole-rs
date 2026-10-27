@@ -159,7 +159,7 @@ mod tests {
             encode(9, true, u64::MAX, b""),
             b"$20\r\n18446744073709551615\r\n"
         );
-        assert_eq!(encode(5, true, u32::MAX as u64, b""), b"*-1\r\n");
+        assert_eq!(encode(5, true, u64::from(u32::MAX), b""), b"*-1\r\n");
         assert_eq!(encode(6, true, 1 << 31, b""), b"*0\r\n");
         assert_eq!(encode(6, true, (1 << 30) + 1, b""), b"*-2147483646\r\n");
     }

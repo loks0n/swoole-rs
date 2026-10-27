@@ -626,7 +626,7 @@ mod number_tests {
                     data: ptr::null(),
                     length: 0,
                     count: 0,
-                    offset: value as i64,
+                    offset: i64::from(value),
                     alignment: 8,
                     page: 4096,
                 };
@@ -672,7 +672,7 @@ mod number_tests {
             data: ptr::null(),
             length: 0,
             count: 0,
-            offset: i32::MAX as i64 + 1,
+            offset: i64::from(i32::MAX) + 1,
             alignment: 8,
             page: 4096,
         };
