@@ -18,9 +18,11 @@ declarations and layouts are unchanged.
 
 - `hook_no_coro` keeps the reactor/current-coroutine guard only at its existing
   call site; DNS hooks without that guard are unchanged.
-- `hook_flock` keeps the no-reactor/no-coroutine and `LOCK_NB` bypass before
-  validating `LOCK_EX`/`SH`/`UN`. `hook_lock_result` retries only on
-  -1/EWOULDBLOCK; native `wait_for` runs each callback and sleep.
+- `swoole_coroutine_flock` is one Rust call, `hook_coroutine_flock`: outside a
+  coroutine (native passes no sleep) or with `LOCK_NB` it is plain flock; `LOCK_UN`
+  unlocks; `LOCK_EX`/`LOCK_SH` retry `flock(op | LOCK_NB)` only on -1/EWOULDBLOCK,
+  sleeping through `System::sleep` with the `wait_for` backoff, and fail when that
+  sleep is cancelled; anything else is invalid, for native to raise EINVAL.
 - `hook_file_result` rejects open fd 0 and does not reset close's fd.
 - `wait_for` uses a copied caller-local delay/phase/result plan selecting the
   next callback, sleep, success or canceled return. Backoff: capped doubling with

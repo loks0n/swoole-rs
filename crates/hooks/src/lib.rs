@@ -10,6 +10,7 @@
 )]
 
 pub mod address;
+pub mod flock;
 pub mod packet;
 pub mod shutdown;
 pub mod sleep;
@@ -41,44 +42,6 @@ pub extern "C" fn swr_v1_hook_filter(flags: u32, unavailable: u32) -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_file_result(open: bool, result: i64) -> bool {
     if open { result > 0 } else { result == 0 }
-}
-
-/// Lock action: 0 syscall unchanged, 1 cooperative exclusive, 2 shared,
-/// 3 unlock, -1 invalid operation. Native supplies host constants.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_flock(
-    cooperative: bool,
-    operation: i32,
-    nonblock: i32,
-    exclusive: i32,
-    shared: i32,
-    unlock: i32,
-) -> i32 {
-    if !cooperative || operation & nonblock != 0 {
-        return 0;
-    }
-    if operation == exclusive {
-        1
-    } else if operation == shared {
-        2
-    } else if operation == unlock {
-        3
-    } else {
-        -1
-    }
-}
-
-/// -1 completed with error, 0 retry, 1 completed successfully. Unexpected
-/// nonzero flock results preserve the original error completion.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_lock_result(result: i32, would_block: bool) -> i32 {
-    if result == 0 {
-        1
-    } else if result == -1 && would_block {
-        0
-    } else {
-        -1
-    }
 }
 
 #[unsafe(no_mangle)]
