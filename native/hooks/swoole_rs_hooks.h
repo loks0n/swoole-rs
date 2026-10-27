@@ -7,6 +7,9 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <dirent.h>
+#include <sys/stat.h>
+#include <sys/statvfs.h>
+#include <sys/types.h>
 #include <sys/types.h>
 #ifdef __cplusplus
 extern "C" {
@@ -25,6 +28,21 @@ int swr_v1_hook_fclose(FILE *stream, swr_v1_hook_offload offload);
 DIR *swr_v1_hook_opendir(const char *name, swr_v1_hook_offload offload);
 struct dirent *swr_v1_hook_readdir(DIR *dirp, swr_v1_hook_offload offload);
 int swr_v1_hook_closedir(DIR *dirp, swr_v1_hook_offload offload);
+int swr_v1_hook_open(const char *pathname, int flags, mode_t mode, swr_v1_hook_offload offload);
+int swr_v1_hook_fstat(int fd, struct stat *statbuf, swr_v1_hook_offload offload);
+int swr_v1_hook_stat(const char *path, struct stat *statbuf, swr_v1_hook_offload offload);
+int swr_v1_hook_lstat(const char *path, struct stat *statbuf, swr_v1_hook_offload offload);
+int swr_v1_hook_unlink(const char *pathname, swr_v1_hook_offload offload);
+int swr_v1_hook_mkdir(const char *pathname, mode_t mode, swr_v1_hook_offload offload);
+int swr_v1_hook_rmdir(const char *pathname, swr_v1_hook_offload offload);
+int swr_v1_hook_rename(const char *oldpath, const char *newpath, swr_v1_hook_offload offload);
+int swr_v1_hook_fsync(int fd, swr_v1_hook_offload offload);
+int swr_v1_hook_fdatasync(int fd, swr_v1_hook_offload offload);
+int swr_v1_hook_ftruncate(int fd, off_t length, swr_v1_hook_offload offload);
+off_t swr_v1_hook_lseek(int fd, off_t offset, int whence, swr_v1_hook_offload offload);
+ssize_t swr_v1_hook_readlink(const char *pathname, char *buf, size_t len, swr_v1_hook_offload offload);
+int swr_v1_hook_statvfs(const char *path, struct statvfs *buf, swr_v1_hook_offload offload);
+int swr_v1_hook_access(const char *pathname, int mode, swr_v1_hook_offload offload);
 bool swr_v1_hook_no_coro(bool reactor, bool coroutine);
 int32_t swr_v1_hook_transition(uint32_t requested, uint32_t installed, uint32_t bit);
 uint32_t swr_v1_hook_filter(uint32_t flags, uint32_t unavailable);

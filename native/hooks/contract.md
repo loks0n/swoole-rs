@@ -100,9 +100,12 @@ are still never uninstalled.
   unregistering after it. Native passes the coroutine operations, signal
   registration (deferred under `SW_USE_THREAD_CONTEXT`), the reactor exit condition
   and `signal_async_listener_num`.
-- The hooked stdio and directory functions (`fopen`, `fdopen`, `freopen`, `fread`,
-  `fwrite`, `fgets`, `fputs`, `feof`, `fflush`, `fclose`, `opendir`, `readdir`,
-  `closedir`) are Rust (`hook_<name>`): outside a coroutine the libc call runs in
+- The hooked stdio, directory and file-system functions (`fopen`, `fdopen`,
+  `freopen`, `fread`, `fwrite`, `fgets`, `fputs`, `feof`, `fflush`, `fclose`,
+  `opendir`, `readdir`, `closedir`, `open`, `fstat`, `stat`, `lstat`, `unlink`,
+  `mkdir`, `rmdir`, `rename`, `fsync`, `fdatasync`, `ftruncate`, `lseek`,
+  `readlink`, `statvfs`, `access`) are Rust (`hook_<name>`). In an io_uring build
+  native still sends a coroutine's call to `Iouring` where upstream did; outside a coroutine the libc call runs in
   place; inside one it runs through native `async` (`hook_offload`), which parks the
   coroutine and restores the worker's errno; a refused dispatch returns the
   function's failure value.
