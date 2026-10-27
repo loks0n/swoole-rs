@@ -45,7 +45,7 @@ Feature values come from `MODULES` in `tools/build_hybrid.py`.
 | M10 | `crc32` | 16 | `src/core/crc32.cc` | [Contract](core-abi-v1.md). Graduated: always on. |
 | M11 | `error` | 32 | `src/core/error.cc` | Known error strings and formatting. [Contract](core-abi-v1.md). Graduated: always on. |
 | M12 | `memory` | 64 | `src/memory/`, `src/core/{heap,channel}.cc` (+ headers) | Memory pools, shared storage, core collections. `native/memory/swoole_rs_memory.h`. |
-| M13 | `protocols` | 128 | `src/protocol/{mqtt,redis,socks5,message_bus}.cc`, `ext-src/swoole_redis_server.cc` (+ headers) | Packet protocol and proxy codecs. `native/protocols/swoole_rs_protocols.h`. |
+| M13 | `protocols` | 128 | `src/protocol/{mqtt,redis,socks5,message_bus}.cc`, `ext-src/swoole_redis_server.cc` (+ headers) | Packet protocol and proxy codecs. `native/protocols/swoole_rs_protocols.h`. Graduated: always on. |
 | M14 | `utilities` | 512 | `src/core/{misc,log}.cc`, `include/swoole_{log,util}.h`, `include/swoole.h` | Core utilities and logging. Hash width, signed-char promotion and wrapping follow the pinned code. [Contract](../native/utilities/contract.md). |
 | M15 | `--fix-halfclose` | — | patches (applied first) on `src/server/{base,master,reactor_thread}.cc`, `src/network/socket.cc` | Native (not Rust) correction: drain queued output before close, keep pre-queue responses, send TLS close_notify. |
 | M16 | `locks` | 1024 | `src/lock/*.cc`, `ext-src/swoole_{lock,atomic,thread_lock,thread_atomic}.cc` (+ headers) | Native locks and PHP lock/atomic. [Contract](../native/locks/contract.md). |
