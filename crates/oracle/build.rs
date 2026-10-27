@@ -157,7 +157,11 @@ fn http_frame() {
         if text.contains("int frame_request(") {
             parts.push(definition(text, "int frame_request("));
         }
+        if text.contains("int http_no_digits_errno(") {
+            parts.push(definition(text, "int http_no_digits_errno("));
+        }
         for signature in [
+            "void Request::parse_header_info(",
             "int Request::get_protocol(",
             "int Request::get_header_length(",
             "int Request::get_chunked_body_length(",
@@ -180,6 +184,36 @@ fn http_frame() {
         slice(&header, "enum swHttpMethod {", "\n};") + "\n};\n",
     ];
     fs::write(out("http_frame_enums.inc"), enums.concat()).unwrap();
+}
+
+/// StaticHandler::parse_range from the pinned static_handler.cc (upstream) and from
+/// it with the http static-ranges patch applied (candidate, calling Rust), with the
+/// candidate's part-header helpers, copied unchanged for shim/http_range.cc.
+fn http_range() {
+    let patch = "../../migration/patches/http/0002-static-ranges.patch";
+    println!("cargo:rerun-if-changed={patch}");
+    let upstream = fs::read_to_string("upstream/src/server/static_handler.cc")
+        .expect("vendored static_handler.cc");
+    let candidate = apply(
+        &upstream,
+        &fs::read_to_string(patch).expect("static-ranges patch"),
+    );
+    for (name, text) in [("upstream", &upstream), ("candidate", &candidate)] {
+        let parts: Vec<String> = [
+            "static size_t http_range_header(",
+            "static std::string http_range_end(",
+            "void StaticHandler::parse_range(",
+        ]
+        .into_iter()
+        .filter(|signature| text.contains(signature))
+        .map(|signature| definition(text, signature))
+        .collect();
+        fs::write(
+            out(&format!("http_range_{name}.inc")),
+            parts.join("\n") + "\n",
+        )
+        .unwrap();
+    }
 }
 
 /// MQTT's length decoder and RESP's parse from the pinned mqtt.cc and redis.cc
@@ -335,6 +369,7 @@ fn main() {
     http();
     framing();
     http_frame();
+    http_range();
     protocols();
     clients();
     cpp()
@@ -354,6 +389,18 @@ fn main() {
         .include(env::var("OUT_DIR").unwrap())
         .file("shim/protocols.cc")
         .compile("swoole_oracle_protocols");
+    for engine in ["upstream", "candidate"] {
+        cpp()
+            .define("SWR_RANGE_ENGINE", engine)
+            .define(
+                "SWR_RANGE_INC",
+                format!("\"http_range_{engine}.inc\"").as_str(),
+            )
+            .include("../../native/http")
+            .include(env::var("OUT_DIR").unwrap())
+            .file("shim/http_range.cc")
+            .compile(&format!("swoole_{engine}_http_range"));
+    }
     cpp()
         .define("SWR_FRAME_ENGINE", "upstream")
         .define("SWR_FRAME_INC", "\"http_frame_upstream.inc\"")

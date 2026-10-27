@@ -137,5 +137,19 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "http_header_info"
+path = "fuzz_targets/http_header_info.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "http_range"
+path = "fuzz_targets/http_range.rs"
+test = false
+doc = false
+bench = false
+
 # Built only by `cargo +nightly fuzz`, outside the pinned stable workspace.
 [workspace]
