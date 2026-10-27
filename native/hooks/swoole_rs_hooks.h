@@ -91,10 +91,6 @@ typedef struct {
 typedef struct { int32_t signo; int32_t last_error; } swr_v1_hook_signalled;
 void swr_v1_hook_signal_wake(int signo);
 swr_v1_hook_signalled swr_v1_hook_wait_signal(const int32_t *signals, size_t count, double timeout, const swr_v1_hook_signal_ops *ops);
-enum swr_hook_retry_action { SWR_HOOK_RETRY_DONE = 0, SWR_HOOK_RETRY_IO = 1, SWR_HOOK_RETRY_CLASSIFY = 2, SWR_HOOK_RETRY_TIMER = 3, SWR_HOOK_RETRY_WAIT = 4 };
-typedef struct { uint32_t phase; int32_t action; } swr_v1_hook_retry_plan;
-swr_v1_hook_retry_plan swr_v1_hook_retry(uint32_t phase, int64_t result, bool success);
-swr_v1_hook_retry_plan swr_v1_hook_retry_interrupt(uint32_t phase, int64_t result, bool success, bool interrupted);
 uint32_t swr_v1_hook_socket_status(bool closed, bool close_wait);
 uint32_t swr_v1_hook_check_result(int64_t result, bool has_error);
 double swr_v1_hook_timeval(double seconds, double micros);
@@ -143,6 +139,21 @@ typedef struct {
     void (*check)(void *, ssize_t);
 } swr_v1_hook_vector_ops;
 ssize_t swr_v1_hook_vector_all(const swr_v1_hook_vector_ops *ops);
+/* The coroutine Socket's transfers: swr_v1_hook_io retries one call while the socket would
+   block; swr_v1_hook_io_all is recv_all/send_all. wait installs barrier (when given) and waits;
+   buffer, when not null, is the caller's buffer slot that a write's wait may move. */
+typedef struct {
+    void *context;
+    bool retry_interrupted;
+    ssize_t (*call)(void *, char *buffer, size_t length);
+    bool (*would_block)(void *);
+    bool (*start)(void *);
+    bool (*wait)(void *, swr_v1_hook_barrier barrier, void *barrier_state, char **buffer);
+    void (*check)(void *, ssize_t);
+    void (*fail)(void *);
+} swr_v1_hook_transfer_ops;
+ssize_t swr_v1_hook_io(const swr_v1_hook_transfer_ops *ops, char *buffer, size_t length);
+ssize_t swr_v1_hook_io_all(const swr_v1_hook_transfer_ops *ops, char *buffer, size_t length);
 /* The coroutine Socket's connection state, Rust-owned behind an opaque handle (#439). */
 typedef struct swr_v1_hook_socket_state swr_v1_hook_socket_state;
 typedef struct { bool connected, read, write; } swr_v1_hook_socket_flags_t;
@@ -186,27 +197,8 @@ int32_t swr_v1_hook_liveness_error(bool alive, int32_t error, int32_t reset);
 }
 // Callables stay on the native stack. Rust returns before every IO, errno
 // classifier, timer operation or coroutine suspension; exceptions remain native.
-template <class IO, class Classify, class Start, class Wait>
-static inline int64_t swr_hook_retry(IO io, Classify classify, Start start, Wait wait, int interrupt_errno = 0) {
-    int64_t result = io();
-    uint32_t phase = 1;
-    bool success = false;
-    for (;;) {
-        auto plan = swr_v1_hook_retry_interrupt(phase, result, success,
-            interrupt_errno != 0 && phase == 1 && result < 0 && errno == interrupt_errno);
-        phase = plan.phase;
-        switch (plan.action) {
-        case SWR_HOOK_RETRY_IO: result = io(); break;
-        case SWR_HOOK_RETRY_CLASSIFY: success = classify(); break;
-        case SWR_HOOK_RETRY_TIMER: success = start(); break;
-        case SWR_HOOK_RETRY_WAIT: success = wait(); break;
-        default: return result;
-        }
-    }
-}
 static_assert(sizeof(swr_v1_hook_curl_plan) == 8, "curl plan ABI");
 static_assert(sizeof(swr_v1_hook_timeout_plan) == 16, "timeout plan ABI");
-static_assert(sizeof(swr_v1_hook_retry_plan) == 8, "retry cursor ABI");
 static_assert(sizeof(swr_v1_hook_wait_plan) == 16, "wait cursor ABI");
 static_assert(sizeof(swr_v1_hook_event_plan) == 8, "event waiter ABI");
 static_assert(sizeof(swr_v1_hook_transfer_plan) == 16, "transfer ABI");

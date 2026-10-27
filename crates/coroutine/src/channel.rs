@@ -219,6 +219,220 @@ pub unsafe extern "C" fn swr_v1_channel_owned_step(
     result
 }
 
+/// Native primitives a whole `pop`/`push`/`close` calls back into: the timer,
+/// the coroutine suspend/resume and the current fact snapshot. `suspend` enqueues
+/// the current coroutine as a waiter and yields, returning `SWR_CH_ALLOCATION_REFUSED`
+/// (-5) instead of raising, so no native exception unwinds through this frame; the
+/// caller raises after the whole operation returns. `query` returns the fresh
+/// `CANCELED`/`TIMEDOUT` bits. Every pointee, trace and context lifetime stays native.
+#[repr(C)]
+pub struct ChannelEffects {
+    pub ctx: *mut c_void,
+    pub query: extern "C" fn(*mut c_void) -> u32,
+    pub arm_timer: extern "C" fn(*mut c_void),
+    pub delete_timer: extern "C" fn(*mut c_void),
+    pub suspend: extern "C" fn(*mut c_void) -> i32,
+    pub resume: extern "C" fn(*mut c_void, *mut c_void),
+}
+
+/// Outcome of a whole channel operation. `status` 0 succeeded (`data` is the popped
+/// token for a pop), a negative `SWR_CH_ERROR_*` failed, and -5 means the caller must
+/// raise `bad_alloc`. Native maps this to pop's pointer / push's and close's bool.
+#[repr(C)]
+pub struct ChannelOutcome {
+    pub status: i32,
+    pub data: *mut c_void,
+}
+
+/// Drive the owned step machine to completion as one operation, performing each
+/// native effect through `effects`. Mirrors the pinned C++ driver loops exactly;
+/// the step logic and queue mutations remain [`swr_v1_channel_owned_step`].
+///
+/// # Safety
+/// `state` and the three token owners meet [`swr_v1_channel_owned_step`]'s contract;
+/// `effects` is a live `ChannelEffects` whose callbacks are valid for `effects.ctx`
+/// for the duration of the call.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the channel's state, three token queues and op mirror the step machine's FFI surface"
+)]
+unsafe fn channel_run(
+    state: *mut ChannelState,
+    data: *mut ChannelTokens,
+    producers: *mut ChannelTokens,
+    consumers: *mut ChannelTokens,
+    op: u32,
+    positive_timeout: bool,
+    input: *mut c_void,
+    effects: &ChannelEffects,
+) -> ChannelOutcome {
+    const CLOSE: u32 = 2;
+    const ALLOCATION_REFUSED: i32 = -5;
+    let mut cursor = OwnedChannelCursor {
+        step: crate::ChannelCursor { phase: 0 },
+        pending: 0,
+    };
+    let mut armed = false;
+    let mut token = ptr::null_mut();
+    loop {
+        let external = if op == CLOSE {
+            0
+        } else {
+            (u32::from(positive_timeout) * crate::POSITIVE_TIMEOUT)
+                | (u32::from(armed) * crate::HAS_TIMER)
+                | ((effects.query)(effects.ctx) & (crate::CANCELED | crate::TIMEDOUT))
+        };
+        // SAFETY: the caller's state and queues satisfy the step machine's contract.
+        let plan = unsafe {
+            swr_v1_channel_owned_step(
+                &raw mut cursor,
+                state,
+                data,
+                producers,
+                consumers,
+                op,
+                external,
+                input,
+            )
+        };
+        match plan.action {
+            crate::ARM_TIMER => {
+                (effects.arm_timer)(effects.ctx);
+                armed = true;
+            }
+            crate::YIELD => {
+                if (effects.suspend)(effects.ctx) == ALLOCATION_REFUSED {
+                    return ChannelOutcome {
+                        status: ALLOCATION_REFUSED,
+                        data: ptr::null_mut(),
+                    };
+                }
+            }
+            crate::DELETE => (effects.delete_timer)(effects.ctx),
+            crate::TRANSFER => {
+                if op == 1 {
+                    token = plan.token;
+                }
+            }
+            crate::PUBLISH_CLOSED => {}
+            crate::WAKE_PRODUCER | crate::WAKE_CONSUMER => {
+                (effects.resume)(effects.ctx, plan.token);
+                if op != CLOSE {
+                    return ChannelOutcome {
+                        status: 0,
+                        data: token,
+                    };
+                }
+            }
+            crate::DONE => {
+                return ChannelOutcome {
+                    status: 0,
+                    data: token,
+                };
+            }
+            other => {
+                return ChannelOutcome {
+                    status: other,
+                    data: ptr::null_mut(),
+                };
+            }
+        }
+    }
+}
+
+/// Whole `Channel::pop`: returns the popped token, or null on timeout/cancel/close
+/// (or an allocation-refused outcome the caller raises on).
+///
+/// # Safety
+/// As [`channel_run`]: the state and queues are live module handles and `effects`
+/// is valid for its context.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_channel_pop(
+    state: *mut ChannelState,
+    data: *mut ChannelTokens,
+    producers: *mut ChannelTokens,
+    consumers: *mut ChannelTokens,
+    positive_timeout: bool,
+    effects: *const ChannelEffects,
+) -> ChannelOutcome {
+    // SAFETY: the caller lends a live ChannelEffects.
+    let effects = unsafe { &*effects };
+    // SAFETY: the caller lends the usual live channel handles.
+    unsafe {
+        channel_run(
+            state,
+            data,
+            producers,
+            consumers,
+            1,
+            positive_timeout,
+            ptr::null_mut(),
+            effects,
+        )
+    }
+}
+
+/// Whole `Channel::push`: `status` 0 pushed, negative failed, -5 raise.
+///
+/// # Safety
+/// As [`swr_v1_channel_pop`]; `input` is the opaque token to enqueue.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_channel_push(
+    state: *mut ChannelState,
+    data: *mut ChannelTokens,
+    producers: *mut ChannelTokens,
+    consumers: *mut ChannelTokens,
+    positive_timeout: bool,
+    input: *mut c_void,
+    effects: *const ChannelEffects,
+) -> ChannelOutcome {
+    // SAFETY: the caller lends a live ChannelEffects.
+    let effects = unsafe { &*effects };
+    // SAFETY: the caller lends the usual live channel handles.
+    unsafe {
+        channel_run(
+            state,
+            data,
+            producers,
+            consumers,
+            0,
+            positive_timeout,
+            input,
+            effects,
+        )
+    }
+}
+
+/// Whole `Channel::close`: wakes every waiter, then `status` 0, or -2 if already
+/// closed. Only `resume` of `effects` is used.
+///
+/// # Safety
+/// As [`swr_v1_channel_pop`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_channel_close(
+    state: *mut ChannelState,
+    data: *mut ChannelTokens,
+    producers: *mut ChannelTokens,
+    consumers: *mut ChannelTokens,
+    effects: *const ChannelEffects,
+) -> ChannelOutcome {
+    // SAFETY: the caller lends a live ChannelEffects.
+    let effects = unsafe { &*effects };
+    // SAFETY: the caller lends the usual live channel handles.
+    unsafe {
+        channel_run(
+            state,
+            data,
+            producers,
+            consumers,
+            2,
+            false,
+            ptr::null_mut(),
+            effects,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -377,6 +591,191 @@ mod tests {
         assert_eq!(f.step(&mut cursor(), 2, 0, ptr::null_mut()).action, -2);
         assert_eq!(f.view().error, -2); // Already-closed close never changes error.
         assert_eq!(tokens, [1, 2, 3]);
+    }
+
+    struct Probe {
+        data: *mut ChannelTokens,
+        log: std::cell::RefCell<Vec<&'static str>>,
+        suspend_result: i32,
+        wake_token: *mut c_void,
+        query_bits: u32,
+    }
+    extern "C" fn p_query(ctx: *mut c_void) -> u32 {
+        // SAFETY: ctx is a live &Probe for the whole channel_run call.
+        let p = unsafe { &*ctx.cast::<Probe>() };
+        p.log.borrow_mut().push("query");
+        p.query_bits
+    }
+    extern "C" fn p_arm(ctx: *mut c_void) {
+        // SAFETY: ctx is a live &Probe.
+        unsafe { &*ctx.cast::<Probe>() }
+            .log
+            .borrow_mut()
+            .push("arm");
+    }
+    extern "C" fn p_del(ctx: *mut c_void) {
+        // SAFETY: ctx is a live &Probe.
+        unsafe { &*ctx.cast::<Probe>() }
+            .log
+            .borrow_mut()
+            .push("del");
+    }
+    extern "C" fn p_suspend(ctx: *mut c_void) -> i32 {
+        // SAFETY: ctx is a live &Probe.
+        let p = unsafe { &*ctx.cast::<Probe>() };
+        p.log.borrow_mut().push("suspend");
+        if !p.wake_token.is_null() {
+            // SAFETY: the test's data queue is live for the call.
+            unsafe { swr_v1_channel_tokens_push(p.data, p.wake_token) };
+        }
+        p.suspend_result
+    }
+    extern "C" fn p_resume(ctx: *mut c_void, _co: *mut c_void) {
+        // SAFETY: ctx is a live &Probe.
+        unsafe { &*ctx.cast::<Probe>() }
+            .log
+            .borrow_mut()
+            .push("resume");
+    }
+    fn effects(probe: &Probe) -> ChannelEffects {
+        ChannelEffects {
+            ctx: std::ptr::from_ref::<Probe>(probe)
+                .cast::<c_void>()
+                .cast_mut(),
+            query: p_query,
+            arm_timer: p_arm,
+            delete_timer: p_del,
+            suspend: p_suspend,
+            resume: p_resume,
+        }
+    }
+
+    #[test]
+    fn whole_push_and_pop_transfer_without_suspending() {
+        let mut f = Fixture::new(2);
+        let mut byte = 9u8;
+        let token = (&raw mut byte).cast::<c_void>();
+        let probe = Probe {
+            data: f.queues[0],
+            log: std::cell::RefCell::new(Vec::new()),
+            suspend_result: 0,
+            wake_token: ptr::null_mut(),
+            query_bits: 0,
+        };
+        let eff = effects(&probe);
+        // SAFETY: live state/queues and a live effects table.
+        let out = unsafe {
+            swr_v1_channel_push(
+                &raw mut f.state,
+                f.queues[0],
+                f.queues[1],
+                f.queues[2],
+                false,
+                token,
+                &raw const eff,
+            )
+        };
+        assert_eq!(out.status, 0);
+        assert_eq!(f.view().length, 1);
+        assert!(
+            probe.log.borrow().iter().all(|&c| c == "query"),
+            "a direct push arms no timer and never suspends or resumes"
+        );
+        // SAFETY: as above.
+        let out = unsafe {
+            swr_v1_channel_pop(
+                &raw mut f.state,
+                f.queues[0],
+                f.queues[1],
+                f.queues[2],
+                false,
+                &raw const eff,
+            )
+        };
+        assert_eq!((out.status, out.data), (0, token));
+        assert_eq!(f.view().length, 0);
+    }
+
+    #[test]
+    fn whole_pop_on_empty_suspends_then_transfers_the_woken_token() {
+        let mut f = Fixture::new(1);
+        let mut byte = 3u8;
+        let token = (&raw mut byte).cast::<c_void>();
+        let probe = Probe {
+            data: f.queues[0],
+            log: std::cell::RefCell::new(Vec::new()),
+            suspend_result: 0,
+            wake_token: token, // a producer "arrives" during the suspend
+            query_bits: 0,
+        };
+        let eff = effects(&probe);
+        // SAFETY: live state/queues and effects.
+        let out = unsafe {
+            swr_v1_channel_pop(
+                &raw mut f.state,
+                f.queues[0],
+                f.queues[1],
+                f.queues[2],
+                false,
+                &raw const eff,
+            )
+        };
+        assert_eq!((out.status, out.data), (0, token));
+        let log = probe.log.borrow();
+        assert_eq!(log.iter().filter(|&&c| c == "suspend").count(), 1);
+        assert!(!log.contains(&"arm"), "no timer without a positive timeout");
+    }
+
+    #[test]
+    fn whole_pop_reports_allocation_refused_from_suspend() {
+        let mut f = Fixture::new(1);
+        let probe = Probe {
+            data: f.queues[0],
+            log: std::cell::RefCell::new(Vec::new()),
+            suspend_result: -5,
+            wake_token: ptr::null_mut(),
+            query_bits: 0,
+        };
+        let eff = effects(&probe);
+        // SAFETY: live state/queues and effects.
+        let out = unsafe {
+            swr_v1_channel_pop(
+                &raw mut f.state,
+                f.queues[0],
+                f.queues[1],
+                f.queues[2],
+                false,
+                &raw const eff,
+            )
+        };
+        assert_eq!((out.status, out.data), (-5, ptr::null_mut()));
+    }
+
+    #[test]
+    fn whole_pop_on_closed_empty_channel_errors_without_suspending() {
+        let mut f = Fixture::new(1);
+        f.state.closed = 1;
+        let probe = Probe {
+            data: f.queues[0],
+            log: std::cell::RefCell::new(Vec::new()),
+            suspend_result: 0,
+            wake_token: ptr::null_mut(),
+            query_bits: 0,
+        };
+        let eff = effects(&probe);
+        // SAFETY: live state/queues and effects.
+        let out = unsafe {
+            swr_v1_channel_pop(
+                &raw mut f.state,
+                f.queues[0],
+                f.queues[1],
+                f.queues[2],
+                false,
+                &raw const eff,
+            )
+        };
+        assert_eq!(out.status, -2);
+        assert!(!probe.log.borrow().contains(&"suspend"));
     }
 
     #[test]

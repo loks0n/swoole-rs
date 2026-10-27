@@ -1,13 +1,27 @@
-//! `network::Socket::ssl_recv`/`ssl_send` as whole operations, OpenSSL call
-//! included: clear the error queue, `SSL_read`/`SSL_write`, and classify a failure.
-//! Native code keeps the want flags, errno and `ssl_catch_error`'s log, which needs
-//! the socket's address.
+//! `network::Socket`'s TLS operations, OpenSSL calls included: creating the SSL,
+//! handshake steps, reads and writes, host and verify checks, PEM export and error
+//! reasons. Native code keeps the socket's flags, errno, last error and logs, which
+//! need the socket's address.
 use openssl_sys::{
-    ERR_clear_error, SSL, SSL_ERROR_SSL, SSL_ERROR_SYSCALL, SSL_ERROR_WANT_READ,
-    SSL_ERROR_WANT_WRITE, SSL_ERROR_ZERO_RETURN, SSL_accept, SSL_connect, SSL_get_error,
-    SSL_get_verify_result, SSL_read, SSL_write, X509, X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT,
-    X509_V_OK, X509_check_host, X509_free,
+    BIO_ctrl, BIO_free_all, BIO_new, BIO_read, BIO_s_mem, ERR_GET_REASON, ERR_clear_error,
+    ERR_get_error, ERR_reason_error_string, PEM_write_bio_X509, SSL, SSL_CTX, SSL_ERROR_SSL,
+    SSL_ERROR_SYSCALL, SSL_ERROR_WANT_READ, SSL_ERROR_WANT_WRITE, SSL_ERROR_ZERO_RETURN,
+    SSL_accept, SSL_connect, SSL_get_error, SSL_get_verify_result, SSL_new, SSL_read,
+    SSL_set_accept_state, SSL_set_connect_state, SSL_set_ex_data, SSL_write, X509,
+    X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT, X509_V_OK, X509_check_host, X509_free,
 };
+
+// SAFETY: libssl/libcrypto's own declarations; openssl-sys binds neither.
+unsafe extern "C" {
+    fn SSL_set_fd(ssl: *mut SSL, fd: c_int) -> c_int;
+    fn ERR_peek_error() -> std::os::raw::c_ulong;
+}
+
+/// `BIO_CTRL_PENDING`, behind the `BIO_pending` macro.
+const BIO_CTRL_PENDING: c_int = 10;
+/// `SW_SSL_SERVER` and `SW_SSL_CLIENT`.
+const SERVER: c_int = 1;
+const CLIENT: c_int = 2;
 use std::os::raw::{c_char, c_int, c_long, c_void};
 
 /// `SW_ERROR_SSL_BAD_CLIENT` and `SW_ERROR_SSL_RESET`.
@@ -281,6 +295,121 @@ pub unsafe extern "C" fn swr_v1_socket_ssl_verify(
     result
 }
 
+/// `_ssl_read_x509_file`: `cert` as PEM into at most `length` bytes at `buffer`.
+/// Returns the bytes written, or -1 when `BIO_new` failed and -2 when
+/// `PEM_write_bio_X509` failed (native code warns). When `consume`, frees `cert`.
+///
+/// # Safety
+/// `cert` is a live X509 (owned by the caller when `consume`), and `buffer` denotes
+/// `length` writable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_socket_ssl_pem(
+    cert: *mut X509,
+    buffer: *mut c_char,
+    length: usize,
+    consume: bool,
+) -> c_int {
+    // SAFETY: OpenSSL's static memory BIO method.
+    let method = unsafe { BIO_s_mem() };
+    // SAFETY: a fresh BIO of that method.
+    let bio = unsafe { BIO_new(method) };
+    let written = if bio.is_null() {
+        -1
+    // SAFETY: the caller's certificate into the fresh BIO.
+    } else if unsafe { PEM_write_bio_X509(bio, cert) } == 0 {
+        -2
+    } else {
+        // SAFETY: the live BIO; BIO_pending.
+        let pending = unsafe { BIO_ctrl(bio, BIO_CTRL_PENDING, 0, std::ptr::null_mut()) };
+        let room = c_long::try_from(length).unwrap_or(c_long::MAX);
+        let count = c_int::try_from(pending.min(room)).unwrap_or(c_int::MAX);
+        // SAFETY: at most `length` bytes into the caller's buffer.
+        unsafe { BIO_read(bio, buffer.cast(), count) }
+    };
+    if !bio.is_null() {
+        // SAFETY: frees the BIO made above.
+        unsafe { BIO_free_all(bio) };
+    }
+    if consume {
+        // SAFETY: drops the reference the caller handed over.
+        unsafe { X509_free(cert) };
+    }
+    written
+}
+
+/// `Socket::ssl_get_error_reason`: pops the oldest queued OpenSSL error and
+/// returns its reason string, storing its reason code in `reason` when given.
+///
+/// # Safety
+/// `reason` is null or writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_socket_ssl_error_reason(reason: *mut c_int) -> *const c_char {
+    // SAFETY: this thread's OpenSSL error queue.
+    let error = unsafe { ERR_get_error() };
+    // SAFETY: `reason` is null or writable.
+    if let Some(reason) = unsafe { reason.as_mut() } {
+        *reason = ERR_GET_REASON(error);
+    }
+    // SAFETY: OpenSSL's static string table.
+    unsafe { ERR_reason_error_string(error) }
+}
+
+/// `Socket::ssl_catch_error`'s reason: the oldest queued error's reason code, left queued.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_socket_ssl_peek_reason() -> c_int {
+    // SAFETY: this thread's OpenSSL error queue, read without popping.
+    ERR_GET_REASON(unsafe { ERR_peek_error() })
+}
+
+/// `Socket::ssl_create`: a new SSL from `context` on `fd`, in connect state for
+/// `SW_SSL_CLIENT` or accept state for `SW_SSL_SERVER`, carrying `socket` as its
+/// ex data at `index`. `*ssl` is set once made. Returns 0, or 1 when `SSL_new`
+/// failed, 2 when `SSL_set_fd` failed (`*error` holds the peeked error) and 3 when
+/// `SSL_set_ex_data` failed; native code warns.
+///
+/// # Safety
+/// `context` is a live `SSL_CTX`; `ssl` and `error` are writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_socket_ssl_new(
+    context: *mut SSL_CTX,
+    fd: c_int,
+    flags: c_int,
+    index: c_int,
+    socket: *mut c_void,
+    ssl: *mut *mut SSL,
+    error: *mut std::os::raw::c_ulong,
+) -> c_int {
+    // SAFETY: clears this thread's OpenSSL error queue.
+    unsafe { ERR_clear_error() };
+    // SAFETY: the caller's live context.
+    let made = unsafe { SSL_new(context) };
+    // SAFETY: the caller's slot for the new SSL.
+    unsafe { ssl.write(made) };
+    if made.is_null() {
+        return 1;
+    }
+    // SAFETY: the new SSL and the caller's descriptor.
+    if unsafe { SSL_set_fd(made, fd) } == 0 {
+        // SAFETY: the queue holds SSL_set_fd's error.
+        let peeked = unsafe { ERR_peek_error() };
+        // SAFETY: the caller's error slot.
+        unsafe { error.write(peeked) };
+        return 2;
+    }
+    if flags & CLIENT != 0 {
+        // SAFETY: the new SSL.
+        unsafe { SSL_set_connect_state(made) };
+    } else if flags & SERVER != 0 {
+        // SAFETY: the new SSL.
+        unsafe { SSL_set_accept_state(made) };
+    }
+    // SAFETY: the new SSL keeps the caller's socket pointer as opaque ex data.
+    if unsafe { SSL_set_ex_data(made, index, socket) } == 0 {
+        return 3;
+    }
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -422,6 +551,78 @@ mod tests {
                 c_long::from(X509_V_ERR_CERT_HAS_EXPIRED)
             );
             SSL_free(ssl);
+        }
+    }
+
+    #[test]
+    fn pem_reason_and_new() {
+        unsafe {
+            let mut pem = [0_u8; 4096];
+            let empty = X509_new();
+            assert_eq!(
+                swr_v1_socket_ssl_pem(empty, pem.as_mut_ptr().cast(), pem.len(), true),
+                -2,
+                "nothing to encode"
+            );
+            ERR_clear_error();
+            // A self-signed Ed25519 certificate.
+            let keygen = EVP_PKEY_CTX_new_id(EVP_PKEY_ED25519, std::ptr::null_mut());
+            let mut key = std::ptr::null_mut();
+            assert_eq!(EVP_PKEY_keygen_init(keygen), 1);
+            assert_eq!(EVP_PKEY_keygen(keygen, &raw mut key), 1);
+            EVP_PKEY_CTX_free(keygen);
+            let cert = X509_new();
+            assert_eq!(X509_set_pubkey(cert, key), 1);
+            assert!(X509_sign(cert, key, std::ptr::null()) > 0);
+            EVP_PKEY_free(key);
+            let written = swr_v1_socket_ssl_pem(cert, pem.as_mut_ptr().cast(), pem.len(), false);
+            assert!(written > 0);
+            assert!(pem.starts_with(b"-----BEGIN CERTIFICATE-----"));
+            let mut short = [0_u8; 10];
+            assert_eq!(
+                swr_v1_socket_ssl_pem(cert, short.as_mut_ptr().cast(), short.len(), true),
+                10,
+                "bounded by the buffer"
+            );
+
+            let context = SSL_CTX_new(TLS_method());
+            let mut ssl = std::ptr::null_mut();
+            let mut error = 0;
+            let mut socket = 7_u8;
+            let index = SSL_get_ex_new_index(0, std::ptr::null_mut(), None, None, None);
+            let made = swr_v1_socket_ssl_new(
+                context,
+                3,
+                CLIENT,
+                index,
+                (&raw mut socket).cast(),
+                &raw mut ssl,
+                &raw mut error,
+            );
+            assert_eq!(made, 0);
+            assert_eq!(SSL_is_server(ssl), 0, "connect state");
+            assert_eq!(SSL_get_ex_data(ssl, index), (&raw mut socket).cast());
+            SSL_free(ssl);
+            assert_eq!(
+                swr_v1_socket_ssl_new(
+                    context,
+                    3,
+                    SERVER,
+                    index,
+                    std::ptr::null_mut(),
+                    &raw mut ssl,
+                    &raw mut error
+                ),
+                0
+            );
+            assert_eq!(SSL_is_server(ssl), 1, "accept state");
+            SSL_free(ssl);
+            SSL_CTX_free(context);
+
+            assert_eq!(swr_v1_socket_ssl_peek_reason(), 0, "empty queue");
+            let mut reason = -1;
+            assert!(swr_v1_socket_ssl_error_reason(&raw mut reason).is_null());
+            assert_eq!(reason, 0);
         }
     }
 

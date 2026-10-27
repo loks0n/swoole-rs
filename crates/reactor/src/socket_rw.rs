@@ -257,6 +257,58 @@ pub unsafe extern "C" fn swr_v1_socket_iov(
     }
 }
 
+/// `Socket::ssl_sendfile`'s outcome: what it returns, and which warning native code
+/// writes (1 `write() failed`, 2 `pread() failed`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SslSendfileResult {
+    pub value: isize,
+    pub warn: c_int,
+}
+
+/// `Socket::ssl_sendfile`: pread(2) up to `SW_BUFFER_SIZE_BIG` bytes of `file_fd`
+/// at `*offset`, hand them to `send` once, and advance `*offset` by what it sent.
+/// A failed send warns when `catch_error` says it is an error.
+///
+/// # Safety
+/// `offset` and `kernel_nobufs` are writable; `send` is valid for `socket`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_socket_ssl_sendfile(
+    file_fd: c_int,
+    offset: *mut libc::off_t,
+    size: usize,
+    send: TlsIo,
+    socket: *mut c_void,
+    kernel_nobufs: *mut bool,
+) -> SslSendfileResult {
+    const CHUNK: usize = 65536;
+    let mut buffer = vec![0_u8; CHUNK];
+    // SAFETY: the caller's offset.
+    let at = unsafe { *offset };
+    // SAFETY: up to `CHUNK` bytes into the local buffer.
+    let n = unsafe { libc::pread(file_fd, buffer.as_mut_ptr().cast(), size.min(CHUNK), at) };
+    if n <= 0 {
+        return SslSendfileResult { value: -1, warn: 2 };
+    }
+    // SAFETY: the caller's TLS write of the `n` bytes just read.
+    let sent = unsafe { send(socket, buffer.as_mut_ptr().cast(), n.cast_unsigned()) };
+    if sent < 0 {
+        let error = Error::last_os_error().raw_os_error().unwrap_or(0);
+        // SAFETY: the caller's kernel_nobufs flag.
+        let failed = unsafe { crate::swr_v1_socket_catch_error(error, kernel_nobufs) } == 4;
+        return SslSendfileResult {
+            value: sent,
+            warn: c_int::from(failed),
+        };
+    }
+    // SAFETY: the caller's offset.
+    unsafe { *offset = at + libc::off_t::try_from(sent).unwrap_or(libc::off_t::MAX) };
+    SslSendfileResult {
+        value: sent,
+        warn: 0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -480,5 +532,48 @@ mod tests {
             libc::close(a);
             libc::close(b);
         }
+    }
+
+    unsafe extern "C" fn sends_three(_: *mut c_void, _: *mut c_void, length: usize) -> isize {
+        length.min(3).cast_signed()
+    }
+
+    #[test]
+    fn ssl_sendfile_reads_then_sends() {
+        let path = std::env::temp_dir().join(format!("swr-ssl-sendfile-{}", std::process::id()));
+        std::fs::write(&path, b"0123456789").unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        use std::os::fd::AsRawFd;
+        let mut offset: libc::off_t = 4;
+        let mut nobufs = false;
+        // SAFETY: local offset and flag; the callback ignores its socket.
+        let result = unsafe {
+            swr_v1_socket_ssl_sendfile(
+                file.as_raw_fd(),
+                &raw mut offset,
+                6,
+                sends_three,
+                std::ptr::null_mut(),
+                &raw mut nobufs,
+            )
+        };
+        assert_eq!(
+            (result, offset),
+            (SslSendfileResult { value: 3, warn: 0 }, 7)
+        );
+        offset = 10;
+        // SAFETY: as above; nothing is left to read.
+        let result = unsafe {
+            swr_v1_socket_ssl_sendfile(
+                file.as_raw_fd(),
+                &raw mut offset,
+                6,
+                sends_three,
+                std::ptr::null_mut(),
+                &raw mut nobufs,
+            )
+        };
+        assert_eq!(result, SslSendfileResult { value: -1, warn: 2 });
+        std::fs::remove_file(&path).unwrap();
     }
 }

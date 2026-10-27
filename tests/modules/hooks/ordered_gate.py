@@ -62,6 +62,9 @@ def main():
             for path, names in signatures.items():
                 text = originals[path] if variant == 'original' else (tree/path).read_text()
                 bodies.extend(block(text, name) for name in names)
+                # The selected socket's transfers run through one Rust-driven member template (#443).
+                if variant == 'selected' and path == 'src/coroutine/socket.cc':
+                    bodies.insert(len(bodies) - len(names), block(text, 'template <class Call>\nssize_t Socket::transfer('))
             (tree/(variant+'.inc')).write_text('\n'.join(bodies))
         command = ['c++', '-std=c++14', '-O1', '-g', '-I'+str(tree), '-I'+str(ROOT/'native/hooks'), str(ROOT/'tests/modules/hooks/ordered_gate.cc'), str(a.archive.resolve()), '-o', str(tree/'ordered'), '-lpthread']
         if a.sanitize:

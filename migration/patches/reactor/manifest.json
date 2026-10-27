@@ -41,8 +41,9 @@
     },
     {
       "path": "0007-server-buffer-typed.patch",
-      "sha256": "3502e85fa0aa6a14749e8345cc999097de0c8712f51ac359974e754082eb5318",
+      "sha256": "62f9bb7103f3537ee308f3f8856ed34ac96b9ae40819beee9a6a7054aa01eb32",
       "upstream_paths": [
+        "include/swoole_socket.h",
         "src/network/socket.cc",
         "src/server/base.cc",
         "src/server/reactor_thread.cc"
