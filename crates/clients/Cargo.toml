@@ -7,5 +7,8 @@ edition = "2024"
 name = "swoole_rs_clients"
 crate-type = ["rlib"]
 
+[dependencies]
+swoole-rs-base64 = { path = "../base64" }
+
 [lints]
 workspace = true

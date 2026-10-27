@@ -180,6 +180,9 @@ dependencies = [
 [[package]]
 name = "swoole-rs-clients"
 version = "0.1.0"
+dependencies = [
+ "swoole-rs-base64",
+]
 
 [[package]]
 name = "swoole-rs-corebase"

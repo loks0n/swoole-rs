@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-rust-address-client-policy.patch",
-      "sha256": "6df1ad2bff98bd6b1303dd5b2e0c0a6390cc33c113c163d89054d491f9427d9a",
+      "sha256": "23f3bee54f9e1bcdc62a4956c0e55e180a2ca72475b23b73d69d8022799a4dd1",
       "upstream_paths": [
         "ext-src/swoole_client.cc",
         "ext-src/swoole_client_async.cc",
