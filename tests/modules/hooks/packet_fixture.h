@@ -63,5 +63,6 @@ struct Socket {
  ssize_t recv_all(void *buffer,size_t n){return receive(buffer,n,true);}
  ssize_t readv_all(network::IOVector *);ssize_t writev_all(network::IOVector *);
  ssize_t recv_packet_with_length_protocol();ssize_t recv_packet_with_eof_protocol();ssize_t recv_packet(double);
+ ssize_t vector_all(network::IOVector *,TimerController *,bool);
 };
 #include ACTUAL_BODIES
