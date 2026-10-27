@@ -100,15 +100,23 @@ typedef struct {
     void (*check)(void *, ssize_t);
 } swr_v1_hook_vector_ops;
 ssize_t swr_v1_hook_vector_all(const swr_v1_hook_vector_ops *ops);
+/* The coroutine Socket's connection state, Rust-owned behind an opaque handle (#439). */
+typedef struct swr_v1_hook_socket_state swr_v1_hook_socket_state;
+typedef struct { bool connected, read, write; } swr_v1_hook_socket_flags_t;
+swr_v1_hook_socket_state *swr_v1_hook_socket_state_new(void);
+void swr_v1_hook_socket_state_free(swr_v1_hook_socket_state *state);
+swr_v1_hook_socket_flags_t swr_v1_hook_socket_flags(const swr_v1_hook_socket_state *state);
+void swr_v1_hook_socket_set_flags(swr_v1_hook_socket_state *state, swr_v1_hook_socket_flags_t flags);
+void swr_v1_hook_socket_connect(swr_v1_hook_socket_state *state);
 /* Socket::cancel/close. release marks the descriptor closed and runs the destructor
    callback once; the socket may be gone afterwards. resume wakes the coroutine bound
    to the event (read or write). */
 typedef struct {
     void *context;
+    swr_v1_hook_socket_state *state;
     uint32_t read, write;
     int32_t close_wait_error;
     bool (*closed)(void *);
-    bool (*connected)(void *);
     void (*shutdown)(void *);
     bool (*bound)(void *, uint32_t event);
     void (*set_err)(void *, int32_t);
@@ -118,10 +126,9 @@ typedef struct {
 } swr_v1_hook_socket_ops;
 bool swr_v1_hook_cancel(const swr_v1_hook_socket_ops *ops, uint32_t event);
 bool swr_v1_hook_close(const swr_v1_hook_socket_ops *ops);
-/* Socket::shutdown(how) after set_err(0): 0, or the error to set. live is is_connected();
+/* Socket::shutdown(how) after set_err(0): 0, or the error to set. closed is is_closed();
    ssl_shutdown (null without TLS) closes the session first, with context; syscall is shutdown(2). */
-typedef struct { bool connected, read, write; } swr_v1_hook_shutdown_flags;
-int32_t swr_v1_hook_shutdown(int (*syscall)(int, int), int32_t fd, int32_t how, bool live, swr_v1_hook_shutdown_flags *flags,
+int32_t swr_v1_hook_shutdown(int (*syscall)(int, int), int32_t fd, int32_t how, bool closed, swr_v1_hook_socket_state *state,
                              void (*ssl_shutdown)(void *), void *context);
 int32_t swr_v1_hook_connect_action(int32_t result, bool interrupted, bool in_progress);
 bool swr_v1_hook_connect_option(int32_t result, int32_t error);

@@ -1,36 +1,90 @@
-//! `Socket::shutdown` of the coroutine socket: admission, the TLS close, the
-//! `shutdown(2)` call and the half-close flags. Native code keeps `set_err`,
-//! `is_connected` and the TLS session.
+//! The coroutine socket's connection state, which Rust owns behind an opaque
+//! handle (#439), and `Socket::shutdown` over it: admission, the TLS close, the
+//! `shutdown(2)` call and the half-close flags. Native code keeps `set_err` and
+//! the TLS session.
 use core::ffi::c_void;
 
-/// The socket's `connected`, `shutdown_read` and `shutdown_write`, updated in place.
+/// Whether the socket is connected and which directions are shut.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct ShutdownFlags {
+pub struct SocketFlags {
     pub connected: bool,
     pub read: bool,
     pub write: bool,
 }
 
+/// One coroutine socket's state; native code holds it only as a pointer.
+#[derive(Default)]
+pub struct SocketState {
+    pub(crate) flags: SocketFlags,
+}
+
+/// A new socket's state: not connected, nothing shut.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_hook_socket_state_new() -> *mut SocketState {
+    Box::into_raw(Box::default())
+}
+
+/// # Safety
+/// `state` is null or a handle from `swr_v1_hook_socket_state_new`, not used afterwards.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_hook_socket_state_free(state: *mut SocketState) {
+    if !state.is_null() {
+        // SAFETY: a live handle from Box::into_raw, released once (see above).
+        drop(unsafe { Box::from_raw(state) });
+    }
+}
+
+/// # Safety
+/// `state` is a live handle.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_hook_socket_flags(state: *const SocketState) -> SocketFlags {
+    // SAFETY: a live handle (see above).
+    unsafe { (*state).flags }
+}
+
+/// # Safety
+/// `state` is a live handle, not borrowed elsewhere during the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_hook_socket_set_flags(state: *mut SocketState, flags: SocketFlags) {
+    // SAFETY: a live, unborrowed handle (see above).
+    unsafe { (*state).flags = flags };
+}
+
+/// The socket connected (or was accepted).
+///
+/// # Safety
+/// `state` is a live handle, not borrowed elsewhere during the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_hook_socket_connect(state: *mut SocketState) {
+    // SAFETY: a live, unborrowed handle (see above).
+    unsafe { (*state).flags.connected = true };
+}
+
 /// `Socket::shutdown(how)` after `set_err(0)`: 0 on success, otherwise the error
-/// to set. `live` is `is_connected()`; `ssl_shutdown`, when the socket has TLS,
+/// to set. `closed` is `is_closed()`; `ssl_shutdown`, when the socket has TLS,
 /// closes the session first. `syscall` is `shutdown(2)`, which sets errno.
 ///
 /// # Safety
-/// `flags` is writable; `ssl_shutdown`, if set, acts on the live socket in `context`.
+/// `state` is a live, unborrowed handle; `ssl_shutdown`, if set, acts on the live
+/// socket in `context`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_hook_shutdown(
     syscall: unsafe extern "C" fn(i32, i32) -> i32,
     fd: i32,
     how: i32,
-    live: bool,
-    flags: *mut ShutdownFlags,
+    closed: bool,
+    state: *mut SocketState,
     ssl_shutdown: Option<unsafe extern "C" fn(*mut c_void)>,
     context: *mut c_void,
 ) -> i32 {
-    // SAFETY: the caller passes writable flags (see above).
-    let flags = unsafe { &mut *flags };
-    if !live || how == libc::SHUT_RD && flags.read || how == libc::SHUT_WR && flags.write {
+    // SAFETY: a live, unborrowed handle (see above).
+    let flags = unsafe { &mut (*state).flags };
+    if !flags.connected
+        || closed
+        || how == libc::SHUT_RD && flags.read
+        || how == libc::SHUT_WR && flags.write
+    {
         return libc::ENOTCONN;
     }
     if let Some(ssl_shutdown) = ssl_shutdown {
@@ -79,14 +133,24 @@ mod tests {
         fds
     }
 
-    fn shutdown(fd: i32, how: i32, live: bool, flags: &mut ShutdownFlags) -> i32 {
+    fn connected() -> *mut SocketState {
+        let state = swr_v1_hook_socket_state_new();
+        unsafe { swr_v1_hook_socket_connect(state) };
+        state
+    }
+
+    fn flags(state: *mut SocketState) -> SocketFlags {
+        unsafe { swr_v1_hook_socket_flags(state) }
+    }
+
+    fn shutdown(fd: i32, how: i32, closed: bool, state: *mut SocketState) -> i32 {
         unsafe {
             swr_v1_hook_shutdown(
                 libc::shutdown,
                 fd,
                 how,
-                live,
-                &raw mut *flags,
+                closed,
+                state,
                 None,
                 core::ptr::null_mut(),
             )
@@ -96,53 +160,50 @@ mod tests {
     #[test]
     fn half_closes_then_both_disconnects() {
         let fds = pair();
-        let mut flags = ShutdownFlags {
-            connected: true,
-            ..Default::default()
-        };
-        assert_eq!(shutdown(fds[0], libc::SHUT_RD, true, &mut flags), 0);
+        let state = connected();
+        assert_eq!(shutdown(fds[0], libc::SHUT_RD, false, state), 0);
         assert_eq!(
-            flags,
-            ShutdownFlags {
+            flags(state),
+            SocketFlags {
                 connected: true,
                 read: true,
                 write: false
             }
         );
         assert_eq!(
-            shutdown(fds[0], libc::SHUT_RD, true, &mut flags),
+            shutdown(fds[0], libc::SHUT_RD, false, state),
             libc::ENOTCONN
         );
-        assert_eq!(shutdown(fds[0], libc::SHUT_WR, true, &mut flags), 0);
+        assert_eq!(shutdown(fds[0], libc::SHUT_WR, false, state), 0);
         assert_eq!(
-            flags,
-            ShutdownFlags {
+            flags(state),
+            SocketFlags {
                 connected: false,
                 read: true,
                 write: true
             }
         );
+        unsafe { swr_v1_hook_socket_state_free(state) };
         unsafe { libc::close(fds[0]) };
         unsafe { libc::close(fds[1]) };
     }
 
     #[test]
-    fn not_connected_and_bad_descriptors_fail() {
-        let mut flags = ShutdownFlags::default();
+    fn not_connected_closed_and_bad_descriptors_fail() {
+        let state = swr_v1_hook_socket_state_new();
+        assert_eq!(shutdown(-1, libc::SHUT_RDWR, false, state), libc::ENOTCONN);
+        unsafe { swr_v1_hook_socket_connect(state) };
+        assert_eq!(shutdown(-1, libc::SHUT_RDWR, true, state), libc::ENOTCONN);
+        assert_eq!(shutdown(-1, libc::SHUT_RDWR, false, state), libc::EBADF);
         assert_eq!(
-            shutdown(-1, libc::SHUT_RDWR, false, &mut flags),
-            libc::ENOTCONN
-        );
-        flags.connected = true;
-        assert_eq!(shutdown(-1, libc::SHUT_RDWR, true, &mut flags), libc::EBADF);
-        assert_eq!(
-            flags,
-            ShutdownFlags {
+            flags(state),
+            SocketFlags {
                 connected: true,
                 read: false,
                 write: false
             }
         );
+        unsafe { swr_v1_hook_socket_state_free(state) };
     }
 
     #[test]
@@ -152,22 +213,20 @@ mod tests {
         }
         let fds = pair();
         let mut closed = false;
-        let mut flags = ShutdownFlags {
-            connected: true,
-            ..Default::default()
-        };
+        let state = connected();
         let error = unsafe {
             swr_v1_hook_shutdown(
                 libc::shutdown,
                 fds[0],
                 libc::SHUT_RDWR,
-                true,
-                &raw mut flags,
+                false,
+                state,
                 Some(mark),
                 (&raw mut closed).cast(),
             )
         };
-        assert_eq!((error, closed, flags.connected), (0, true, false));
+        assert_eq!((error, closed, flags(state).connected), (0, true, false));
+        unsafe { swr_v1_hook_socket_state_free(state) };
         unsafe { libc::close(fds[0]) };
         unsafe { libc::close(fds[1]) };
     }

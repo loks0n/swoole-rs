@@ -41,7 +41,7 @@
     },
     {
       "path": "0007-server-buffer-typed.patch",
-      "sha256": "f0c7d9e98f93bd59326e260c74489597bd35db26d6cb007a48bfeb714d389f7b",
+      "sha256": "61b592370166f1ff54435d5dd98318220965a95a35ecd8e303e559549557f5d2",
       "upstream_paths": [
         "src/network/socket.cc",
         "src/server/base.cc",
