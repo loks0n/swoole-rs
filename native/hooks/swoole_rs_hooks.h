@@ -86,8 +86,19 @@ typedef struct {
     bool (*timed_out)(void *);
 } swr_v1_hook_packet_ops;
 ssize_t swr_v1_hook_recv_packet(const swr_v1_hook_packet_ops *ops);
-int64_t swr_v1_hook_vector_progress(int64_t result, int64_t total);
-bool swr_v1_hook_vector_continue(int64_t result, uint64_t remaining);
+/* Socket::readv_all/writev_all after the availability check and the timer's creation.
+   wait installs barrier (called with barrier_state) and runs timer.start() && wait_event. */
+typedef bool (*swr_v1_hook_barrier)(void *barrier_state);
+typedef struct {
+    void *context;
+    ssize_t (*transfer)(void *, bool first);
+    bool (*would_block)(void *);
+    size_t (*remaining)(void *);
+    void (*fail)(void *);
+    bool (*wait)(void *, swr_v1_hook_barrier barrier, void *barrier_state);
+    void (*check)(void *, ssize_t);
+} swr_v1_hook_vector_ops;
+ssize_t swr_v1_hook_vector_all(const swr_v1_hook_vector_ops *ops);
 bool swr_v1_hook_shutdown_admit(bool connected, int32_t how, bool read, bool write, int32_t shut_read, int32_t shut_write);
 uint32_t swr_v1_hook_shutdown_mask(bool success, bool disconnected, int32_t how, int32_t shut_read, int32_t shut_write);
 uint32_t swr_v1_hook_cancel_action(bool bound, uint32_t event, uint32_t read, uint32_t write);

@@ -12,6 +12,7 @@
 pub mod address;
 pub mod packet;
 pub mod sleep;
+pub mod vector;
 
 /// The original per-hook guard. Some DNS hooks intentionally do not use it.
 #[unsafe(no_mangle)]
@@ -461,21 +462,6 @@ pub extern "C" fn swr_v1_hook_dns_error(
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_sleep_timeout(seconds: f64, minimum: f64) -> f64 {
     if seconds < minimum { minimum } else { seconds }
-}
-
-/// Accumulate only positive vectored progress within the pinned defined `ssize_t` domain.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_vector_progress(result: i64, total: i64) -> i64 {
-    if result > 0 {
-        total.wrapping_add(result)
-    } else {
-        total
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_vector_continue(result: i64, remaining: u64) -> bool {
-    result > 0 && remaining > 0
 }
 
 #[unsafe(no_mangle)]

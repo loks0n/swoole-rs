@@ -25,8 +25,10 @@ def main():
     manifest=json.loads((ROOT/'migration/patches/hooks/manifest.json').read_text())
     paths=manifest['patches'][0]['upstream_paths']
     originals={path:subprocess.check_output(['git','-C',str(a.source),'show',PIN+':'+path],text=True) for path in paths}
-    # recv_packet is one Rust call in the selected tree (#443); upstream's runs its two helpers.
+    # recv_packet and readv_all/writev_all are Rust calls in the selected tree (#443):
+    # upstream's runs its two packet helpers, the selected tree its vector_all glue.
     helpers=['ssize_t Socket::recv_packet_with_length_protocol()', 'ssize_t Socket::recv_packet_with_eof_protocol()']
+    glue=['ssize_t Socket::vector_all(']
     common=['ssize_t Socket::readv_all(', 'ssize_t Socket::writev_all(', 'ssize_t Socket::recv_packet(double timeout)']
     with tempfile.TemporaryDirectory(prefix='swr-hooks-packet-') as directory:
         tree=Path(directory)
@@ -38,7 +40,7 @@ def main():
             subprocess.run(['git','apply',str(patch)],cwd=tree,check=True)
         for variant in ['original','selected']:
             texts=originals if variant=='original' else {path:(tree/path).read_text() for path in paths}
-            signatures=common+(helpers if variant=='original' else [])
+            signatures=common+(helpers if variant=='original' else glue)
             bodies=[block(texts[unit],signature) for signature in signatures]
             (tree/(variant+'-packet.inc')).write_text('\n'.join(bodies))
         command=['c++','-std=c++14','-O1','-g','-I'+str(tree),'-I'+str(ROOT/'native/hooks'),'-I'+str(ROOT/'tests/modules/hooks'),str(ROOT/'tests/modules/hooks/packet_gate.cc'),str(a.archive.resolve()),'-lpthread','-o',str(tree/'packet')]
