@@ -171,6 +171,21 @@ typedef struct {
 } swr_v1_socket_ssl_io_result;
 swr_v1_socket_ssl_io_result swr_v1_socket_ssl_recv(struct ssl_st *ssl, void *buffer, size_t length);
 swr_v1_socket_ssl_io_result swr_v1_socket_ssl_send(struct ssl_st *ssl, const void *buffer, size_t length);
+/* Socket::ssl_accept/ssl_connect: one SSL_accept/SSL_connect step and its
+ * classification. Native code sets the want flags, ssl_state (state >= 0) and the
+ * last error (when nonzero), then logs: 1 bad client, 2 failed handshake with
+ * ssl_error, 3 peer closed (connect). code is the method's return value. */
+typedef struct {
+    int code;
+    bool want_read;
+    bool want_write;
+    int state;
+    int last_error;
+    int log;
+    int ssl_error;
+} swr_v1_socket_ssl_handshake_result;
+swr_v1_socket_ssl_handshake_result swr_v1_socket_ssl_accept(struct ssl_st *ssl, bool dtls);
+swr_v1_socket_ssl_handshake_result swr_v1_socket_ssl_connect(struct ssl_st *ssl);
 /* network::Socket's per-request reads and writes: recv/send/peek with EINTR and
  * dont_restart, driving `tls` (ssl_recv/ssl_send/SSL_peek on `socket`) when set;
  * catch_error's classification (swReturnCode). */

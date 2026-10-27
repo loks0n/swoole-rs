@@ -1,5 +1,5 @@
 diff --git a/src/network/socket.cc b/src/network/socket.cc
-index 02480c6..374cc73 100644
+index 02480c6..7a7113c 100644
 --- a/src/network/socket.cc
 +++ b/src/network/socket.cc
 @@ -62,2 +62,4 @@ void IOVector::update_iterator(ssize_t _n) {
@@ -69,7 +69,158 @@ index 02480c6..374cc73 100644
 -    size_t sendn = get_sendfile_chunk_size(task->begin, task->end);
 +    size_t sendn = swr_v1_socket_sendfile_chunk(task->begin, task->end);
      ssize_t rv = sendfile(task->file, &task->begin, sendn);
-@@ -1424,37 +1405,21 @@ void Socket::ssl_catch_error() const {
+@@ -1161,37 +1142,27 @@ const char *Socket::ssl_get_error_reason(int *reason) {
+ 
+-ReturnCode Socket::ssl_accept() {
+-    ssl_clear_error();
++static_assert(SW_WAIT == 2 && SW_ERROR == 4 && SW_READY == 5 && SW_OK == 0 && SW_ERR == -1, "swr_v1_socket_ssl_accept's codes");
++static_assert(SW_SSL_STATE_READY == 1 && SW_SSL_STATE_WAIT_STREAM == 2 && SW_ERROR_SSL_HANDSHAKE_FAILED == 1018,
++              "swr_v1_socket_ssl_connect's states");
+ 
+-    int n = SSL_accept(ssl);
+-    /**
+-     * The TLS/SSL handshake was successfully completed
+-     */
+-    if (n == 1) {
+-        ssl_state = SW_SSL_STATE_READY;
+-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+-#ifdef SSL3_FLAGS_NO_RENEGOTIATE_CIPHERS
+-        if (ssl->s3) {
+-            ssl->s3->flags |= SSL3_FLAGS_NO_RENEGOTIATE_CIPHERS;
+-        }
+-#endif
+-#endif
+-        return SW_READY;
++// SSL_accept/SSL_connect and their classification are Rust's (crates/tls/src/socket.rs);
++// the flags, state, last error and logs stay here.
++static void ssl_handshake(Socket *socket, const swr_v1_socket_ssl_handshake_result &result) {
++    socket->ssl_want_read = result.want_read;
++    socket->ssl_want_write = result.want_write;
++    if (result.state >= 0) {
++        socket->ssl_state = result.state;
+     }
+-    /**
+-     * The TLS/SSL handshake was not successful but was shutdown.
+-     */
+-    else if (n == 0) {
+-        return SW_ERROR;
+-    }
+-
+-    long err = SSL_get_error(ssl, n);
+-    if (err == SSL_ERROR_WANT_READ) {
+-        ssl_want_read = 1;
+-        ssl_want_write = 0;
+-        return SW_WAIT;
+-    } else if (err == SSL_ERROR_WANT_WRITE) {
+-        ssl_want_read = 0;
+-        ssl_want_write = 1;
+-        return SW_WAIT;
+-    } else if (err == SSL_ERROR_SSL) {
++    if (result.last_error) {
++        swoole_set_last_error(result.last_error);
++    }
++}
++
++ReturnCode Socket::ssl_accept() {
++#ifdef SW_SUPPORT_DTLS
++    auto result = swr_v1_socket_ssl_accept(ssl, dtls);
++#else
++    auto result = swr_v1_socket_ssl_accept(ssl, false);
++#endif
++    ssl_handshake(this, result);
++    if (result.log == 1) {
+         int reason;
+@@ -1203,14 +1174,7 @@ ReturnCode Socket::ssl_accept() {
+                        error_string);
+-        return SW_ERROR;
+-    } else if (err == SSL_ERROR_SYSCALL) {
+-#ifdef SW_SUPPORT_DTLS
+-        if (dtls && errno == 0) {
+-            ssl_want_read = 1;
+-            return SW_WAIT;
+-        }
+-#endif
+-        return SW_ERROR;
++    } else if (result.log == 2) {
++        swoole_warning(
++            "SSL_do_handshake() failed. Error: %s[%ld|%d]", strerror(errno), (long) result.ssl_error, errno);
+     }
+-    swoole_warning("SSL_do_handshake() failed. Error: %s[%ld|%d]", strerror(errno), err, errno);
+-    return SW_ERROR;
++    return static_cast<ReturnCode>(result.code);
+ }
+@@ -1218,9 +1182,6 @@ ReturnCode Socket::ssl_accept() {
+ int Socket::ssl_connect() {
+-    ssl_clear_error();
+-
+-    int n = SSL_connect(ssl);
+-    if (n == 1) {
+-        ssl_state = SW_SSL_STATE_READY;
+-
++    auto result = swr_v1_socket_ssl_connect(ssl);
++    ssl_handshake(this, result);
+ #ifdef SW_LOG_TRACE_OPEN
++    if (result.state == SW_SSL_STATE_READY) {
+         const char *ssl_version = SSL_get_version(ssl);
+@@ -1228,43 +1189,19 @@ int Socket::ssl_connect() {
+         swoole_trace_log(SW_TRACE_SSL, "connected (%s %s)", ssl_version, ssl_cipher);
+-#endif
+-
+-        return SW_OK;
+     }
+-
+-    long err = SSL_get_error(ssl, n);
+-    if (err == SSL_ERROR_WANT_READ) {
+-        ssl_want_read = 1;
+-        ssl_want_write = 0;
+-        ssl_state = SW_SSL_STATE_WAIT_STREAM;
+-        return SW_OK;
+-    } else if (err == SSL_ERROR_WANT_WRITE) {
+-        ssl_want_read = 0;
+-        ssl_want_write = 1;
+-        ssl_state = SW_SSL_STATE_WAIT_STREAM;
+-        return SW_OK;
+-    } else if (err == SSL_ERROR_ZERO_RETURN) {
++#endif
++    if (result.log == 3) {
+         swoole_debug("SSL_connect(fd=%d) closed", fd);
+-        swoole_set_last_error(SW_ERROR_SSL_RESET);
+-        return SW_ERR;
+-    } else if (err == SSL_ERROR_SYSCALL) {
+-        if (n) {
+-            swoole_set_last_error(errno);
+-            return SW_ERR;
+-        }
+-    } else {
+-        swoole_set_last_error(SW_ERROR_SSL_HANDSHAKE_FAILED);
++    } else if (result.log == 2) {
++        ulong_t err_code = ERR_get_error();
++        char error_buf[512];
++        ERR_error_string_n(err_code, error_buf, sizeof(error_buf));
++        swoole_notice("ssl_connect(fd=%d) to server[%s:%d] failed. Error: %s[%ld|%d]",
++                      fd,
++                      info.get_addr(),
++                      info.get_port(),
++                      error_buf,
++                      (long) result.ssl_error,
++                      ERR_GET_REASON(err_code));
+     }
+-
+-    ulong_t err_code = ERR_get_error();
+-    char error_buf[512];
+-    ERR_error_string_n(err_code, error_buf, sizeof(error_buf));
+-    swoole_notice("ssl_connect(fd=%d) to server[%s:%d] failed. Error: %s[%ld|%d]",
+-                  fd,
+-                  info.get_addr(),
+-                  info.get_port(),
+-                  error_buf,
+-                  err,
+-                  ERR_GET_REASON(err_code));
+-
+-    return SW_ERR;
++    return result.code;
+ }
+@@ -1424,37 +1361,21 @@ void Socket::ssl_catch_error() const {
  
 -ssize_t Socket::ssl_recv(void *_buf, size_t _n) {
 -    ssl_clear_error();
@@ -122,7 +273,7 @@ index 02480c6..374cc73 100644
  
 +ssize_t Socket::ssl_send(const void *_buf, size_t _n) {
  #ifdef SW_SUPPORT_DTLS
-@@ -1464,31 +1429,3 @@ ssize_t Socket::ssl_send(const void *_buf, size_t _n) {
+@@ -1464,31 +1385,3 @@ ssize_t Socket::ssl_send(const void *_buf, size_t _n) {
  #endif
 -
 -    int n = SSL_write(ssl, _buf, _n);
