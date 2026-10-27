@@ -2,6 +2,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
+#include <exception>
 #include <functional>
 #include <map>
 #include <stdexcept>
@@ -86,7 +87,8 @@ int sock_fd=77,type=4,sock_domain=AF_INET;NativeSocket native;NativeSocket *sock
  bool wait_event(int e,const void **buf,size_t n){record("wait-buffer:"+std::to_string(n));*buf=redirected_buffer;return wait_event(e);} \
  ssize_t recvmsg(msghdr *,int);ssize_t sendmsg(const msghdr *,int);ssize_t sendto(const std::string &,int,const void *,size_t);ssize_t recvfrom(void *,size_t,sockaddr *,socklen_t *); \
  ssize_t recv(void *,size_t);ssize_t send(const void *,size_t);ssize_t read(void *,size_t);ssize_t write(const void *,size_t);ssize_t readv(network::IOVector *);ssize_t writev(network::IOVector *); \
- ssize_t recv_all(void *,size_t);ssize_t send_all(const void *,size_t);}; \
+ ssize_t recv_all(void *,size_t);ssize_t send_all(const void *,size_t); \
+ enum {TRANSFER_ALL=1,TRANSFER_EINTR=2,TRANSFER_CHECKED=4};template <class Call> ssize_t transfer(EventType,const void *,size_t,int,Call);}; \
 struct UringSocket {ssize_t recv(void *,size_t n){return io("uring-recv",n);}ssize_t send(const void *,size_t n){return io("uring-send",n);}void check_return_value(ssize_t r){record("check:"+std::to_string(r));}ssize_t recv_all(void *,size_t);ssize_t send_all(const void *,size_t);}; \
 static bool running=true;static bool swoole_event_is_running(){record("event:running");return running;} \
 static std::vector<int> submit_results;static size_t submit_index=0; \
