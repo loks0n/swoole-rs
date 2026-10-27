@@ -24,7 +24,7 @@ pub unsafe extern "C" fn swr_v1_memory_heap_debug_step(
             priority: 0,
             position: 0,
             data: ptr::null_mut(),
-        })
+        });
     };
     if state.is_null() || index.is_null() {
         return -1;
@@ -65,7 +65,7 @@ impl Heap {
         )]
         // SAFETY: a node owned by this heap (see `Heap`).
         unsafe {
-            (*node.as_ptr()).position = index as u32 + 1
+            (*node.as_ptr()).position = index as u32 + 1;
         };
     }
     fn up(&mut self, index: usize) {
@@ -303,7 +303,7 @@ pub unsafe extern "C" fn swr_v1_memory_heap_push(
             )]
             position: index as u32 + 1,
             data,
-        })
+        });
     };
     heap.nodes.push(node);
     heap.up(index);

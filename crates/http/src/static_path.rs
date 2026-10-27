@@ -181,7 +181,7 @@ pub(crate) unsafe fn path_step(
                     url.as_ptr(),
                     output.wrapping_add(root.len()),
                     state.url_length,
-                )
+                );
             };
             // SAFETY: as above.
             unsafe { output.wrapping_add(length).write(0) };
@@ -315,7 +315,7 @@ pub unsafe extern "C" fn swr_v1_http_static_index_path(
             name.as_ptr(),
             output.wrapping_add(logical_length + usize::from(slash)),
             name.len(),
-        )
+        );
     };
     // SAFETY: as above.
     unsafe { output.wrapping_add(end).write(0) };

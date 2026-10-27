@@ -326,7 +326,11 @@ unsafe fn apply_plan(
             let text = buffer.format(value);
             // SAFETY: as above; `text` is a local buffer, disjoint from `data`.
             unsafe {
-                ptr::copy_nonoverlapping(text.as_ptr(), data.wrapping_add(state.length), text.len())
+                ptr::copy_nonoverlapping(
+                    text.as_ptr(),
+                    data.wrapping_add(state.length),
+                    text.len(),
+                );
             };
         }
         COPY => {
@@ -359,7 +363,7 @@ unsafe fn apply_plan(
                                 destination,
                                 destination.wrapping_add(filled),
                                 copied,
-                            )
+                            );
                         };
                         filled += copied;
                     }
@@ -910,7 +914,7 @@ mod copy_tests {
             assert_eq!(
                 swr_v1_string_prepare(&raw const target, &raw const same, &raw mut plan),
                 OK
-            )
+            );
         };
         assert_eq!((plan.capacity, plan.length, plan.offset), (8, 0, 0));
         let invalid = StringEdit { count: 2, ..edit };
@@ -918,7 +922,7 @@ mod copy_tests {
             assert_eq!(
                 swr_v1_string_prepare(&raw const target, &raw const invalid, &raw mut plan),
                 INVALID
-            )
+            );
         };
         assert!(plan == StringPlan::ZERO);
     }

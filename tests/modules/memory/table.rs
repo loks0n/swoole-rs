@@ -1576,7 +1576,7 @@ fn collection_free_core_teardown_preserves_real_resource_effects_without_column_
                 actions.push(effect.action);
                 match effect.action {
                     3 | 4 | 6 if !effect.token.is_null() => {
-                        drop(Box::from_raw(effect.token.cast::<u8>()))
+                        drop(Box::from_raw(effect.token.cast::<u8>()));
                     }
                     3 | 4 => {}
                     5 => drop(Box::from_raw(effect.token.cast::<[u64; 8]>())),

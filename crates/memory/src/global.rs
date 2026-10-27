@@ -125,7 +125,7 @@ pub unsafe extern "C" fn swr_v1_memory_global_create(
             drained: None,
             shared: false,
             creator: 0,
-        })
+        });
     };
     // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe { output.write(state.cast()) };
@@ -293,7 +293,7 @@ pub unsafe extern "C" fn swr_v1_memory_global_alloc(
     )]
     // SAFETY: as above.
     unsafe {
-        block.cast::<u32>().write(size as u32)
+        block.cast::<u32>().write(size as u32);
     };
     // SAFETY: as above.
     unsafe { ptr::write_bytes(block.wrapping_add(8), 0, size) };

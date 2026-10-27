@@ -126,7 +126,7 @@ pub unsafe extern "C" fn swr_v1_context_stack_step(
         unsafe {
             stack.write(ContextStackCell {
                 pointer: ptr::null_mut(),
-            })
+            });
         };
         return ContextStackView::empty();
     }
@@ -138,7 +138,7 @@ pub unsafe extern "C" fn swr_v1_context_stack_step(
         unsafe {
             stack.write(ContextStackCell {
                 pointer: allocation,
-            })
+            });
         };
     }
     // SAFETY: outside CLEAR the cell is initialized and the extent readable.

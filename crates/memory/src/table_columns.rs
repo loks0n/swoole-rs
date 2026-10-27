@@ -42,7 +42,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_columns_create(output: *mut *mut Co
     unsafe {
         columns.write(Columns {
             entries: HashMap::default(),
-        })
+        });
     };
     // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe { output.write(columns) };

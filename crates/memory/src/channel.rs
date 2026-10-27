@@ -68,7 +68,7 @@ unsafe fn copy_record(input: *const u8, output: *mut u8, length: usize) {
                 input.wrapping_add(length - N),
                 output.wrapping_add(length - N),
                 N,
-            )
+            );
         };
     }
     if length > 64 {
@@ -135,7 +135,7 @@ pub unsafe extern "C" fn swr_v1_memory_channel_in(
             input.cast::<u8>(),
             item.wrapping_add(4),
             length.unsigned_abs() as usize,
-        )
+        );
     };
     c.tail += signed(packet);
     if c.tail >= signed(c.size) {
@@ -196,7 +196,7 @@ unsafe fn read_record(c: &Channel, output: *mut c_void, capacity: i32) -> i32 {
             item.wrapping_add(4),
             output.cast::<u8>(),
             length.unsigned_abs() as usize,
-        )
+        );
     };
     length
 }

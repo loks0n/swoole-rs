@@ -274,7 +274,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_clear(row: *mut Row, keep_lock: u32
             row.cast::<u8>().wrapping_add(begin),
             0,
             mem::size_of::<Row>() - begin,
-        )
+        );
     };
     0
 }
@@ -299,7 +299,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_init(
             row.cast::<u8>().wrapping_add(begin),
             0,
             mem::size_of::<Row>() - begin,
-        )
+        );
     };
     if !key.is_empty() {
         // SAFETY: as above; `key.len() <= 63` fits the 64-byte key field.
@@ -308,7 +308,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_init(
                 key.as_ptr(),
                 field::<u8>(row, mem::offset_of!(Row, key)),
                 key.len(),
-            )
+            );
         };
     }
     #[expect(
@@ -317,7 +317,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_init(
     )]
     // SAFETY: as above.
     unsafe {
-        field::<u8>(row, mem::offset_of!(Row, key_len)).write_unaligned(length as u8)
+        field::<u8>(row, mem::offset_of!(Row, key_len)).write_unaligned(length as u8);
     };
     // SAFETY: as above.
     unsafe { field::<u8>(row, mem::offset_of!(Row, active)).write_unaligned(1) };
@@ -480,7 +480,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_delete(
                 field::<u8>(replacement, mem::offset_of!(Row, key)),
                 field::<u8>(root, mem::offset_of!(Row, key)),
                 length + 1,
-            )
+            );
         };
         #[expect(
             clippy::cast_possible_truncation,
@@ -488,7 +488,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_delete(
         )]
         // SAFETY: as above.
         unsafe {
-            field::<u8>(root, mem::offset_of!(Row, key_len)).write_unaligned(length as u8)
+            field::<u8>(root, mem::offset_of!(Row, key_len)).write_unaligned(length as u8);
         };
         if item_size != 0 {
             // SAFETY: as above.
@@ -497,7 +497,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_delete(
                     replacement.cast::<u8>().wrapping_add(mem::size_of::<Row>()),
                     root.cast::<u8>().wrapping_add(mem::size_of::<Row>()),
                     item_size,
-                )
+                );
             };
         }
         // SAFETY: `removed` is non-null (checked above), aligned and writable.
@@ -507,7 +507,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_delete(
         let following = unsafe { next(row) };
         // SAFETY: as above.
         unsafe {
-            field::<*mut Row>(previous, mem::offset_of!(Row, next)).write_unaligned(following)
+            field::<*mut Row>(previous, mem::offset_of!(Row, next)).write_unaligned(following);
         };
         // SAFETY: `removed` is non-null (checked above), aligned and writable.
         unsafe { removed.write(row.cast()) };
@@ -1054,7 +1054,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_clear_value(
             row.cast::<u8>().wrapping_add(mem::size_of::<Row>() + index),
             0,
             bytes,
-        )
+        );
     };
     0
 }
@@ -1185,13 +1185,13 @@ pub unsafe extern "C" fn swr_v1_memory_table_set_value(
             )]
             // SAFETY: as above; a 4-byte length prefix leads the column.
             unsafe {
-                data.cast::<u32>().write_unaligned(length as u32)
+                data.cast::<u32>().write_unaligned(length as u32);
             };
             if length != 0 {
                 // SAFETY: as above; `length <= width - 4` bytes follow the prefix, and `value`
                 // lends them readable, disjoint from the row.
                 unsafe {
-                    ptr::copy_nonoverlapping(value.cast::<u8>(), data.wrapping_add(4), length)
+                    ptr::copy_nonoverlapping(value.cast::<u8>(), data.wrapping_add(4), length);
                 };
             }
         }
@@ -1216,7 +1216,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_get_number(
             row.cast::<u8>().wrapping_add(mem::size_of::<Row>() + index),
             output.cast::<u8>(),
             8,
-        )
+        );
     };
     0
 }

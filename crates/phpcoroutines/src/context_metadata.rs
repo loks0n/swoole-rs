@@ -87,7 +87,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_metadata(
                 )]
                 // SAFETY: this kind's cells are valid and initialized (see the contract).
                 unsafe {
-                    (*cells.temporary).value = observation as c_int
+                    (*cells.temporary).value = observation as c_int;
                 };
                 plan = MetadataPlan {
                     action: 2,

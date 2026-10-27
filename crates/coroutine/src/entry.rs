@@ -73,7 +73,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_entry_step(
         }
         6 => {
             if c.mode == 0 {
-                c.cid = c_long::from(c.cid > 0)
+                c.cid = c_long::from(c.cid > 0);
             }
             c.phase = 7;
             6

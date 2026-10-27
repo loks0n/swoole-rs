@@ -232,7 +232,7 @@ pub unsafe extern "C" fn swr_v2_http_context_new(
                 },
                 directory: HttpDirectory::default(),
                 tasks: HttpTasks::default(),
-            })
+            });
         };
     }
     context

@@ -121,7 +121,7 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_initialize(base: *mut u8, total: 
     #[expect(clippy::cast_ptr_alignment, reason = "the mapping header is 8-aligned")]
     // SAFETY: non-null, 8-aligned and covering `total >= 8` bytes (checked above).
     unsafe {
-        base.cast::<usize>().write(total)
+        base.cast::<usize>().write(total);
     };
     base.wrapping_add(8)
 }

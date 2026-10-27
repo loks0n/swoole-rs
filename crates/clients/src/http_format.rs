@@ -32,7 +32,7 @@ impl Writer {
                     bytes.as_ptr(),
                     self.output.wrapping_add(offset),
                     copied,
-                )
+                );
             };
         }
         self.count = count;
@@ -70,7 +70,7 @@ impl Writer {
             unsafe {
                 self.output
                     .wrapping_add(if error == 0 { written } else { 0 })
-                    .write(0)
+                    .write(0);
             };
         }
         ClientsFormatResult { written, error }

@@ -83,7 +83,7 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_usage(pool: *const Fixed, output: *
             spare: pool.slice_num.wrapping_sub(pool.slice_use),
             total: pool.slice_num,
             width: pool.slice_size,
-        })
+        });
     };
     0
 }
@@ -286,7 +286,7 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_construct(
     )]
     // SAFETY: as above.
     unsafe {
-        field::<_, u8>(arena, offset_of!(Fixed, shared)).write(shared as u8)
+        field::<_, u8>(arena, offset_of!(Fixed, shared)).write(shared as u8);
     };
     #[expect(
         clippy::cast_possible_truncation,
@@ -294,7 +294,7 @@ pub unsafe extern "C" fn swr_v1_memory_fixed_construct(
     )]
     // SAFETY: as above.
     unsafe {
-        field::<_, u8>(arena, offset_of!(Fixed, allocated)).write(owned as u8)
+        field::<_, u8>(arena, offset_of!(Fixed, allocated)).write(owned as u8);
     };
     // SAFETY: the header is fully initialized and `memory` holds `plan.usable` bytes.
     unsafe { swr_v1_memory_fixed_init(arena) }
