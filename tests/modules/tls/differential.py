@@ -151,8 +151,10 @@ def main():
         # DSO's separate ex_data authority while these actual protocol TUs own
         # another. Compile the unchanged pinned real caller in both comparators;
         # no protected source patch or stub and no full native-world rebuild.
+        # Linux binds flat: the executable's protocol TUs already interpose the DSO's, and a second
+        # copy of socket.cc there is an ODR violation that ASan aborts on.
         socket_sources=[]
-        if args.peers or (args.crypto_allocation and args.crypto_operation=='dtls-init'):
+        if sys.platform=='darwin' and (args.peers or (args.crypto_allocation and args.crypto_operation=='dtls-init')):
             socket_source=attempt/'native-socket.cc'
             socket_source.write_text(run(['git','-C',args.reference.resolve(),'show',pin+':src/network/socket.cc']).stdout)
             socket_sources=[socket_source]
