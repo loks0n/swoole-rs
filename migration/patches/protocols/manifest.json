@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-rust-packet-protocols.patch",
-      "sha256": "8a9086d48872344f4edf46ce075685123af3146c70ff20f172dd7461bca7e2ca",
+      "sha256": "e3899e2b91c695c399af4a9b0ea9e386f225775e82cde637987a3538725bce0b",
       "upstream_paths": [
         "ext-src/swoole_redis_server.cc",
         "include/swoole_message_bus.h",
