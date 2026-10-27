@@ -1,11 +1,14 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #ifndef SWOOLE_RS_CLIENTS_H
 #define SWOOLE_RS_CLIENTS_H
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
+int swr_v1_clients_address_assign(void *address, uint32_t *length, int kind, const char *host, size_t host_length, int port, int (*resolve)(int family, const char *name, char *address));
+bool swr_v1_clients_verify_ip(int family, const char *host, void *destination);
 enum swr_v1_clients_object_action {
     SWR_CLIENTS_OBJECT_RETURN=0, SWR_CLIENTS_OBJECT_FD_STREAM=1,
     SWR_CLIENTS_OBJECT_FD_DGRAM=2, SWR_CLIENTS_OBJECT_MAKE=3,

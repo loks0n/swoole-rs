@@ -55,8 +55,14 @@ its own buffers on destruction, so allocation topology differs.
 - Apple accepts decimal leading zeros; Linux is strict. Dotted IPv6 tails are
   normalized in bounded stack storage before `std::net` parsing.
 - IPv4 loopback is exactly `127.0.0.1`, not `/8`.
-- Unsupported families and Apple scoped-IPv6 interface lookup stay native,
-  including errno on successful scoped parsing.
+- `Address::assign(type, host, port, resolve)` is one Rust call,
+  `clients_address_assign`: port check, then the sockaddr union and length for
+  IPv4/IPv6/raw (literal, else native `gethostbyname` through a function pointer
+  when resolving) or Unix (length limit, `strlcpy` copy); it returns the
+  `SW_ERROR_*` code native sets as the last error. Native sets `type` first.
+  `Address::verify_ip` is `clients_verify_ip` into native `tmp_address`.
+- Unsupported families and Apple scoped-IPv6 parsing go to the platform's
+  `inet_pton` from Rust, errno included.
 - `ip_text` writes into 40-byte caller-local storage and returns the length.
   IPv6 is emitted as eight four-digit lowercase groups (as the original DNS
   helper does, not compressed `inet_ntop` text). Native builds the

@@ -7,6 +7,7 @@
     )
 )]
 
+pub mod address;
 pub mod async_client;
 pub mod coro_client;
 pub mod http_connection;

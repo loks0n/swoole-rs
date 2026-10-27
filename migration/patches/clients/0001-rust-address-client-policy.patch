@@ -1490,7 +1490,7 @@ index e959b5e..fe217f5 100644
 -    return result;
  }
 diff --git a/src/network/address.cc b/src/network/address.cc
-index 04e0462..23ca259 100644
+index 04e0462..de48820 100644
 --- a/src/network/address.cc
 +++ b/src/network/address.cc
 @@ -18,7 +18,7 @@
@@ -1506,39 +1506,16 @@ index 04e0462..23ca259 100644
 +#include "swoole_rs_clients.h"
 +#include <locale>
  
-@@ -27,2 +27,26 @@ namespace network {
- static thread_local char tmp_address[INET6_ADDRSTRLEN];
-+static int clients_parse_ip(int family, const std::string &host, void *destination) {
-+    if (family != AF_INET && family != AF_INET6) {
-+        // Unsupported-family errno remains an actual native platform effect.
-+        return inet_pton(family, host.c_str(), destination);
-+    }
-+#ifdef __APPLE__
-+    if (family == AF_INET6 && strchr(host.c_str(), '%') != nullptr) {
-+        // Scope/interface lookup can succeed while changing native errno.
-+        // Keep that platform execution boundary outside Rust frames.
-+        return inet_pton(family, host.c_str(), destination);
-+    }
-+    constexpr uint8_t allow_decimal_zeroes = 1;
-+#else
-+    constexpr uint8_t allow_decimal_zeroes = 0;
-+#endif
-+    const auto plan = swr_v1_clients_ip(family == AF_INET ? 4 : 6,
-+                                      reinterpret_cast<const uint8_t *>(host.data()), host.size(), allow_decimal_zeroes);
-+    if (plan.length == 0) {
-+        return 0;
-+    }
-+    memcpy(destination, plan.bytes, plan.length);
-+    return 1;
-+}
-+
+@@ -28,2 +28,3 @@ static thread_local char tmp_address[INET6_ADDRSTRLEN];
  
-@@ -36,3 +60,3 @@ const char *Address::addr_str(int family, const void *addr) {
++
+ const char *Address::addr_str(int family, const void *addr) {
+@@ -36,3 +37,3 @@ const char *Address::addr_str(int family, const void *addr) {
  bool Address::verify_ip(int family, const std::string &str) {
 -    return inet_pton(family, str.c_str(), tmp_address) == 1;
-+    return clients_parse_ip(family, str, tmp_address) == 1;
++    return swr_v1_clients_verify_ip(family, str.c_str(), tmp_address);
  }
-@@ -40,9 +64,3 @@ bool Address::verify_ip(int family, const std::string &str) {
+@@ -40,9 +41,3 @@ bool Address::verify_ip(int family, const std::string &str) {
  bool Address::verify_port(const int port, const bool for_connect) {
 -    if (port < 0 || port > 65535) {
 -        return false;
@@ -1549,17 +1526,70 @@ index 04e0462..23ca259 100644
 -    return true;
 +    return swr_v1_clients_port(port, for_connect);
  }
-@@ -98,3 +116,3 @@ bool Address::assign(SocketType _type, const std::string &_host, int _port, bool
+@@ -84,54 +79,14 @@ void Address::set_port(int _port) {
  
++static int address_resolve(int family, const char *name, char *address) {
++    return gethostbyname(family, name, address);
++}
++
+ bool Address::assign(SocketType _type, const std::string &_host, int _port, bool _resolve_name) {
+     type = _type;
+-    const char *host = _host.c_str();
+-
+-    if (!verify_port(_port)) {
+-        swoole_set_last_error(SW_ERROR_BAD_PORT);
+-        return false;
+-    }
+-
+-    if (Socket::is_inet4(_type)) {
+-        addr.inet_v4.sin_family = AF_INET;
+-        addr.inet_v4.sin_port = htons(_port);
+-        len = sizeof(addr.inet_v4);
+-
 -        if (inet_pton(AF_INET, host, &addr.inet_v4.sin_addr.s_addr) != 1) {
-+        if (clients_parse_ip(AF_INET, _host, &addr.inet_v4.sin_addr.s_addr) != 1) {
-             if (!_resolve_name) {
-@@ -112,3 +130,3 @@ bool Address::assign(SocketType _type, const std::string &_host, int _port, bool
-         len = sizeof(addr.inet_v6);
+-            if (!_resolve_name) {
+-                swoole_set_last_error(SW_ERROR_BAD_HOST_ADDR);
+-                return false;
+-            }
+-            if (gethostbyname(AF_INET, host, reinterpret_cast<char *>(&addr.inet_v4.sin_addr)) < 0) {
+-                swoole_set_last_error(SW_ERROR_DNSLOOKUP_RESOLVE_FAILED);
+-                return false;
+-            }
+-        }
+-    } else if (Socket::is_inet6(_type)) {
+-        addr.inet_v6.sin6_family = AF_INET6;
+-        addr.inet_v6.sin6_port = htons(_port);
+-        len = sizeof(addr.inet_v6);
 -        if (inet_pton(AF_INET6, host, addr.inet_v6.sin6_addr.s6_addr) != 1) {
-+        if (clients_parse_ip(AF_INET6, _host, addr.inet_v6.sin6_addr.s6_addr) != 1) {
-             if (!_resolve_name) {
-@@ -153,26 +171,27 @@ const char *Address::type_str(SocketType type) {
+-            if (!_resolve_name) {
+-                swoole_set_last_error(SW_ERROR_BAD_HOST_ADDR);
+-                return false;
+-            }
+-            if (gethostbyname(AF_INET6, host, reinterpret_cast<char *>(&addr.inet_v6.sin6_addr)) < 0) {
+-                swoole_set_last_error(SW_ERROR_DNSLOOKUP_RESOLVE_FAILED);
+-                return false;
+-            }
+-        }
+-    } else if (Socket::is_local(_type)) {
+-        if (_host.length() >= sizeof(addr.un.sun_path) - 1) {
+-            swoole_set_last_error(SW_ERROR_NAME_TOO_LONG);
+-            return false;
+-        }
+-        addr.un.sun_family = AF_UNIX;
+-        swoole_strlcpy(addr.un.sun_path, host, sizeof(addr.un.sun_path));
+-        addr.un.sun_path[sizeof(addr.un.sun_path) - 1] = 0;
+-        len = sizeof(addr.un.sun_path);
+-    } else {
+-        swoole_set_last_error(SW_ERROR_BAD_SOCKET_TYPE);
++    const int error = swr_v1_clients_address_assign(
++        &addr, &len, _type, _host.c_str(), _host.length(), _port, _resolve_name ? address_resolve : nullptr);
++    if (error != 0) {
++        swoole_set_last_error(error);
+         return false;
+     }
+-
+     return true;
+@@ -153,26 +108,27 @@ const char *Address::type_str(SocketType type) {
  bool Address::assign(const std::string &url) {
 -    static const std::regex unix_pattern(R"(^(unix|udg)://(/[^?#]+))");
 -    static const std::regex inet4_pattern(R"(^(tcp|udp)://([^:\[]+):(\d+)$)");
@@ -1611,7 +1641,7 @@ index 04e0462..23ca259 100644
 +            return assign(type, host, port);
 +        }
      }
-@@ -184,6 +203,6 @@ bool Address::is_loopback_addr() const {
+@@ -184,6 +140,6 @@ bool Address::is_loopback_addr() const {
      if (Socket::is_inet4(type)) {
 -        return IN_IS_ADDR_LOOPBACK(&addr.inet_v4.sin_addr);
 +        return swr_v1_clients_loopback(4, reinterpret_cast<const uint8_t *>(&addr.inet_v4.sin_addr));

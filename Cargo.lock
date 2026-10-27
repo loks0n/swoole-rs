@@ -199,6 +199,7 @@ dependencies = [
 name = "swoole-rs-clients"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "swoole-rs-base64",
 ]
 
