@@ -147,7 +147,7 @@ impl Buffer {
                 },
                 length: 0,
                 mode,
-            })
+            });
         };
         // SAFETY: a global allocation with `Box`'s layout, initialized above.
         Ok(unsafe { Box::from_raw(handle) })
@@ -542,7 +542,7 @@ pub unsafe extern "C" fn swr_v1_buffer_front_plan(
                 kind: 3,
                 token: facade_view,
                 ..BufferView::ZERO
-            })
+            });
         };
         return OK;
     }
@@ -606,7 +606,7 @@ pub unsafe extern "C" fn swr_v1_buffer_advance(
                 action: 1,
                 token: cached,
                 ..BufferAdvance::ZERO
-            })
+            });
         };
         return OK;
     }

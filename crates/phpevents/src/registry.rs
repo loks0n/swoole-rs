@@ -48,7 +48,7 @@ unsafe fn try_insert_slot(slot: *mut *mut PhpEventRegistry, fd: i32, value: usiz
         unsafe {
             owner.write(PhpEventRegistry {
                 sockets: HashMap::default(),
-            })
+            });
         };
         // SAFETY: a global-allocator allocation with `Box`'s layout, initialized above.
         let mut owner = unsafe { Box::from_raw(owner) };

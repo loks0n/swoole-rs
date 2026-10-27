@@ -355,7 +355,7 @@ mod continuation_tests {
                     &raw mut plan
                 ),
                 0
-            )
+            );
         };
         assert_eq!(
             (plan.action, plan.offset, plan.step.begin, plan.step.length),
@@ -376,7 +376,7 @@ mod continuation_tests {
                     &raw mut plan
                 ),
                 0
-            )
+            );
         };
         assert_eq!(
             (plan.action, plan.offset, plan.step.begin, plan.step.length),
@@ -396,7 +396,7 @@ mod continuation_tests {
                     &raw mut plan
                 ),
                 0
-            )
+            );
         };
         assert_eq!((plan.action, plan.offset, plan.value), (0, 5, -1));
         // A callback offset side effect is committed before the next search.
@@ -413,7 +413,7 @@ mod continuation_tests {
                     &raw mut plan
                 ),
                 0
-            )
+            );
         };
         assert_eq!((plan.action, plan.offset, plan.value), (0, 6, 6));
         // Rust-only invalid-state check: keep the already committed offset.
@@ -430,7 +430,7 @@ mod continuation_tests {
                     &raw mut plan
                 ),
                 INVALID
-            )
+            );
         };
         assert_eq!((plan.action, plan.offset), (0, 9));
     }

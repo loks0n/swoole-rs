@@ -78,7 +78,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_create(
         path.write(LogPath {
             text,
             native_max: state.native_max,
-        })
+        });
     };
     // SAFETY: as for the first write to `output`.
     unsafe { output.write(path) };

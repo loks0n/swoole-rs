@@ -115,7 +115,7 @@ pub unsafe extern "C" fn swr_v1_http_rewrite_literal(
                 suffix.as_ptr(),
                 output.wrapping_add(replacement.len()),
                 suffix.len(),
-            )
+            );
         };
     }
     // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.

@@ -209,7 +209,7 @@ pub unsafe extern "C" fn swr_v1_http_url_encode(
         // the entire initialized input without reclassifying each byte.
         // SAFETY: `input.len() < needed` slots in the disjoint output.
         unsafe {
-            std::ptr::copy_nonoverlapping(input.as_ptr(), output.as_mut_ptr().cast(), input.len())
+            std::ptr::copy_nonoverlapping(input.as_ptr(), output.as_mut_ptr().cast(), input.len());
         };
         input.len()
     } else {

@@ -72,7 +72,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_config(
             let disabled = u8::from(value == 0);
             // SAFETY: as above.
             unsafe {
-                field::<u8>(state, offset_of!(ConfigState, disable_deadlock)).write(disabled)
+                field::<u8>(state, offset_of!(ConfigState, disable_deadlock)).write(disabled);
             };
             u64::from(value != 0)
         }

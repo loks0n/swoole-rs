@@ -196,7 +196,7 @@ pub unsafe extern "C" fn swr_v1_memory_records_cursor_open(
             unique_count: owner.first.len(),
             position: 0,
             generation: owner.generation,
-        })
+        });
     };
     0
 }
@@ -263,7 +263,7 @@ pub unsafe extern "C" fn swr_v1_memory_records_copy_name(
                 owner.order[view.ordinal].name.as_ptr(),
                 output,
                 view.name_length,
-            )
+            );
         };
     }
     0

@@ -67,7 +67,7 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_open(output: *mut *mut OwnedCo
             generation: 0,
             position: 0,
             closing: false,
-        })
+        });
     };
     // SAFETY: `output` is non-null (checked above), aligned and writable.
     unsafe { output.write(owner) };
@@ -229,7 +229,7 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_cursor_open(
             position: 0,
             generation: owner.generation,
             column: ptr::null_mut(),
-        })
+        });
     };
     0
 }

@@ -190,7 +190,7 @@ unsafe fn allocate(state: *mut Ring, requested: u32) -> *mut c_void {
                 )]
                 // SAFETY: as above; only the producer writes this unpublished header.
                 unsafe {
-                    item.wrapping_add(4).cast::<u32>().write(skip - 8)
+                    item.wrapping_add(4).cast::<u32>().write(skip - 8);
                 };
                 // SAFETY: as above; the aligned lock is only accessed atomically.
                 unsafe { AtomicU16::from_ptr(item.cast()) }.store(0, Ordering::Release);
@@ -222,7 +222,7 @@ unsafe fn allocate(state: *mut Ring, requested: u32) -> *mut c_void {
     unsafe {
         item.wrapping_add(2)
             .cast::<u16>()
-            .write(c.alloc_count as u16)
+            .write(c.alloc_count as u16);
     };
     #[expect(
         clippy::cast_ptr_alignment,
@@ -230,7 +230,7 @@ unsafe fn allocate(state: *mut Ring, requested: u32) -> *mut c_void {
     )]
     // SAFETY: as above.
     unsafe {
-        item.wrapping_add(4).cast::<u32>().write(size)
+        item.wrapping_add(4).cast::<u32>().write(size);
     };
     // SAFETY: as above; the aligned lock is only accessed atomically.
     unsafe { AtomicU16::from_ptr(item.cast()) }.store(1, Ordering::Release);
@@ -283,7 +283,7 @@ pub unsafe extern "C" fn swr_v1_memory_ring_storage_alloc(
     unsafe { field::<u32>(storage, offset_of!(Storage, alloc_offset)).write(state.alloc_offset) };
     // SAFETY: as above.
     unsafe {
-        field::<u32>(storage, offset_of!(Storage, collect_offset)).write(state.collect_offset)
+        field::<u32>(storage, offset_of!(Storage, collect_offset)).write(state.collect_offset);
     };
     // SAFETY: as above.
     unsafe { field::<u32>(storage, offset_of!(Storage, alloc_count)).write(state.alloc_count) };

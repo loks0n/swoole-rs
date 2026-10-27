@@ -70,7 +70,7 @@ unsafe fn allocate(
             o.length = 0;
             o.capacity = capacity;
             o.offset = 0;
-        })
+        });
     };
     // SAFETY: `allocator` is live.
     let data = unsafe { malloc(allocator, capacity) }?;
@@ -79,7 +79,7 @@ unsafe fn allocate(
         update(object, |o| {
             o.data = data;
             o.allocator = allocator;
-        })
+        });
     };
     if data.is_null() { Err(NOMEM) } else { Ok(()) }
 }
@@ -117,7 +117,7 @@ unsafe fn reserve(
         update(object, |o| {
             o.data = replacement;
             o.capacity = capacity;
-        })
+        });
     };
     Ok(())
 }
@@ -151,7 +151,7 @@ unsafe fn copy(
         update(object, |o| {
             o.length = from.length;
             o.offset = from.offset;
-        })
+        });
     };
     Ok(ptr::null_mut())
 }
@@ -176,7 +176,7 @@ unsafe fn pop(object: *mut StringObject, edit: &StringEdit) -> Result<*mut u8, i
             o.data = replacement;
             o.capacity = requested;
             o.length = captured;
-        })
+        });
     };
     // The original copies from the offset as it is after malloc.
     // SAFETY: live String.

@@ -145,14 +145,14 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
             (0, 5) => {
                 if i.flags & WAIT != 0 {
                     if usize::try_from(i.offset).is_ok_and(|offset| i.len >= offset) {
-                        s.phase = 9
+                        s.phase = 9;
                     } else if i.flags & TLS != 0 {
-                        s.phase = 1
+                        s.phase = 1;
                     } else {
                         return done(0);
                     }
                 } else {
-                    s.phase = 2
+                    s.phase = 2;
                 }
             }
             (0, 6) => {
@@ -201,7 +201,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
             }
             (0, 12) => {
                 if i.flags & TLS != 0 {
-                    s.phase = 1
+                    s.phase = 1;
                 } else {
                     return done(0);
                 }
@@ -264,7 +264,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
             }
             (1, 8) => {
                 if i.result > 0 {
-                    s.phase = 0
+                    s.phase = 0;
                 } else {
                     return done(0);
                 }
@@ -296,7 +296,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
             }
             (1, 10) => {
                 if s.again != 0 {
-                    s.phase = 0
+                    s.phase = 0;
                 } else {
                     return done(0);
                 }

@@ -235,7 +235,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_arguments(
             head: position.cast_unsigned(),
             tail_begin: (position + 1).cast_unsigned(),
             tail_count: (count - position - 1).cast_unsigned(),
-        })
+        });
     };
     1
 }
@@ -929,7 +929,7 @@ unsafe fn write_type_layout(
                 value: UNDEF,
                 offset: offset16,
                 length: 0,
-            })
+            });
         };
         return 2;
     }
@@ -950,7 +950,7 @@ unsafe fn write_type_layout(
             value,
             offset: offset16,
             length,
-        })
+        });
     };
     1
 }
@@ -1375,7 +1375,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_definition(
     if value_length != 0 {
         // SAFETY: as above; `value` lends `value_length` initialized bytes.
         unsafe {
-            std::ptr::copy_nonoverlapping(value, output.wrapping_add(prefix.len()), value_length)
+            std::ptr::copy_nonoverlapping(value, output.wrapping_add(prefix.len()), value_length);
         };
     }
     // SAFETY: as above.
