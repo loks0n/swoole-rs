@@ -1,0 +1,133 @@
+//! `network::Socket`'s mapping between `swSocketType` and (domain, type), and the
+//! type a host string names.
+use std::os::raw::c_int;
+
+/// `swSocketType`.
+const TCP: c_int = 1;
+const UDP: c_int = 2;
+const TCP6: c_int = 3;
+const UDP6: c_int = 4;
+const UNIX_STREAM: c_int = 5;
+const UNIX_DGRAM: c_int = 6;
+const RAW: c_int = 7;
+const RAW6: c_int = 8;
+
+/// `Socket::convert_to_type(domain, type)`: anything unknown is `SW_SOCK_RAW`.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_socket_type(domain: c_int, kind: c_int) -> c_int {
+    match (domain, kind) {
+        (libc::AF_INET, libc::SOCK_STREAM) => TCP,
+        (libc::AF_INET6, libc::SOCK_STREAM) => TCP6,
+        (libc::AF_UNIX, libc::SOCK_STREAM) => UNIX_STREAM,
+        (libc::AF_INET, libc::SOCK_DGRAM) => UDP,
+        (libc::AF_INET6, libc::SOCK_DGRAM) => UDP6,
+        (libc::AF_UNIX, libc::SOCK_DGRAM) => UNIX_DGRAM,
+        (libc::AF_INET6, libc::SOCK_RAW) => RAW6,
+        _ => RAW,
+    }
+}
+
+/// `Socket::get_domain_and_type`: false for a type with no socket(2) arguments.
+///
+/// # Safety
+/// `domain` and `kind` point to writable ints.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_socket_domain_and_type(
+    socket_type: c_int,
+    domain: *mut c_int,
+    kind: *mut c_int,
+) -> bool {
+    let (d, k) = match socket_type {
+        TCP6 => (libc::AF_INET6, libc::SOCK_STREAM),
+        UNIX_STREAM => (libc::AF_UNIX, libc::SOCK_STREAM),
+        UDP => (libc::AF_INET, libc::SOCK_DGRAM),
+        UDP6 => (libc::AF_INET6, libc::SOCK_DGRAM),
+        UNIX_DGRAM => (libc::AF_UNIX, libc::SOCK_DGRAM),
+        TCP => (libc::AF_INET, libc::SOCK_STREAM),
+        RAW => (libc::AF_INET, libc::SOCK_RAW),
+        RAW6 => (libc::AF_INET6, libc::SOCK_RAW),
+        _ => return false,
+    };
+    // SAFETY: the caller lends two writable ints.
+    unsafe { domain.write(d) };
+    // SAFETY: as above.
+    unsafe { kind.write(k) };
+    true
+}
+
+/// The type a host string names, and how many leading bytes `convert_to_type`
+/// erases from it.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct HostType {
+    pub socket_type: c_int,
+    pub erase: usize,
+}
+
+fn host_type(host: &[u8]) -> HostType {
+    if host.starts_with(b"unix:/") {
+        // "unix:" goes, then every leading '/' but one; all slashes erases everything.
+        let path = &host[5..];
+        let erase = path
+            .iter()
+            .position(|&b| b != b'/')
+            .map_or(host.len(), |first| 5 + first - 1);
+        return HostType {
+            socket_type: UNIX_STREAM,
+            erase,
+        };
+    }
+    HostType {
+        socket_type: if host.contains(&b':') { TCP6 } else { TCP },
+        erase: 0,
+    }
+}
+
+/// `Socket::convert_to_type(host)`: `unix:/path` is a Unix stream socket, a ':' is
+/// IPv6, anything else IPv4 TCP.
+///
+/// # Safety
+/// `host` denotes `length` readable bytes, or is null for length 0.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_socket_host_type(host: *const u8, length: usize) -> HostType {
+    if length == 0 || host.is_null() || length > isize::MAX as usize {
+        return host_type(&[]);
+    }
+    // SAFETY: `host` is non-null and `length <= isize::MAX` (checked above); the caller lends `length` bytes.
+    host_type(unsafe { std::slice::from_raw_parts(host, length) })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn domain_and_type_round_trip() {
+        for socket_type in TCP..=RAW6 {
+            let (mut domain, mut kind) = (0, 0);
+            // SAFETY: two local ints.
+            assert!(unsafe {
+                swr_v1_socket_domain_and_type(socket_type, &raw mut domain, &raw mut kind)
+            });
+            assert_eq!(swr_v1_socket_type(domain, kind), socket_type);
+        }
+        let (mut domain, mut kind) = (0, 0);
+        // SAFETY: as above.
+        assert!(!unsafe { swr_v1_socket_domain_and_type(0, &raw mut domain, &raw mut kind) });
+        assert_eq!(swr_v1_socket_type(libc::AF_UNIX, libc::SOCK_RAW), RAW);
+    }
+
+    #[test]
+    fn hosts_name_their_type() {
+        fn erased(host: &[u8]) -> (c_int, &[u8]) {
+            let plan = host_type(host);
+            (plan.socket_type, &host[plan.erase.min(host.len())..])
+        }
+        assert_eq!(erased(b"unix:/tmp/s"), (UNIX_STREAM, &b"/tmp/s"[..]));
+        assert_eq!(erased(b"unix:///tmp/s"), (UNIX_STREAM, &b"/tmp/s"[..]));
+        assert_eq!(erased(b"unix://"), (UNIX_STREAM, &b""[..]));
+        assert_eq!(erased(b"::1"), (TCP6, &b"::1"[..]));
+        assert_eq!(erased(b"127.0.0.1"), (TCP, &b"127.0.0.1"[..]));
+        assert_eq!(erased(b"unix:x"), (TCP6, &b"unix:x"[..]));
+    }
+}

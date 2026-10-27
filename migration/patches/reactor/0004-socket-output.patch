@@ -1,5 +1,5 @@
 diff --git a/src/network/socket.cc b/src/network/socket.cc
-index ed39457..6768ee8 100644
+index ed39457..5900170 100644
 --- a/src/network/socket.cc
 +++ b/src/network/socket.cc
 @@ -21,2 +21,7 @@
@@ -248,11 +248,6 @@ index ed39457..6768ee8 100644
 -bool Socket::cork() {
 -    if (tcp_nopush) {
 -        return false;
--    }
--#ifdef TCP_CORK
--    if (set_tcp_nopush(1) < 0) {
--        swoole_sys_warning("set_tcp_nopush(fd=%d, ON) failed", fd);
--        return false;
 +// Cork and uncork are Rust's, setsockopt included; the warnings stay here.
 +static bool socket_cork_result(Socket *socket, swr_v1_socket_cork_state state, swr_v1_socket_option_result result,
 +                               const char *nopush, const char *nodelay) {
@@ -261,6 +256,11 @@ index ed39457..6768ee8 100644
 +    if (result.warnings & 1) {
 +        swoole_sys_warning("set_tcp_nopush(fd=%d, %s) failed", socket->fd, nopush);
      }
+-#ifdef TCP_CORK
+-    if (set_tcp_nopush(1) < 0) {
+-        swoole_sys_warning("set_tcp_nopush(fd=%d, ON) failed", fd);
+-        return false;
+-    }
 -#endif
 -    // Need to turn off tcp nodelay when using nopush
 -    if (tcp_nodelay && !set_tcp_nodelay(0)) {
@@ -435,14 +435,6 @@ index ed39457..6768ee8 100644
 -    } else {
 -        if (send_timer) {
 -            last_sent_time = time<std::chrono::milliseconds>(true);
--        }
--    }
--
--    // sendfile completed
--    if (task->begin == task->end) {
--        if (task->corked == 1) {
--            uncork();
--            task->corked = 0;
 +        case 4: observed = catch_write_error(errno); break;
 +        case 5: swoole_sys_warning("sendfile(%s, %ld, %zu) failed", task->get_filename(), (long) task->begin, requested); break;
 +        case 6: close_wait = 1; return SW_ERR;
@@ -456,8 +448,16 @@ index ed39457..6768ee8 100644
 +        case 21: observed = send_timer != nullptr; break;
 +        default: std::abort();
          }
--        buffer->pop();
      }
+-
+-    // sendfile completed
+-    if (task->begin == task->end) {
+-        if (task->corked == 1) {
+-            uncork();
+-            task->corked = 0;
+-        }
+-        buffer->pop();
+-    }
 -
 -    return SW_OK;
  }
@@ -706,4 +706,84 @@ index ed39457..6768ee8 100644
 -        return SW_ERROR;
 -    }
 +    return swr_v1_socket_catch_error(err, &kernel_nobufs);
+ }
+@@ -1057,21 +901,3 @@ int Socket::catch_error(const int err) {
+ SocketType Socket::convert_to_type(const int domain, const int type) {
+-    if (domain == AF_INET && type == SOCK_STREAM) {
+-        return SW_SOCK_TCP;
+-    } else if (domain == AF_INET6 && type == SOCK_STREAM) {
+-        return SW_SOCK_TCP6;
+-    } else if (domain == AF_UNIX && type == SOCK_STREAM) {
+-        return SW_SOCK_UNIX_STREAM;
+-    } else if (domain == AF_INET && type == SOCK_DGRAM) {
+-        return SW_SOCK_UDP;
+-    } else if (domain == AF_INET6 && type == SOCK_DGRAM) {
+-        return SW_SOCK_UDP6;
+-    } else if (domain == AF_UNIX && type == SOCK_DGRAM) {
+-        return SW_SOCK_UNIX_DGRAM;
+-    } else if (domain == AF_INET && type == SOCK_RAW) {
+-        return SW_SOCK_RAW;
+-    } else if (domain == AF_INET6 && type == SOCK_RAW) {
+-        return SW_SOCK_RAW6;
+-    } else {
+-        return SW_SOCK_RAW;
+-    }
++    return static_cast<SocketType>(swr_v1_socket_type(domain, type));
+ }
+@@ -1079,11 +905,5 @@ SocketType Socket::convert_to_type(const int domain, const int type) {
+ SocketType Socket::convert_to_type(std::string &host) {
+-    if (host.compare(0, 6, "unix:/", 0, 6) == 0) {
+-        host = host.substr(sizeof("unix:") - 1);
+-        host.erase(0, host.find_first_not_of('/') - 1);
+-        return SW_SOCK_UNIX_STREAM;
+-    }
+-    if (host.find(':') != std::string::npos) {
+-        return SW_SOCK_TCP6;
+-    }
+-    return SW_SOCK_TCP;
++    const auto plan = swr_v1_socket_host_type(reinterpret_cast<const uint8_t *>(host.data()), host.size());
++    host.erase(0, plan.erase);
++    return static_cast<SocketType>(plan.socket_type);
+ }
+@@ -1091,40 +911,3 @@ SocketType Socket::convert_to_type(std::string &host) {
+ int Socket::get_domain_and_type(SocketType type, int *sock_domain, int *sock_type) {
+-    switch (type) {
+-    case SW_SOCK_TCP6:
+-        *sock_domain = AF_INET6;
+-        *sock_type = SOCK_STREAM;
+-        break;
+-    case SW_SOCK_UNIX_STREAM:
+-        *sock_domain = AF_UNIX;
+-        *sock_type = SOCK_STREAM;
+-        break;
+-    case SW_SOCK_UDP:
+-        *sock_domain = AF_INET;
+-        *sock_type = SOCK_DGRAM;
+-        break;
+-    case SW_SOCK_UDP6:
+-        *sock_domain = AF_INET6;
+-        *sock_type = SOCK_DGRAM;
+-        break;
+-    case SW_SOCK_UNIX_DGRAM:
+-        *sock_domain = AF_UNIX;
+-        *sock_type = SOCK_DGRAM;
+-        break;
+-    case SW_SOCK_TCP:
+-        *sock_domain = AF_INET;
+-        *sock_type = SOCK_STREAM;
+-        break;
+-    case SW_SOCK_RAW:
+-        *sock_domain = AF_INET;
+-        *sock_type = SOCK_RAW;
+-        break;
+-    case SW_SOCK_RAW6:
+-        *sock_domain = AF_INET6;
+-        *sock_type = SOCK_RAW;
+-        break;
+-    default:
+-        return SW_ERR;
+-    }
+-
+-    return SW_OK;
++    return swr_v1_socket_domain_and_type(type, sock_domain, sock_type) ? SW_OK : SW_ERR;
  }
