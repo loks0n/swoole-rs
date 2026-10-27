@@ -75,7 +75,11 @@ int main(int argc, char **argv) {
         }
         ERR_clear_error();errno = 71;
         bool result = ctx.create();int saved = errno;
-        if (!ctx.context) return 5;
+        // A failed create() may leave no context (v6.2.4); print that, so both engines are compared.
+        if (!ctx.context) {
+            std::cout << "setup " << scenario << ' ' << result << " null " << saved << '\n';
+            continue;
+        }
         std::cout << "setup " << scenario << ' ' << result << ' ' << ctx.protocols << ' '
                   << SSL_CTX_get_options(ctx.context) << ' ' << SSL_CTX_get_mode(ctx.context) << ' '
                   << SSL_CTX_get_verify_mode(ctx.context) << ' ' << SSL_CTX_get_verify_depth(ctx.context)
