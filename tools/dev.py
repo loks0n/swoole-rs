@@ -573,7 +573,8 @@ def plan(args, reports):
                    '--config', manifest.parent / 'src/config.h',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                    '--jobs', args.jobs, *native_options, *report('corebase-lifecycle'))
-    if 'tls' in modules:
+    # Its native control is coroutine-native-originals' upstream engine, built only when integrating.
+    if 'tls' in modules and integrate and 'coroutine' in modules:
         tls_options = ['--gtest-prefix', args.gtest_prefix] if getattr(args, 'gtest_prefix', None) else []
         if integrate and 'corebase' in modules:
             tls_options += ['--allocation-native-report', reports / 'corebase-lifecycle.json']
