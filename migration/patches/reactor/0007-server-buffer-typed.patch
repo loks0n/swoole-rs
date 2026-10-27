@@ -1,5 +1,5 @@
 diff --git a/src/network/socket.cc b/src/network/socket.cc
-index 02480c6..1423891 100644
+index 02480c6..9f966d2 100644
 --- a/src/network/socket.cc
 +++ b/src/network/socket.cc
 @@ -62,2 +62,4 @@ void IOVector::update_iterator(ssize_t _n) {
@@ -69,6 +69,92 @@ index 02480c6..1423891 100644
 -    size_t sendn = get_sendfile_chunk_size(task->begin, task->end);
 +    size_t sendn = swr_v1_socket_sendfile_chunk(task->begin, task->end);
      ssize_t rv = sendfile(task->file, &task->begin, sendn);
+@@ -1424,37 +1405,21 @@ void Socket::ssl_catch_error() const {
+ 
+-ssize_t Socket::ssl_recv(void *_buf, size_t _n) {
+-    ssl_clear_error();
+-
+-    int n = SSL_read(ssl, _buf, _n);
+-    if (n < 0) {
+-        int _errno = SSL_get_error(ssl, n);
+-        switch (_errno) {
+-        case SSL_ERROR_WANT_READ:
+-            ssl_want_read = 1;
+-            errno = EAGAIN;
+-            return SW_ERR;
+-
+-        case SSL_ERROR_WANT_WRITE:
+-            ssl_want_write = 1;
+-            errno = EAGAIN;
+-            return SW_ERR;
+-
+-        case SSL_ERROR_SYSCALL:
+-            return errno == 0 ? 0 : SW_ERR;
+-
+-        case SSL_ERROR_SSL:
+-            ssl_catch_error();
+-            errno = SW_ERROR_SSL_BAD_CLIENT;
+-            return SW_ERR;
+-
+-        default:
+-            break;
+-        }
++// SSL_read/SSL_write and their error classification are Rust's
++// (crates/reactor/src/socket_tls.rs); the flags, errno and log stay here.
++static ssize_t ssl_io(Socket *socket, swr_v1_socket_ssl_io_result result) {
++    socket->ssl_want_read = result.want_read;
++    socket->ssl_want_write = result.want_write;
++    if (result.protocol_error) {
++        socket->ssl_catch_error();
+     }
+-    return n;
++    if (result.error) {
++        errno = result.error;
++    }
++    return result.value;
+ }
+ 
+-ssize_t Socket::ssl_send(const void *_buf, size_t _n) {
+-    ssl_clear_error();
++ssize_t Socket::ssl_recv(void *_buf, size_t _n) {
++    return ssl_io(this, swr_v1_socket_ssl_recv(ssl, _buf, _n));
++}
+ 
++ssize_t Socket::ssl_send(const void *_buf, size_t _n) {
+ #ifdef SW_SUPPORT_DTLS
+@@ -1464,31 +1429,3 @@ ssize_t Socket::ssl_send(const void *_buf, size_t _n) {
+ #endif
+-
+-    int n = SSL_write(ssl, _buf, _n);
+-    if (n < 0) {
+-        int _errno = SSL_get_error(ssl, n);
+-        switch (_errno) {
+-        case SSL_ERROR_WANT_READ:
+-            ssl_want_read = 1;
+-            errno = EAGAIN;
+-            return SW_ERR;
+-
+-        case SSL_ERROR_WANT_WRITE:
+-            ssl_want_write = 1;
+-            errno = EAGAIN;
+-            return SW_ERR;
+-
+-        case SSL_ERROR_SYSCALL:
+-            errno = SW_ERROR_SSL_RESET;
+-            return SW_ERR;
+-
+-        case SSL_ERROR_SSL:
+-            ssl_catch_error();
+-            errno = SW_ERROR_SSL_BAD_CLIENT;
+-            return SW_ERR;
+-
+-        default:
+-            break;
+-        }
+-    }
+-    return n;
++    return ssl_io(this, swr_v1_socket_ssl_send(ssl, _buf, _n));
+ }
 diff --git a/src/server/base.cc b/src/server/base.cc
 index cf0058d..29c4c6c 100644
 --- a/src/server/base.cc
