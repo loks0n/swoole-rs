@@ -2,5 +2,7 @@
   "plaintext": 1.21,
   "echo-1k": 1.18,
   "json": 1.15,
-  "service-health": 1.19
+  "service-health": 1.19,
+  "websocket": 1.39,
+  "timer": 0.87
 }
