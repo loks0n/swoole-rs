@@ -44,7 +44,8 @@ typedef struct { double delay; uint32_t phase; int32_t action; } swr_v1_hook_wai
 swr_v1_hook_wait_plan swr_v1_hook_wait_for(uint32_t phase, double delay, bool result, double initial, double maximum);
 typedef struct { uint32_t revents; bool wake; } swr_v1_hook_event_plan;
 swr_v1_hook_event_plan swr_v1_hook_event_waiter(uint32_t received, uint32_t event);
-uint32_t swr_v1_hook_wait_revents(uint32_t requested, uint32_t received, uint32_t read_write, uint32_t error);
+typedef struct { int32_t result; int32_t last_error; int32_t error; } swr_v1_hook_wait_event_outcome;
+swr_v1_hook_wait_event_outcome swr_v1_hook_wait_event(int32_t fd, int32_t events, double timeout, int (*wait)(int fd, int events, double timeout, int *revents));
 enum swr_hook_retry_action { SWR_HOOK_RETRY_DONE = 0, SWR_HOOK_RETRY_IO = 1, SWR_HOOK_RETRY_CLASSIFY = 2, SWR_HOOK_RETRY_TIMER = 3, SWR_HOOK_RETRY_WAIT = 4 };
 typedef struct { uint32_t phase; int32_t action; } swr_v1_hook_retry_plan;
 swr_v1_hook_retry_plan swr_v1_hook_retry(uint32_t phase, int64_t result, bool success);

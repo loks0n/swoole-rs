@@ -16,6 +16,7 @@ pub mod packet;
 pub mod shutdown;
 pub mod sleep;
 pub mod vector;
+pub mod wait_event;
 
 /// The original per-hook guard. Some DNS hooks intentionally do not use it.
 #[unsafe(no_mangle)]
@@ -226,13 +227,8 @@ pub extern "C" fn swr_v1_hook_event_waiter(received: u32, event: u32) -> EventPl
 }
 
 /// `System::wait_event` strips error readiness and adds only requested IO bits.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_wait_revents(
-    requested: u32,
-    received: u32,
-    read_write: u32,
-    error: u32,
-) -> u32 {
+#[must_use]
+pub fn swr_v1_hook_wait_revents(requested: u32, received: u32, read_write: u32, error: u32) -> u32 {
     if received & error != 0 {
         (received ^ error) | (requested & read_write)
     } else {
