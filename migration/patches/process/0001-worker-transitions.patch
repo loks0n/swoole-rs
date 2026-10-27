@@ -1,5 +1,5 @@
 diff --git a/src/os/process_pool.cc b/src/os/process_pool.cc
-index 143d00144..e7b3ac340 100644
+index 143d001..e7b3ac3 100644
 --- a/src/os/process_pool.cc
 +++ b/src/os/process_pool.cc
 @@ -17,2 +17,7 @@
@@ -39,7 +39,7 @@ index 143d00144..e7b3ac340 100644
 +        } else if (action == 2) {
              swoole_sys_warning("kill(%d, SIGTERM) [%d] failed", pid, iter->second->id);
 diff --git a/src/server/manager.cc b/src/server/manager.cc
-index ee4229dd5..e611104f5 100644
+index ee4229d..e611104 100644
 --- a/src/server/manager.cc
 +++ b/src/server/manager.cc
 @@ -17,2 +17,7 @@
@@ -63,7 +63,7 @@ index ee4229dd5..e611104f5 100644
 +            } else if (reload_action == 2) {  // only reload task workers
                  pool->reload_init = reload_task_worker = false;
 diff --git a/src/server/task_worker.cc b/src/server/task_worker.cc
-index 324abb3be..80273e4ce 100644
+index 324abb3..80273e4 100644
 --- a/src/server/task_worker.cc
 +++ b/src/server/task_worker.cc
 @@ -18,2 +18,7 @@
@@ -115,7 +115,7 @@ index 324abb3be..80273e4ce 100644
 +            SW_TASK_CALLBACK, SW_TASK_COROUTINE);
          buf.info.ext_flags |= flags;
 diff --git a/src/server/worker.cc b/src/server/worker.cc
-index b4624c6bc..e447eaa72 100644
+index b4624c6..3dcb40c 100644
 --- a/src/server/worker.cc
 +++ b/src/server/worker.cc
 @@ -20,2 +20,7 @@
@@ -146,7 +146,60 @@ index b4624c6bc..e447eaa72 100644
      }
 -_discard_data:
      swoole_error_log(SW_LOG_WARNING,
-@@ -484,12 +481,14 @@ static void Worker_reactor_try_to_exit(Reactor *reactor) {
+@@ -243,44 +240,12 @@ void Server::worker_stop_callback(Worker *worker) {
+ static void Worker_set_cpu_affinity(const Server *serv, const Worker *worker) {
+-    cpu_set_t available;
+-    CPU_ZERO(&available);
+-    if (swoole_get_cpu_affinity(&available) < 0) {
+-        swoole_sys_warning("get CPU affinity for worker#%d failed", worker->id);
+-        return;
+-    }
+-    if (serv->cpu_affinity_available) {
+-        cpu_set_t filtered;
+-        CPU_ZERO(&filtered);
+-        for (int i = 0; i < serv->cpu_affinity_available_num; i++) {
+-            int cpu = serv->cpu_affinity_available[i];
+-            if (CPU_ISSET(cpu, &available)) {
+-                CPU_SET(cpu, &filtered);
+-            }
+-        }
+-        available = filtered;
+-    }
+-    int count = 0;
+-    for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+-        count += CPU_ISSET(cpu, &available) ? 1 : 0;
++    const auto outcome = swr_v1_process_worker_affinity(
++        worker->id, serv->cpu_affinity_available, serv->cpu_affinity_available_num, serv->is_thread_mode());
++    if (outcome.error != 0) {
++        errno = outcome.error;
+     }
+-    if (count == 0) {
++    if (outcome.status == 1) {
++        swoole_sys_warning("get CPU affinity for worker#%d failed", worker->id);
++    } else if (outcome.status == 2) {
+         swoole_warning("no available CPU for worker#%d", worker->id);
+-        return;
+-    }
+-    int index = worker->id % count;
+-    cpu_set_t selected;
+-    CPU_ZERO(&selected);
+-    for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
+-        if (CPU_ISSET(cpu, &available) && index-- == 0) {
+-            CPU_SET(cpu, &selected);
+-            break;
+-        }
+-    }
+-    int error = 0;
+-    if (serv->is_thread_mode()) {
+-        error = pthread_setaffinity_np(pthread_self(), sizeof(selected), &selected);
+-    } else if (swoole_set_cpu_affinity(&selected) < 0) {
+-        error = errno;
+-    }
+-    if (error != 0) {
+-        errno = error;
++    } else if (outcome.status == 3) {
+         swoole_sys_warning("set CPU affinity for worker#%d failed", worker->id);
+@@ -484,12 +449,14 @@ static void Worker_reactor_try_to_exit(Reactor *reactor) {
      while (true) {
 -        if (reactor->if_exit()) {
 +        const bool can_exit = reactor->if_exit();
@@ -168,7 +221,7 @@ index b4624c6bc..e447eaa72 100644
 +            const auto budget = swr_v1_process_exit_budget(remaining_time, remaining_time > 0 ? reactor->timeout_msec : 0);
 +            if (budget.timed_out) {
                  swoole_error_log(
-@@ -497,7 +496,4 @@ static void Worker_reactor_try_to_exit(Reactor *reactor) {
+@@ -497,7 +464,4 @@ static void Worker_reactor_try_to_exit(Reactor *reactor) {
                  reactor->running = false;
 -            } else {
 -                int timeout_msec = remaining_time * 1000;

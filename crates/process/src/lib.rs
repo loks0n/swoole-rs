@@ -6,6 +6,7 @@
         clippy::multiple_unsafe_ops_per_block
     )
 )]
+pub mod affinity;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExitObservation {

@@ -15,6 +15,8 @@ uint32_t swr_v1_process_finish_error(bool pipe, bool no_reply);
 int32_t swr_v1_process_result_flags(int32_t flags, bool callback, bool coroutine, int32_t callback_flag, int32_t coroutine_flag);
 uint32_t swr_v1_process_reload_action(bool all, bool task);
 uint32_t swr_v1_process_reload_kill(bool failed, bool no_child, bool no_process);
+typedef struct { uint32_t status; int32_t error; } swr_v1_process_affinity_outcome;
+swr_v1_process_affinity_outcome swr_v1_process_worker_affinity(uint32_t worker_id, const int32_t *available, int32_t available_len, bool thread);
 #ifdef __cplusplus
 }
 #endif
