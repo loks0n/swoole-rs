@@ -23,19 +23,14 @@ resolve to the selected DSO.
 | --- | --- | --- |
 | (default) | readiness/timeout/ONCE over private AF_UNIX pairs | 14 cases / 210 assertions |
 | `--callbacks` | constructor, set/replace/erase, end/exit, insertion/removal during traversal | 22 assertions |
-| `--handlers` | typed handler routing | 1,462 cases / 2,194 checks / 190 Native calls |
 | `--builtins` | defer/begin/end and installed deferred/idle/try-exit functions | 31 assertions |
 | `--socket-output` | queued DATA and small positive-size file output | 9 cases / 78 assertions |
-| `--blocking` | blocking Socket, writable wait, Native IOVector | 8 cases / 61 assertions |
-| `--ordinary-io` | send/recv/peek, sync I/O, IOVector, fd flags, buffer sizes, timeouts, poll | 35 cases / 180 assertions |
-| `--datagram` | `sendto_sync`, `recvfrom`, both `recvfrom_sync` overloads over UNIX sockets | 12 cases / 72 assertions |
+| `--blocking` | blocking Socket, writable wait, Rust-owned IOVector | 8 cases / 61 assertions |
 
 Fixtures use private socketpairs and temporary files, consume every byte and
 keep peers live until normal cleanup. They do not probe errors, interruption,
-zero-length I/O, lifetime or SSL. The `--ordinary-io` profile expects the
-kernel-timeout wrapper naming mismatch described in [socket-io.md](socket-io.md).
-The 9/78 socket-output inventory passes on macOS and Linux for both engines;
-the datagram, ordinary-io and owned-storage profiles pass on macOS.
+zero-length I/O, lifetime or SSL. The 9/78 socket-output inventory passes on
+macOS and Linux for both engines; the owned-storage profiles pass on macOS.
 
 ## Capability modifiers
 

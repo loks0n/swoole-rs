@@ -28,11 +28,10 @@ The chunk helper uses a signed `off_t` fitting `int64_t`; DATA offset keeps
 The M15 sendfile correction applies first when requested; its EINTR early
 return and trace prefix stay outside the M05 hunks.
 
-## Writable callback and drain
+## Writable callback
 
-`Reactor::_writable_callback` and `Reactor::drain_write_buffer` use
-`flush_workflow` and `drain_workflow` (4-byte state each; the frozen step APIs
-remain). Requests 10..15 read empty, front-kind, close-wait, send-wait, timer and
+`Reactor::_writable_callback` uses `flush_workflow` (4-byte state);
+`drain_write_buffer` is upstream's code. Requests 10..15 read empty, front-kind, close-wait, send-wait, timer and
 removed.
 
 - Rust picks DATA (0), SENDFILE (1) or CLOSE (2); other kinds fall back to DATA.
@@ -42,24 +41,6 @@ removed.
   even with no timer) and write-interest removal.
 - The originally captured Buffer pointer is kept, not replaced by a fresh
   `socket->out_buffer`.
-- Drain: wait returns before the next decision; the writable callback's return
-  is ignored; then `close_wait`, then `removed` if needed. Only `wait ==
-  SW_ERR` ends that branch.
-
-## Reactor::write_func and _write/_writev
-
-`swr_v1_reactor_write_workflow` owns preparation and fact queries: initial
-capacity, conditional default buffer setup, nonblock, conditional fd setup,
-admission capacity, Buffer emptiness and conditional TLS/length. The nonempty
-path asks for capacity again after `Buffer::length`. Output-pointer, writable
-and errno facts are asked only at their original conditional points.
-
-`_write`/`_writev`: Rust rejects SSL before observing any vector (Native emits
-the original warning), folds vector lengths with `size_t` wrapping reading only
-`iov_len` from real `libc::iovec`, and chooses the post-send append offset
-(positive sent offset or zero) and remaining size. Native keeps the
-`uint32_t`/`off_t` conversions, pointer arithmetic, send/writev,
-`std::function` and Buffer append.
 
 ## Typed server Buffer (`SWOOLE_RS_BUFFER_TYPED`)
 

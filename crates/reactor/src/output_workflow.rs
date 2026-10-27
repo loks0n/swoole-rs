@@ -168,69 +168,7 @@ pub unsafe extern "C" fn swr_v1_reactor_output_workflow(
     resolve(state, operation, cork_min)
 }
 
-/// Complete file-parameter observation/publication workflow. Effect actions
-/// match frozen output_parameters; request23ready/24stat-size/25published-end.
-/// `begin`/`length` are original Native arguments, not borrowed object fields.
-/// # Safety
-/// Independently zero-initialized live/exclusive state for this workflow only.
-/// Native filename/stat/end storage, syscalls, diagnostics and effects stay
-/// outside Rust. The original defined signed arithmetic domain is preserved.
-#[unsafe(no_mangle)]
-#[expect(
-    clippy::cast_possible_truncation,
-    reason = "native int/uint32_t state fields fed from the ABI's i64 operands"
-)]
-pub unsafe extern "C" fn swr_v1_reactor_output_parameters_workflow(
-    state: *mut OutputWorkflow,
-    begin: i64,
-    length: usize,
-    observed: i64,
-) -> ReactorOutputAction {
-    let invalid = || ReactorOutputAction {
-        phase: 0,
-        action: -1,
-        value: 0,
-    };
-    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
-    let Some(state) = (unsafe { state.as_mut() }) else {
-        return invalid();
-    };
-    match state.pending {
-        0 => return observation(state, 23),
-        23 => state.validation = observed as i32,
-        24 => {
-            state.result = observed;
-            if state.phase == 3 {
-                return observation(state, 25);
-            }
-        }
-        25 => state.end = observed,
-        255 if state.previous_action == 1 => state.validation = observed as i32,
-        255 if state.previous_action == 5 => return observation(state, 24),
-        _ => return invalid(),
-    }
-    let reply = crate::swr_v1_reactor_output_parameters(
-        state.phase,
-        state.validation,
-        state.result,
-        begin,
-        length,
-        state.end,
-    );
-    state.phase = reply.phase;
-    if reply.action == 7 {
-        return observation(state, 24);
-    }
-    state.pending = 255;
-    state.previous_action = reply.action;
-    reply
-}
-
 #[cfg(test)]
-#[expect(
-    clippy::cast_possible_wrap,
-    reason = "tests drive the native integer interfaces with literal and loop values"
-)]
 mod tests {
     use super::*;
     fn trace(operation: u32, facts: &[i64]) -> Vec<(i32, i64)> {
@@ -243,34 +181,6 @@ mod tests {
                 (reply.action, reply.value)
             })
             .collect()
-    }
-    #[test]
-    fn parameters_reobserve_size_then_published_end_after_native_publication() {
-        for begin in 1..5 {
-            for length in 0..7 {
-                let end = if length == 0 {
-                    31
-                } else {
-                    begin + length as i64
-                };
-                let mut state = OutputWorkflow::default();
-                let actual: Vec<_> = [0, 1, 1, 31, 0, 31, end]
-                    .into_iter()
-                    .map(|observed| {
-                        let reply = unsafe {
-                            swr_v1_reactor_output_parameters_workflow(
-                                &mut state, begin, length, observed,
-                            )
-                        };
-                        (reply.action, reply.value)
-                    })
-                    .collect();
-                assert_eq!(
-                    actual,
-                    [(23, 0), (1, 0), (24, 0), (5, end), (24, 0), (25, 0), (0, 0)]
-                );
-            }
-        }
     }
     #[test]
     fn data_fresh_offset_follows_partial_success_and_full_send_pops() {

@@ -42,8 +42,7 @@ use the typed Rust Buffer queue ([output.md](output.md)).
   registration, wait, batch decoding, readiness and signals.
 - [callbacks.md](callbacks.md): ordered end/exit callbacks, handlers, builtin
   defer/idle/exit scheduling, deferred queue ownership.
-- [socket-io.md](socket-io.md): ordinary Socket I/O, options, connect,
-  datagrams, blocking calls and IOVector.
+- [socket-io.md](socket-io.md): the Rust-owned IOVector.
 - [output.md](output.md): Socket output queue progression, writable/drain,
   `Reactor::write_func`, typed server Buffer consumers.
 - [production.md](production.md): loaded-PHP consumer profiles.
@@ -59,15 +58,10 @@ python3 tests/modules/reactor/builtins.py --source PINNED --archive PRIVATE_TARG
 
 Other gates under `tests/modules/reactor/` take the same
 `--source/--archive/--report [--sanitize]` arguments: `backend_storage.py`,
-`poll_snapshot.py`, `registration.py`, `wait.py`, `batch.py` (no `--source`),
-`initialize.py`, `callbacks.py`, `callback_queues.py`, `handlers.py`,
-`flush.py`, `write_positive.py [--workflow]`, `write_arguments.py`,
-`iov_owned.py`, `sockets.py [--order-model] [--standard]`,
-`socket_iterators.py` and `output.py` with one profile flag (`--blocking`,
-`--iov-progress`, `--ordinary-io`, `--socket-policy`, `--fd-options`,
-`--socket-options`, `--forwarding`, `--datagram`, `--connect`).
-`rust_asan.py` runs filtered Rust ASan units with `--snapshot-only`,
-`--flush-only`, `--backend-only`, `--registration-only` or `--wait-only`.
+`poll_snapshot.py`, `wait.py`, `initialize.py`, `callbacks.py`,
+`callback_queues.py`, `flush.py`, `iov_owned.py` and `output.py` (optionally
+`--iov-progress` or `--forwarding`). `rust_asan.py` runs filtered Rust ASan
+units with `--snapshot-only`, `--flush-only`, `--backend-only` or `--wait-only`.
 
 These gates extract the complete original and selected method bodies and run
 them against Native effect facades with positive inputs only. Error,

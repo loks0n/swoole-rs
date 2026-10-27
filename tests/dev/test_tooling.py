@@ -429,17 +429,14 @@ class Lanes(unittest.TestCase):
         commands = dict(dev.plan(args, ROOT / 'target/reports/real-callers'))
         queues = commands['reactor-callback-queues']
         self.assertIn('--sanitize', queues)
-        workflow = commands['reactor-write-workflow']
-        self.assertIn('--workflow', workflow)
-        self.assertIn('--sanitize', workflow)
         catalogue = commands['phpcoroutines-method-catalogue']
         sanitized = commands['phpcoroutines-method-catalogue-native-sanitized']
         self.assertNotIn('--sanitize', catalogue)
         self.assertIn('--sanitize', sanitized)
         archives = {command[command.index('--archive') + 1]
-                    for command in [queues, workflow, catalogue, sanitized]}
+                    for command in [queues, catalogue, sanitized]}
         self.assertEqual(len(archives), 1)
-        for command in [queues, workflow, catalogue, sanitized]:
+        for command in [queues, catalogue, sanitized]:
             self.assertNotIn('--engine', command)
 
     def test_long_all_module_aliases_publish_and_remain_distinct(self):
@@ -537,7 +534,6 @@ class Lanes(unittest.TestCase):
         for name in ['phphelpers-facade-runtime', 'phphelpers-entrypoint', 'phphelpers-runtime']:
             self.assertNotIn(name, commands)
         self.assertEqual(set(commands['build'][i+1] for i,x in enumerate(commands['build']) if x=='--module'),set(dev.SELECTABLE))
-        self.assertIn('reactor-filters',commands)
         self.assertIn('--sanitize', commands['reactor-poll-snapshot'])
         self.assertIn('--report', commands['reactor-poll-snapshot'])
         self.assertIn('--archive', commands['reactor-flush'])
@@ -607,8 +603,6 @@ class Lanes(unittest.TestCase):
         self.assertNotIn('--sanitize', commands['memory-mapping-operation'])
         self.assertIn('--archive', commands['reactor-backend-storage'])
         self.assertIn('--report', commands['reactor-backend-storage'])
-        self.assertIn('--report', commands['reactor-registration'])
-        self.assertIn('--archive', commands['reactor-write-positive'])
         self.assertIn('--archive', commands['phpcoroutines-policy'])
         self.assertIn('--selected-export', commands['phpcoroutines-statistics'])
         self.assertIn('--native-export', commands['phpcoroutines-statistics'])

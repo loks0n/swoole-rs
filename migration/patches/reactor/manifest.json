@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-readiness-policy.patch",
-      "sha256": "04b77e3be3168c34e9474bc0963595a9e6a3d3b9d0f7cbfd450cfe10b28aadb3",
+      "sha256": "644e0135ac81d01a3ecc555330d8f3e671e70d6cf2c750de43acc0c11534a672",
       "upstream_paths": [
         "include/swoole_reactor.h",
         "src/reactor/epoll.cc",
@@ -34,7 +34,7 @@
     },
     {
       "path": "0004-socket-output.patch",
-      "sha256": "b680578a85e0f0e8ea0452ae6014b0601f065ebd63acfda4ee426a626fafabc9",
+      "sha256": "11bea3f78f5f8f24d18a3d741d63907c91e1b54409e2496d4052f90ef17ace88",
       "upstream_paths": [
         "src/network/socket.cc"
       ]

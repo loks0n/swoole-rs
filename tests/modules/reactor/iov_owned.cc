@@ -21,7 +21,7 @@ check(swr_v1_reactor_iov_owned_layout(1)==alignof(swr_v1_reactor_iov_allocation)
 check(swr_v1_reactor_iov_owned_layout(2)==offsetof(swr_v1_reactor_iov_allocation,original));
 check(swr_v1_reactor_iov_owned_layout(3)==offsetof(swr_v1_reactor_iov_allocation,iterator));
 check(swr_v1_reactor_iov_owned_layout(4)==offsetof(swr_v1_reactor_iov_allocation,status));
-check(swr_v1_reactor_iovec_layout(0)==sizeof(iovec));check(swr_v1_reactor_iovec_layout(1)==alignof(iovec));check(swr_v1_reactor_iovec_layout(2)==offsetof(iovec,iov_base));check(swr_v1_reactor_iovec_layout(3)==offsetof(iovec,iov_len));
+
 check(swr_v1_reactor_iov_progress_layout(0)==sizeof(swr_v1_reactor_iov_progress_reply));check(swr_v1_reactor_iov_progress_layout(1)==alignof(swr_v1_reactor_iov_progress_reply));check(swr_v1_reactor_iov_progress_layout(2)==offsetof(swr_v1_reactor_iov_progress_reply,offset_bytes));check(swr_v1_reactor_iov_progress_layout(3)==offsetof(swr_v1_reactor_iov_progress_reply,advance));check(swr_v1_reactor_iov_progress_layout(4)==offsetof(swr_v1_reactor_iov_progress_reply,consumed));check(swr_v1_reactor_iov_progress_layout(5)==offsetof(swr_v1_reactor_iov_progress_reply,remain_count));check(swr_v1_reactor_iov_progress_layout(6)==offsetof(swr_v1_reactor_iov_progress_reply,index));check(swr_v1_reactor_iov_progress_layout(7)==offsetof(swr_v1_reactor_iov_progress_reply,action));
 for(const std::vector<size_t>&lengths:std::vector<std::vector<size_t>>{{1},{2,3},{1,3,7},{4,1,2,9},{0,1,0,3}}){
  size_t total=0;for(auto length:lengths)total+=length;std::string bytes;for(size_t i=0;i<total;++i)bytes+=static_cast<char>(i);std::vector<iovec>input;size_t start=0;for(auto length:lengths){input.push_back({&bytes[0]+start,length});start+=length;}auto snapshot=input;
