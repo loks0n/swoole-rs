@@ -134,7 +134,12 @@ fn diagnostic_snapshot_preserves_storage_order_positions_tokens_and_empty_peek()
             let mut tokens = [1u64, 2, 3, 4];
             for (priority, token) in [9, 3, 5, 3].into_iter().zip(tokens.iter_mut()) {
                 assert!(
-                    !swr_v1_memory_heap_push(heap, priority, (token as *mut u64).cast()).is_null()
+                    !swr_v1_memory_heap_push(
+                        heap,
+                        priority,
+                        std::ptr::from_mut::<u64>(token).cast()
+                    )
+                    .is_null()
                 );
             }
             for i in 0..4 {

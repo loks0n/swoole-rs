@@ -348,7 +348,7 @@ mod tests {
         let mut tokens = [1u8, 2, 3];
         let ptrs = tokens
             .iter_mut()
-            .map(|p| (p as *mut u8).cast())
+            .map(|p| std::ptr::from_mut::<u8>(p).cast())
             .collect::<Vec<_>>();
         unsafe {
             assert_eq!(swr_v1_channel_tokens_push(f.queues[1], ptrs[0]), 0);

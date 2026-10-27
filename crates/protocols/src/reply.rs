@@ -36,6 +36,7 @@ impl ReplyParts {
 /// `number` carries the signed integer's bits, array count, or unsigned key.
 /// Unlike the native primitive formatter, present empty status/error stays empty
 /// and empty bulk still emits `$0\r\n\r\n`. Map keys preserve printf NUL truncation.
+#[must_use]
 pub fn reply_parts(kind: u8, present: bool, number: u64, value: &[u8]) -> Option<ReplyParts> {
     let mut result = ReplyParts::default();
     match kind {

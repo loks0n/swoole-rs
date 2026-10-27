@@ -24,6 +24,7 @@ pub struct BusChunk {
 }
 
 impl BusWriter {
+    #[must_use]
     pub fn new(
         length: u32,
         maximum: u32,
@@ -50,6 +51,7 @@ impl BusWriter {
         }
         Some(writer)
     }
+    #[must_use]
     pub fn next_chunk(&self) -> BusChunk {
         let length = if self.mode == 2 {
             self.remaining.min(self.maximum)
