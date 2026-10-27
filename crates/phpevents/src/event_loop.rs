@@ -27,10 +27,10 @@ enum Action {
 /// # Safety
 /// Independent aligned phase initially0. Mode is constant throughout the plan;
 /// observations are fresh copied booleans, except Wait's signed result. The
-/// PrepareFlags observation is a copied boolean for Native's compile-time-
+/// `PrepareFlags` observation is a copied boolean for Native's compile-time-
 /// available shutdown flag suppression. Rust retains only its restore decision,
 /// never Zend flags/storage. Every Native effect occurs after Rust returns;
-/// Native zend_try/bailout remains outside Rust, including all error effects.
+/// Native `zend_try/bailout` remains outside Rust, including all error effects.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_loop(
     phase: *mut u32,

@@ -1,4 +1,4 @@
-//! Complete Scheduler::set ordered lookup and exit-condition publication policy.
+//! Complete `Scheduler::set` ordered lookup and exit-condition publication policy.
 use std::ffi::c_char;
 #[repr(C)]
 #[derive(Default)]

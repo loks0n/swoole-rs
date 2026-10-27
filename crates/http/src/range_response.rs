@@ -217,7 +217,7 @@ impl HttpRangeFinish {
 /// before each requested native operation; resume only after it returns.
 /// # Safety
 /// State is initialized/aligned/exclusively writable POD. The caller supplies
-/// end_length after action2 and modified after action3; no owner/borrow survives.
+/// `end_length` after action2 and modified after action3; no owner/borrow survives.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_http_range_finish(state: *mut HttpRangeFinish) -> i32 {
     // SAFETY: `state` is null or live, aligned and exclusively lent for this call.

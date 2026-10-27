@@ -176,7 +176,7 @@ impl HttpStaticContext {
     }
 }
 /// # Safety
-/// Input URL initialized/disjoint; capacity is the selected native PATH_MAX.
+/// Input URL initialized/disjoint; capacity is the selected native `PATH_MAX`.
 /// Returned context has unique custody and must be destroyed once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_context_new(
@@ -309,7 +309,7 @@ pub unsafe extern "C" fn swr_v2_http_context_publish(
 /// in its sole Rust owner, without a Native prefix/string allocation.
 /// # Safety
 /// Unique live owner and initialized independent random bytes for the length
-/// requested by static_boundary. No Rust frame/borrow spans the Native RNG call.
+/// requested by `static_boundary`. No Rust frame/borrow spans the Native RNG call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_context_boundary(
     owner: *mut HttpStaticContext,
@@ -477,7 +477,7 @@ pub unsafe extern "C" fn swr_v2_http_context_format(
 
 /// First-match iteration/classification policy over the unchanged native rule
 /// collection. Observations: begin0,literal1,regex2,unchanged3,changed4,match5.
-/// Actions: done0,read_rule1,literal2,regex_search3,regex_replace4. Native regex
+/// Actions: `done0,read_rule1,literal2,regex_search3,regex_replace4`. Native regex
 /// resources remain native locals across separate copied policy calls.
 /// # Safety
 /// Unique live context; aligned writable index disjoint from owner. Count is
@@ -664,7 +664,7 @@ pub unsafe extern "C" fn swr_v2_http_context_directory(
     }
 }
 /// # Safety
-/// Live unchanged context; CSS/powered and output obey index_page's initialized,
+/// Live unchanged context; CSS/powered and output obey `index_page`'s initialized,
 /// disjoint spans. Copies only; native buffer reserve happens between calls.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_context_page(
@@ -716,7 +716,7 @@ pub unsafe extern "C" fn swr_v2_http_context_page(
 /// Range scratch/commit:0=begin,1=prepare,2=push,3=clear. Native RNG/MIME/date
 /// effects have ended; no pointer to the by-value task owner escapes.
 /// # Safety
-/// Unique live context; optional format and written obey tasks_prepare contract.
+/// Unique live context; optional format and written obey `tasks_prepare` contract.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_context_task(
     owner: *mut HttpStaticContext,
@@ -745,7 +745,7 @@ pub unsafe extern "C" fn swr_v2_http_context_task(
     }
 }
 /// # Safety
-/// Live unchanged context and independent native output/written, as task_snapshot.
+/// Live unchanged context and independent native output/written, as `task_snapshot`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_context_tasks(
     owner: *const HttpStaticContext,

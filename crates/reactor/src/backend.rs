@@ -58,7 +58,7 @@ mod epoll {
     }
     /// # Safety
     /// Owner is live/exclusive. Native may access exactly its construction count
-    /// of actual target epoll_event records until free. No Rust borrow is held.
+    /// of actual target `epoll_event` records until free. No Rust borrow is held.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn swr_v1_reactor_epoll_data(
         owner: *mut EpollEvents,

@@ -78,7 +78,7 @@ pub unsafe extern "C" fn swr_v2_utils_rtrim(
 }
 
 /// Borrowed result facts only. Pointer derives from the input allocation;
-/// offset-1 and null denote a miss. needle_length records native uint32 narrowing.
+/// offset-1 and null denote a miss. `needle_length` records native uint32 narrowing.
 #[repr(C)]
 pub struct SwrUtilsSearchResult {
     pub pointer: *const c_char,

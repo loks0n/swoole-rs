@@ -132,7 +132,7 @@ pub(crate) fn header_info(
     0
 }
 /// Parse through the next multipart allocation boundary or completion.
-/// Status1 requires native FormData allocation before resuming;0 completes.
+/// Status1 requires native `FormData` allocation before resuming;0 completes.
 /// # Safety
 /// Input is readable; state/span are valid/aligned/disjoint. The same input is
 /// retained across steps; no Rust reference survives native allocation/bailout.
@@ -240,9 +240,9 @@ unsafe fn cookie(
 }
 /// Tokenize one cookie, then native invokes its callback after Rust returns.
 /// Buffer capacity may contain uninitialized suffix bytes: reads stop at its
-/// initialized NUL terminator. Delimiter/'=' mutations match legacy strtok_r.
+/// initialized NUL terminator. Delimiter/'=' mutations match legacy `strtok_r`.
 /// # Safety
-/// Buffer is writable through capacity<=isize::MAX, initialized through a NUL
+/// Buffer is writable through capacity<=`isize::MAX`, initialized through a NUL
 /// reachable from cursor; cursor/output are valid/aligned/disjoint. Callback may
 /// mutate the native buffer between calls, but never retains a Rust reference.
 #[unsafe(no_mangle)]

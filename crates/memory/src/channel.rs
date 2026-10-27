@@ -439,7 +439,7 @@ pub unsafe extern "C" fn swr_v1_memory_channel_storage_out(
     result
 }
 
-/// Only the initialized scalar fields read by public Channel::full cross ABI.
+/// Only the initialized scalar fields read by public `Channel::full` cross ABI.
 #[repr(C)]
 pub struct CapacityState {
     head: i64,

@@ -85,8 +85,8 @@ pub extern "C" fn swr_v1_hook_backoff(current: f64, initial: f64, maximum: f64) 
     }
 }
 
-/// Return the native partial-progress result, preserving unsigned size_t to
-/// ssize_t conversion on the supported LP64 targets.
+/// Return the native partial-progress result, preserving unsigned `size_t` to
+/// `ssize_t` conversion on the supported LP64 targets.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_transfer_result(result: i64, total: u64) -> i64 {
     if result < 0 && total == 0 {
@@ -104,7 +104,7 @@ pub struct Transfer {
 }
 
 /// Receive/send-all barrier. The native catch-error call is evaluated first
-/// only for a negative result; its copied SW_WAIT fact comes here afterward.
+/// only for a negative result; its copied `SW_WAIT` fact comes here afterward.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_transfer(
     result: i64,
@@ -119,7 +119,7 @@ pub extern "C" fn swr_v1_hook_transfer(
     }
 }
 
-/// io_uring submit result: 0 finish, 1 defer, 2 sleep and retry, 3 retry,
+/// `io_uring` submit result: 0 finish, 1 defer, 2 sleep and retry, 3 retry,
 /// -1 diagnose. Host errno constants are classified natively, without mutation.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_submit(
@@ -148,7 +148,7 @@ pub struct Completion {
     pub error: i32,
 }
 
-/// io_uring reports negative errno. ECANCELED intentionally maps to timeout.
+/// `io_uring` reports negative errno. ECANCELED intentionally maps to timeout.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_completion(result: i64, canceled: i32, timeout: i32) -> Completion {
     if result < 0 {
@@ -211,7 +211,7 @@ pub struct WaitForPlan {
     pub action: i32,
 }
 
-/// Caller-local wait_for cursor. Every callback and sleep is native and finishes
+/// Caller-local `wait_for` cursor. Every callback and sleep is native and finishes
 /// before the next copied-fact transition; Rust keeps no closure or task pointer.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_wait_for(
@@ -245,7 +245,7 @@ pub struct EventPlan {
     pub wake: bool,
 }
 
-/// Native EventWaiter queues at most one deferred wake before publishing bits.
+/// Native `EventWaiter` queues at most one deferred wake before publishing bits.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_event_waiter(received: u32, event: u32) -> EventPlan {
     EventPlan {
@@ -254,7 +254,7 @@ pub extern "C" fn swr_v1_hook_event_waiter(received: u32, event: u32) -> EventPl
     }
 }
 
-/// System::wait_event strips error readiness and adds only requested IO bits.
+/// `System::wait_event` strips error readiness and adds only requested IO bits.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_wait_revents(
     requested: u32,
@@ -544,7 +544,7 @@ pub extern "C" fn swr_v1_hook_packet_kind(length: bool, eof: bool) -> u32 {
     }
 }
 
-/// Accumulate only positive vectored progress within the pinned defined ssize_t domain.
+/// Accumulate only positive vectored progress within the pinned defined `ssize_t` domain.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_vector_progress(result: i64, total: i64) -> i64 {
     if result > 0 {

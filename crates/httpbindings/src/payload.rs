@@ -29,7 +29,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_request_option(key: Text, capabilit
 }
 
 /// Exact case-sensitive native substring preference, including matches inside
-/// tokens and q=0. Caller truncates the input length to native uint32_t first.
+/// tokens and q=0. Caller truncates the input length to native `uint32_t` first.
 /// Capabilities: bit0 zlib, bit1 Brotli, bit2 Zstd. Return native method0..4.
 /// # Safety
 /// Encoding is an initialized borrowed span, readable only for this call.

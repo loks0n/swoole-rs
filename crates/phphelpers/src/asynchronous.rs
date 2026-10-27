@@ -9,10 +9,10 @@ enum Action {
 
 /// Blocking admission deliberately skips the Native coroutine observation.
 /// Every invocation/async/yield happens after Rust returns, with no retained
-/// callback, context, std::function representation or borrowed Native payload.
+/// callback, context, `std::function` representation or borrowed Native payload.
 /// # Safety
 /// Phase is independent aligned exclusive scalar storage initialized to zero.
-/// Observation is fresh only after ObserveCoroutine. No pointer is retained.
+/// Observation is fresh only after `ObserveCoroutine`. No pointer is retained.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phphelpers_async(
     phase: *mut u32,

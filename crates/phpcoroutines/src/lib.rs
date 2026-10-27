@@ -86,7 +86,7 @@ pub extern "C" fn swr_v1_phpcoroutines_scheduler_new() -> *mut SchedulerQueue {
 }
 
 /// # Safety
-/// `queue` is a live exclusively owned handle returned by scheduler_new.
+/// `queue` is a live exclusively owned handle returned by `scheduler_new`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_push(
     queue: *mut SchedulerQueue,

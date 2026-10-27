@@ -32,7 +32,7 @@ pub extern "C" fn swr_v1_clients_async_meta(slot: u32) -> ClientsAsyncMeta {
 }
 /// # Safety
 /// Folded is an initialized native C-locale lowercase prefix of min(length,12)
-/// bytes; original_length is the original PHP string size. No borrow survives.
+/// bytes; `original_length` is the original PHP string size. No borrow survives.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_clients_async_event(
     folded: *const u8,

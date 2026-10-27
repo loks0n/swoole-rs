@@ -9,7 +9,7 @@
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExitObservation {
-    ///0 stop;1 invoke WorkerExit then observe reactor again;2 capture fresh clock/settings.
+    ///0 stop;1 invoke `WorkerExit` then observe reactor again;2 capture fresh clock/settings.
     pub action: u32,
     pub callback_called: bool,
 }
@@ -122,7 +122,7 @@ pub extern "C" fn swr_v1_process_result_flags(
         }
 }
 /// Ordinary manager-loop reload selection:0none,1all workers,2task workers.
-/// Signal callbacks and Server::reload itself stay native.
+/// Signal callbacks and `Server::reload` itself stay native.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_process_reload_action(all: bool, task: bool) -> u32 {
     if all {

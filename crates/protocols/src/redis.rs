@@ -373,7 +373,7 @@ pub(crate) fn decimal(mut value: u64, buffer: &mut [u8; 20]) -> &[u8] {
 }
 
 /// kind=0 error,2 status,4 bulk,7 explicit nil,8 integer. Other string overloads
-/// produce no output. Integer formatting ignores the native ReplyType.
+/// produce no output. Integer formatting ignores the native `ReplyType`.
 /// Output=null/capacity=0 queries exact size; insufficient capacity writes nothing.
 ///
 /// # Safety
@@ -465,7 +465,7 @@ pub fn resp_receive(
 }
 /// Size to extend a RESP receive buffer to after action 1 (upstream 0c954199e):
 /// 0 unless it is full and below the maximum; the maximum once it is half way;
-/// otherwise double, then swoole_size_align (which always adds up to a whole
+/// otherwise double, then `swoole_size_align` (which always adds up to a whole
 /// page, even to an aligned value) and cap.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_resp_extend_size(
@@ -588,7 +588,7 @@ fn resp_receive_range(
 }
 
 /// # Safety
-/// Buffer is borrowed/readable; request and set_offset are aligned exclusive
+/// Buffer is borrowed/readable; request and `set_offset` are aligned exclusive
 /// writable values, disjoint from the buffer and one another.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_resp_receive(

@@ -1,5 +1,5 @@
 //! Complete bailout admission and authoritative foreign-origin walk. Native
-//! std::function, errors, yield and exit are effects after this frame returns.
+//! `std::function`, errors, yield and exit are effects after this frame returns.
 use crate::CoroutineIdentity;
 use core::ffi::c_void;
 
@@ -20,7 +20,7 @@ pub struct CoroutineBailoutAction {
 /// observes function presence only when requested, and executes its assignment
 /// before phase2. Saved tokens retain original live foreign allocation
 /// provenance. At phase2 every reached object has an aligned initialized
-/// CoroutineIdentity at the exact Native-derived origin_offset, within that
+/// `CoroutineIdentity` at the exact Native-derived `origin_offset`, within that
 /// allocation and with representable in-bounds byte arithmetic. Only this
 /// designated cell may be addressed; no other object bytes are accessed. The
 /// original chain terminates with null and is serialized during this call.

@@ -7,7 +7,7 @@ const CONTENT_TYPE: &[u8] = b"multipart/byteranges; boundary=\0";
 
 /// Return the lazy boundary initializer, or NULL for an existing boundary.
 /// # Safety
-/// random_length is aligned/writable; the returned string has static lifetime.
+/// `random_length` is aligned/writable; the returned string has static lifetime.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_http_static_boundary(
     length: usize,

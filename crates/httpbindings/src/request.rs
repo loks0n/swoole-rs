@@ -96,10 +96,10 @@ pub unsafe extern "C" fn swr_v1_httpbindings_request_key(name: Text) -> i32 {
 
 /// Native first calls mode0 on the original span, preserving its no-copy fast
 /// path. A return2 requests native scratch copy+terminator before mode1; mode1
-/// mutates that scratch exactly like strtok_r and the original trim helpers.
+/// mutates that scratch exactly like `strtok_r` and the original trim helpers.
 /// # Safety
 /// Read spans are initialized; mode1 additionally requires writable data with a
-/// terminator at data[length]. Value is readable through its native C-string terminator on scan paths, or for the bounded comparison on fast paths. fast_extent preserves the native pointer-size expression.
+/// terminator at data[length]. Value is readable through its native C-string terminator on scan paths, or for the bounded comparison on fast paths. `fast_extent` preserves the native pointer-size expression.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_httpbindings_tokens(
     data: *mut u8,
@@ -242,7 +242,7 @@ pub struct Trimmed {
 
 /// # Safety
 /// Data is initialized/writable for length bytes and output is disjoint. The
-/// original shrinking left-loop bound is intentional; this is not trim_matches.
+/// original shrinking left-loop bound is intentional; this is not `trim_matches`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_httpbindings_trim_quotes(
     data: *mut u8,

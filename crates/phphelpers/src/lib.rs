@@ -268,7 +268,7 @@ fn merge_action(phase: &mut u32, inserted: u8, existing_array: u8) -> u32 {
 }
 
 /// Keyed variant of the frozen merge lifecycle. Numeric-key classification stays
-/// native; Rust selects concrete HashTable effects without an extra dispatch.
+/// native; Rust selects concrete `HashTable` effects without an extra dispatch.
 /// # Safety
 /// Same phase storage/lazy observation requirements as `swr_v1_phphelpers_merge`.
 #[unsafe(no_mangle)]
@@ -587,7 +587,7 @@ enum DefinitionAction {
 /// Phase is independent aligned writable native storage initialized to zero.
 /// Data is borrowed only at phase2, after native lowercase/copy/normalization,
 /// and is readable for length initialized bytes. Native class lookup, its local
-/// zend::String custody and all allocation/error/reentry run after return.
+/// `zend::String` custody and all allocation/error/reentry run after return.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phphelpers_parse_definition(
     phase: *mut u32,

@@ -13,7 +13,7 @@ pub extern "C" fn swr_v1_phpcollections_capacity(capacity: isize) -> isize {
     capacity.max(1)
 }
 
-/// Native TableColumn tags are pinned and checked by the native adapter.
+/// Native `TableColumn` tags are pinned and checked by the native adapter.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_phpcollections_kind(kind: i64) -> u32 {
     match kind {
@@ -34,7 +34,7 @@ pub extern "C" fn swr_v1_phpcollections_key_warning(length: usize, limit: usize)
     u8::from(length >= limit)
 }
 
-/// Native count and column size use size_t; multiplication has unsigned wrap.
+/// Native count and column size use `size_t`; multiplication has unsigned wrap.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_phpcollections_count(mode: isize, rows: usize, columns: usize) -> usize {
     if mode == 0 {

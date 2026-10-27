@@ -1,4 +1,4 @@
-//! Sole logical custody of primitive frontend cells at Native PHPContext offsets.
+//! Sole logical custody of primitive frontend cells at Native `PHPContext` offsets.
 use crate::scheduler_phase::SchedulerPhase;
 use std::ffi::{c_int, c_long};
 
@@ -15,7 +15,7 @@ pub struct ClockCell {
     pub value: i64,
 }
 
-/// Native forms addresses only; Rust never interprets a PHPContext or Zend value.
+/// Native forms addresses only; Rust never interprets a `PHPContext` or Zend value.
 /// Null cells denote absent/unused fields, not an alternate registry.
 #[repr(C)]
 pub struct ContextCells {

@@ -121,7 +121,7 @@ pub unsafe extern "C" fn swr_v1_channel_view_read(
 }
 
 /// Whole optional data removal. A stored null and absent data both return null,
-/// as the original public pop_data method does; no Native payload is destroyed.
+/// as the original public `pop_data` method does; no Native payload is destroyed.
 /// # Safety
 /// Data is a live exclusive token owner; no borrow survives this call.
 #[unsafe(no_mangle)]

@@ -196,7 +196,7 @@ unsafe fn pop(object: *mut StringObject, edit: &StringEdit) -> Result<*mut u8, i
     Ok(s.data)
 }
 
-/// APPEND, WRITE, APPEND_I32, REPEAT and TERMINATE: reserve if needed, then write
+/// APPEND, WRITE, `APPEND_I32`, REPEAT and TERMINATE: reserve if needed, then write
 /// at the String's fields as they are after the reserve.
 unsafe fn write(
     object: *mut StringObject,

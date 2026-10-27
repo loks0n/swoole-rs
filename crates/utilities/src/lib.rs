@@ -190,7 +190,7 @@ pub unsafe extern "C" fn swr_v1_utils_spinlock(lock: *mut u32, cpus: u32, backof
     }
 }
 
-/// Futex wait on the native atomic utility's word (HAVE_FUTEX builds only).
+/// Futex wait on the native atomic utility's word (`HAVE_FUTEX` builds only).
 /// # Safety
 /// Word is aligned, live u32 atomic storage shared only through atomic accesses.
 #[cfg(target_os = "linux")]
@@ -349,7 +349,7 @@ unsafe fn log_bytes<'a>(data: *const u8, precision: i32) -> &'a [u8] {
     unsafe { std::slice::from_raw_parts(data, length) }
 }
 
-/// Format the pinned Logger::put line without allocation or native callbacks.
+/// Format the pinned `Logger::put` line without allocation or native callbacks.
 /// # Safety
 /// Output is writable for capacity bytes and disjoint from inputs. Each input is
 /// readable through its first NUL or nonnegative precision, whichever comes first;
@@ -513,7 +513,7 @@ enum LogFileAction {
 }
 
 /// Native Logger file lifecycle, operations open=0, close=1, reopen=2.
-/// Native storage, FILE operations, diagnostics and std::string allocation occur
+/// Native storage, FILE operations, diagnostics and `std::string` allocation occur
 /// only after this call returns. Failure actions are terminal, including a
 /// successful open followed by an unchecked native fdopen result, as upstream.
 /// # Safety
@@ -734,7 +734,7 @@ pub struct LogDefaults {
 /// string and FILE effects execute natively after each returned action.
 /// # Safety
 /// Phase points to an exclusive aligned u32 initialized to zero. Reset requires
-/// an independent aligned writable LogDefaults output. No pointer is retained;
+/// an independent aligned writable `LogDefaults` output. No pointer is retained;
 /// its returned date pointer refers to immutable static C-string storage.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_utils_log_config_step(

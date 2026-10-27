@@ -97,8 +97,8 @@ impl LogState {
 
 /// Fallible owned context construction; publishes only a complete context.
 /// # Safety
-/// Output is aligned/writable pointer storage. Native_max is the actual native
-/// std::string maximum. On success its sole owner must later destroy the handle.
+/// Output is aligned/writable pointer storage. `Native_max` is the actual native
+/// `std::string` maximum. On success its sole owner must later destroy the handle.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_utils_log_state_create(
     native_max: usize,

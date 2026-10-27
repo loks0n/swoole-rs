@@ -113,7 +113,7 @@ pub unsafe extern "C" fn swr_v1_channel_tokens_pop(tokens: *mut ChannelTokens) {
     unsafe { (*tokens).0.pop_front() };
 }
 
-/// Preserve std::list::remove's removal of *all* matching pointer identities.
+/// Preserve `std::list::remove`'s removal of *all* matching pointer identities.
 /// # Safety
 /// `tokens` is an exclusive live owner; no pointed-to object is accessed.
 #[unsafe(no_mangle)]

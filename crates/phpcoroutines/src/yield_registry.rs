@@ -37,8 +37,8 @@ pub extern "C" fn swr_v1_phpcoroutines_yield_erase(cid: i64) {
     });
 }
 
-/// Native SW_THREAD_LOCAL custody owns this opaque allocation. It is global when
-/// SW_THREAD is off, per-thread when on; no separate Rust global registry exists.
+/// Native `SW_THREAD_LOCAL` custody owns this opaque allocation. It is global when
+/// `SW_THREAD` is off, per-thread when on; no separate Rust global registry exists.
 pub struct YieldRegistry(Registry);
 
 /// # Safety

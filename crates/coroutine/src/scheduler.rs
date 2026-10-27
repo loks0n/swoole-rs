@@ -55,7 +55,7 @@ pub unsafe extern "C" fn swr_v1_coroutine_scheduler_registration(
 /// # Safety
 /// `state` is a live aligned record without racing reads/writes. `count` is the
 /// original second observation after a requested peak publication, even if it
-/// differs from the first observation. Do not replace publication with max().
+/// differs from the first observation. Do not replace publication with `max()`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_coroutine_scheduler_publish_peak(
     state: *mut CoroutineScheduler,

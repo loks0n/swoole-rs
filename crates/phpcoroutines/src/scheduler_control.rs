@@ -8,7 +8,7 @@ pub struct SchedulerConstants {
 
 /// # Safety
 /// Stage is local exclusive zeroed POD, kind/constants fixed. Observation is the
-/// requested fresh Native scalar fact. No Callable, resolver, HashTable, zval,
+/// requested fresh Native scalar fact. No Callable, resolver, `HashTable`, zval,
 /// reactor or callback pointer enters Rust. Native effects run after return.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_control(

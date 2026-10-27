@@ -89,8 +89,8 @@ fn selected(state: &mut HttpStaticPath, facts: u32) -> i32 {
         6
     }
 }
-/// Resume selection: 0=false,1=true,2=visit locations,3=assign native dir_path,
-/// 4=lstat,5=realpath/get_absolute_path,6=MIME lookup,7=native catch_error.
+/// Resume selection: 0=false,1=true,2=visit locations,3=assign native `dir_path`,
+/// `4=lstat,5=realpath/get_absolute_path,6=MIME` lookup,7=native `catch_error`.
 /// Facts: locations1,statOK2,canonicalOK4,link8,dir16,file32,index64,auto128,MIME256.
 /// # Safety
 /// URL/root spans are initialized and disjoint from output/state. Output is
@@ -273,7 +273,7 @@ pub(crate) unsafe fn path_step(
 /// Append an index filename using the pinned logical-length/slash behavior.
 /// Logical length intentionally stays unchanged in the native class.
 /// # Safety
-/// Storage is writable through capacity; byte at logical_length is initialized.
+/// Storage is writable through capacity; byte at `logical_length` is initialized.
 /// Name is readable/initialized and disjoint from storage. No callback occurs.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_http_static_index_path(

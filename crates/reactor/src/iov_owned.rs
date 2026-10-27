@@ -81,7 +81,7 @@ pub unsafe extern "C" fn swr_v1_reactor_iov_owned_new(
 /// Release only descriptor storage and allocation-local metadata. No payload,
 /// Native callback, destructor or public counter is consulted.
 /// # Safety
-/// original is null or the unmodified base returned by owned_new, exclusively owned and
+/// original is null or the unmodified base returned by `owned_new`, exclusively owned and
 /// released exactly once. Foreign/replaced/shallow-copied owners are unsupported.
 #[unsafe(no_mangle)]
 #[expect(
@@ -100,7 +100,7 @@ pub unsafe extern "C" fn swr_v1_reactor_iov_owned_free(original: *mut libc::iove
     // SAFETY: allocated with `header.layout`; exclusively owned and released once.
     unsafe { dealloc(allocation, header.layout) };
 }
-/// Sum the live original descriptor span with C size_t wrapping semantics.
+/// Sum the live original descriptor span with C `size_t` wrapping semantics.
 /// # Safety
 /// For positive count, original names count readable initialized C iovec objects.
 /// No payload is dereferenced and no borrow survives this call.

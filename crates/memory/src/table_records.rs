@@ -1,4 +1,4 @@
-//! TableV2's authoritative metadata and name storage. Views contain no borrowed
+//! `TableV2`'s authoritative metadata and name storage. Views contain no borrowed
 //! Rust pointers; native scratch allocation and Zend effects happen after return.
 use crate::table::{Row, swr_v1_memory_table_clear_value, swr_v1_memory_table_column_size};
 use crate::table_columns::name;
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn swr_v1_memory_records_open(output: *mut *mut Records) -
     0
 }
 /// No native column construction, callbacks or partial logical publication.
-/// Caller owns exclusive schema access; item_size is the actual core field.
+/// Caller owns exclusive schema access; `item_size` is the actual core field.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_memory_records_declare(
     owner: *mut Records,

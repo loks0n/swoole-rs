@@ -469,7 +469,7 @@ pub unsafe extern "C" fn swr_v1_timer_complete(
 }
 
 /// # Safety
-/// Handle and next_delay output are valid and disjoint as specified by ABI v1.
+/// Handle and `next_delay` output are valid and disjoint as specified by ABI v1.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_timer_end(queue: *mut Timer, next_delay: *mut i64) -> i32 {
     if next_delay.is_null() {

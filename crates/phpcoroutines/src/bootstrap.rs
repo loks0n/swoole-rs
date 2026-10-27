@@ -122,7 +122,7 @@ fn plan(action: u32, id: u32, name: Option<&'static [u8]>) -> BootstrapPlan {
 /// # Safety
 /// State is exclusive zero-initialized native POD. Kind stays fixed (core0,
 /// Scheduler1,System2). Observation answers the latest native presence request;
-/// exit_opcode is the actual PHP-version compilation capability.
+/// `exit_opcode` is the actual PHP-version compilation capability.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_bootstrap(
     state: *mut BootstrapState,

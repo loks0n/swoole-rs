@@ -58,8 +58,8 @@ impl HttpMultipartData {
     }
 }
 /// Native action:0=success,1=append,2=fwrite,3=fclose+clear FILE,4=warn/reject,
-/// 5=reject. Flags:1=excepted,2=unavailable,4=too_large. Upload_size publication
-/// follows the first call when has_file; flags apply before the requested action.
+/// 5=reject. `Flags:1=excepted,2=unavailable,4=too_large`. `Upload_size` publication
+/// follows the first call when `has_file`; flags apply before the requested action.
 /// # Safety
 /// State is aligned/readable/writable and valid for each call. No native object,
 /// allocation, callback or borrow is retained between resumptions.
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn swr_v1_http_multipart_data(state: *mut HttpMultipartDat
 }
 /// Classify the mature parser's return after its native execution has ended.
 /// -1=log parser error,0=log short result/reject,1=log short result/excepted,
-/// 2=clear input/success. Unsigned cast matches the pinned ssize_t/size_t check.
+/// 2=clear input/success. Unsigned cast matches the pinned `ssize_t/size_t` check.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_http_multipart_result(
     processed: i64,
@@ -104,7 +104,7 @@ pub unsafe extern "C" fn swr_v1_http_multipart_disposition(data: *const u8, leng
 /// The legacy callback stops even for a filename with no '=' or an empty value.
 /// Native file creation runs only after this function returns.
 /// # Safety
-/// Scratch is writable through capacity<=isize::MAX and initialized through a
+/// Scratch is writable through capacity<=`isize::MAX` and initialized through a
 /// reachable NUL terminator. No reference or owner is retained across native work.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_http_multipart_filename(data: *mut u8, capacity: usize) -> i32 {

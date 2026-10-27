@@ -472,7 +472,7 @@ unsafe fn word<'a>(word: *mut u32) -> Option<&'a AtomicU32> {
 }
 
 /// Futex wait on a native atomic word: consume a ready token, otherwise one
-/// FUTEX_WAIT syscall. Non-futex builds use upstream's C++ wait registry.
+/// `FUTEX_WAIT` syscall. Non-futex builds use upstream's C++ wait registry.
 /// # Safety
 /// Word is aligned, live, process-shared u32 storage accessed only atomically.
 #[cfg(target_os = "linux")]

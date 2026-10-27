@@ -20,7 +20,7 @@ const DTLS: u32 = 0x80;
 /// SSL and callback custody remain with the caller. Rejected copies touch neither
 /// pointer. A nonempty String can have narrowed length0 on a native target; that
 /// case still writes the original terminator. Negative narrowed copy lengths and
-/// nonempty/INT_MIN capacity border original UB and are not parity/safety claims.
+/// `nonempty/INT_MIN` capacity border original UB and are not parity/safety claims.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_tls_password(
     source: *const u8,

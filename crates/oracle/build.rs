@@ -142,8 +142,8 @@ fn definition(text: &str, signature: &str) -> String {
 }
 
 /// Request framing from the pinned http.cc (upstream) and from it with the http
-/// overlay patch applied (candidate), copied unchanged for shim/http_frame.cc,
-/// with the method and version enums from the pinned swoole_http.h.
+/// overlay patch applied (candidate), copied unchanged for `shim/http_frame.cc`,
+/// with the method and version enums from the pinned `swoole_http.h`.
 fn http_frame() {
     let patch = "../../migration/patches/http/0001-http-helpers.patch";
     println!("cargo:rerun-if-changed={patch}");
@@ -186,9 +186,9 @@ fn http_frame() {
     fs::write(out("http_frame_enums.inc"), enums.concat()).unwrap();
 }
 
-/// StaticHandler::parse_range from the pinned static_handler.cc (upstream) and from
+/// `StaticHandler::parse_range` from the pinned `static_handler.cc` (upstream) and from
 /// it with the http static-ranges patch applied (candidate, calling Rust), with the
-/// candidate's part-header helpers, copied unchanged for shim/http_range.cc.
+/// candidate's part-header helpers, copied unchanged for `shim/http_range.cc`.
 fn http_range() {
     let patch = "../../migration/patches/http/0002-static-ranges.patch";
     println!("cargo:rerun-if-changed={patch}");
@@ -258,7 +258,7 @@ fn protocols() {
     .unwrap();
 }
 
-/// Address::assign(url) from the pinned address.cc (upstream) and from it with the
+/// `Address::assign(url)` from the pinned address.cc (upstream) and from it with the
 /// clients overlay patch applied (candidate, calling Rust), plus the pinned
 /// Set-Cookie split and DNS name decode, copied unchanged for shim/clients.cc.
 fn clients() {
@@ -342,7 +342,7 @@ fn websocket() {
     fs::write(out("websocket.inc"), text).unwrap();
 }
 
-/// A C++ build that matches the Rust side's sanitizer, so `cargo fuzz`'s ASan
+/// A C++ build that matches the Rust side's sanitizer, so `cargo fuzz`'s `ASan`
 /// also checks the upstream code.
 fn cpp() -> cc::Build {
     let mut build = cc::Build::new();

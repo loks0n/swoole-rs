@@ -47,7 +47,7 @@ pub use flush::*;
 
 const INVALID: i32 = -1;
 /// Encode the stream's four-byte network-order body length. The supplied total
-/// length follows native size_t subtraction and uint32 truncation semantics.
+/// length follows native `size_t` subtraction and uint32 truncation semantics.
 /// # Safety
 /// Destination points to four writable bytes. No pointer is retained.
 #[unsafe(no_mangle)]

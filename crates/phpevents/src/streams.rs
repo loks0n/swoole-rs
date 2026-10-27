@@ -15,8 +15,8 @@ enum StreamAction {
 /// Extended stream conversion preserves native wrapper/descriptor effects and
 /// the original optional PHP-socket fallback without filtering that socket fd.
 /// # Safety
-/// Independent aligned phase storage starts0. ReadFd supplies signed fd,
-/// CastStream supplies Zend SUCCESS0; other observations are boolean. Native
+/// Independent aligned phase storage starts0. `ReadFd` supplies signed fd,
+/// `CastStream` supplies Zend SUCCESS0; other observations are boolean. Native
 /// owns streams, wrapper pointers, socket storage and the async output.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_stream(
