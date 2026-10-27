@@ -25,7 +25,11 @@ struct Socket {
 #else
  bool connected=false,shutdown_read=false,shutdown_write=false;
 #endif
+#ifndef SELECTED_STATE
  Coroutine *read_co=nullptr,*write_co=nullptr;
+ Coroutine *event_co(uint32_t e) const {return e==SW_EVENT_READ?read_co:write_co;}
+ void bind_co(uint32_t e,Coroutine *c){if(e&SW_EVENT_READ)read_co=c;if(e&SW_EVENT_WRITE)write_co=c;}
+#endif
  NativeSocket native;NativeSocket *socket=&native;
  std::function<void(Socket*)> dtor_;
  void *read_timer=nullptr,*write_timer=nullptr;

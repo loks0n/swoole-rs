@@ -38,7 +38,9 @@ def main():
             subprocess.run(['git','apply',str(patch)],cwd=tree,check=True)
         for variant in ['original','selected']:
             texts=originals if variant=='original' else {path:(tree/path).read_text() for path in paths}
-            (tree/(variant+'-inline.inc')).write_text('\n'.join(block(texts[header],signature) for signature in signatures))
+            # The selected header's bound-coroutine accessors over its Rust state (#439).
+            selected_inline=['Coroutine *event_co(', 'void bind_co('] if variant=='selected' else []
+            (tree/(variant+'-inline.inc')).write_text('\n'.join(block(texts[header],signature) for signature in signatures+selected_inline))
             (tree/(variant+'-methods.inc')).write_text('\n'.join(block(texts[unit],signature) for signature in methods))
         command=['c++','-std=c++14','-O1','-g','-I'+str(tree),'-I'+str(ROOT/'native/hooks'),'-I'+str(ROOT/'tests/modules/hooks'),str(ROOT/'tests/modules/hooks/socket_policy_gate.cc'),str(a.archive.resolve()),'-lpthread','-o',str(tree/'inline')]
         if a.sanitize:command+=['-fsanitize=address,undefined','-fno-omit-frame-pointer']
