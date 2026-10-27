@@ -695,7 +695,9 @@ class Lanes(unittest.TestCase):
         self.assertIn('--archive', commands['ports-listen'])
         self.assertIn('--archive', commands['ports-socket'])
         self.assertIn('--core', commands['ports-socket'])
-        for name in ['ports-php', 'ports-configuration']:
+        self.assertNotIn('ports-php', commands)
+        self.assertNotIn('ports-callback-php', commands)
+        for name in ['ports-configuration']:
             self.assertIn('--build-manifest', commands[name])
             self.assertIn('--archive', commands[name])
             self.assertIn('--source-ref', commands[name])

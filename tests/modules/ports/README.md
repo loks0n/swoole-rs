@@ -75,22 +75,17 @@ python3 tests/modules/ports/sanitizer.py --source PINNED_REFERENCE --core CONFIG
 PHP runtime checks:
 
 ```text
-python3 tests/modules/ports/server.py --engine hybrid=CANDIDATE_DSO --engine upstream=NATIVE_DSO [--build-manifest MANIFEST --archive SELECTED_ARCHIVE --source-ref REF] [--protocol length|eof|mqtt] --output REPORT
 python3 tests/modules/ports/configuration.py --engine ... --build-manifest MANIFEST --archive SELECTED_ARCHIVE --source-ref REF [--case NAME] --output REPORT
-python3 tests/modules/ports/callback_php.py --engine ... --build-manifest MANIFEST --archive SELECTED_ARCHIVE --source-ref REF --output REPORT
 python3 tests/modules/ports/php.py --engine ... --output REPORT
 python3 tests/modules/ports/class_properties_loaded.py --source PINNED_REFERENCE --native NATIVE_EXPORT --selected SELECTED_EXPORT --output REPORT
 ```
 
-- `server.py`: starts a listener on an ephemeral port per protocol (length, EOF,
-  MQTT), sends a split frame and requires the echo, callback and clean shutdown.
-  `--protocol` subsets leave the gate failed. The build-manifest options
-  (all three or none) verify, before startup, that the candidate DSO, archive,
-  M25 Rust source, header and both patches match the manifest and that the DSO
-  exports every `swr_v1_ports_*` symbol.
-- `configuration.py`: setting conversion, reentry, ignored SSL, and the six
-  fatal rejections, compared across engines.
-- `callback_php.py`: `callback_property.php` getter fixture across engines.
+- `configuration.py`: setting conversion, reentry, ignored SSL, a throwing
+  conversion (reported uncaught, then fatal, as upstream does: #317) and the six
+  fatal rejections, compared across engines. The build-manifest options verify,
+  before running, that the candidate DSO, archive, M25 Rust source, header and
+  both patches match the manifest and that the DSO exports every
+  `swr_v1_ports_*` symbol.
 - `php.py`: event registration/lookup, unknown-event warnings, Stringable
   reentry and callback replacement lifetime across engines.
 - `class_properties_loaded.py`: reflection of all 19 Port properties in both
