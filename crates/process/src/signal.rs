@@ -15,9 +15,9 @@ const SIG_IGN: usize = 1;
 /// signal number and whether it is registered.
 #[repr(C)]
 pub struct Slot {
-    handler: AtomicUsize,
-    signo: AtomicU16,
-    activated: AtomicBool,
+    pub(crate) handler: AtomicUsize,
+    pub(crate) signo: AtomicU16,
+    pub(crate) activated: AtomicBool,
 }
 
 impl Slot {
@@ -29,7 +29,7 @@ impl Slot {
         }
     }
 
-    fn reset(&self) {
+    pub(crate) fn reset(&self) {
         self.handler.store(SIG_DFL, Relaxed);
         self.signo.store(0, Relaxed);
         self.activated.store(false, Relaxed);
