@@ -18,7 +18,7 @@ impl Hasher for PacketIdHasher {
         self.0 = id;
     }
     fn finish(&self) -> u64 {
-        self.0.wrapping_mul(0x9e3779b97f4a7c15)
+        self.0.wrapping_mul(0x9e37_79b9_7f4a_7c15)
     }
 }
 
@@ -367,9 +367,11 @@ mod tests {
     fn swap_removal_and_duplicate_ownership_match_model() {
         let mut pool = PacketPool::default();
         let mut model = BTreeMap::new();
-        let mut random = 0x6d2b79f5u64;
+        let mut random = 0x6d2b_79f5_u64;
         for step in 1..=30000 {
-            random = random.wrapping_mul(6364136223846793005).wrapping_add(1);
+            random = random
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1);
             let key = (random >> 32) % 113;
             let id = if random & 4 == 0 { key } else { u64::MAX - key };
             if random & 1 == 0 {

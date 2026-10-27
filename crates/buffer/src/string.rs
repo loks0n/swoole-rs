@@ -611,7 +611,7 @@ mod number_tests {
     use super::*;
     #[test]
     fn integer_edit_preserves_capacity_offset_and_failure_prefix() {
-        for value in [i32::MIN, -123456789, -1, 0, 1, i32::MAX] {
+        for value in [i32::MIN, -123_456_789, -1, 0, 1, i32::MAX] {
             let expected = value.to_string();
             for used in [0, 2, 11, 16, 31, 32] {
                 let mut bytes = [b'x'; 64];

@@ -280,7 +280,7 @@ mod tests {
         assert!(!owner.is_null());
         let file = HttpStaticObservation {
             filesize: 10,
-            mtime: 1700000000,
+            mtime: 1_700_000_000,
             kind: 32,
             ..HttpStaticObservation::default()
         };

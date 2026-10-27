@@ -86,7 +86,7 @@ fn collision_deletion_iteration_and_unaligned_values() {
             0
         );
         assert_eq!((plan.row, plan.level, plan.flags), (third.cast(), 3, 2));
-        let number = 123456i64;
+        let number = 123_456_i64;
         assert_eq!(
             swr_v1_memory_table_set_value(second, 0, 8, 1, (&raw const number).cast(), 0),
             0
@@ -1678,7 +1678,7 @@ fn construction_sequences_normal_storage_effects_before_single_publication() {
                         (1, state.storage.physical.total)
                     );
                     assert!(effect.memory.is_null());
-                    let mut arena = vec![0x5a5a5a5a5a5a5a5au64; effect.size.div_ceil(8)];
+                    let mut arena = vec![0x5a5a_5a5a_5a5a_5a5a_u64; effect.size.div_ceil(8)];
                     state.storage.memory = arena.as_mut_ptr().cast();
                     assert_eq!(
                         swr_v1_memory_table_construction_step(

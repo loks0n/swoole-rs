@@ -415,7 +415,7 @@ mod tests {
             ("2147483647", i32::MAX),
         ] {
             let input = std::ffi::CString::new(text).unwrap();
-            let mut output = 0x13579bdf;
+            let mut output = 0x1357_9bdf;
             assert_eq!(
                 unsafe { swr_v1_corebase_parse_stoi(input.as_ptr(), &raw mut output) },
                 1
@@ -424,12 +424,12 @@ mod tests {
         }
         for text in ["", "x", "  ", "+", "2147483648", "-2147483649"] {
             let input = std::ffi::CString::new(text).unwrap();
-            let mut output = 0x13579bdf;
+            let mut output = 0x1357_9bdf;
             assert_eq!(
                 unsafe { swr_v1_corebase_parse_stoi(input.as_ptr(), &raw mut output) },
                 0
             );
-            assert_eq!(output, 0x13579bdf);
+            assert_eq!(output, 0x1357_9bdf);
         }
     }
 
@@ -439,7 +439,7 @@ mod tests {
         unsafe {
             assert_eq!(
                 swr_v1_corebase_hex(c"FFtail".as_ptr(), &raw mut parsed),
-                16833333
+                16_833_333
             );
             assert_eq!(parsed, 6);
             assert_eq!(swr_v1_corebase_hex(c"0x".as_ptr(), &raw mut parsed), 0);
