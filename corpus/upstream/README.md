@@ -160,10 +160,16 @@ PASSED counts as passed.
 
 A test the gate flags is re-run 3 times on both engines (in the `phpt-gate` job,
 unless more than 20 are flagged). If upstream fails any re-run, the test is listed
-as flaky on upstream and doesn't fail the gate. If upstream passes every re-run and
-the hybrid fails any, it is a regression. If both pass every re-run, it is listed as
-passed on re-run and doesn't fail the gate. The hybrid never gets retried to green:
-it must pass every re-run.
+as flaky on upstream and doesn't fail the gate, provided the hybrid passes one of its
+re-runs. If upstream passes every re-run and the hybrid fails any, it is a regression.
+If both pass every re-run, it is listed as passed on re-run and doesn't fail the gate.
+The hybrid never gets retried to green: it must pass every re-run.
+
+A re-run whose test passed but whose runner then died with `corrupted double-linked
+list` / `Aborted` (#200: both engines hit it at the same rate) is inconclusive on
+either engine. It doesn't count towards the verdict and gets one more re-run in its
+place. A test whose re-runs on an engine are all inconclusive fails the gate, listed
+as inconclusive.
 
 Before that, the PR tier's `gates` job runs the families of the modules a PR
 touches: each module in `migration/modules.json` lists its `phpt_families`, and

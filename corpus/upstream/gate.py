@@ -12,6 +12,11 @@ is flaky on upstream only if the hybrid passes one of its re-runs; otherwise it 
 regression. If upstream passes every re-run, any failed hybrid re-run is a regression
 and passing them all is a pass on re-run. Only regressions fail the gate, and a flagged
 test without hybrid re-runs stays one.
+
+A re-run whose test passed but whose runner then aborted with the heap-corruption
+signature both engines hit at the same rate (#200, #406) is inconclusive: it is left out
+of the verdict and re-run once more. A test whose re-runs on an engine are all
+inconclusive fails the gate, labelled inconclusive.
 """
 import argparse
 from collections import Counter, defaultdict
@@ -32,6 +37,8 @@ CATEGORIES = [
 ANSI = re.compile(r'\x1b\[[0-9;]*m')
 # PHP's run-tests timeout marker, and run.py's own group deadline.
 TIMED_OUT = re.compile(r'process timed out|exceeded its isolated group deadline')
+# The official runner's own abort after a passing test (#200).
+ABORTED = re.compile(r'corrupted double-linked list[\s\S]*Aborted')
 RERUNS = 3
 STATUSES = ['passed', 'failed', 'skipped']
 
@@ -59,6 +66,8 @@ def rows(reports):
                 entry['category'] = category(entry['reason'])
             elif row['status'] == 'failed':
                 entry['timed_out'] = bool(TIMED_OUT.search(row.get('detail') or ''))
+                entry['inconclusive'] = (row.get('upstream_status') in ('PASSED', 'WARNED')
+                                         and bool(ABORTED.search(row.get('detail') or '')))
             yield entry
 
 
@@ -83,17 +92,25 @@ def flagged(results):
 def reruns(rechecked):
     runs = defaultdict(lambda: defaultdict(list))
     for row in rechecked:
-        runs[row['test']][row['engine']].append(row['status'])
+        runs[row['test']][row['engine']].append('inconclusive' if row.get('inconclusive') else row['status'])
     return runs
 
 
+def conclusive(statuses):
+    return [status for status in statuses if status != 'inconclusive']
+
+
 def recheck(tests, rechecked):
-    """(regressions, flaky on upstream, passed on re-run) for flagged tests, from their re-runs."""
+    """(regressions, flaky on upstream, passed on re-run, inconclusive) for flagged tests,
+    from their re-runs. Regressions and inconclusive tests fail the gate."""
     runs = reruns(rechecked)
-    regressions, flaky, recovered = [], [], []
+    regressions, flaky, recovered, inconclusive = [], [], [], []
     for test in tests:
-        upstream = runs[test].get('upstream', [])
-        others = [status for engine, statuses in runs[test].items() if engine != 'upstream' for status in statuses]
+        if any(statuses and not conclusive(statuses) for statuses in runs[test].values()):
+            inconclusive.append(test)
+            continue
+        upstream = conclusive(runs[test].get('upstream', []))
+        others = [status for engine, statuses in runs[test].items() if engine != 'upstream' for status in conclusive(statuses)]
         if any(status != 'passed' for status in upstream):
             # Upstream is noisy; only a hybrid pass shows the hybrid isn't simply broken.
             (flaky if 'passed' in others else regressions).append(test)
@@ -101,23 +118,28 @@ def recheck(tests, rechecked):
             regressions.append(test)
         else:
             recovered.append(test)
-    return regressions, flaky, recovered
+    return regressions, flaky, recovered, inconclusive
 
 
 def pending(tests, rechecked, engine='upstream', results=()):
     """Flagged tests still worth re-running on `engine`. Upstream stops at its first failed
     re-run. Another engine stops once its verdict is settled (a pass after an upstream
     failure, a failure otherwise) or its budget is spent: one re-run if its first failure
-    timed out, else three."""
+    timed out, else three. Inconclusive re-runs don't use the budget, but each engine stops
+    after twice its budget in all."""
     runs = reruns(rechecked)
+
+    def within(statuses, budget):
+        return len(conclusive(statuses)) < budget and len(statuses) < 2 * budget
     if engine == 'upstream':
-        return [test for test in tests if all(status == 'passed' for status in runs[test].get('upstream', []))]
+        return [test for test in tests if all(status in ('passed', 'inconclusive') for status in runs[test].get('upstream', []))
+                and within(runs[test].get('upstream', []), RERUNS)]
     timed_out = {row['test'] for row in results if row['engine'] == engine and row.get('timed_out')}
     left = []
     for test in tests:
         statuses = runs[test].get(engine, [])
-        settled = 'passed' if any(status != 'passed' for status in runs[test].get('upstream', [])) else 'failed'
-        if settled not in statuses and len(statuses) < (1 if test in timed_out else RERUNS):
+        settled = 'passed' if any(status not in ('passed', 'inconclusive') for status in runs[test].get('upstream', [])) else 'failed'
+        if settled not in statuses and within(statuses, 1 if test in timed_out else RERUNS):
             left.append(test)
     return left
 
@@ -147,8 +169,9 @@ def markdown(results, rechecked=None):
                   '', 'Skips by reason: ' + ', '.join(f'{n} {c}' for c, n in skips.most_common()), '']
     regressions, both = compare(results)
     if len(engines) > 1 and rechecked is not None:
-        confirmed, flaky, recovered = recheck(flagged(results), rechecked)
+        confirmed, flaky, recovered, inconclusive = recheck(flagged(results), rechecked)
         lines += listing('regressions: pass on upstream, fail on a re-run here', confirmed)
+        lines += listing('inconclusive: every re-run on an engine ended in the runner abort (#200); gated', inconclusive)
         lines += flaky_listing(flaky, rechecked)
         lines += listing('passed on re-run on both engines (not gated)', recovered)
         lines += listing('failing on upstream too', both)
@@ -183,7 +206,8 @@ def main():
         args.output.write_text(json.dumps(results, indent=1) + '\n')
     print(markdown(results, rechecked))
     if rechecked is not None:
-        return int(bool(recheck(flagged(results), rechecked)[0]))
+        confirmed, _, _, inconclusive = recheck(flagged(results), rechecked)
+        return int(bool(confirmed or inconclusive))
     return int(bool(compare(results)[0]))
 
 
