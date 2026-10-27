@@ -6,7 +6,7 @@ separate identities. No errors, EINTR, faults, shutdown or lifetime probes run.
 Full Socket syntax checks are independent of body-facade execution; neither is
 loaded production, original-corpus, performance or whole Socket parity proof.
 """
-import argparse,io,json,subprocess,sys,tarfile,tempfile
+import argparse,io,json,shutil,subprocess,sys,tarfile,tempfile
 from pathlib import Path
 from ordered_gate import ROOT,PIN,block
 sys.path.insert(0,str(ROOT))
@@ -18,9 +18,11 @@ p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=Pa
 if a.report.exists():raise ValueError('Choose a unique receipt path')
 fixed=ROOT/'migration/patches/halfclose/0003-send-tls-close-notify.patch'
 fixed_sha=next(e['sha256'] for e in json.loads((fixed.parent/'manifest.json').read_text())['patches'] if e['path']==fixed.name)
-manifest=ROOT/'migration/patches/reactor/manifest.json';entry=[e for e in json.loads(manifest.read_text())['patches'] if e['upstream_paths']==['src/network/socket.cc']]
-if len(entry)!=1:raise ValueError('Expected sole M05 Socket overlay')
-entry=entry[0];patch=manifest.parent/entry['path'];dest='src/network/socket.cc'
+manifest=ROOT/'migration/patches/reactor/manifest.json';dest='src/network/socket.cc'
+# Every reactor patch up to the last that touches socket.cc, with the files they touch.
+entries=json.loads(manifest.read_text())['patches'];last=max(i for i,e in enumerate(entries) if dest in e['upstream_paths'])
+stack=[e for e in entries[:last+1] if set(e['upstream_paths'])&{dest,'include/swoole_socket.h'}]
+paths=sorted({path for e in stack for path in e['upstream_paths']}|{dest})
 fixture_name='forwarding' if a.forwarding else 'iov_progress' if a.iov_progress else 'output'
 report=dict(scope=('Whole file/event forwarding positive source effects; clean syntax/pure Rust only, Native clean unexecuted' if a.forwarding else 'Genuine IOVector complete progression; Native vs Rust-owned descriptor storage, unchanged public class; no kernel/loaded production or error/fault/lifetime qualification' if a.iov_progress else __doc__),pin=PIN,patch_application=[],syntax=[],commands=[],results=[],passed=False)
 with tempfile.TemporaryDirectory(prefix='swr-output-') as tmp:
@@ -34,20 +36,26 @@ with tempfile.TemporaryDirectory(prefix='swr-output-') as tmp:
    for member in archive:
     if member.isfile():path=sdk/member.name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(archive.extractfile(member).read())
   for variant,corrected,selected in [('native',False,False),('native-corrected',True,False),('rust',False,True),('rust-corrected',True,True)]:
-   tree=t/variant;file=tree/dest;file.parent.mkdir(parents=True);file.write_bytes(source)
-   for overlay,sha in ([(fixed,fixed_sha)] if corrected else [])+([(patch,entry['sha256'])] if selected else []):report['patch_application'].append(dict(variant=variant,proof=apply_patch_verified(tree,overlay,[dest],sha)))
+   tree=t/variant;file=tree/dest
+   for path in paths:(tree/path).parent.mkdir(parents=True,exist_ok=True);(tree/path).write_bytes(subprocess.check_output(['git','-C',str(a.source),'show',PIN+':'+path]))
+   overlays=([(fixed,fixed_sha,[dest])] if corrected else [])+([(manifest.parent/e['path'],e['sha256'],e['upstream_paths']) for e in stack] if selected else [])
+   for overlay,sha,targets in overlays:report['patch_application'].append(dict(variant=variant,proof=apply_patch_verified(tree,overlay,targets,sha)))
    body=file.read_text()
+   # The SDK headers, with this composition's patched ones laid over them.
+   overlaid=tree/'sdk';shutil.copytree(sdk,overlaid)
+   for path in paths:
+    if path.startswith('include/'):shutil.copy(tree/path,overlaid/path)
    # Protected Native effects/optional correction are never converted or tested
    # by interruption: attest their exact text/order in each selected composition.
    shutdown=lambda text:block(text,text.index('bool Socket::ssl_shutdown('))[0]
    control=t/('native-corrected' if corrected else 'native')/dest
    if selected and shutdown(body)!=shutdown(control.read_text()):raise ValueError('Protected SSL shutdown changed')
-   prefix='    size_t sendn = get_sendfile_chunk_size(task->begin, task->end);\n    ssize_t rv = sendfile(task->file, &task->begin, sendn);\n'
+   prefix='    size_t sendn = '+('swr_v1_socket_sendfile_chunk' if selected else 'get_sendfile_chunk_size')+'(task->begin, task->end);\n    ssize_t rv = sendfile(task->file, &task->begin, sendn);\n'
    if corrected:prefix+='    if (rv < 0 && errno == EINTR) {\n        return SW_OK;\n    }\n'
    prefix+='\n    swoole_trace("rv=%ld|begin=%ld|sendn=%lu|end=%lu", rv, (long) task->begin, sendn, task->end);'
    if prefix not in body:raise ValueError('Native sendfile prefix changed')
    for ssl in [False,True]:
-    command=['c++','-std=c++14','-fsyntax-only','-I'+str(sdk/'include'),'-I'+str(sdk),'-I'+str(ROOT/'native/reactor'),*subprocess.check_output(['pkg-config','--cflags','openssl'],text=True).split()]
+    command=['c++','-std=c++14','-fsyntax-only','-I'+str(overlaid/'include'),'-I'+str(overlaid),'-I'+str(ROOT/'native/reactor'),*subprocess.check_output(['pkg-config','--cflags','openssl'],text=True).split()]
     if selected:command+=['-DSWOOLE_RS_REACTOR']
     if ssl:command+=['-DSW_USE_OPENSSL']
     command+=[str(file)];result=run_isolated(command,cwd=t,timeout=60)
@@ -58,7 +66,9 @@ with tempfile.TemporaryDirectory(prefix='swr-output-') as tmp:
     refused=result.returncode!=0 and 'Reactor overlay requires --enable-swoole-rs-reactor' in result.stderr
     report['syntax'].append(dict(variant=variant+'-disabled',command=disabled,exit=result.returncode,stderr=result.stderr,expected_refusal=refused))
     if not refused:raise RuntimeError('Disabled selected Socket not refused')
-   extracted='\n'.join(block(body,body.index(sig))[0] for sig in ['static bool check_sendfile_parameters(','static size_t get_sendfile_chunk_size(','int Socket::handle_sendfile(','int Socket::handle_send()','static void Socket_sendfile_destructor(','int Socket::sendfile_async('])
+   signatures=(['static bool check_sendfile_parameters(','static swr_v1_socket_output_hooks output_hooks(','int Socket::handle_sendfile(','int Socket::handle_send()','static void Socket_sendfile_destructor(','struct SendfileAsync {','int Socket::sendfile_async('] if selected else
+               ['static bool check_sendfile_parameters(','static size_t get_sendfile_chunk_size(','int Socket::handle_sendfile(','int Socket::handle_send()','static void Socket_sendfile_destructor(','int Socket::sendfile_async('])
+   extracted='\n'.join(block(body,body.index(sig))[0]+(';' if sig.startswith('struct ') else '') for sig in signatures)
    if a.iov_progress:
     header=subprocess.check_output(['git','-C',str(a.source),'show',PIN+':include/swoole_socket.h'],text=True)
     declaration=block(header,header.index('struct IOVector {'))[0]+';'

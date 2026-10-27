@@ -42,9 +42,8 @@ both engines:
 Profiles: default (readiness over AF_UNIX socketpairs), `--callbacks`,
 `--builtins`, `--socket-output`, `--blocking`. Extra identity checks: `--require-owned-iov` (with
 `--blocking`) and `--require-owned-defer` (with `--builtins`) check the Rust-owned storage
-imports and origins against the Native control; `--require-output-workflow`
-(with `--socket-output`) and `--require-typed-buffer` refuse a selected build
-whose source predates the required Rust code.
+imports and origins against the Native control; `--require-typed-buffer`
+refuses a selected build whose source predates the required Rust code.
 
 Known failure: the original broad production profile failed on Native kqueue (a
 missing WRITE filter deletion warned, and its assertions assumed poll ordering

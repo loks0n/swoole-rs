@@ -258,7 +258,7 @@ def plan(args, reports):
         if integrate:
             for phase, extra in [('reactor-production-supported', []), ('reactor-production-callbacks', ['--callbacks']),
                                  ('reactor-production-builtins', ['--builtins']),
-                                 ('reactor-production-socket-output', ['--socket-output', '--require-output-workflow']),
+                                 ('reactor-production-socket-output', ['--socket-output']),
                                  ('reactor-production-owned-iov', ['--blocking', '--require-owned-iov']),
                                  ('reactor-production-owned-defer', ['--builtins', '--require-owned-defer'])]:
                 script(phase, 'tests/modules/reactor/production_supported.py',

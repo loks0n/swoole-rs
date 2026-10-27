@@ -19,11 +19,10 @@ mod poll;
 #[cfg(unix)]
 pub use poll::*;
 
+#[cfg(unix)]
 mod output;
+#[cfg(unix)]
 pub use output::*;
-
-mod output_workflow;
-pub use output_workflow::*;
 
 mod builtins;
 pub use builtins::*;

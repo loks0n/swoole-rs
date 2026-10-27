@@ -2,31 +2,26 @@
 
 ## Socket output progression
 
-`handle_send`, `handle_sendfile` and `sendfile_async` use one typed Rust
-workflow (64 bytes of numeric state) over three pure state machines: DATA
-progress, cork/sendfile/completion, and async request publication. Native keeps
-Buffer/BufferChunk, SendfileRequest/File and `unique_ptr` storage and performs
-sends, file operations, time, errno classification, warnings, allocation,
-cork/uncork, publication and pop/destruction after Rust returns.
+`crates/reactor/src/output.rs` runs each operation whole, calling back into
+Native through `swr_v1_socket_output_hooks` (send, cork, uncork, send time):
 
-Requests 16 length, 17 offset, 18 corked, 19 begin, 20 end, 21 timer, 22 buffer
-carry fresh observations in original order. DATA offset is re-read after a
-partial send; file completion re-reads begin/end after the send/time effects.
-Request validation precedes out-buffer presence. A pop is terminal: nothing is
-observed after deletion or a callback. The async request stays in its
-`unique_ptr` through validation, then publishes the released pointer before the
-destructor callback.
+- `handle_send` sends the unsent tail of the front data chunk and classifies the
+  result with `catch_error`: pop when it all went, store the advanced offset (and
+  `send_wait`) after a short write, `send_wait`/`close_wait` or a warning on
+  failure.
+- `handle_sendfile` corks once when more than `SW_SOCKET_CORK_MIN_SIZE` remain
+  (`sendfile_cork`). Native code then makes the sendfile call and trace, the
+  point where the halfclose repair (M15) inserts its EINTR early return when
+  selected. `sendfile_sent` classifies the result, records the send time,
+  then uncorks and pops once the request is done.
+- `sendfile_async` runs the request's construction and range check, the output
+  buffer's creation and the enqueue, in that order.
 
-`check_sendfile_parameters` (shared by async and sync sendfile) uses
-`output_parameters_workflow` on a separate zeroed instance of the same POD:
-requests 23 ready, 24 stat-size, 25 published-end. Stat-size is re-read before
-published-end, after the Native end write.
-
-The chunk helper uses a signed `off_t` fitting `int64_t`; DATA offset keeps
-`uint32_t` wrapping. Signed overflow is not matched.
-
-The M15 sendfile correction applies first when requested; its EINTR early
-return and trace prefix stay outside the M05 hunks.
+Native code keeps Buffer/BufferChunk, SendfileRequest/File and `unique_ptr`
+storage, the sendfile call, warnings, and applies each returned result (pop,
+offset, wait flags). `check_sendfile_parameters` uses
+`swr_v1_socket_sendfile_range` (fstat included) and the chunk size
+`swr_v1_socket_sendfile_chunk`.
 
 ## Writable callback
 

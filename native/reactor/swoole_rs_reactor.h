@@ -12,22 +12,34 @@
 extern "C" {
 
 #endif
-typedef struct { uint32_t phase; int32_t action; int64_t value; } swr_v1_reactor_output_action;
-/* Complete output workflow POD: no Native object/pointer is retained. */
+/* Socket's queued output: handle_send sends the rest of the front data chunk and
+ * classifies the result; handle_sendfile corks (sendfile_cork), lets native code
+ * send, then classifies and completes the request (sendfile_sent); sendfile_async
+ * runs prepare (make and check the request), buffer and enqueue in order. Native
+ * code applies the result: pop, store offset, close_wait/send_wait, and warn (1
+ * send, 2 sendfile of requested bytes); code is returned. */
 typedef struct {
-    uint32_t phase, pending, requested, flags, length, offset;
-    int32_t corked, error;
-    int64_t begin, end, result;
-    int32_t previous_action, validation;
-} swr_v1_reactor_output_workflow_state;
-swr_v1_reactor_output_action swr_v1_reactor_output_workflow(swr_v1_reactor_output_workflow_state *, uint32_t, int64_t, int64_t);
-
-swr_v1_reactor_output_action swr_v1_reactor_output_data(uint32_t, uint32_t, uint32_t, uint32_t, intptr_t, int32_t);
-swr_v1_reactor_output_action swr_v1_reactor_output_file(uint32_t, int32_t, int64_t, int64_t, int64_t, intptr_t, int32_t, uint32_t);
-swr_v1_reactor_output_action swr_v1_reactor_output_request(uint32_t, int32_t, uint32_t);
-size_t swr_v1_reactor_output_chunk(int64_t, int64_t, size_t);
-size_t swr_v1_reactor_output_layout(uint32_t);
-swr_v1_reactor_output_action swr_v1_reactor_output_parameters(uint32_t, int32_t, int64_t, int64_t, size_t, int64_t);
+    void *socket;
+    bool *kernel_nobufs;
+    ssize_t (*send)(void *socket, const void *data, size_t length);
+    bool (*cork)(void *socket);
+    void (*uncork)(void *socket);
+    void (*sent)(void *socket);
+} swr_v1_socket_output_hooks;
+typedef struct {
+    int code;
+    bool pop;
+    bool set_offset;
+    uint32_t offset;
+    bool close_wait;
+    bool send_wait;
+    int warn;
+    size_t requested;
+} swr_v1_socket_output_result;
+swr_v1_socket_output_result swr_v1_socket_handle_send(const swr_v1_socket_output_hooks *hooks, const uint8_t *data, uint32_t length, uint32_t offset);
+void swr_v1_socket_sendfile_cork(const swr_v1_socket_output_hooks *hooks, int8_t *corked, off_t begin, off_t end, off_t cork_min);
+swr_v1_socket_output_result swr_v1_socket_sendfile_sent(const swr_v1_socket_output_hooks *hooks, ssize_t sent, size_t requested, int8_t *corked, off_t begin, off_t end);
+int swr_v1_socket_sendfile_async(void *socket, bool (*prepare)(void *), void (*buffer)(void *), void (*enqueue)(void *));
 
 struct iovec;
 /* Rust-owned IOVector descriptor storage, used by every Rust reactor build. */

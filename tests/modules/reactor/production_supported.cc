@@ -199,11 +199,10 @@ PHP_FUNCTION(swr_reactor_output_supported) {
 #else
     image(return_value,"request_image","_ZN6swoole7network6Socket14sendfile_asyncEPKclm");
 #endif
-    image(return_value,"data_policy_image","swr_v1_reactor_output_data");
-    image(return_value,"file_policy_image","swr_v1_reactor_output_file");
-    image(return_value,"request_policy_image","swr_v1_reactor_output_request");
-    image(return_value,"parameters_policy_image","swr_v1_reactor_output_parameters");
-    image(return_value,"workflow_policy_image","swr_v1_reactor_output_workflow");
+    image(return_value,"send_policy_image","swr_v1_socket_handle_send");
+    image(return_value,"sendfile_cork_image","swr_v1_socket_sendfile_cork");
+    image(return_value,"sendfile_sent_image","swr_v1_socket_sendfile_sent");
+    image(return_value,"request_policy_image","swr_v1_socket_sendfile_async");
     image(return_value,"buffer_constructor_image","_ZN6swoole6BufferC1Ej");
 #if defined(SWOOLE_RS_BUFFER_TYPED) && SWOOLE_RS_BUFFER_TYPED
     add_assoc_long(return_value,"typed_buffer_compiled",1);
