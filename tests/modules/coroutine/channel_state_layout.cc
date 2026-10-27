@@ -25,7 +25,12 @@ struct Probe : Channel {
 #else
 struct Probe : Channel {
     static void verify() {
+// The native Channel's std::list members make it non-standard-layout; GCC accepts offsetof there
+// but warns, and the gate builds with -Werror.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winvalid-offsetof"
         std::printf("{\"size\":%zu,\"align\":%zu,\"capacity\":%zu,\"closed\":%zu,\"error\":%zu}\n",sizeof(Channel),alignof(Channel),offsetof(Probe,capacity),offsetof(Probe,closed),offsetof(Probe,error_));
+#pragma GCC diagnostic pop
     }
 };
 #endif
