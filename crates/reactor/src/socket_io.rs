@@ -254,6 +254,47 @@ pub unsafe extern "C" fn swr_v1_socket_bind(
     unsafe { libc::bind(fd, address, length) == 0 }
 }
 
+/// `Socket::readv`'s non-TLS path: readv(2), retried on EINTR. Native code owns
+/// the `IOVector` and advances its iterator from the return value (a no-op on a
+/// negative return, so the intermediate EINTR retries need no update).
+///
+/// # Safety
+/// `iov` points to `iovcnt` readable iovec entries, each naming a writable buffer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_socket_readv(
+    fd: c_int,
+    iov: *const libc::iovec,
+    iovcnt: c_int,
+) -> isize {
+    loop {
+        // SAFETY: the caller lends `iovcnt` iovec entries with writable buffers.
+        let received = unsafe { libc::readv(fd, iov, iovcnt) };
+        if received >= 0 || errno() != libc::EINTR {
+            return received;
+        }
+    }
+}
+
+/// `Socket::writev`'s non-TLS path: writev(2), retried on EINTR; see
+/// [`swr_v1_socket_readv`].
+///
+/// # Safety
+/// `iov` points to `iovcnt` readable iovec entries, each naming a readable buffer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_socket_writev(
+    fd: c_int,
+    iov: *const libc::iovec,
+    iovcnt: c_int,
+) -> isize {
+    loop {
+        // SAFETY: the caller lends `iovcnt` iovec entries with readable buffers.
+        let sent = unsafe { libc::writev(fd, iov, iovcnt) };
+        if sent >= 0 || errno() != libc::EINTR {
+            return sent;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

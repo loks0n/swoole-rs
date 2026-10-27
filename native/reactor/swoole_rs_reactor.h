@@ -154,6 +154,11 @@ swr_v1_socket_io_result swr_v1_socket_connect(int fd, const struct sockaddr *add
 bool swr_v1_socket_get_name(int fd, struct sockaddr *address, socklen_t *address_length);
 bool swr_v1_socket_get_peer_name(int fd, struct sockaddr *address, socklen_t *address_length);
 bool swr_v1_socket_bind(int fd, const struct sockaddr *address, socklen_t length);
+/* readv/writev non-TLS path: the syscall with its EINTR retry. Native code owns
+ * the IOVector and advances its iterator from the return value. */
+struct iovec;
+ssize_t swr_v1_socket_readv(int fd, const struct iovec *iov, int iovcnt);
+ssize_t swr_v1_socket_writev(int fd, const struct iovec *iov, int iovcnt);
 swr_v1_socket_io_result swr_v1_socket_pending_error(int fd);
 /* network::Socket's per-request reads and writes: recv/send/peek with EINTR and
  * dont_restart, driving `tls` (ssl_recv/ssl_send/SSL_peek on `socket`) when set;

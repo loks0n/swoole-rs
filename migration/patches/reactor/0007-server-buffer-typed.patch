@@ -1,5 +1,5 @@
 diff --git a/src/network/socket.cc b/src/network/socket.cc
-index 02480c6..63070de 100644
+index 02480c6..946b806 100644
 --- a/src/network/socket.cc
 +++ b/src/network/socket.cc
 @@ -414,3 +414,3 @@ int Socket::get_name() {
@@ -17,6 +17,50 @@ index 02480c6..63070de 100644
 -    if (::bind(fd, sa, len) < 0) {
 +    if (!swr_v1_socket_bind(fd, sa, len)) {
          return SW_ERR;
+@@ -859,13 +859,11 @@ ssize_t Socket::write_sync(const void *_buf, size_t _len) {
+ ssize_t Socket::readv(IOVector *io_vector) {
+-    ssize_t retval;
+-
+-    do {
+-        if (ssl) {
++    if (ssl) {
++        ssize_t retval;
++        do {
+             retval = ssl_readv(io_vector);
+-        } else {
+-            retval = ::readv(fd, io_vector->get_iterator(), io_vector->get_remain_count());
+-            io_vector->update_iterator(retval);
+-        }
+-    } while (retval < 0 && errno == EINTR);
+-
++        } while (retval < 0 && errno == EINTR);
++        return retval;
++    }
++    ssize_t retval = swr_v1_socket_readv(fd, io_vector->get_iterator(), io_vector->get_remain_count());
++    io_vector->update_iterator(retval);
+     return retval;
+@@ -874,13 +872,11 @@ ssize_t Socket::readv(IOVector *io_vector) {
+ ssize_t Socket::writev(IOVector *io_vector) {
+-    ssize_t retval;
+-
+-    do {
+-        if (ssl) {
++    if (ssl) {
++        ssize_t retval;
++        do {
+             retval = ssl_writev(io_vector);
+-        } else {
+-            retval = ::writev(fd, io_vector->get_iterator(), io_vector->get_remain_count());
+-            io_vector->update_iterator(retval);
+-        }
+-    } while (retval < 0 && errno == EINTR);
+-
++        } while (retval < 0 && errno == EINTR);
++        return retval;
++    }
++    ssize_t retval = swr_v1_socket_writev(fd, io_vector->get_iterator(), io_vector->get_remain_count());
++    io_vector->update_iterator(retval);
+     return retval;
 diff --git a/src/server/base.cc b/src/server/base.cc
 index cf0058d..29c4c6c 100644
 --- a/src/server/base.cc
