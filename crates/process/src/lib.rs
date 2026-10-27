@@ -7,6 +7,7 @@
     )
 )]
 pub mod affinity;
+pub mod task_file;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExitObservation {
