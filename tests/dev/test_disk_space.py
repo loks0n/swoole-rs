@@ -26,7 +26,7 @@ class DiskSpace(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with patch.object(dev, 'ROOT', root), \
-                 patch('sys.argv', ['dev.py', 'edit', '--module', 'timer']), \
+                 patch('sys.argv', ['dev.py', 'edit', '--module', 'locks']), \
                  patch.object(dev, 'require_build_space', side_effect=RuntimeError('disk low')), \
                  patch.object(dev, 'execute') as run:
                 self.assertEqual(dev.main(), 1)

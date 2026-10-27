@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 class TypedBufferSelection(unittest.TestCase):
     def test_typed_phases_follow_the_reactor(self):
         variants = set()
-        for modules in [['timer'], ['reactor']]:
+        for modules in [['locks'], ['reactor']]:
             typed = 'reactor' in modules
             args = SimpleNamespace(lane='integrate', module=modules, all_modules=False,
                                    php='php', php_extension=[], jobs=2, test=None, case=None,

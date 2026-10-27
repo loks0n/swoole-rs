@@ -38,7 +38,7 @@ class FrozenSource(unittest.TestCase):
                 planned = [('positive', [sys.executable, '-c', code]),
                            ('later', [sys.executable, '-c', 'pass'])]
                 with patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned), \
-                     patch('sys.argv', ['dev.py', 'integrate', '--module', 'timer', '--frozen-source', source]):
+                     patch('sys.argv', ['dev.py', 'integrate', '--module', 'locks', '--frozen-source', source]):
                     self.assertEqual(dev.main(), int(mutation != 'none'))
                 report = json.loads(next(root.glob('target/reports/dev/*/loop.json')).read_text())
                 self.assertEqual(report['frozen_source_required'], source)
