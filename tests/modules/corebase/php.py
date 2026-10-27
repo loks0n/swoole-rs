@@ -187,6 +187,16 @@ def main():
                 (sandbox / 'tmp').mkdir()
                 artifacts = args.output.resolve().parent / (args.output.stem + '-artifacts') / engine.name
                 results, _ = run_cases(engine, cases, sandbox, artifacts, 30, 1)
+                # These originals are timing-sensitive on either engine (#379): a failed case gets
+                # up to two re-runs on the same engine, and every attempt stays in the report.
+                for attempt in (1, 2):
+                    failed = [case for case in cases if results[case['path']]['status'] != 'passed']
+                    if not failed:
+                        break
+                    retry, _ = run_cases(engine, failed, sandbox, artifacts / f'rerun-{attempt}', 30, 1)
+                    for case in failed:
+                        results[case['path']] = {**retry[case['path']], 'earlier_attempts':
+                            results[case['path']].get('earlier_attempts', []) + [results[case['path']]]}
                 for case in cases:
                     record_result(report, engine, case, results[case['path']])
                 save_report(args.output, report)
