@@ -97,6 +97,48 @@ pub unsafe extern "C" fn swr_v1_socket_host_type(host: *const u8, length: usize)
     host_type(unsafe { std::slice::from_raw_parts(host, length) })
 }
 
+/// `SW_SOCK_NONBLOCK` and `SW_SOCK_CLOEXEC`.
+const NONBLOCK: c_int = 1 << 2;
+const CLOEXEC: c_int = 1 << 3;
+
+/// `swoole::socket`: socket(2) with `SW_SOCK_NONBLOCK`/`SW_SOCK_CLOEXEC` applied,
+/// atomically where the platform has `SOCK_NONBLOCK`/`SOCK_CLOEXEC`, else by fcntl.
+/// As upstream, a failed fcntl closes the socket but still returns its number.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_socket_open(
+    domain: c_int,
+    kind: c_int,
+    protocol: c_int,
+    flags: c_int,
+) -> c_int {
+    let (nonblock, cloexec) = (flags & NONBLOCK != 0, flags & CLOEXEC != 0);
+    #[cfg(target_os = "linux")]
+    {
+        let extra = if nonblock { libc::SOCK_NONBLOCK } else { 0 }
+            | if cloexec { libc::SOCK_CLOEXEC } else { 0 };
+        // SAFETY: socket(2) has no memory preconditions.
+        unsafe { libc::socket(domain, kind | extra, protocol) }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        // SAFETY: socket(2) has no memory preconditions.
+        let fd = unsafe { libc::socket(domain, kind, protocol) };
+        if fd >= 0
+            && (nonblock || cloexec)
+            && !crate::swr_v1_socket_fd_option(
+                fd,
+                if nonblock { 1 } else { -1 },
+                if cloexec { 1 } else { -1 },
+            )
+            .ok
+        {
+            // SAFETY: `fd` is the socket just opened.
+            unsafe { libc::close(fd) };
+        }
+        fd
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +157,30 @@ mod tests {
         // SAFETY: as above.
         assert!(!unsafe { swr_v1_socket_domain_and_type(0, &raw mut domain, &raw mut kind) });
         assert_eq!(swr_v1_socket_type(libc::AF_UNIX, libc::SOCK_RAW), RAW);
+    }
+
+    #[test]
+    fn open_applies_the_flags() {
+        let fd = swr_v1_socket_open(libc::AF_INET, libc::SOCK_STREAM, 0, NONBLOCK | CLOEXEC);
+        assert!(fd >= 0, "a socket");
+        // SAFETY: fcntl(F_GETFL/F_GETFD) on a socket this test opened.
+        unsafe {
+            assert_ne!(
+                libc::fcntl(fd, libc::F_GETFL) & libc::O_NONBLOCK,
+                0,
+                "nonblocking"
+            );
+            assert_ne!(
+                libc::fcntl(fd, libc::F_GETFD) & libc::FD_CLOEXEC,
+                0,
+                "close-on-exec"
+            );
+            libc::close(fd);
+        }
+        assert!(
+            swr_v1_socket_open(-1, libc::SOCK_STREAM, 0, 0) < 0,
+            "bad domain"
+        );
     }
 
     #[test]
