@@ -154,6 +154,16 @@ pub extern "C" fn swr_v1_process_reload_kill(
         2
     }
 }
+/// Held by tests that install process-wide signal state (handlers, the signalfd
+/// mask), which `cargo test`'s parallel threads would otherwise race on (#534).
+#[cfg(test)]
+pub(crate) fn signal_state_lock() -> std::sync::MutexGuard<'static, ()> {
+    static STATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    STATE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

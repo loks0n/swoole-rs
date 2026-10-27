@@ -271,6 +271,7 @@ mod tests {
 
     #[test]
     fn registers_dispatches_and_clears() {
+        let _state = crate::signal_state_lock();
         let handler = record as *const () as usize;
         swr_v1_signal_set(libc::SIGUSR1, handler, false, record, no_reactor);
         assert!(swr_v1_signal_isset(libc::SIGUSR1));
