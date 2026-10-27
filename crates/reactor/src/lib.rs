@@ -61,6 +61,10 @@ pub use socket_rw::*;
 mod socket_types;
 #[cfg(unix)]
 pub use socket_types::*;
+#[cfg(unix)]
+mod socket_tls;
+#[cfg(unix)]
+pub use socket_tls::*;
 
 const INVALID: i32 = -1;
 /// Encode the stream's four-byte network-order body length. The supplied total

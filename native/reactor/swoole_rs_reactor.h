@@ -159,6 +159,18 @@ swr_v1_socket_io_result swr_v1_socket_pending_error(int fd);
  * fstat failed (errno set), 2 empty file, 3 range outside the file. */
 int swr_v1_socket_sendfile_range(int file_fd, off_t begin, size_t length, off_t *end);
 size_t swr_v1_socket_sendfile_chunk(off_t begin, off_t end);
+/* Socket::ssl_recv/ssl_send: ERR_clear_error, SSL_read/SSL_write and SSL_get_error.
+ * Native code sets the want flags, then logs (protocol_error) and sets errno
+ * (error, when nonzero). */
+typedef struct {
+    ssize_t value;
+    bool want_read;
+    bool want_write;
+    int error;
+    bool protocol_error;
+} swr_v1_socket_ssl_io_result;
+swr_v1_socket_ssl_io_result swr_v1_socket_ssl_recv(struct ssl_st *ssl, void *buffer, size_t length);
+swr_v1_socket_ssl_io_result swr_v1_socket_ssl_send(struct ssl_st *ssl, const void *buffer, size_t length);
 /* network::Socket's per-request reads and writes: recv/send/peek with EINTR and
  * dont_restart, driving `tls` (ssl_recv/ssl_send/SSL_peek on `socket`) when set;
  * catch_error's classification (swReturnCode). */
