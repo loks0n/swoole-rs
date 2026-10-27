@@ -34,7 +34,7 @@
     },
     {
       "path": "0004-socket-output.patch",
-      "sha256": "11bea3f78f5f8f24d18a3d741d63907c91e1b54409e2496d4052f90ef17ace88",
+      "sha256": "7b4f8fe34c67f9c51e81c40157fad747976f4eed8c5f4a21940489b27f547e29",
       "upstream_paths": [
         "src/network/socket.cc"
       ]

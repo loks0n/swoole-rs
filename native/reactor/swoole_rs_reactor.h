@@ -125,6 +125,19 @@ typedef struct { uint32_t offset, length, close_wait; } swr_v1_stream_view_actio
 int32_t swr_v1_stream_prepare(uint8_t *, size_t);
 int32_t swr_v1_stream_length(const uint8_t *, size_t);
 swr_v1_stream_view_action swr_v1_stream_view(uint32_t);
+/* network::Socket's descriptor options, syscall included. fd_option: -1 leaves a
+ * flag alone. warnings: fd_option 1 F_GETFL, 2 F_SETFL, 4 F_GETFD, 8 F_SETFD failed;
+ * cork/uncork 1 TCP_CORK, 2 TCP_NODELAY failed. */
+typedef struct { bool ok; uint32_t warnings; } swr_v1_socket_option_result;
+typedef struct { uint8_t tcp_nopush, tcp_nodelay; } swr_v1_socket_cork_state;
+swr_v1_socket_option_result swr_v1_socket_fd_option(int fd, int nonblock, int cloexec);
+int swr_v1_socket_tcp_nopush(int fd, int nopush);
+bool swr_v1_socket_tcp_nodelay(int fd, int nodelay);
+swr_v1_socket_option_result swr_v1_socket_cork(int fd, swr_v1_socket_cork_state *state);
+swr_v1_socket_option_result swr_v1_socket_uncork(int fd, bool enable_tcp_nodelay, swr_v1_socket_cork_state *state);
+bool swr_v1_socket_buffer_size(int fd, bool recv, bool send, uint32_t size);
+bool swr_v1_socket_kernel_timeout(int fd, bool send, double timeout);
+bool swr_v1_socket_listen(int fd, int backlog, int default_backlog);
 #ifdef __cplusplus
 }
 static_assert(sizeof(swr_v1_reactor_builtin_reply) == 8, "reactor builtin reply ABI");
