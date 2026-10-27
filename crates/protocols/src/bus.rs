@@ -168,8 +168,8 @@ pub unsafe extern "C" fn swr_v1_bus_writer_complete(
     writer.complete(success != 0, reduce != 0)
 }
 
-/// Increment is uint16 wrapping, preserving read_with_buffer's existing double
-/// count before prepare_packet. End always wins over the fairness threshold.
+/// Increment is uint16 wrapping, preserving `read_with_buffer`'s existing double
+/// count before `prepare_packet`. End always wins over the fairness threshold.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_bus_receive_step(count: u16, end: u8, limit: u16) -> u32 {
     let count = count.wrapping_add(1);

@@ -44,7 +44,7 @@ pub struct StackState {
     pub stage: u32,
 }
 
-/// Whole stack walk sequencing and size_t wrapping accounting. A page is never
+/// Whole stack walk sequencing and `size_t` wrapping accounting. A page is never
 /// borrowed by Rust: native reads valid pointer-difference facts and next links.
 /// # Safety
 /// State is exclusive writable native POD, with requested cid and zeroed stage.

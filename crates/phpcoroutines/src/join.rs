@@ -37,7 +37,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_clone(owner: *const JoinOwner
 /// # Safety
 /// Consume one live strong reference exactly once, after all uses of that
 /// reference. Final drop frees Rust metadata only, never token referents. Native
-/// lifetime/capture validity is authoritative, as for the original shared_ptr.
+/// lifetime/capture validity is authoritative, as for the original `shared_ptr`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_join_drop(owner: *const JoinOwner) {
     // SAFETY: the caller consumes one live strong reference here.
@@ -100,7 +100,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_empty(owner: *const JoinOwner
 /// Owner is held live with serial payload access. Cursor/output are writable,
 /// distinct local POD and cannot alias metadata. Cursor starts at zero; no token
 /// mutation occurs during traversal. Empty leaves cursor/output untouched.
-/// Iteration does not erase membership before Native clears on_close fields.
+/// Iteration does not erase membership before Native clears `on_close` fields.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpcoroutines_join_next(
     owner: *const JoinOwner,

@@ -70,9 +70,9 @@ enum ValueAction {
 }
 
 /// # Safety
-/// Initialized independent phase0. Operations0/1/2 are KeyValue construction,
+/// Initialized independent phase0. Operations0/1/2 are `KeyValue` construction,
 /// insertion/destruction;3/4 are Variable retained copy/move. Key presence is
-/// refreshed by native ObserveKey before use. Native owns every value and effect.
+/// refreshed by native `ObserveKey` before use. Native owns every value and effect.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phphelpers_value_plan(
     phase: *mut u32,
@@ -148,7 +148,7 @@ enum FactoryAction {
 
 /// # Safety
 /// Initialized native phase0; operation0 basic factory,1 nullable facade. Facts
-/// are refreshed only on Observe actions; allow_null is the copied native flag.
+/// are refreshed only on Observe actions; `allow_null` is the copied native flag.
 /// Allocation, constructor warnings/destruction and exceptions remain native.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phphelpers_factory_plan(

@@ -244,7 +244,7 @@ pub struct StringSplitPlan {
 
 /// Combine fresh post-handler metadata, continuation policy and the next scan.
 /// # Safety
-/// Readable source/delimiter bytes and disjoint aligned PODs obey split_next.
+/// Readable source/delimiter bytes and disjoint aligned PODs obey `split_next`.
 /// Cursor is initialized from initial offset or the previous returned plan.
 /// Handler effects complete before this call; no callback/borrow escapes Rust.
 #[unsafe(no_mangle)]

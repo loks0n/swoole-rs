@@ -145,7 +145,7 @@ fn hosts_match(line: &[u8], search: &[u8], spaces: &[u8]) -> HostMatch {
 }
 
 /// # Safety
-/// Nonempty line/search pointers denote initialized spans no larger than isize::MAX;
+/// Nonempty line/search pointers denote initialized spans no larger than `isize::MAX`;
 /// spaces denotes256 initialized classification bytes. None is retained.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_clients_hosts_match(
@@ -294,7 +294,7 @@ pub unsafe extern "C" fn swr_v1_clients_domain_encode(
 }
 
 /// # Safety
-/// data denotes capacity initialized writable bytes. signed_char records native
+/// data denotes capacity initialized writable bytes. `signed_char` records native
 /// plain-char promotion. No pointer retained; every read/write stays in this span.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_clients_domain_decode(
@@ -975,7 +975,7 @@ pub extern "C" fn swr_v1_clients_transport_next(stage: u32, facts: u32) -> Trans
     }
 }
 
-/// Both values are native ssize_t, preserving the caller's original len cast.
+/// Both values are native `ssize_t`, preserving the caller's original len cast.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_clients_datagram_send(result: isize, length: isize) -> isize {
     if result < 0 || result < length {

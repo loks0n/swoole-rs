@@ -1,4 +1,4 @@
-//! Private StaticHandlerV2 directory owner. No native container or name mirror.
+//! Private `StaticHandlerV2` directory owner. No native container or name mirror.
 use crate::proxy::HttpProxyText;
 use crate::{HttpIndexPage, INVALID, bytes, swr_v1_http_index_page};
 use std::{
@@ -62,7 +62,7 @@ pub extern "C" fn swr_v2_http_directory_new() -> *mut HttpDirectory {
     owner
 }
 /// # Safety
-/// Owner is null or a live unique result of directory_new, destroyed once.
+/// Owner is null or a live unique result of `directory_new`, destroyed once.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_directory_drop(owner: *mut HttpDirectory) {
     if !owner.is_null() {
@@ -119,7 +119,7 @@ pub unsafe extern "C" fn swr_v2_http_directory_clone(
     0
 }
 /// Insert a copied complete name. Unsigned byte ordering and duplicate suppression
-/// match native std::set<std::string>. Returns1=inserted,0=already present.
+/// match native `std::set`<std::string>. Returns1=inserted,0=already present.
 /// All allocation is fallible; errors publish no name. No native call occurs.
 /// # Safety
 /// Live unique owner; initialized input span, disjoint from owner storage.
@@ -229,7 +229,7 @@ pub unsafe extern "C" fn swr_v2_http_directory_contains(
 /// the indexed directory entry. Existing page serialization/size policy is shared.
 /// # Safety
 /// Null empty or live finished unchanged owner and initialized page; part1 requires a live
-/// indexed entry. Output/written obey index_page's
+/// indexed entry. Output/written obey `index_page`'s
 /// disjointness contract and cannot alias this owner's storage. No borrow survives
 /// native reserve/append/IO; query and fill are separate complete calls.
 #[unsafe(no_mangle)]
@@ -282,10 +282,10 @@ pub unsafe extern "C" fn swr_v2_http_directory_page(
 }
 
 /// Complete page append policy over the sole ordered directory owner. Actions
-/// and buffer publication match context_page_emit; no name pointer escapes.
+/// and buffer publication match `context_page_emit`; no name pointer escapes.
 /// # Safety
 /// Owner is null empty or live finished/unchanged; input spans, buffer and output
-/// obey index_page_emit's disjoint initialized-input/writable-backing contract.
+/// obey `index_page_emit`'s disjoint initialized-input/writable-backing contract.
 /// No borrow survives a Native reserve/extend; reobserve backing on each call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_directory_emit(

@@ -3,7 +3,7 @@ use crate::{SchedulerQueue, SchedulerTask};
 
 /// # Safety
 /// Slot is a live/exclusive Native frontend pointer cell, constant-zero seeded
-/// or containing its sole Rust SchedulerQueue handle. No Native object enters
+/// or containing its sole Rust `SchedulerQueue` handle. No Native object enters
 /// Rust; only this field address. Runtime accesses are serialized by the existing
 /// Native Scheduler owner. Failure leaves the cell unchanged; Native throws only
 /// after return. No borrow/frame spans cache persistence, callbacks or Zend.

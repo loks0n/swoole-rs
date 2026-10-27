@@ -1,5 +1,5 @@
-//! Deferred/begin/idle/exit policy only. Native retains CallbackManager storage,
-//! allocation, std::function payloads, invocation, deletion and bailout frames.
+//! Deferred/begin/idle/exit policy only. Native retains `CallbackManager` storage,
+//! allocation, `std::function` payloads, invocation, deletion and bailout frames.
 #[repr(C)]
 pub struct ReactorBuiltinReply {
     pub phase: u32,

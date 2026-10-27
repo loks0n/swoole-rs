@@ -18,10 +18,10 @@ pub struct HttpContextServeObservation {
     pub value: HttpProxyText,
 }
 /// Events begin0/config, locations-finished1, stat2, canonical3, MIME4.
-/// Stat metadata is admitted by observed() only on Native success. Canonical
+/// Stat metadata is admitted by `observed()` only on Native success. Canonical
 /// bytes are copied before return; no Native path/configuration pointer is stored.
 /// Returns existing path actions, with directory publication and terminal error
-/// handling completed in Rust. Legacy path() and v1 contracts remain unchanged.
+/// handling completed in Rust. Legacy `path()` and v1 contracts remain unchanged.
 /// # Safety
 /// Unique live owner; initialized, independent root/observation spans. Native
 /// effects complete before this call, never through a Rust frame/borrow.

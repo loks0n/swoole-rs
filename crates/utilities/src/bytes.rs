@@ -119,7 +119,7 @@ pub unsafe extern "C" fn swr_v1_utils_find(
 /// C prefix=2/3, binary prefix=4, binary suffix=5.
 /// # Safety
 /// Only compared ranges need be initialized/readable (C modes stop at NUL).
-/// Nonempty compared inputs are nonnull; binary ranges fit isize::MAX.
+/// Nonempty compared inputs are nonnull; binary ranges fit `isize::MAX`.
 /// No pointer is retained; libc locale changes follow its native rules.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_utils_compare(

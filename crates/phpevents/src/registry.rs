@@ -68,7 +68,7 @@ unsafe fn try_insert_slot(slot: *mut *mut PhpEventRegistry, fd: i32, value: usiz
 
 /// Fallible actual Native ABI. The raw slot policy stays in one internal helper.
 /// # Safety
-/// Same initialized, serialized slot/token custody as try_insert_slot.
+/// Same initialized, serialized slot/token custody as `try_insert_slot`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_registry_try_insert(
     slot: *mut *mut PhpEventRegistry,
@@ -80,9 +80,9 @@ pub unsafe extern "C" fn swr_v1_phpevents_registry_try_insert(
 }
 
 /// Frozen void ABI. Its historical allocation refusal remains terminating;
-/// real selected Native callers use try_insert to raise outside Rust instead.
+/// real selected Native callers use `try_insert` to raise outside Rust instead.
 /// # Safety
-/// Same serialized slot/token custody as registry_try_insert.
+/// Same serialized slot/token custody as `registry_try_insert`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_registry_insert(
     slot: *mut *mut PhpEventRegistry,
@@ -110,9 +110,9 @@ pub unsafe extern "C" fn swr_v1_phpevents_registry_contains(
 }
 
 /// Returns copied opaque address,0 when absent. Presence remains separately
-/// queryable so even a stored0 preserves unordered_map semantics.
+/// queryable so even a stored0 preserves `unordered_map` semantics.
 /// # Safety
-/// Same serialized live-registry custody as registry_contains.
+/// Same serialized live-registry custody as `registry_contains`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_registry_get(
     registry: *const PhpEventRegistry,
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn swr_v1_phpevents_registry_erase(
 
 /// Releases metadata storage only; native Socket/Zend objects are untouched.
 /// # Safety
-/// Registry is null or a uniquely owned live pointer from registry_insert.
+/// Registry is null or a uniquely owned live pointer from `registry_insert`.
 /// Native must stop using it and discard the pointer after this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_registry_drop(registry: *mut PhpEventRegistry) {

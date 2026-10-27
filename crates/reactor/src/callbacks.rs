@@ -1,4 +1,4 @@
-//! Ordered callback metadata only. Native owns every std::function payload and
+//! Ordered callback metadata only. Native owns every `std::function` payload and
 //! performs its copy, call and destruction after each Rust function returns.
 use crate::owner::{publish, release as release_metadata};
 use std::ptr;
@@ -226,7 +226,7 @@ fn next_metadata(
 /// 2 allocate candidate, 3 committed candidate, 0 discard candidate then retry.
 /// -2 capacity refusal, -1 invalid protocol. A zero candidate requests lookup.
 /// # Safety
-/// The slot/output follow callbacks_insert; a nonzero candidate is a fresh live
+/// The slot/output follow `callbacks_insert`; a nonzero candidate is a fresh live
 /// Native payload token exclusively retained until action3 transfers ownership.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_reactor_callbacks_ensure(
@@ -275,7 +275,7 @@ pub struct ReactorCallbackCopy {
 }
 /// 0 complete, 1 copy end token, 2 copy exit token, -1 invalid.
 /// # Safety
-/// Source/state/output follow callbacks_next, with zero initialized state.
+/// Source/state/output follow `callbacks_next`, with zero initialized state.
 /// Source storage and payloads stay live; caller applies each copy after return.
 #[unsafe(no_mangle)]
 #[expect(

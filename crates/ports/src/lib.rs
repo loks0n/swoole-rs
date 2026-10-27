@@ -1,4 +1,4 @@
-//! Callback-free ListenPort decisions. All native effects and object custody stay native.
+//! Callback-free `ListenPort` decisions. All native effects and object custody stay native.
 #![expect(
     clippy::missing_safety_doc,
     reason = "every export is covered by the module-local C contract"

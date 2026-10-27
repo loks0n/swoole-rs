@@ -636,7 +636,7 @@ pub unsafe extern "C" fn swr_v2_http_request_text_snapshot_new(
 }
 /// Release the optional fallback after its Native effect has completed.
 /// # Safety
-/// Null or one live uniquely owned snapshot from text_snapshot, with all raw
+/// Null or one live uniquely owned snapshot from `text_snapshot`, with all raw
 /// span uses ended. Rust performs no Native callback or allocation here.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_request_text_snapshot_drop(

@@ -28,7 +28,7 @@ enum FdAction {
 
 /// Phase0; kinds resource0/long1/object2/other3, sockets support0/1.
 /// Each returned effect finishes natively before the next copied observation.
-/// Only ReadLong/ReadFd observations are signed descriptors; CastStream is the
+/// Only ReadLong/ReadFd observations are signed descriptors; `CastStream` is the
 /// native Zend result (SUCCESS0); all other observations are boolean facts.
 /// # Safety
 /// Phase points to independent aligned u32 storage initialized to0. Native owns

@@ -391,7 +391,7 @@ pub extern "C" fn swr_v1_buffer_iovec_layout() -> PosixIovecLayout {
 
 /// Copy actual target POSIX iovecs without allocating descriptor staging storage.
 /// # Safety
-/// Handle, target libc::iovec array and borrowed initialized data obey the frozen
+/// Handle, target `libc::iovec` array and borrowed initialized data obey the frozen
 /// validity/disjointness/stability rules. This is not the frozen POD type. No
 /// descriptor reference survives the call; callbacks and native effects remain outside.
 #[cfg(unix)]

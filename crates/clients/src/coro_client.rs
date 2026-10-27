@@ -7,7 +7,7 @@ pub struct ClientsCoroPlan {
 }
 /// Operation0 setup helper;1 connect;2 send;3 recv;4 sendfile. Facts are
 /// Operations5..10 cover datagram/peek/connected/endpoint/close bindings. Facts
-/// are stage-local, result is native ssize_t, length is a native initialized size.
+/// are stage-local, result is native `ssize_t`, length is a native initialized size.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_clients_coro_next(
     operation: u32,

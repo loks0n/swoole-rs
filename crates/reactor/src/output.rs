@@ -19,7 +19,7 @@ fn step(phase: u32, action: i32, value: i64) -> ReactorOutputAction {
 ///5 close-wait/return-error,6 send-wait/return-error,7 refresh offset,
 ///8 publish offset/return,9 publish offset+send-wait/return-error.
 /// `requested` is the unchanged scalar returned with action1; offset is freshly
-/// observed only at phase3. Native SW_WAIT2/SW_CLOSE3/SW_ERROR4 are asserted there.
+/// observed only at phase3. Native `SW_WAIT2/SW_CLOSE3/SW_ERROR4` are asserted there.
 #[unsafe(no_mangle)]
 #[expect(
     clippy::cast_possible_truncation,
@@ -109,7 +109,7 @@ pub extern "C" fn swr_v1_reactor_output_file(
 /// Request actions:0 done,1 allocate request,2 check Native parameters,
 ///3 allocate/publish buffer,4 allocate chunk,5 release/publish request,
 ///6 publish destructor,7 return-error,8 refresh out-buffer presence.
-/// Native owns the unique_ptr and all failure/exception cleanup. Flags:buffer1.
+/// Native owns the `unique_ptr` and all failure/exception cleanup. Flags:buffer1.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_reactor_output_request(
     phase: u32,
@@ -129,8 +129,8 @@ pub extern "C" fn swr_v1_reactor_output_request(
         _ => step(phase, -1, 0),
     }
 }
-/// The subtraction has the original defined off_t domain. Native checks its
-/// signed off_t fits i64. Casting/min preserve the original size_t conversion;
+/// The subtraction has the original defined `off_t` domain. Native checks its
+/// signed `off_t` fits i64. Casting/min preserve the original `size_t` conversion;
 /// out-of-domain signed overflow is not claimed as Native parity.
 #[unsafe(no_mangle)]
 #[expect(

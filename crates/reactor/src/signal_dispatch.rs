@@ -7,7 +7,7 @@ pub struct ReactorSignalState {
 }
 
 /// Actions0 done,1 invoke,2 warn; observations10 activated,11 handler present,
-///12 handler differs from SIG_IGN. No Signal/function pointer enters Rust.
+///12 handler differs from `SIG_IGN`. No Signal/function pointer enters Rust.
 /// # Safety
 /// State is a live exclusive initialized POD, independent of Native effects.
 #[unsafe(no_mangle)]

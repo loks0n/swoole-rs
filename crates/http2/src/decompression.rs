@@ -7,7 +7,7 @@ pub struct Http2DecompressPlan {
 
 /// # Safety
 /// `out` points to writable storage for one plan. Zlib status values are the
-/// pinned Z_OK=0/Z_STREAM_END=1 contract; other statuses retain native errors.
+/// pinned `Z_OK=0/Z_STREAM_END=1` contract; other statuses retain native errors.
 #[no_mangle]
 pub unsafe extern "C" fn sw_rs_http2_decompress_plan(
     after_extend: u32,

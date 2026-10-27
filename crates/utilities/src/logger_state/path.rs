@@ -87,7 +87,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_create(
 
 /// Complete captured filename+dot+date after native calendar effects return.
 /// # Safety
-/// Path is exclusively owned and date readable for date_length bytes, null only
+/// Path is exclusively owned and date readable for `date_length` bytes, null only
 /// when empty. Replacement is published only after full fallible construction.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_utils_log_path_rotate(
@@ -131,7 +131,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_rotate(
 
 /// Borrow complete bytes and their length; the allocation also ends in NUL.
 /// # Safety
-/// Path is null or live, length is null or exclusive writable size_t storage.
+/// Path is null or live, length is null or exclusive writable `size_t` storage.
 /// Borrowed bytes remain valid until destroy/adopt; no Rust reference escapes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_utils_log_path_get(

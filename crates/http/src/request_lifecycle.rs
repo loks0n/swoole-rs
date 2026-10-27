@@ -75,7 +75,7 @@ pub(crate) fn plan(kind: u32, observed: u32) -> Option<&'static [u32]> {
     })
 }
 /// Kind0=boundary result,1=parser allocation result,2=destroy prefix,
-/// 3=FP presence freshly observed after prefix,4=destructor FormData presence.
+/// 3=FP presence freshly observed after prefix,4=destructor `FormData` presence.
 /// Returns immutable module-lifetime actions; unknown metadata leaves count
 /// unchanged and returns null. No dynamic owner or operand is captured.
 ///

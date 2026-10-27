@@ -11,8 +11,8 @@ pub struct FileLineResult {
 /// skipped byte when no terminator occurs. Offset addition stays native so the
 /// original left-associated signed arithmetic is preserved.
 /// # Safety
-/// For positive read_result, data points to that many initialized readable bytes,
-/// with read_result <= isize::MAX. The borrow ends before any native effect.
+/// For positive `read_result`, data points to that many initialized readable bytes,
+/// with `read_result` <= `isize::MAX`. The borrow ends before any native effect.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_os_file_line_result(
     data: *const u8,

@@ -7,7 +7,7 @@ pub struct KqueueTimeout {
 }
 
 /// Preserve kqueue's positive-timeout priority over deferred work, unlike the
-/// poll/epoll Native get_timeout_msec helper. Native constructs its timespec.
+/// poll/epoll Native `get_timeout_msec` helper. Native constructs its timespec.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_reactor_kqueue_timeout(milliseconds: i32, deferred: u32) -> KqueueTimeout {
     if milliseconds > 0 {

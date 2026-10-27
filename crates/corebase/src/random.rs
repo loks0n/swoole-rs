@@ -31,9 +31,9 @@ const ALPHABET: &[u8; 62] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwx
 /// # Safety
 /// `state` is an exclusive zeroed cursor, mode/length/range remain fixed, and
 /// each returned effect completes before reentry. Stop at RETURN/FALLBACK/NUL/
-/// DONE/STORE_NUL/STORE_DONE/INVALID. STORE_DRAW completes store before draw.
+/// `DONE/STORE_NUL/STORE_DONE/INVALID`. `STORE_DRAW` completes store before draw.
 /// SYSTEM flags copy cached-fd-ready (1) and full-native-read (2); string
-/// modes may set FIRST_DRAW_READY (4) when the native caller already drew.
+/// modes may set `FIRST_DRAW_READY` (4) when the native caller already drew.
 /// SYSTEM requires the original defined range domain (max>min, no signed
 /// overflow in max-min+1); string draws are native integers in 0..=61.
 #[unsafe(no_mangle)]

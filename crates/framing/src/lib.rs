@@ -469,8 +469,8 @@ pub extern "C" fn swr_v1_framing_mime_fallback() -> Span {
 unsafe extern "C" {
     fn tolower(c: i32) -> i32;
 }
-/// Locate the borrowed suffix before native std::string allocation. No pointer
-/// or borrow survives return; usize::MAX rejects an inaccessible input extent.
+/// Locate the borrowed suffix before native `std::string` allocation. No pointer
+/// or borrow survives return; `usize::MAX` rejects an inaccessible input extent.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_framing_mime_suffix_offset(data: *const u8, len: usize) -> usize {
     // SAFETY: the caller lends `len` initialized bytes at `data` for this call.

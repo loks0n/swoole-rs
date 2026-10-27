@@ -91,7 +91,7 @@ enum Operation {
 /// State is writable, initially zero, and exclusively owned for this call. Keep
 /// it unchanged between calls except through this function. No borrow survives
 /// return. Operation 1 takes main-thread bool, 2 ignores argument, 3 takes the
-/// native hook-slot count. Operations 4/5 sequence fork/fork_exec with pinned
+/// native hook-slot count. Operations 4/5 sequence `fork/fork_exec` with pinned
 /// native flags as argument. After Fork, observed is 0=failure, 1=child,
 /// 2=parent; other requested observations are copied booleans. Keep operation
 /// and argument fixed. Stop on zero/INVALID; execute each action before next.
@@ -118,9 +118,9 @@ pub unsafe extern "C" fn swr_v1_corebase_lifecycle_next(
 /// # Safety
 /// State is exclusively writable and initially zero. Execute each returned
 /// native action after return; preserve cursor and limit between calls. After
-/// QueryCpu observations are booleans for native sysconf(_SC_NPROCESSORS_ONLN) < 1;
-/// QueryRlimit observations are (uint64(native uint32 rlim_cur)<<1)|1 on success,
-/// zero on failure. Other observations are booleans. PublishRlimit reads index.
+/// `QueryCpu` observations are booleans for native sysconf(_`SC_NPROCESSORS_ONLN`) < 1;
+/// `QueryRlimit` observations are (uint64(native uint32 `rlim_cur`)<<1)|1 on success,
+/// zero on failure. Other observations are booleans. `PublishRlimit` reads index.
 /// Stop on zero/INVALID. No borrow survives return or spans a native effect.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_corebase_init_next(
@@ -135,9 +135,9 @@ pub unsafe extern "C" fn swr_v1_corebase_init_next(
 /// Task-directory acceptance/publication sequencing, using copied native facts.
 /// # Safety
 /// State is exclusively writable and initially zero. Execute each requested
-/// effect after return. Observations are first byte from native string::at(0),
+/// effect after return. Observations are first byte from native `string::at(0)`,
 /// nonnegative access / successful mkdir booleans, then published string length.
-/// Preserve cursor/limit. Stop on AcceptTask, RejectTask or INVALID. Native owns
+/// Preserve cursor/limit. Stop on `AcceptTask`, `RejectTask` or INVALID. Native owns
 /// lock, strings, formatting, publication, IO and exceptions; no pointer retained.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_corebase_task_tmp_next(

@@ -111,7 +111,7 @@ pub unsafe extern "C" fn swr_v1_http_index_page(
 /// buffer protocol as the owned context. The queried count remains captured
 /// across Native reserve/extend effects; no pointer/borrow is retained by Rust.
 /// # Safety
-/// Page/input spans obey index_page's contract and remain unchanged from its
+/// Page/input spans obey `index_page`'s contract and remain unchanged from its
 /// successful size query. Buffer is writable for capacity, length<=capacity;
 /// independent result is writable/aligned. Native effects run only after return.
 #[unsafe(no_mangle)]

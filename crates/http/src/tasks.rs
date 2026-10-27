@@ -1,4 +1,4 @@
-//! Sole persistent StaticHandlerV2 task storage. Native owns one local immutable
+//! Sole persistent `StaticHandlerV2` task storage. Native owns one local immutable
 //! send snapshot and executes RNG/MIME/date/allocation/IO effects after return.
 use crate::INVALID;
 use crate::range_response::{HttpRangeFormat, swr_v1_http_range_format};
@@ -83,7 +83,7 @@ pub extern "C" fn swr_v2_http_tasks_new() -> *mut HttpTasks {
     owner
 }
 /// # Safety
-/// Null or a unique live owner from tasks_new, dropped once. Native snapshots
+/// Null or a unique live owner from `tasks_new`, dropped once. Native snapshots
 /// are independent copies and may outlive this owner.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v2_http_tasks_drop(owner: *mut HttpTasks) {
@@ -133,7 +133,7 @@ pub unsafe extern "C" fn swr_v2_http_tasks_prepare(
 }
 /// Commit the prepared value with fallible admission; error publishes no task.
 /// Native updates original content accounting before this call as it did before
-/// vector::push_back. Allocation failure/exception equivalence is unqualified.
+/// `vector::push_back`. Allocation failure/exception equivalence is unqualified.
 /// # Safety
 /// Unique live owner with initialized per-parse scratch. No concurrent observer.
 #[unsafe(no_mangle)]

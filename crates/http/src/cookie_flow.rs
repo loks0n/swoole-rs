@@ -18,14 +18,14 @@ const CALLBACK: i32 = 1;
 const RESERVE: i32 = 2;
 /// Start with zeroed flow. Returns2=Native reserve(required),1=Native callback
 /// using copied cookie offsets,0=done. Feed the actual callback boolean on resume.
-/// Mode copy_only1 prepares scratch for native multipart filename consumers;
+/// Mode `copy_only1` prepares scratch for native multipart filename consumers;
 /// mode0 additionally tokenizes/calls back. Mode/length stay fixed across steps.
 /// Existing scratch growth/alias rebasing corrections are retained; no reference
 /// implementation overflow/alias/reentry/failure profile is made safe by this API.
 /// # Safety
 /// Flow is aligned/writable/disjoint. Initial source has length initialized bytes
 /// (null allowed only when length0); scratch is a live Native allocation through
-/// capacity<=isize::MAX. Native completes reserve before resuming with fresh base/
+/// capacity<=`isize::MAX`. Native completes reserve before resuming with fresh base/
 /// capacity; callback completes before resume with fresh captured scratch fields.
 /// No callback/allocation may occur through a Rust frame. Valid initialized span,
 /// effect, aliasing and callback lifetime preconditions remain the Native caller's.

@@ -282,7 +282,7 @@ mod tests {
 }
 
 /// Sole private queue container. Native owns/dereferences/frees all event tokens.
-/// All accesses are serialized by the existing native event_mutex.
+/// All accesses are serialized by the existing native `event_mutex`.
 pub struct OsQueue {
     entries: std::collections::VecDeque<usize>,
 }

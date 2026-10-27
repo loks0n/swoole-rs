@@ -870,7 +870,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_column_size(
     }
     0
 }
-/// Independent native descriptor snapshot, never a C++ TableColumn layout.
+/// Independent native descriptor snapshot, never a C++ `TableColumn` layout.
 #[repr(C)]
 #[derive(Default, Clone, Copy)]
 pub struct Column {

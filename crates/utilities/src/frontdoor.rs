@@ -12,8 +12,8 @@ pub struct SwrLogAction {
 }
 
 /// Advance one complete macro program with facts from the requested effect only.
-/// Operations: info, notice, warning, debug, trace, sys_notice, sys_warning,
-/// error_log, error, sys_error. Actions are declared in the matching C header.
+/// Operations: info, notice, warning, debug, trace, `sys_notice`, `sys_warning`,
+/// `error_log`, error, `sys_error`. Actions are declared in the matching C header.
 ///
 /// # Safety
 /// `state` is a unique live aligned caller-owned context for this call only.

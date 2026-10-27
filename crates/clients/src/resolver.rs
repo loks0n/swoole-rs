@@ -6,7 +6,7 @@ pub struct ResolverPlan {
     pub stage: u32,
 }
 /// Stage-local facts only: private context; retval object/string; count==0;
-/// retval array; host valid string; with_port; port present. Native effects run
+/// retval array; host valid string; `with_port`; port present. Native effects run
 /// after return and facts are refreshed only at the original observation point.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_clients_resolver_next(stage: u32, facts: u32) -> ResolverPlan {

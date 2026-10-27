@@ -66,7 +66,7 @@ pub struct EventInitPlan {
 }
 
 /// Copied readiness/flag facts only. Native allocation, initializer calls and
-/// final SwooleTG publication occur outside Rust using the original local owner.
+/// final `SwooleTG` publication occur outside Rust using the original local owner.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_wrappers_event_init(
     flags: u32,
@@ -84,7 +84,7 @@ pub extern "C" fn swr_v1_wrappers_event_init(
 }
 
 /// Allocation-free decimal wire value. The caller supplies live writable output bytes;
-/// return usize::MAX without publication if capacity is insufficient. No terminator.
+/// return `usize::MAX` without publication if capacity is insufficient. No terminator.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_wrappers_content_length(
     length: usize,

@@ -1,4 +1,4 @@
-//! Sole ordered column-token ownership for the typed TableV2 facade.
+//! Sole ordered column-token ownership for the typed `TableV2` facade.
 //! Native column construction/destruction and Zend effects never enter Rust.
 use crate::table::{Clear, swr_v1_memory_table_column_size};
 use crate::table_columns::{Columns, name};

@@ -24,7 +24,7 @@ pub struct WaitOps {
     pub begin: unsafe extern "C" fn(*mut c_void),
     pub catch_error: unsafe extern "C" fn(*mut c_void) -> c_int,
     pub end: unsafe extern "C" fn(*mut c_void, c_int),
-    /// epoll with io_uring only: `interrupt` runs the EINTR handler when `interrupted`.
+    /// epoll with `io_uring` only: `interrupt` runs the EINTR handler when `interrupted`.
     pub interrupted: Option<unsafe extern "C" fn(*mut c_void) -> c_int>,
     pub interrupt: Option<unsafe extern "C" fn(*mut c_void)>,
     pub wait_failed: unsafe extern "C" fn(*mut c_void),

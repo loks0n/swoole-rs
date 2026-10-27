@@ -118,7 +118,7 @@ pub unsafe extern "C" fn swr_v1_corebase_itoa(output: *mut c_char, value: c_long
 }
 
 /// Format backwards into native scratch storage; return the first digit offset.
-/// SIZE_MAX rejects invalid radix, null output or insufficient maximum capacity.
+/// `SIZE_MAX` rejects invalid radix, null output or insufficient maximum capacity.
 /// # Safety
 /// Nonnull output is writable for capacity bytes, with no overlapping live borrow.
 #[unsafe(no_mangle)]
@@ -156,15 +156,15 @@ pub unsafe extern "C" fn swr_v1_corebase_radix(
 
 /// Target-default char mode retained for the frozen two-argument ABI.
 /// # Safety
-/// Same input/output requirements as swr_v1_corebase_hex_mode; native char mode
-/// must match this Rust target's default c_char.
+/// Same input/output requirements as `swr_v1_corebase_hex_mode`; native char mode
+/// must match this Rust target's default `c_char`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_corebase_hex(input: *const c_char, parsed: *mut usize) -> c_ulong {
     // SAFETY: forwards the caller's own input and output contract unchanged.
     unsafe { swr_v1_corebase_hex_mode(input, parsed, u8::from(c_char::MIN != 0)) }
 }
 
-/// Preserve native prefix, locale, signed-char and size_t wrap semantics.
+/// Preserve native prefix, locale, signed-char and `size_t` wrap semantics.
 /// # Safety
 /// Input is a valid NUL-terminated C string; parsed is writable and disjoint.
 /// Bytes passed to toupper must satisfy the original host's ctype precondition.
@@ -254,9 +254,9 @@ pub unsafe extern "C" fn swr_v1_corebase_version(
     }
 }
 
-/// Return the prefix length for native std::string construction, including root.
+/// Return the prefix length for native `std::string` construction, including root.
 /// # Safety
-/// Nonempty input is readable for length bytes, with length at most isize::MAX.
+/// Nonempty input is readable for length bytes, with length at most `isize::MAX`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_corebase_dirname(input: *const u8, length: usize) -> usize {
     if length == 0 {
@@ -280,7 +280,7 @@ pub struct MkdirState {
 /// Prepare/cut the next native mkdir prefix. 0=done, 1=prefix, 2=too long,
 /// 3=invalid state/storage. Native access/mkdir/logging execute after return.
 /// # Safety
-/// Input is readable for input_length bytes. Output is writable for capacity
+/// Input is readable for `input_length` bytes. Output is writable for capacity
 /// bytes, disjoint from input and initialized state. State starts zeroed, then
 /// stays unmodified between calls; output stays unchanged by native IO. Stop on
 /// any result other than1. All pointers remain valid during each call only.

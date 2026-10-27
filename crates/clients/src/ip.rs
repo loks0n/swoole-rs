@@ -72,8 +72,8 @@ fn ipv6(text: &str, allow_zeroes: bool) -> Option<Ipv6Addr> {
 }
 /// # Safety
 /// Input denotes `length` initialized readable bytes, or null for length0. Native
-/// std::string callers pass their full bytes; parsing stops at the first NUL to
-/// preserve their original c_str/inet_pton boundary. No pointer is retained.
+/// `std::string` callers pass their full bytes; parsing stops at the first NUL to
+/// preserve their original `c_str/inet_pton` boundary. No pointer is retained.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_clients_ip(
     version: u8,
