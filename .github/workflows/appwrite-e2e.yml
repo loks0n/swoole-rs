@@ -5,6 +5,12 @@ name: Appwrite e2e
 # on stock are listed, not gated (tools/appwrite_e2e.py).
 on:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: 'all, or bench to skip the e2e suites'
+        default: all
+        type: choice
+        options: [all, bench]
   schedule:
     - cron: '0 4 * * 1'
 env:
@@ -53,6 +59,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=appwrite-e2e-${{ matrix.variant }}
 
   services:
+    if: inputs.suite != 'bench'
     runs-on: ubuntu-24.04
     outputs:
       services: ${{ steps.list.outputs.services }}
@@ -142,6 +149,62 @@ jobs:
           name: junit-${{ matrix.variant }}-${{ matrix.service.name }}
           path: tests/e2e/Services/${{ matrix.service.name }}/junit.xml
           if-no-files-found: ignore
+
+  # Endpoint load on both images, alternating variants on one runner over three trials (#88).
+  bench:
+    needs: appwrite
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      COMPOSE_FILE: docker-compose.yml:docker-compose.override.yml
+      COMPOSE_PROFILES: postgresql
+      _APP_DB_ADAPTER: postgresql
+      _APP_DB_HOST: postgresql
+      _APP_DB_PORT: 5432
+      _APP_OPTIONS_ROUTER_PROTECTION: enabled
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: swoole-rs
+      - uses: actions/checkout@v4
+        with:
+          repository: appwrite/appwrite
+          ref: ${{ env.APPWRITE_COMMIT }}
+          submodules: recursive
+          path: appwrite
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - run: sudo apt-get install -y -q apache2-utils
+      - name: Pull images
+        working-directory: appwrite
+        run: |
+          for variant in hybrid upstream; do
+            docker pull --quiet ghcr.io/${{ github.repository }}/appwrite-e2e:${{ github.sha }}-$variant
+          done
+          docker compose pull --quiet --ignore-buildable
+      - name: Load
+        working-directory: appwrite
+        run: |
+          for trial in 1 2 3; do
+            for variant in hybrid upstream; do
+              docker tag ghcr.io/${{ github.repository }}/appwrite-e2e:${{ github.sha }}-$variant appwrite-dev
+              docker compose up -d --quiet-pull --wait
+              timeout 120 sh -c 'until curl -sf http://localhost/v1/health/version >/dev/null; do sleep 1; done'
+              ab -q -k -n 500 -c 8 http://localhost/v1/health/version >/dev/null  # warm up
+              python3 ../swoole-rs/tools/appwrite_bench.py run $variant $trial ../bench
+              docker compose down -v --remove-orphans
+            done
+          done
+      - shell: bash  # pipefail, so failed or non-2xx requests fail the job through tee
+        run: python3 swoole-rs/tools/appwrite_bench.py report bench | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: appwrite-bench
+          path: bench/
 
   compare:
     needs: e2e
