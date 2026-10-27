@@ -32,6 +32,17 @@ bool swr_v1_signal_isset(int signo);
 void swr_v1_signal_reset(void);
 void swr_v1_signal_clear(void);
 void swr_v1_signal_mask_all(bool block, bool *blocking_all);
+typedef struct {
+    void *(*current)(void);
+    void (*signal_init)(void);
+    void (*yield_for)(void *co, double timeout);
+    void (*resume)(void *co);
+    bool (*timed_out)(void *co);
+} swr_v1_wait_coroutines;
+typedef struct { int pid; bool timed_out; } swr_v1_waited;
+swr_v1_waited swr_v1_wait_pid(int pid, int *status, int options, double timeout, const swr_v1_wait_coroutines *ops);
+void swr_v1_wait_reap(int signo, void (*resume)(void *co));
+size_t swr_v1_wait_count(void);
 #ifdef __linux__
 typedef struct { uint32_t status; int fd; int32_t error; } swr_v1_signalfd_created;
 typedef struct { uint32_t status; uint32_t signo; uintptr_t handler; int32_t error; } swr_v1_signalfd_received;

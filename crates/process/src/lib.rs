@@ -11,6 +11,7 @@ pub mod signal;
 #[cfg(target_os = "linux")]
 pub mod signalfd;
 pub mod task_file;
+pub mod wait;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ExitObservation {
