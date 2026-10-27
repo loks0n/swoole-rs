@@ -33,7 +33,6 @@ python3 tests/modules/utilities/put.py --source /pinned/reference \
 | `bytes_gate.py` (`utilities-bytes`) | All 16 pinned vs overlaid inline helpers: binary/NUL input, bounds/sentinels/errno, locale classification and casefold, both char modes |
 | `wait.py` (`utilities-wait`) | Wait/wake result, errno and word; real shared fork wake, Linux futex wait channel and fallback, macOS polling |
 | `put.py --threads` (`utilities-put-threads`) | Complete `Logger::put` bodies with four threads, real mutex/stdio: 16,384 ordered records and 1,024 stream/flag publications per engine |
-| `jenkins_width.py --source S --deps RELEASE_DEPS --output F` | Private Jenkins kernel vs native consumed-width rule: 480 bounded cases per char mode |
 
 `--rust-asan` (with `--sanitize`) additionally requires the utility Rust objects
 to carry ASan imports (`rust_asan.py`). On macOS the installed Apple and Rust ASan
@@ -123,9 +122,7 @@ headers and DSOs, and runs unchanged macro bodies through the production Logger
 DSOs for four debug/trace combinations per engine: filtered argument laziness,
 repeated level/error reads, last-error publication, trace masks, labels/order and
 hex rows. `--candidate-header` / `--candidate-archive` test a private frontdoor
-implementation (macOS also needs `--asan-runtime`). `--fixture operand_profile.cc
---wire operand_profile.php` runs the operand profile (fractional/long double,
-128-bit, noncopyable and overloaded operators, temporaries, exceptions);
+implementation (macOS also needs `--asan-runtime`).
 `--single-profile`, `--cpp-standard` and `--extra-cxx-flag` adjust the build. The
 output directory must exist.
 

@@ -12,6 +12,9 @@
 #include <sys/stat.h>
 
 thread_local swoole::ThreadGlobal SwooleTG{};
+// The selected log macros' fatal/exit branches name these; no check reaches them.
+swoole::Global SwooleG{};
+void swoole_exit(int status) { std::exit(status); }
 thread_local char sw_error[SW_ERROR_MSG_SIZE];
 static swoole::Logger *active;
 static unsigned backtraces;
