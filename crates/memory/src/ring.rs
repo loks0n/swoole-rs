@@ -298,11 +298,9 @@ fn release_offset(memory: usize, size: u32, count: usize, data: usize) -> Option
     let offset = data.wrapping_sub(memory).wrapping_sub(8);
     let aligned = ((memory | data) & 7) | (count & 3) == 0;
     let valid = (memory != 0)
-        & (count != 0)
-        & (data >= memory)
-        & (size >= 8)
-        & (offset <= (size as usize).wrapping_sub(8))
-        & aligned;
+        && (count != 0)
+        && (data >= memory)
+        && (size >= 8) & (offset <= (size as usize).wrapping_sub(8)) & aligned;
     valid.then_some(offset)
 }
 
