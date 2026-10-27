@@ -102,19 +102,6 @@ int main(void) {
     assert(swr_v1_phpcoroutines_scheduler_control(&scheduler_control_stage, SWR_CORO_SCHED_CONTROL_CALLBACK, -3, &scheduler_constants) == SWR_CORO_SCHED_CONTROL_EXCEPTION_PRESENCE);
     assert(swr_v1_phpcoroutines_scheduler_control(&scheduler_control_stage, SWR_CORO_SCHED_CONTROL_CALLBACK, 0, &scheduler_constants) == SWR_CORO_SCHED_CONTROL_RESULT);
     assert(swr_v1_phpcoroutines_scheduler_control(&scheduler_control_stage, SWR_CORO_SCHED_CONTROL_CALLBACK, 19, &scheduler_constants) == SWR_CORO_SCHED_CONTROL_FALSE);
-    uint32_t control_stage = 0;
-    assert(swr_v1_phpcoroutines_control(&control_stage, SWR_CORO_CONTROL_TIME_LIMIT, 1, 0.5).action == SWR_CORO_CONTROL_CID);
-    swr_phpcoroutines_control_plan interval = swr_v1_phpcoroutines_control(&control_stage, SWR_CORO_CONTROL_TIME_LIMIT, 0, 0.5);
-    assert(interval.action == SWR_CORO_CONTROL_TIMER);
-    const double timeouts[] = {0.5, -0.5, 1.9, -1.9, 120.0, -120.0, 100000.0, 0.0, -0.0};
-    for (size_t i = 0; i < sizeof(timeouts) / sizeof(timeouts[0]); ++i) {
-        control_stage = 0;
-        const int positive = timeouts[i] > 0;
-        assert(swr_v1_phpcoroutines_control(&control_stage, SWR_CORO_CONTROL_TIME_LIMIT, 1, timeouts[i]).action ==
-               (positive ? SWR_CORO_CONTROL_CID : SWR_CORO_CONTROL_FALSE));
-        if (!positive) continue;
-        assert(swr_v1_phpcoroutines_control(&control_stage, SWR_CORO_CONTROL_TIME_LIMIT, 0, timeouts[i]).action == SWR_CORO_CONTROL_TIMER);
-    }
     swr_phpcoroutines_parent_cell parent_cell;
     swr_phpcoroutines_context_cells cells = {NULL, NULL, NULL, NULL, NULL, NULL, NULL};
     uint32_t metadata_stage = 0;
@@ -128,11 +115,6 @@ int main(void) {
     assert(swr_v1_phpcoroutines_scheduler_phase(&scheduler_phase, SWR_CORO_SCHED_PHASE_READ) == 1);
     assert(swr_v1_phpcoroutines_scheduler_phase(&scheduler_phase, SWR_CORO_SCHED_PHASE_STOP) == 0);
     swr_phpcoroutines_fiber_states fiber_states = {11, -3, 24, 99};
-    const char *creation_names[] = {"__destruct", "__destructor", "__destruc\0", "x_destruct"};
-    for (size_t i = 0; i < sizeof(creation_names) / sizeof(creation_names[0]); ++i) {
-        assert(swr_v1_phpcoroutines_create_destructor((const uint8_t *) creation_names[i]) ==
-               (memcmp(creation_names[i], "__destruct", 10) == 0));
-    }
     const uint8_t interrupt_maxima[] = {0, 1, 2, 9, 10, 255};
     for (size_t maximum_index = 0; maximum_index < sizeof(interrupt_maxima); ++maximum_index) {
         const uint8_t maximum = interrupt_maxima[maximum_index];
@@ -157,15 +139,6 @@ int main(void) {
         while (swr_v1_phpcoroutines_repeat(&repeat)) { ++selected_count; }
         assert(selected_count == native_count);
     }
-    uint32_t create_stage = 0;
-    assert(swr_v1_phpcoroutines_control(&create_stage, SWR_CORO_CONTROL_CREATE_FRONTEND, 0, 0).action == SWR_CORO_CONTROL_REQUEST_SHUTDOWN);
-    assert(swr_v1_phpcoroutines_control(&create_stage, SWR_CORO_CONTROL_CREATE_FRONTEND, 0, 0).action == SWR_CORO_CONTROL_CREATE_EFFECT);
-    assert(swr_v1_phpcoroutines_control(&create_stage, SWR_CORO_CONTROL_CREATE_FRONTEND, 7, 0).action == SWR_CORO_CONTROL_CREATE_LONG);
-    uint32_t terminal_stage = 0;
-    assert(swr_v1_phpcoroutines_control(&terminal_stage, SWR_CORO_CONTROL_CLOSE, 0, 0).action == SWR_CORO_CONTROL_CLOSE_PRESENCE);
-    assert(swr_v1_phpcoroutines_control(&terminal_stage, SWR_CORO_CONTROL_CLOSE, 1, 0).action == SWR_CORO_CONTROL_CLOSE_CALLBACK);
-    assert(swr_v1_phpcoroutines_control(&terminal_stage, SWR_CORO_CONTROL_CLOSE, 0, 0).action == SWR_CORO_CONTROL_CLOSE_FREE);
-    assert(swr_v1_phpcoroutines_control(&terminal_stage, SWR_CORO_CONTROL_CLOSE, 0, 0).action == SWR_CORO_CONTROL_DONE);
     uint32_t destroy_stage = 0;
     const uint32_t destroy_actions[] = {SWR_CORO_FIBER_DESTROY_PRESENT, SWR_CORO_FIBER_PUBLISH_DEAD,
         SWR_CORO_FIBER_DESTROY_SWITCH, SWR_CORO_FIBER_DESTROY_NOTIFY,

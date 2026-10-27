@@ -94,14 +94,12 @@ tests/modules/phpcoroutines/test_autoload_owner.py
 tests/modules/phpcoroutines/test_bootstrap_fallback.py
 tests/modules/phpcoroutines/test_config_boundary.py
 tests/modules/phpcoroutines/test_config_identity.py
-tests/modules/phpcoroutines/test_control_boundary.py
 tests/modules/phpcoroutines/test_exit_boundary.py
 tests/modules/phpcoroutines/test_fiber_boundary.py
 tests/modules/phpcoroutines/test_gate_identity.py
 tests/modules/phpcoroutines/test_header_boundary.py
 tests/modules/phpcoroutines/test_interrupt_owner_boundary.py
 tests/modules/phpcoroutines/test_join_boundary.py
-tests/modules/phpcoroutines/test_lifecycle_boundary.py
 tests/modules/phpcoroutines/test_metadata_boundary.py
 tests/modules/phpcoroutines/test_method_catalogue_boundary.py
 tests/modules/phpcoroutines/test_queries_identity.py
@@ -113,7 +111,6 @@ tests/modules/phpcoroutines/test_startup_identity.py
 tests/modules/phpcoroutines/test_statistics_identity.py
 tests/modules/phpcoroutines/test_system_boundary.py
 tests/modules/phpcoroutines/test_system_control_boundary.py
-tests/modules/phpcoroutines/test_terminal_boundary.py
 tests/modules/phpevents/descriptor_entrypoint.cc
 tests/modules/phpevents/descriptor_entrypoint.php
 tests/modules/phpevents/test_callback_pair.py
