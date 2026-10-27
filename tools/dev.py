@@ -66,9 +66,15 @@ def changed_modules(base):
     return sorted(selected)
 
 
+# Gates that read another module's native-control report: tls-native attests the coroutine
+# originals' build and borrows corebase-lifecycle's uninstrumented control (#420).
+CONTROLS = {'tls': ('coroutine', 'corebase')}
+
+
 def selected_modules(args):
     chosen = MODULES if getattr(args, 'all_modules', False) else args.module or ['websocket']
-    return sorted(set(chosen) | set(GRADUATED))
+    chosen = set(chosen) | {control for module in chosen for control in CONTROLS.get(module, ())}
+    return sorted(chosen | set(GRADUATED))
 
 
 def typed_buffer(args):
