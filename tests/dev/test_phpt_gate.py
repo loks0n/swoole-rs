@@ -27,9 +27,13 @@ class PhptGate(unittest.TestCase):
             report.write_text(json.dumps({'results': [
                 {'test': 'tests/a/1.phpt', 'module': 'a', 'status': 'passed', 'upstream_status': 'PASSED'},
                 {'test': 'tests/a/2.phpt', 'module': 'a', 'status': 'skipped', 'upstream_status': 'SKIPPED', 'detail': detail},
-                {'test': 'tests/b/1.phpt', 'module': 'b', 'status': 'failed', 'upstream_status': 'WARNED'}]}))
+                {'test': 'tests/b/1.phpt', 'module': 'b', 'status': 'failed', 'upstream_status': 'WARNED'},
+                {'test': 'tests/b/2.phpt', 'module': 'b', 'status': 'failed', 'upstream_status': 'FAILED',
+                 'detail': '001+ ** ERROR: process timed out **'}]}))
             results = list(rows([report]))
-        self.assertEqual([r['status'] for r in results], ['passed', 'skipped', 'failed'])
+        self.assertEqual([r['status'] for r in results], ['passed', 'skipped', 'failed', 'failed'])
+        self.assertEqual([r.get('timed_out') for r in results[2:]], [False, True])
+        results = results[:3]
         self.assertIn('1 passed, 1 failed, 1 skipped', markdown(results))
         self.assertIn('| a | 1 | 0 | 1 |', markdown(results))
 
@@ -54,7 +58,8 @@ class PhptGate(unittest.TestCase):
         results += [row('kept', 'hybrid', 'passed')]
         self.assertEqual(flagged(results), ['hybrid-blip', 'real', 'unrun', 'upstream-flake'])
         rechecked = [row('real', 'upstream', 'passed')] * 3 + [row('real', 'hybrid', 'passed'), row('real', 'hybrid', 'failed')]
-        rechecked += [row('upstream-flake', 'upstream', 'failed'), row('upstream-flake', 'hybrid', 'failed')]
+        rechecked += [row('upstream-flake', 'upstream', 'failed'), row('upstream-flake', 'hybrid', 'failed'),
+                      row('upstream-flake', 'hybrid', 'passed')]
         rechecked += [row('hybrid-blip', 'upstream', 'passed'), row('hybrid-blip', 'hybrid', 'passed')]
         # 'unrun' has no re-runs, so it stays a regression.
         self.assertEqual(recheck(flagged(results), rechecked),
@@ -64,15 +69,39 @@ class PhptGate(unittest.TestCase):
         self.assertIn('1 flaky on upstream', summary)
         self.assertIn('1 passed on re-run on both engines', summary)
 
-    def test_a_test_failing_an_upstream_rerun_needs_no_more_reruns(self):
+    def test_upstream_flakes_still_gate_a_hybrid_that_always_fails(self):
         def row(test, engine, status):
             return {'test': test, 'family': 'a', 'engine': engine, 'status': status, 'category': 'other'}
-        rechecked = [row('flaky', 'upstream', 'failed'), row('steady', 'upstream', 'passed'),
-                     row('steady', 'hybrid', 'failed')]
-        self.assertEqual(pending(['flaky', 'steady', 'unrun'], rechecked), ['steady', 'unrun'])
-        self.assertEqual(pending(['flaky'], []), ['flaky'])
-        # Re-runs stop at the first upstream failure, so a flaky test may have no hybrid re-run.
-        self.assertEqual(recheck(['flaky'], [row('flaky', 'upstream', 'failed')]), ([], ['flaky'], []))
+        rechecked = [row('broken', 'upstream', 'passed'), row('broken', 'upstream', 'failed')]
+        rechecked += [row('broken', 'hybrid', 'failed')] * 3
+        rechecked += [row('flaky', 'upstream', 'failed'), row('flaky', 'hybrid', 'failed'), row('flaky', 'hybrid', 'passed')]
+        rechecked += [row('unrun', 'upstream', 'failed')]
+        # Upstream failing a re-run no longer excuses a hybrid that never passes.
+        self.assertEqual(recheck(['broken', 'flaky', 'unrun'], rechecked), (['broken', 'unrun'], ['flaky'], []))
+        summary = markdown([row(t, 'upstream', 'passed') for t in ['broken', 'flaky']] +
+                           [row(t, 'hybrid', 'failed') for t in ['broken', 'flaky']], rechecked)
+        self.assertIn('1 regressions', summary)
+        self.assertIn('- `flaky`: hybrid failed, passed; upstream failed', summary)
+
+    def test_reruns_stop_once_settled_and_a_timeout_gets_one(self):
+        def row(test, engine, status, timed_out=False):
+            return {'test': test, 'family': 'a', 'engine': engine, 'status': status, 'category': 'other',
+                    'timed_out': timed_out}
+        tests = ['flaky-passed', 'flaky-failing', 'steady-failed', 'steady-passing', 'slow']
+        rechecked = [row('flaky-passed', 'upstream', 'failed'), row('flaky-passed', 'hybrid', 'passed'),
+                     row('flaky-failing', 'upstream', 'failed'), row('flaky-failing', 'hybrid', 'failed'),
+                     row('steady-failed', 'upstream', 'passed'), row('steady-failed', 'hybrid', 'failed'),
+                     row('steady-passing', 'upstream', 'passed'), row('steady-passing', 'hybrid', 'passed'),
+                     row('slow', 'upstream', 'failed'), row('slow', 'hybrid', 'failed', True)]
+        results = [row('slow', 'hybrid', 'failed', True)]
+        # Upstream stops at its first failure; the hybrid until its verdict is settled.
+        self.assertEqual(pending(tests, rechecked, 'upstream'), ['steady-failed', 'steady-passing'])
+        self.assertEqual(pending(tests, rechecked, 'hybrid', results), ['flaky-failing', 'steady-passing'])
+        self.assertEqual(pending(['flaky-failing'], rechecked + [row('flaky-failing', 'hybrid', 'failed')] * 2,
+                                 'hybrid', results), [])
+        # A first hybrid failure that timed out gets one re-run; timing out again is a regression.
+        self.assertEqual(recheck(['slow'], rechecked), (['slow'], [], []))
+        self.assertEqual(pending(['slow'], [row('slow', 'upstream', 'failed')], 'hybrid', results), ['slow'])
 
     def test_incomplete_shards_are_refused(self):
         with tempfile.TemporaryDirectory() as temp:
