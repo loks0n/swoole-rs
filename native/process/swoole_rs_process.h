@@ -32,6 +32,18 @@ bool swr_v1_signal_isset(int signo);
 void swr_v1_signal_reset(void);
 void swr_v1_signal_clear(void);
 void swr_v1_signal_mask_all(bool block, bool *blocking_all);
+#ifdef __linux__
+typedef struct { uint32_t status; int fd; int32_t error; } swr_v1_signalfd_created;
+typedef struct { uint32_t status; uint32_t signo; uintptr_t handler; int32_t error; } swr_v1_signalfd_received;
+void swr_v1_signalfd_init(void);
+int swr_v1_signalfd_fd(void);
+bool swr_v1_signalfd_owned(void);
+uintptr_t swr_v1_signalfd_set(int signo, uintptr_t handler);
+swr_v1_signalfd_created swr_v1_signalfd_create(void);
+void swr_v1_signalfd_close(void);
+bool swr_v1_signalfd_clear(void);
+swr_v1_signalfd_received swr_v1_signalfd_receive(int fd);
+#endif
 #ifdef __cplusplus
 }
 #endif

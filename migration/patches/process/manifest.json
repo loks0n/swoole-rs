@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-worker-transitions.patch",
-      "sha256": "a505592d73d9228d930ed025430ccbebfa3f2b546db28e8103aab8568a1c940e",
+      "sha256": "c3dc947de1e7ea48903e54b798febdc2e4e311d3b236a80f501e17f8edbada71",
       "upstream_paths": [
         "src/os/process_pool.cc",
         "src/os/signal.cc",
