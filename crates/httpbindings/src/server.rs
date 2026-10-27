@@ -42,7 +42,7 @@ pub unsafe extern "C" fn swr_v1_httpbindings_accept(
         return -1;
     };
     if has_connection != 0 {
-        return if cid < 0 { 1 } else { 0 };
+        return i32::from(cid < 0);
     }
     if error == errors.per_process || error == errors.system {
         1

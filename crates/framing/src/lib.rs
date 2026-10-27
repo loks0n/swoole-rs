@@ -320,7 +320,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                 return emit(s, 3, 10, 0);
             }
             (2, 2) => return emit(s, 3, 12, i.len.saturating_sub(i.eof_len as usize) as u64),
-            (2, 3) => return done(if i.flags & TLS != 0 { 1 } else { 0 }),
+            (2, 3) => return done(i32::from(i.flags & TLS != 0)),
             _ => return done(-1),
         }
     }

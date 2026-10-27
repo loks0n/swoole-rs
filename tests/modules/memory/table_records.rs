@@ -69,7 +69,7 @@ fn records_own_names_metadata_duplicates_and_copied_views() {
             assert_eq!(view, View::default());
             let result =
                 swr_v1_memory_records_get(owner, b"duplicate\0name".as_ptr(), 14, &raw mut view);
-            assert_eq!(result, if count == 0 { 0 } else { 1 });
+            assert_eq!(result, i32::from(count != 0));
             assert_eq!(view.ordinal, 0);
             FAIL_AFTER.set(Some(0));
             let closed = swr_v1_memory_records_close(&raw mut owner);

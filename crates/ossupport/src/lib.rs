@@ -81,10 +81,8 @@ pub extern "C" fn swr_v1_os_pool_expand(
     }
     let wanted = if queued > idle {
         queued - idle
-    } else if threshold > 0.0 && age > threshold {
-        1
     } else {
-        0
+        usize::from(threshold > 0.0 && age > threshold)
     };
     wanted.min(workers - threads)
 }
