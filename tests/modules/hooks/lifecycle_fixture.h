@@ -36,5 +36,6 @@ struct Socket {
  const char *get_event_str(EventType event) const;
 #include ACTUAL_INLINE
  bool shutdown(int how=SHUT_RDWR);bool cancel(EventType event);bool close();bool connect(const sockaddr*,socklen_t);bool check_liveness();
+ swr_v1_hook_socket_ops lifecycle_ops();
 };
 #include ACTUAL_BODIES
