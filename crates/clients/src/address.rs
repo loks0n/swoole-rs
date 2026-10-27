@@ -158,7 +158,7 @@ pub unsafe extern "C" fn swr_v1_clients_address_assign(
             // `swoole_strlcpy` and the forced final NUL.
             let copied = text.len().min(path.len() - 1);
             for (slot, &byte) in path.iter_mut().zip(&text[..copied]) {
-                *slot = byte.cast_signed();
+                *slot = c_char::from_ne_bytes([byte]);
             }
             path[copied] = 0;
             *path.last_mut().unwrap_or(&mut 0) = 0;
@@ -253,7 +253,7 @@ mod tests {
         assert_eq!(
             un.sun_path[..12]
                 .iter()
-                .map(|&c| c.cast_unsigned())
+                .map(|&c| c.to_ne_bytes()[0])
                 .collect::<Vec<_>>(),
             b"/tmp/s.sock\0"
         );

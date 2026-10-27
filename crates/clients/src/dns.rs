@@ -560,7 +560,7 @@ mod tests {
         assert_eq!(
             addr[..4]
                 .iter()
-                .map(|&b| b.cast_unsigned())
+                .map(|&b| b.to_ne_bytes()[0])
                 .collect::<Vec<_>>(),
             [127, 0, 0, 1]
         );
