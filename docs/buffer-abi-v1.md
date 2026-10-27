@@ -1,7 +1,7 @@
 # Buffer ABI v1
 
 Declarations: `native/include/swoole_rs_buffer.h`. Feature value 2
-(`--module buffer`). Upstream targets: `src/core/buffer.cc`,
+(graduated: always on). Upstream targets: `src/core/buffer.cc`,
 `include/swoole_buffer.h`, `src/core/string.cc`, `include/swoole_string.h`.
 
 Rust owns one queue and its data allocations. Entries are either Rust data or

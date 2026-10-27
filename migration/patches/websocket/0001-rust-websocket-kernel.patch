@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_websocket_server.cc b/ext-src/swoole_websocket_server.cc
-index 6f4ae420b..7af3efece 100644
+index 6f4ae42..7af3efe 100644
 --- a/ext-src/swoole_websocket_server.cc
 +++ b/ext-src/swoole_websocket_server.cc
 @@ -25,2 +25,3 @@ SW_EXTERN_C_END
@@ -35,19 +35,16 @@ index 6f4ae420b..7af3efece 100644
 +        if (delivery == 2) {
              String frame(SW_WEBSOCKET_FRAME_HEADER_SIZE + req->info.len, sw_php_allocator());
 diff --git a/src/protocol/websocket.cc b/src/protocol/websocket.cc
-index 465dd3b2c..12228dc39 100644
+index 465dd3b..c9c6db9 100644
 --- a/src/protocol/websocket.cc
 +++ b/src/protocol/websocket.cc
-@@ -19,2 +19,8 @@
+@@ -19,2 +19,5 @@
  
-+#ifndef SWOOLE_RS_WEBSOCKET
-+#error "WebSocket overlay requires --enable-swoole-rs-websocket"
-+#endif
 +#include "swoole_rs_websocket.h"
 +#include "swoole_rs_websocket_codec.h"
 +
  using swoole::Connection;
-@@ -49,42 +55,4 @@ namespace websocket {
+@@ -49,42 +52,4 @@ namespace websocket {
  static ssize_t get_package_length_impl(PacketLength *pl) {
 -    // need more data
 -    if (pl->buf_size < SW_WEBSOCKET_HEADER_LEN) {
@@ -92,7 +89,7 @@ index 465dd3b2c..12228dc39 100644
 +    return static_cast<ssize_t>(swr_v1_ws_frame_length(
 +        reinterpret_cast<const uint8_t *>(pl->buf), pl->buf_size, &pl->header_len));
  }
-@@ -96,21 +64,24 @@ ssize_t get_package_length(const Protocol *protocol, Socket *conn, PacketLength
+@@ -96,21 +61,24 @@ ssize_t get_package_length(const Protocol *protocol, Socket *conn, PacketLength
  void mask(char *data, size_t len, const char *mask_key) {
 -    size_t n = len / 8;
 -    uint64_t mask_key64 = ((uint64_t) (*((uint32_t *) mask_key)) << 32) | *((uint32_t *) mask_key);
@@ -129,7 +126,7 @@ index 465dd3b2c..12228dc39 100644
 -                       !!(_flags & FLAG_FIN),
 +                       !!(flags & FLAG_FIN),
                         length);
-@@ -118,49 +89,11 @@ bool encode(String *buffer, const char *data, size_t length, uint8_t opcode, uin
+@@ -118,49 +86,11 @@ bool encode(String *buffer, const char *data, size_t length, uint8_t opcode, uin
      }
 -
 -    int pos = 0;
@@ -187,7 +184,7 @@ index 465dd3b2c..12228dc39 100644
 +    // Upstream appends the mask key before rejecting masked header-only output.
 +    return !((flags & FLAG_MASK) && (flags & FLAG_ENCODE_HEADER_ONLY));
  }
-@@ -168,45 +101,30 @@ bool encode(String *buffer, const char *data, size_t length, uint8_t opcode, uin
+@@ -168,45 +98,30 @@ bool encode(String *buffer, const char *data, size_t length, uint8_t opcode, uin
  bool decode(Frame *frame, char *data, size_t length) {
 -    frame->header.OPCODE = data[0] & 0xf;
 -    frame->header.RSV1 = (data[0] >> 6) & 0x1;
@@ -256,12 +253,12 @@ index 465dd3b2c..12228dc39 100644
      }
 -
      return true;
-@@ -215,3 +133,3 @@ bool decode(Frame *frame, char *data, size_t length) {
+@@ -215,3 +130,3 @@ bool decode(Frame *frame, char *data, size_t length) {
  bool pack_close_frame(String *buffer, int code, const char *reason, size_t length, uint8_t flags) {
 -    if (sw_unlikely(length > SW_WEBSOCKET_CLOSE_REASON_MAX_LEN)) {
 +    if (length > SW_WEBSOCKET_CLOSE_REASON_MAX_LEN) {
          swoole_warning("the max length of close reason is %d", SW_WEBSOCKET_CLOSE_REASON_MAX_LEN);
-@@ -219,14 +137,17 @@ bool pack_close_frame(String *buffer, int code, const char *reason, size_t lengt
+@@ -219,14 +134,17 @@ bool pack_close_frame(String *buffer, int code, const char *reason, size_t lengt
      }
 -
 -    char payload[SW_WEBSOCKET_HEADER_LEN + SW_WEBSOCKET_CLOSE_CODE_LEN + SW_WEBSOCKET_CLOSE_REASON_MAX_LEN];
@@ -288,7 +285,7 @@ index 465dd3b2c..12228dc39 100644
 +    buffer->length += size;
 +    return !((flags & FLAG_MASK) && (flags & FLAG_ENCODE_HEADER_ONLY));
  }
-@@ -248,13 +169,7 @@ void print_frame(const Frame *frame) {
+@@ -248,13 +166,7 @@ void print_frame(const Frame *frame) {
  
 -int dispatch_frame(const Protocol *proto, Socket *_socket, const RecvData *rdata) {
 -    auto *serv = (Server *) proto->private_data_2;
@@ -306,7 +303,7 @@ index 465dd3b2c..12228dc39 100644
 -
 +    const size_t length = rdata->info.len;
      Frame ws;
-@@ -263,107 +178,79 @@ int dispatch_frame(const Protocol *proto, Socket *_socket, const RecvData *rdata
+@@ -263,107 +175,79 @@ int dispatch_frame(const Protocol *proto, Socket *_socket, const RecvData *rdata
      }
 -
 -    String *frame_buffer;

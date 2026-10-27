@@ -72,7 +72,7 @@ CONTROLS = {'tls': ('coroutine', 'corebase')}
 
 
 def selected_modules(args):
-    chosen = MODULES if getattr(args, 'all_modules', False) else args.module or ['websocket']
+    chosen = MODULES if getattr(args, 'all_modules', False) else args.module or []
     chosen = set(chosen) | {control for module in chosen for control in CONTROLS.get(module, ())}
     return sorted(chosen | set(GRADUATED))
 

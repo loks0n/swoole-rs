@@ -989,7 +989,7 @@ class Lanes(unittest.TestCase):
 
     def test_integration_cannot_filter_or_use_development_build(self):
         from argparse import Namespace
-        args = Namespace(lane='integrate', module=['timer', 'websocket'], php='php', php_extension=[],
+        args = Namespace(lane='integrate', module=['timer'], php='php', php_extension=[],
                          jobs=4, test=None, case=None, benchmark=False, compare=False)
         commands = dict(dev.plan(args, ROOT / 'target/reports/test-plan'))
         self.assertNotIn('--dev', commands['build'])

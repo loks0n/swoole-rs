@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-rust-websocket-kernel.patch",
-      "sha256": "4ff4010ff9a70c8e42b91b316d654ab93e95b6e12600b9c9a95eb9c7b51a095b",
+      "sha256": "99422b530649c78d116ee1e1a7df153e405b45e5a5a20246e7eb52e044ed306d",
       "upstream_paths": [
         "ext-src/swoole_websocket_server.cc",
         "src/protocol/websocket.cc"

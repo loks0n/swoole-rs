@@ -1,11 +1,11 @@
 # Seeded buffer model gate
 
 ```sh
-python3 -m pytest tests/modules/buffer/test_model.py --sanitize --manifest target/hybrid/rust-buffer-websocket/build-manifest.json
+python3 -m pytest tests/modules/buffer/test_model.py --sanitize --manifest target/hybrid/rust/build-manifest.json
 python3 -m pytest tests/modules/buffer/test_model.py --sanitize --archive /absolute/libswoole_rs_ffi.a
 ```
 
-With `--build-manifest` (default `target/hybrid/rust-buffer-websocket/build-manifest.json`)
+With `--build-manifest` (default `target/hybrid/rust/build-manifest.json`)
 the archive, ABI header and facade patches must match the manifest. `--archive`
 checks a private archive without an extension build.
 
