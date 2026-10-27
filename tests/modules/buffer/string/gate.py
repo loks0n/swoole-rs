@@ -95,7 +95,14 @@ def main():
             if engine == 'rust':
                 symbols = subprocess.check_output(['nm', '-g', str(binary)], text=True)
                 # Exports the profile's native callers reach; Rust-only callees may be inlined or stripped.
-                required = ['swr_v1_string_edit_in_place', 'swr_v1_string_append_in_place'] if args.original_only else ['swr_v1_string_transition']
+                if args.original_only:
+                    required = ['swr_v1_string_edit_in_place', 'swr_v1_string_append_in_place']
+                elif args.integer_only:
+                    required = ['swr_v1_string_edit_object']  # append(int) is a whole Rust edit
+                elif args.split_only:
+                    required = []  # only the split plan below; no move/release/ownership path
+                else:
+                    required = ['swr_v1_string_transition']
                 if args.random_only: required.append('swr_v1_string_random_step')
                 if args.format_only: required.append('swr_v1_string_format_step')
                 if args.allocation_only: required.append('swr_v1_string_allocation_plan')
