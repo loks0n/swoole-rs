@@ -465,7 +465,10 @@ pub unsafe extern "C" fn swr_v1_utils_redirect_step(
     redirected: u8,
     result: i32,
 ) -> u32 {
-    use RedirectAction::*;
+    use RedirectAction::{
+        Already, CloseErr, CloseOut, Done, DupErr, DupErrFailed, DupOut, DupOutFailed, Enable,
+        Invalid, NoFile, NotEnabled, RestoreErr, RestoreErrFailed, RestoreOut, RestoreOutFailed,
+    };
     if phase.is_null() {
         return Invalid as u32;
     }
@@ -525,7 +528,10 @@ pub unsafe extern "C" fn swr_v1_utils_log_file_step(
     redirected: u8,
     descriptor: i32,
 ) -> u32 {
-    use LogFileAction::*;
+    use LogFileAction::{
+        AssignPath, Close, Done, Failed, Invalid, Open, Opened, PlainPath, Redirect, ReopenSaved,
+        RotatePath, SavePath,
+    };
     if phase.is_null() {
         return Invalid as u32;
     }
@@ -587,7 +593,10 @@ fn log_put_next(
     opened: u8,
     backtrace: u8,
 ) -> Option<(u32, LogPutAction)> {
-    use LogPutAction::*;
+    use LogPutAction::{
+        Backtrace, Date, Done, FileLock, FileUnlock, Flush, Format, Identity, Lock, Micros, Rotate,
+        Skip, Unlock, Write,
+    };
     let action = match next {
         0 if level < threshold => Done,
         0 => Date,
@@ -624,7 +633,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_put_step(
     opened: u8,
     backtrace: u8,
 ) -> u32 {
-    use LogPutAction::*;
+    use LogPutAction::Invalid;
     if phase.is_null() {
         return Invalid as u32;
     }
@@ -664,7 +673,10 @@ pub unsafe extern "C" fn swr_v1_utils_log_emit_step(
     acquired: u8,
     worker_pid: i32,
 ) -> u32 {
-    use LogPutAction::*;
+    use LogPutAction::{
+        Identity, Invalid, ProcessId, Rotate, RotationLock, RotationReopen, RotationUnlock, Skip,
+        WorkerSymbol,
+    };
     if phase.is_null() {
         return Invalid as u32;
     }

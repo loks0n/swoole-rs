@@ -23,7 +23,9 @@ pub unsafe extern "C" fn swr_v1_phpevents_query(
     events: i64,
     observation: i64,
 ) -> u32 {
-    use QueryAction::*;
+    use QueryAction::{
+        Descriptor, Events, False, Lookup, Parse, Reactor, Removed, True, WarnUnknown,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase word.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return False as u32;

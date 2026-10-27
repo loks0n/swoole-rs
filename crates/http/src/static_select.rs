@@ -27,7 +27,10 @@ enum Action {
 }
 impl HttpStaticSelection {
     fn next(&mut self, value: usize, status: i32) -> Result<Action, i32> {
-        use Action::*;
+        use Action::{
+            Autoindex, CheckModified, Dates, File, FileHeader, Index, InspectIndex, NotFound,
+            NotModified, Ready, Skip, Status,
+        };
         let (phase, action) = match self.phase {
             0 if value == 0 => (8, Skip),
             0 => (1, Status),

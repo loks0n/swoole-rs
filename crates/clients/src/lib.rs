@@ -367,7 +367,10 @@ pub struct ClosePlan {
 /// No Client/Socket/callback pointer enters Rust, and native effects run after return.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_clients_close_next(stage: u32, facts: u32) -> ClosePlan {
-    use CloseAction::*;
+    use CloseAction::{
+        Advance, CloseFd, Deactivate, EventDelete, OnClose, PublishClosed, Reject, SslClose,
+        Success, TimerDelete, Unlink,
+    };
     let (action, next) = match stage {
         0 if facts & 1 == 0 || facts & 2 != 0 => (Reject, 0),
         0 => (PublishClosed, 1),
@@ -456,7 +459,11 @@ pub struct WritePlan {
 /// Native SSL/proxy/reactor calls and callbacks execute only after Rust returns.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_clients_write_next(stage: u32, facts: u32) -> WritePlan {
-    use WriteAction::*;
+    use WriteAction::{
+        Advance, ConnectCallback, DrainCallback, Error, Fail, FailSsl, GetOption, Handshake,
+        HttpSend, MarkConnected, ReadInterest, SetSslWait, SocksSend, Success, WarnOption,
+        Writable,
+    };
     let (action, next) = match stage {
         0 => (Advance, if facts != 0 { 1 } else { 10 }),
         1 if facts != 0 => (Handshake, 2),
@@ -526,7 +533,11 @@ pub struct ReadPlan {
 /// remain with the caller. Result classifications and branch facts are copied.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_clients_read_next(stage: u32, facts: u32) -> ReadPlan {
-    use ReadAction::*;
+    use ReadAction::{
+        Advance, CatchError, ClearBuffer, Close, ConnectCallback, FailHttp, FailSocks, FailSsl,
+        HttpHandshake, HttpReady, HttpReceive, ProtocolClose, ProtocolReceive, Receive,
+        ReceiveCallback, Sleep, SocksHandshake, SocksReceive, SslHandshake, Success, Warn,
+    };
     let (action, next) = match stage {
         0 if facts != 0 => (HttpReceive, 1),
         0 => (Advance, 5),
@@ -624,7 +635,12 @@ pub struct ConnectPlan {
 /// result, proxy pointer, buffer, timers and every effect/callback.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_clients_connect_next(stage: u32, facts: u32) -> ConnectPlan {
-    use ConnectAction::*;
+    use ConnectAction::{
+        Activate, AddEvent, AddTimer, Address, Advance, AllocateBuffer, AsyncConnect, AsyncPending,
+        Blocking, DnsLookup, Error, FailCallback, HttpHandshake, HttpReceive, HttpSend,
+        KernelTimeout, Nonblocking, ReturnResult, SetTimeout, SocksHandshake, SocksPublish,
+        SocksReceive, SocksSend, SslHandshake, Success, WarnCallbacks, Watermark,
+    };
     let (action, next) = match stage {
         0 => (SetTimeout, 1),
         1 if facts != 0 => (KernelTimeout, 2),
@@ -723,7 +739,11 @@ pub struct PersistentPlan {
 /// Zend/allocator/destructor effects stay outside Rust; no native pointer enters.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_clients_persistent_next(stage: u32, facts: u32) -> PersistentPlan {
-    use PersistentAction::*;
+    use PersistentAction::{
+        Advance, Create, CreateFailed, DeleteClient, DeleteTimer, Detach, DropStale, EnableSsl,
+        ErasePool, Find, FreeCallable, FreeSocketObject, Keep, PublishSocket, Return, Reuse,
+        SetIdentity, Take,
+    };
     let (action, next) = match stage {
         0 if facts != 0 => (Find, 1),
         0 => (Create, 4),
@@ -905,7 +925,12 @@ pub struct TransportPlan {
 /// Client/Socket/proxy fields stay native, with copied facts refreshed by stage.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_clients_transport_next(stage: u32, facts: u32) -> TransportPlan {
-    use TransportAction::*;
+    use TransportAction::{
+        Activate, AddEvent, Address, Advance, BindUnix, BufferFull, Clean, Connect,
+        ConnectCallback, DnsLookup, EnableDtls, Error, ErrorCallback, EventWrite, FailClose,
+        KernelTimeout, Overflow, PublishFlags, ReturnWrite, SetTimeout, SocketTimeout,
+        SslHandshake, Success, WarnBind, WarnError, WarnReceive,
+    };
     let (action, next) = match stage {
         0 => (SetTimeout, 1),
         1 => (if facts != 0 { KernelTimeout } else { Advance }, 2),

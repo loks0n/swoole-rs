@@ -40,7 +40,12 @@ pub unsafe extern "C" fn swr_v1_phpevents_fd(
     sockets: u8,
     observation: i64,
 ) -> u32 {
-    use FdAction::*;
+    use FdAction::{
+        CastStream, CheckClient, CheckCoSocket, CheckPhpSocket, CheckProcess, CheckPropertyLong,
+        CheckPropertyPresent, CheckSocketClosed, ClientProperty, CoSocketProperty, Error,
+        ProcessProperty, PropertyFd, ReadFd, ReadLong, ReadSocket, Return, SocketFd, Stream,
+        WarnClosed, WarnNegative, WarnResource, WarnUnknown,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase word.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Error as u32;

@@ -32,7 +32,7 @@ impl HttpStaticBody {
     }
 
     fn next(&mut self, length: usize, keep_alive: bool) -> Action {
-        use Action::*;
+        use Action::{Allocate, Close, Done, EndPart, File, Free, KeepAlive, PartHeader};
         match self.phase {
             0 if self.head != 0 || self.count == 0 => {
                 self.phase = 6;

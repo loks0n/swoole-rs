@@ -377,10 +377,10 @@ enum SpecialSetting {
 type OptionSpec = (&'static CStr, OptionAction, u32, Converter, u32);
 #[rustfmt::skip]
 static OPTIONS: [OptionSpec; 31] = {
-    use OptionAction::*;
-    use Converter::*;
-    use NumberField::*;
-    use SpecialSetting::*;
+    use OptionAction::{Number, Buffer, Flag, Special};
+    use Converter::{Long, Size, Truth};
+    use NumberField::{Backlog, SocketBuffer, KernelRecv, KernelSend, Heartbeat, HighWatermark, LowWatermark, DeferAccept, KeepIdle, KeepInterval, KeepCount, UserTimeout, MaxLength};
+    use SpecialSetting::{PacketEof, WebsocketOptions, MaxIdle, PacketType, LengthOffsetSetting, BodyOffsetSetting, LengthCallback};
     [
         (c"backlog", Number, Backlog as u32, Long, 0),
         (c"socket_buffer_size", Buffer, SocketBuffer as u32, Size, 0),
@@ -494,9 +494,9 @@ static TLS_FILES: [TlsOptionSpec; 2] = [
 ];
 #[rustfmt::skip]
 static TLS_PORT: [TlsOptionSpec; 12] = {
-    use TlsTarget::*;
-    use OptionAction::*;
-    use Converter::*;
+    use TlsTarget::{Compress, Protocols, VerifyPeer, AllowSelfSigned, ClientCert, CaFile, CaPath, VerifyDepth, PreferCiphers, Ciphers, EcdhCurve, DhParam};
+    use OptionAction::{Flag, Number, Special};
+    use Converter::{Truth, Long, String};
     [
         (c"ssl_compress", Compress as u32, Flag, Truth),
         (c"ssl_protocols", Protocols as u32, Number, Long),
@@ -627,7 +627,10 @@ pub extern "C" fn swr_v1_ports_flag_setting(
     value: i64,
     present: u32,
 ) -> PortsProtocolPlan {
-    use ProtocolField::*;
+    use ProtocolField::{
+        CheckEof, CheckLength, FastOpen, Http2Flag, HttpFlag, Keepalive, MqttFlag, NoDelay,
+        RedisFlag, SplitEof, WebsocketFlag,
+    };
     if present == 0 {
         return if kind == NoDelay as u32 {
             protocol_plan([binding(NoDelay, 1)])
@@ -664,7 +667,10 @@ pub extern "C" fn swr_v1_ports_flag_setting(
 /// Ordered native publications. Callback IDs marshal existing native addresses.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_ports_protocol_plan(input: PortsProtocolInput) -> PortsProtocolPlan {
-    use ProtocolField::*;
+    use ProtocolField::{
+        BodyOffset, EofLength, LengthFunction, LengthOffset, LengthSize, LengthSizeFunction,
+        Package, Reader,
+    };
     match swr_v1_ports_protocol(input.flags, u8::from(input.length_type != 0)) {
         0 => protocol_plan([]),
         1 if input.eof_len > input.eof_max => protocol_plan([

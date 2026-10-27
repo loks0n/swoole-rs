@@ -22,7 +22,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_string_plan(
     operation: u32,
     observation: u8,
 ) -> u32 {
-    use Action::*;
+    use Action::{Alias, Copy, Done, Move, Observe, Release, Reset, ResetSource};
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
@@ -79,7 +79,10 @@ pub unsafe extern "C" fn swr_v1_phphelpers_value_plan(
     operation: u32,
     key_present: u8,
 ) -> u32 {
-    use ValueAction::*;
+    use ValueAction::{
+        Copy, Dereference, Destroy, Done, InsertIndex, InsertString, NullKey, ObserveKey,
+        ReleaseKey, ResetSource, Retain, RetainInserted, RetainKey,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
@@ -154,7 +157,10 @@ pub unsafe extern "C" fn swr_v1_phphelpers_factory_plan(
     observation: u8,
     allow_null: u8,
 ) -> u32 {
-    use FactoryAction::*;
+    use FactoryAction::{
+        Create, Delete, InvalidError, Null, NullError, ObserveCreated, ObserveNull, ObservePointer,
+        ObserveReady, Return,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Null as u32;
@@ -199,7 +205,10 @@ enum IteratorAction {
 /// pointers or native layout are passed to Rust; no native work within this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phphelpers_iterator_plan(phase: *mut u32, observation: u8) -> u32 {
-    use IteratorAction::*;
+    use IteratorAction::{
+        Advance, Dereference, Done, ObserveEnd, ObserveIndirect, ObserveKey, ObservePointer,
+        ObserveUndefined, PublishIndex, PublishString, ReadValue,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
