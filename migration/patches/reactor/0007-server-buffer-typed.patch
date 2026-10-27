@@ -1,5 +1,5 @@
 diff --git a/src/network/socket.cc b/src/network/socket.cc
-index 02480c6..5f83a06 100644
+index 02480c6..6ba76be 100644
 --- a/src/network/socket.cc
 +++ b/src/network/socket.cc
 @@ -62,2 +62,4 @@ void IOVector::update_iterator(ssize_t _n) {
@@ -69,7 +69,52 @@ index 02480c6..5f83a06 100644
 -    size_t sendn = get_sendfile_chunk_size(task->begin, task->end);
 +    size_t sendn = swr_v1_socket_sendfile_chunk(task->begin, task->end);
      ssize_t rv = sendfile(task->file, &task->begin, sendn);
-@@ -914,128 +895,10 @@ int Socket::get_domain_and_type(SocketType type, int *sock_domain, int *sock_typ
+@@ -858,14 +839,11 @@ ssize_t Socket::write_sync(const void *_buf, size_t _len) {
+ 
+-ssize_t Socket::readv(IOVector *io_vector) {
+-    ssize_t retval;
+-
+-    do {
+-        if (ssl) {
+-            retval = ssl_readv(io_vector);
+-        } else {
+-            retval = ::readv(fd, io_vector->get_iterator(), io_vector->get_remain_count());
+-            io_vector->update_iterator(retval);
+-        }
+-    } while (retval < 0 && errno == EINTR);
+-
++// readv/writev, their TLS loops and EINTR retry are Rust's (crates/reactor/src/socket_rw.rs).
++static ssize_t socket_iov(Socket *socket, IOVector *io_vector, bool write, swr_v1_socket_tls_io tls) {
++    swr_v1_socket_iov_state state{
++        io_vector->iov_iterator, io_vector->remain_count, io_vector->index, io_vector->offset_bytes};
++    ssize_t retval = swr_v1_socket_iov(socket->fd, write, &state, tls, socket);
++    io_vector->iov_iterator = state.iterator;
++    io_vector->remain_count = state.remain_count;
++    io_vector->index = state.index;
++    io_vector->offset_bytes = state.offset_bytes;
+     return retval;
+@@ -873,15 +851,8 @@ ssize_t Socket::readv(IOVector *io_vector) {
+ 
+-ssize_t Socket::writev(IOVector *io_vector) {
+-    ssize_t retval;
+-
+-    do {
+-        if (ssl) {
+-            retval = ssl_writev(io_vector);
+-        } else {
+-            retval = ::writev(fd, io_vector->get_iterator(), io_vector->get_remain_count());
+-            io_vector->update_iterator(retval);
+-        }
+-    } while (retval < 0 && errno == EINTR);
++ssize_t Socket::readv(IOVector *io_vector) {
++    return socket_iov(this, io_vector, false, ssl ? socket_tls_recv : nullptr);
++}
+ 
+-    return retval;
++ssize_t Socket::writev(IOVector *io_vector) {
++    return socket_iov(this, io_vector, true, ssl ? socket_tls_send : nullptr);
+ }
+@@ -914,128 +885,10 @@ int Socket::get_domain_and_type(SocketType type, int *sock_domain, int *sock_typ
  
 -#ifndef X509_CHECK_FLAG_ALWAYS_CHECK_SUBJECT
 -static int ssl_check_name(const char *name, ASN1_STRING *pattern) {
@@ -204,7 +249,7 @@ index 02480c6..5f83a06 100644
 -    X509_free(cert);
 -    return true;
  }
-@@ -1043,15 +906,10 @@ _found:
+@@ -1043,15 +896,10 @@ _found:
  bool Socket::ssl_verify(bool allow_self_signed) const {
 -    long err = SSL_get_verify_result(ssl);
 -    switch (err) {
@@ -228,7 +273,7 @@ index 02480c6..5f83a06 100644
 +            SW_LOG_NOTICE, SW_ERROR_SSL_VERIFY_FAILED, "self signed certificate from fd#%d is not allowed", fd);
 +    } else {
          swoole_error_log(SW_LOG_NOTICE,
-@@ -1062,6 +920,4 @@ bool Socket::ssl_verify(bool allow_self_signed) const {
+@@ -1062,6 +910,4 @@ bool Socket::ssl_verify(bool allow_self_signed) const {
                           X509_verify_cert_error_string(err));
 -        return false;
      }
@@ -236,7 +281,7 @@ index 02480c6..5f83a06 100644
 -    return true;
 +    return false;
  }
-@@ -1161,37 +1017,27 @@ const char *Socket::ssl_get_error_reason(int *reason) {
+@@ -1161,37 +1007,27 @@ const char *Socket::ssl_get_error_reason(int *reason) {
  
 -ReturnCode Socket::ssl_accept() {
 -    ssl_clear_error();
@@ -297,7 +342,7 @@ index 02480c6..5f83a06 100644
 +    ssl_handshake(this, result);
 +    if (result.log == 1) {
          int reason;
-@@ -1203,14 +1049,7 @@ ReturnCode Socket::ssl_accept() {
+@@ -1203,14 +1039,7 @@ ReturnCode Socket::ssl_accept() {
                         error_string);
 -        return SW_ERROR;
 -    } else if (err == SSL_ERROR_SYSCALL) {
@@ -316,7 +361,7 @@ index 02480c6..5f83a06 100644
 -    return SW_ERROR;
 +    return static_cast<ReturnCode>(result.code);
  }
-@@ -1218,9 +1057,6 @@ ReturnCode Socket::ssl_accept() {
+@@ -1218,9 +1047,6 @@ ReturnCode Socket::ssl_accept() {
  int Socket::ssl_connect() {
 -    ssl_clear_error();
 -
@@ -329,7 +374,7 @@ index 02480c6..5f83a06 100644
  #ifdef SW_LOG_TRACE_OPEN
 +    if (result.state == SW_SSL_STATE_READY) {
          const char *ssl_version = SSL_get_version(ssl);
-@@ -1228,43 +1064,19 @@ int Socket::ssl_connect() {
+@@ -1228,43 +1054,19 @@ int Socket::ssl_connect() {
          swoole_trace_log(SW_TRACE_SSL, "connected (%s %s)", ssl_version, ssl_cipher);
 +    }
  #endif
@@ -387,7 +432,7 @@ index 02480c6..5f83a06 100644
 -    return SW_ERR;
 +    return result.code;
  }
-@@ -1424,37 +1236,21 @@ void Socket::ssl_catch_error() const {
+@@ -1424,37 +1226,21 @@ void Socket::ssl_catch_error() const {
  
 -ssize_t Socket::ssl_recv(void *_buf, size_t _n) {
 -    ssl_clear_error();
@@ -440,7 +485,7 @@ index 02480c6..5f83a06 100644
  
 +ssize_t Socket::ssl_send(const void *_buf, size_t _n) {
  #ifdef SW_SUPPORT_DTLS
-@@ -1464,31 +1260,3 @@ ssize_t Socket::ssl_send(const void *_buf, size_t _n) {
+@@ -1464,31 +1250,3 @@ ssize_t Socket::ssl_send(const void *_buf, size_t _n) {
  #endif
 -
 -    int n = SSL_write(ssl, _buf, _n);
@@ -472,6 +517,32 @@ index 02480c6..5f83a06 100644
 -    }
 -    return n;
 +    return ssl_io(this, swr_v1_socket_ssl_send(ssl, _buf, _n));
+ }
+@@ -1496,11 +1254,3 @@ ssize_t Socket::ssl_send(const void *_buf, size_t _n) {
+ ssize_t Socket::ssl_readv(IOVector *io_vector) {
+-    ssize_t retval, total_bytes = 0;
+-
+-    do {
+-        retval = ssl_recv(io_vector->get_iterator()->iov_base, io_vector->get_iterator()->iov_len);
+-        total_bytes += retval > 0 ? retval : 0;
+-        io_vector->update_iterator(retval);
+-    } while (retval > 0 && io_vector->get_remain_count() > 0);
+-
+-    return total_bytes > 0 ? total_bytes : retval;
++    return socket_iov(this, io_vector, false, socket_tls_recv);
+ }
+@@ -1508,11 +1258,3 @@ ssize_t Socket::ssl_readv(IOVector *io_vector) {
+ ssize_t Socket::ssl_writev(IOVector *io_vector) {
+-    ssize_t retval, total_bytes = 0;
+-
+-    do {
+-        retval = ssl_send(io_vector->get_iterator()->iov_base, io_vector->get_iterator()->iov_len);
+-        total_bytes += retval > 0 ? retval : 0;
+-        io_vector->update_iterator(retval);
+-    } while (retval > 0 && io_vector->get_remain_count() > 0);
+-
+-    return total_bytes > 0 ? total_bytes : retval;
++    return socket_iov(this, io_vector, true, socket_tls_send);
  }
 diff --git a/src/server/base.cc b/src/server/base.cc
 index cf0058d..29c4c6c 100644
