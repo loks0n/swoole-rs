@@ -861,7 +861,7 @@ index 0f7b169..36caf7b 100644
 -    }
      RETURN_TRUE;
 diff --git a/include/swoole_coroutine_socket.h b/include/swoole_coroutine_socket.h
-index cffe31a..76334a0 100644
+index cffe31a..314774d 100644
 --- a/include/swoole_coroutine_socket.h
 +++ b/include/swoole_coroutine_socket.h
 @@ -20,2 +20,7 @@
@@ -877,37 +877,41 @@ index cffe31a..76334a0 100644
 -        return connected && !is_closed();
 +        return swr_v1_hook_socket_flags(state_).connected && !is_closed();
      }
-@@ -287,13 +292,7 @@ class Socket {
+@@ -287,13 +292,3 @@ class Socket {
      Coroutine *get_bound_co(const EventType event) const {
 -        if (event & SW_EVENT_READ) {
 -            if (read_co) {
 -                return read_co;
 -            }
-+        switch (swr_v1_hook_bound(event, SW_EVENT_READ, SW_EVENT_WRITE, read_co != nullptr, write_co != nullptr)) {
-+        case 1: return read_co;
-+        case 2: return write_co;
-+        default: return nullptr;
-         }
+-        }
 -        if (event & SW_EVENT_WRITE) {
 -            if (write_co) {
 -                return write_co;
 -            }
 -        }
 -        return nullptr;
++        return static_cast<Coroutine *>(swr_v1_hook_socket_bound_co(state_, event));
      }
-@@ -346,3 +345,3 @@ class Socket {
+@@ -346,3 +341,3 @@ class Socket {
      void set_timeout(const timeval *timeout, int _type = SW_TIMEOUT_ALL) const {
 -        set_timeout((double) timeout->tv_sec + ((double) timeout->tv_usec / 1000 / 1000), _type);
 +        set_timeout(swr_v1_hook_timeval((double) timeout->tv_sec, (double) timeout->tv_usec), _type);
      }
-@@ -440,5 +439,3 @@ class Socket {
+@@ -413,4 +408,2 @@ class Socket {
+ 
+-    Coroutine *read_co = nullptr;
+-    Coroutine *write_co = nullptr;
+ 
+@@ -440,5 +433,5 @@ class Socket {
  
 -    bool connected = false;
 -    bool shutdown_read = false;
 -    bool shutdown_write = false;
 +    swr_v1_hook_socket_state *state_ = swr_v1_hook_socket_state_new();
++    Coroutine *event_co(uint32_t event) const { return static_cast<Coroutine *>(swr_v1_hook_socket_co(state_, event)); }
++    void bind_co(uint32_t event, Coroutine *co) { swr_v1_hook_socket_bind(state_, event, co); }
  
-@@ -462,6 +459,6 @@ class Socket {
+@@ -462,6 +455,6 @@ class Socket {
      void check_return_value(ssize_t retval) {
 -        if (retval >= 0) {
 -            set_err(0);
@@ -918,13 +922,13 @@ index cffe31a..76334a0 100644
 +        case 2: set_err(errno); break;
 +        default: break;
          }
-@@ -486,5 +483,2 @@ class Socket {
+@@ -486,5 +479,2 @@ class Socket {
  
 -    ssize_t recv_packet_with_length_protocol();
 -    ssize_t recv_packet_with_eof_protocol();
 -
      bool is_available(const EventType event) {
-@@ -493,8 +487,6 @@ class Socket {
+@@ -493,8 +483,6 @@ class Socket {
          }
 -        if (sw_unlikely(is_closed())) {
 -            set_err(EBADF);
@@ -937,7 +941,7 @@ index cffe31a..76334a0 100644
 +        if (sw_unlikely(status != 0)) {
 +            set_err(status == 1 ? EBADF : SW_ERROR_CO_SOCKET_CLOSE_WAIT);
              return false;
-@@ -530,2 +522,5 @@ class Socket {
+@@ -530,2 +518,5 @@ class Socket {
  
 +    ssize_t vector_all(network::IOVector *io_vector, TimerController *timer, bool write);
 +    swr_v1_hook_socket_ops lifecycle_ops();
@@ -1286,7 +1290,7 @@ index 63ca2f2..f0514c6 100644
 +            break;
          }
 diff --git a/src/coroutine/socket.cc b/src/coroutine/socket.cc
-index 5a16f4c..25a45c8 100644
+index 5a16f4c..6594e61 100644
 --- a/src/coroutine/socket.cc
 +++ b/src/coroutine/socket.cc
 @@ -20,2 +20,7 @@
@@ -1297,12 +1301,92 @@ index 5a16f4c..25a45c8 100644
 +#include "swoole_rs_hooks.h"
 +
  #include "swoole_util.h"
-@@ -395,3 +400,3 @@ Socket::Socket(network::Socket *sock, const Socket *server_sock) {
+@@ -29,2 +34,3 @@ namespace swoole {
+ namespace coroutine {
++static_assert(SW_EVENT_READ == 1 << 9 && SW_EVENT_WRITE == 1 << 10, "swr_v1_hook_socket_* event bits");
+ TimeoutType Socket::timeout_type_list[4] = {SW_TIMEOUT_DNS, SW_TIMEOUT_CONNECT, SW_TIMEOUT_READ, SW_TIMEOUT_WRITE};
+@@ -36,6 +42,6 @@ void Socket::timer_callback(Timer *timer, TimerNode *tnode) {
+         socket->read_timer = nullptr;
+-        socket->read_co->resume();
++        socket->event_co(SW_EVENT_READ)->resume();
+     } else if (tnode == socket->write_timer) {
+         socket->write_timer = nullptr;
+-        socket->write_co->resume();
++        socket->event_co(SW_EVENT_WRITE)->resume();
+     } else {
+@@ -50,3 +56,3 @@ int Socket::readable_event_callback(Reactor *reactor, Event *event) {
+         if (socket->want_event == SW_EVENT_READ) {
+-            socket->write_co->resume();
++            socket->event_co(SW_EVENT_WRITE)->resume();
+         }
+@@ -56,3 +62,3 @@ int Socket::readable_event_callback(Reactor *reactor, Event *event) {
+         }
+-        socket->read_co->resume();
++        socket->event_co(SW_EVENT_READ)->resume();
+     }
+@@ -67,3 +73,3 @@ int Socket::writable_event_callback(Reactor *reactor, Event *event) {
+         if (socket->want_event == SW_EVENT_WRITE) {
+-            socket->read_co->resume();
++            socket->event_co(SW_EVENT_READ)->resume();
+         }
+@@ -73,3 +79,3 @@ int Socket::writable_event_callback(Reactor *reactor, Event *event) {
+         }
+-        socket->write_co->resume();
++        socket->event_co(SW_EVENT_WRITE)->resume();
+     }
+@@ -81,10 +87,10 @@ int Socket::error_event_callback(Reactor *reactor, Event *event) {
+     auto *socket = static_cast<Socket *>(event->socket->object);
+-    if (socket->write_co) {
++    if (socket->event_co(SW_EVENT_WRITE)) {
+         socket->set_err(0);
+-        socket->write_co->resume();
++        socket->event_co(SW_EVENT_WRITE)->resume();
+     }
+     // Notice: socket maybe deleted in write coroutine
+-    if (event->socket->object == socket && !event->socket->removed && socket->read_co) {
++    if (event->socket->object == socket && !event->socket->removed && socket->event_co(SW_EVENT_READ)) {
+         socket->set_err(0);
+-        socket->read_co->resume();
++        socket->event_co(SW_EVENT_READ)->resume();
+     }
+@@ -148,9 +154,9 @@ bool Socket::wait_event(const EventType event, const void **_buf, size_t _n) {
+         if (sw_likely(event == SW_EVENT_READ)) {
+-            read_co = co;
++            bind_co(SW_EVENT_READ, co);
+             System::sleep(0.01);
+-            read_co = nullptr;
++            bind_co(SW_EVENT_READ, nullptr);
+         } else {
+-            write_co = co;
++            bind_co(SW_EVENT_WRITE, co);
+             System::sleep(0.01);
+-            write_co = nullptr;
++            bind_co(SW_EVENT_WRITE, nullptr);
+         }
+@@ -183,5 +189,5 @@ bool Socket::wait_event(const EventType event, const void **_buf, size_t _n) {
+     if (sw_likely(event == SW_EVENT_READ)) {
+-        read_co = co;
+-        read_co->yield(&cancel_fn);
+-        read_co = nullptr;
++        bind_co(SW_EVENT_READ, co);
++        co->yield(&cancel_fn);
++        bind_co(SW_EVENT_READ, nullptr);
+     } else if (event == SW_EVENT_WRITE) {
+@@ -192,5 +198,5 @@ bool Socket::wait_event(const EventType event, const void **_buf, size_t _n) {
+         }
+-        write_co = co;
+-        write_co->yield(&cancel_fn);
+-        write_co = nullptr;
++        bind_co(SW_EVENT_WRITE, co);
++        co->yield(&cancel_fn);
++        bind_co(SW_EVENT_WRITE, nullptr);
+     } else {
+@@ -395,3 +401,3 @@ Socket::Socket(network::Socket *sock, const Socket *server_sock) {
      protocol = server_sock->protocol;
 -    connected = true;
 +    swr_v1_hook_socket_connect(state_);
      ssl_context = server_sock->ssl_context;
-@@ -458,8 +463,6 @@ void Socket::set_timeout(double timeout, int _type) const {
+@@ -458,8 +464,6 @@ void Socket::set_timeout(double timeout, int _type) const {
  const char *Socket::get_event_str(const EventType event) const {
 -    if (event == SW_EVENT_READ) {
 -        return "reading";
@@ -1310,12 +1394,12 @@ index 5a16f4c..25a45c8 100644
 -        return "writing";
 -    } else {
 -        return read_co && write_co ? "reading or writing" : (read_co ? "reading" : "writing");
-+    switch (swr_v1_hook_event_name(event, SW_EVENT_READ, SW_EVENT_WRITE, read_co != nullptr, write_co != nullptr)) {
++    switch (swr_v1_hook_socket_event_name(state_, event)) {
 +    case 0: return "reading";
 +    case 1: return "writing";
 +    default: return "reading or writing";
      }
-@@ -504,8 +507,10 @@ bool Socket::connect(const sockaddr *addr, socklen_t addrlen) {
+@@ -504,8 +508,10 @@ bool Socket::connect(const sockaddr *addr, socklen_t addrlen) {
      }
 -    int retval;
 +    int retval, action;
@@ -1330,18 +1414,26 @@ index 5a16f4c..25a45c8 100644
 +    if (action != 0) {
 +        if (action < 0) {
              set_err(errno);
-@@ -520,3 +525,4 @@ bool Socket::connect(const sockaddr *addr, socklen_t addrlen) {
+@@ -520,3 +526,4 @@ bool Socket::connect(const sockaddr *addr, socklen_t addrlen) {
              } else {
 -                if (socket->get_option(SOL_SOCKET, SO_ERROR, &errCode) < 0 || errCode != 0) {
 +                int option_result = socket->get_option(SOL_SOCKET, SO_ERROR, &errCode);
 +                if (swr_v1_hook_connect_option(option_result, option_result < 0 ? 0 : errCode)) {
                      set_err(errCode);
-@@ -527,3 +533,3 @@ bool Socket::connect(const sockaddr *addr, socklen_t addrlen) {
+@@ -527,3 +534,3 @@ bool Socket::connect(const sockaddr *addr, socklen_t addrlen) {
      }
 -    connected = true;
 +    swr_v1_hook_socket_connect(state_);
      socket->get_name();
-@@ -661,9 +667,6 @@ bool Socket::check_liveness() {
+@@ -593,5 +600,5 @@ bool Socket::connect(const std::string &_host, int _port, int flags) {
+         /* locked like wait_event */
+-        read_co = write_co = Coroutine::get_current_safe();
++        bind_co(SW_EVENT_RDWR, Coroutine::get_current_safe());
+         ON_SCOPE_EXIT {
+-            read_co = write_co = nullptr;
++            bind_co(SW_EVENT_RDWR, nullptr);
+         };
+@@ -661,9 +668,6 @@ bool Socket::check_liveness() {
      }
 -    if (!socket->check_liveness()) {
 -        const int error = errno;
@@ -1355,7 +1447,7 @@ index 5a16f4c..25a45c8 100644
 +    set_err(swr_v1_hook_liveness_error(alive, error, ECONNRESET));
 +    return alive;
  }
-@@ -698,5 +701,7 @@ ssize_t Socket::recv(void *_buf, size_t _n) {
+@@ -698,5 +702,7 @@ ssize_t Socket::recv(void *_buf, size_t _n) {
      TimerController timer(&read_timer, socket->read_timeout, this, timer_callback);
 -    do {
 -        retval = socket->recv(_buf, _n, 0);
@@ -1366,7 +1458,7 @@ index 5a16f4c..25a45c8 100644
 +        [&]() { return timer.start(); },
 +        [&]() { return wait_event(SW_EVENT_READ); });
      check_return_value(retval);
-@@ -711,6 +716,7 @@ ssize_t Socket::send(const void *_buf, size_t _n) {
+@@ -711,6 +717,7 @@ ssize_t Socket::send(const void *_buf, size_t _n) {
      TimerController timer(&write_timer, socket->write_timeout, this, timer_callback);
 -    do {
 -        retval = socket->send(_buf, _n, 0);
@@ -1378,7 +1470,7 @@ index 5a16f4c..25a45c8 100644
 +        [&]() { return timer.start(); },
 +        [&]() { return wait_event(SW_EVENT_WRITE, &_buf, _n); });
      check_return_value(retval);
-@@ -725,5 +731,7 @@ ssize_t Socket::read(void *_buf, size_t _n) {
+@@ -725,5 +732,7 @@ ssize_t Socket::read(void *_buf, size_t _n) {
      TimerController timer(&read_timer, socket->read_timeout, this, timer_callback);
 -    do {
 -        retval = socket->read(_buf, _n);
@@ -1389,7 +1481,7 @@ index 5a16f4c..25a45c8 100644
 +        [&]() { return timer.start(); },
 +        [&]() { return wait_event(SW_EVENT_READ); });
      check_return_value(retval);
-@@ -800,6 +808,7 @@ ssize_t Socket::write(const void *_buf, size_t _n) {
+@@ -800,6 +809,7 @@ ssize_t Socket::write(const void *_buf, size_t _n) {
      TimerController timer(&write_timer, socket->write_timeout, this, timer_callback);
 -    do {
 -        retval = socket->write((void *) _buf, _n);
@@ -1401,7 +1493,7 @@ index 5a16f4c..25a45c8 100644
 +        [&]() { return timer.start(); },
 +        [&]() { return wait_event(SW_EVENT_WRITE, &_buf, _n); });
      check_return_value(retval);
-@@ -814,5 +823,7 @@ ssize_t Socket::readv(network::IOVector *io_vector) {
+@@ -814,5 +824,7 @@ ssize_t Socket::readv(network::IOVector *io_vector) {
      TimerController timer(&read_timer, socket->read_timeout, this, timer_callback);
 -    do {
 -        retval = socket->readv(io_vector);
@@ -1412,7 +1504,7 @@ index 5a16f4c..25a45c8 100644
 +        [&]() { return timer.start(); },
 +        [&]() { return wait_event(SW_EVENT_READ); });
      check_return_value(retval);
-@@ -826,44 +837,4 @@ ssize_t Socket::readv_all(network::IOVector *io_vector) {
+@@ -826,44 +838,4 @@ ssize_t Socket::readv_all(network::IOVector *io_vector) {
      }
 -    ssize_t total_bytes = 0;
      TimerController timer(&read_timer, socket->read_timeout, this, timer_callback);
@@ -1458,7 +1550,7 @@ index 5a16f4c..25a45c8 100644
 -    return total_bytes;
 +    return vector_all(io_vector, &timer, false);
  }
-@@ -876,5 +847,7 @@ ssize_t Socket::writev(network::IOVector *io_vector) {
+@@ -876,5 +848,7 @@ ssize_t Socket::writev(network::IOVector *io_vector) {
      TimerController timer(&write_timer, socket->write_timeout, this, timer_callback);
 -    do {
 -        retval = socket->writev(io_vector);
@@ -1469,7 +1561,7 @@ index 5a16f4c..25a45c8 100644
 +        [&]() { return timer.start(); },
 +        [&]() { return wait_event(SW_EVENT_WRITE); });
      check_return_value(retval);
-@@ -888,44 +861,52 @@ ssize_t Socket::writev_all(network::IOVector *io_vector) {
+@@ -888,44 +862,52 @@ ssize_t Socket::writev_all(network::IOVector *io_vector) {
      }
 -    ssize_t total_bytes = 0;
      TimerController timer(&write_timer, socket->write_timeout, this, timer_callback);
@@ -1561,7 +1653,7 @@ index 5a16f4c..25a45c8 100644
 -    return total_bytes;
 +    return swr_v1_hook_vector_all(&ops);
  }
-@@ -955,4 +936,6 @@ ssize_t Socket::recv_all(void *_buf, size_t _n) {
+@@ -955,4 +937,6 @@ ssize_t Socket::recv_all(void *_buf, size_t _n) {
          retval = socket->recv((char *) _buf + total_bytes, _n - total_bytes, 0);
 -        return (retval < 0 && socket->catch_read_error(errno) == SW_WAIT) ||
 -               (retval > 0 && (total_bytes += retval) < _n);
@@ -1570,12 +1662,12 @@ index 5a16f4c..25a45c8 100644
 +        total_bytes = plan.total;
 +        return plan.again;
      };
-@@ -965,3 +948,3 @@ ssize_t Socket::recv_all(void *_buf, size_t _n) {
+@@ -965,3 +949,3 @@ ssize_t Socket::recv_all(void *_buf, size_t _n) {
  
 -    return retval < 0 && total_bytes == 0 ? -1 : total_bytes;
 +    return swr_v1_hook_transfer_result(retval, total_bytes);
  }
-@@ -991,4 +974,6 @@ ssize_t Socket::send_all(const void *_buf, size_t _n) {
+@@ -991,4 +975,6 @@ ssize_t Socket::send_all(const void *_buf, size_t _n) {
          retval = socket->send((char *) _buf + total_bytes, _n - total_bytes, 0);
 -        return (retval < 0 && socket->catch_write_error(errno) == SW_WAIT) ||
 -               (retval > 0 && (total_bytes += retval) < _n);
@@ -1584,12 +1676,12 @@ index 5a16f4c..25a45c8 100644
 +        total_bytes = plan.total;
 +        return plan.again;
      };
-@@ -1001,3 +986,3 @@ ssize_t Socket::send_all(const void *_buf, size_t _n) {
+@@ -1001,3 +987,3 @@ ssize_t Socket::send_all(const void *_buf, size_t _n) {
  
 -    return retval < 0 && total_bytes == 0 ? -1 : total_bytes;
 +    return swr_v1_hook_transfer_result(retval, total_bytes);
  }
-@@ -1010,5 +995,7 @@ ssize_t Socket::recvmsg(struct msghdr *msg, int flags) {
+@@ -1010,5 +996,7 @@ ssize_t Socket::recvmsg(struct msghdr *msg, int flags) {
      TimerController timer(&read_timer, socket->read_timeout, this, timer_callback);
 -    do {
 -        retval = ::recvmsg(sock_fd, msg, flags);
@@ -1600,7 +1692,7 @@ index 5a16f4c..25a45c8 100644
 +        [&]() { return timer.start(); },
 +        [&]() { return wait_event(SW_EVENT_READ); });
      check_return_value(retval);
-@@ -1026,5 +1013,7 @@ ssize_t Socket::sendmsg(const struct msghdr *msg, int flags) {
+@@ -1026,5 +1014,7 @@ ssize_t Socket::sendmsg(const struct msghdr *msg, int flags) {
      TimerController timer(&write_timer, socket->write_timeout, this, timer_callback);
 -    do {
 -        retval = ::sendmsg(sock_fd, msg, flags);
@@ -1611,7 +1703,7 @@ index 5a16f4c..25a45c8 100644
 +        [&]() { return timer.start(); },
 +        [&]() { return wait_event(SW_EVENT_WRITE); });
      check_return_value(retval);
-@@ -1306,7 +1295,11 @@ ssize_t Socket::sendto(const std::string &host, int port, const void *_buf, size
+@@ -1306,7 +1296,11 @@ ssize_t Socket::sendto(const std::string &host, int port, const void *_buf, size
      TimerController timer(&write_timer, socket->write_timeout, this, timer_callback);
 -    do {
 -        retval = socket->sendto(addr, _buf, _n, 0);
@@ -1628,7 +1720,7 @@ index 5a16f4c..25a45c8 100644
 +        [&]() { return timer.start(); },
 +        [&]() { return wait_event(SW_EVENT_WRITE, &_buf, _n); }, EINTR);
      check_return_value(retval);
-@@ -1334,7 +1327,11 @@ ssize_t Socket::recvfrom(void *_buf, size_t _n, sockaddr *_addr, socklen_t *_soc
+@@ -1334,7 +1328,11 @@ ssize_t Socket::recvfrom(void *_buf, size_t _n, sockaddr *_addr, socklen_t *_soc
      TimerController timer(&read_timer, socket->read_timeout, this, timer_callback);
 -    do {
 -        retval = ::recvfrom(sock_fd, _buf, _n, 0, _addr, _socklen);
@@ -1645,7 +1737,7 @@ index 5a16f4c..25a45c8 100644
 +        [&]() { return timer.start(); },
 +        [&]() { return wait_event(SW_EVENT_READ); }, EINTR);
      check_return_value(retval);
-@@ -1343,126 +1340,2 @@ ssize_t Socket::recvfrom(void *_buf, size_t _n, sockaddr *_addr, socklen_t *_soc
+@@ -1343,126 +1341,2 @@ ssize_t Socket::recvfrom(void *_buf, size_t _n, sockaddr *_addr, socklen_t *_soc
  
 -ssize_t Socket::recv_packet_with_length_protocol() {
 -    ssize_t packet_len = SW_BUFFER_SIZE_STD;
@@ -1772,7 +1864,7 @@ index 5a16f4c..25a45c8 100644
 -}
 -
  /**
-@@ -1490,24 +1363,78 @@ ssize_t Socket::recv_packet(double timeout) {
+@@ -1490,24 +1364,78 @@ ssize_t Socket::recv_packet(double timeout) {
      get_read_buffer();
 -
 -    // unprocessed data
@@ -1872,7 +1964,7 @@ index 5a16f4c..25a45c8 100644
 +    ssize_t recv_bytes = swr_v1_hook_recv_packet(&ops);
 +    context.store();
      return recv_bytes;
-@@ -1517,33 +1444,12 @@ bool Socket::shutdown(int _how) {
+@@ -1517,33 +1445,12 @@ bool Socket::shutdown(int _how) {
      set_err(0);
 -    int error = 0;
 -    if (!is_connected() || (_how == SHUT_RD && shutdown_read) || (_how == SHUT_WR && shutdown_write)) {
@@ -1916,7 +2008,7 @@ index 5a16f4c..25a45c8 100644
 +    if (error == 0) {
 +        return true;
      }
-@@ -1557,18 +1463,36 @@ void Socket::ssl_close() const {
+@@ -1557,18 +1464,36 @@ void Socket::ssl_close() const {
  
 +// Rust decides the cancel and close; these are the socket's effects.
 +swr_v1_hook_socket_ops Socket::lifecycle_ops() {
@@ -1934,7 +2026,7 @@ index 5a16f4c..25a45c8 100644
 +        [](void *s, int32_t error) { static_cast<Socket *>(s)->set_err(error); },
 +        [](void *s, uint32_t event) {
 +            auto *sock = static_cast<Socket *>(s);
-+            (event == SW_EVENT_READ ? sock->read_co : sock->write_co)->resume();
++            sock->event_co(event)->resume();
 +        },
 +        [](void *s) { static_cast<Socket *>(s)->socket->close_wait = 1; },
 +        [](void *s) {
@@ -1968,7 +2060,7 @@ index 5a16f4c..25a45c8 100644
 +    const swr_v1_hook_socket_ops ops = lifecycle_ops();
 +    return swr_v1_hook_cancel(&ops, event);
  }
-@@ -1583,24 +1507,4 @@ bool Socket::cancel(const EventType event) {
+@@ -1583,24 +1508,4 @@ bool Socket::cancel(const EventType event) {
  bool Socket::close() {
 -    if (is_closed()) {
 -        set_err(EBADF);
@@ -1995,11 +2087,11 @@ index 5a16f4c..25a45c8 100644
 +    const swr_v1_hook_socket_ops ops = lifecycle_ops();
 +    return swr_v1_hook_close(&ops);
  }
-@@ -1625,2 +1529,3 @@ Socket::~Socket() {
+@@ -1625,2 +1530,3 @@ Socket::~Socket() {
      delete write_buffer;
 +    swr_v1_hook_socket_state_free(state_);
      if (socket == nullptr) {
-@@ -1636,8 +1541,11 @@ Socket::~Socket() {
+@@ -1636,8 +1542,11 @@ Socket::~Socket() {
  bool Socket::TimerController::start() {
 -    if (timeout != 0 && !*timer_pp) {
 +    auto actions = swr_v1_hook_timer(0, enabled, timeout != 0 && *timer_pp != nullptr, false, timeout);
@@ -2016,7 +2108,7 @@ index 5a16f4c..25a45c8 100644
 +    }
 +    if (actions & SWR_HOOK_TIMER_SENTINEL) {
          *timer_pp = reinterpret_cast<TimerNode *>(-1);
-@@ -1648,6 +1556,9 @@ bool Socket::TimerController::start() {
+@@ -1648,6 +1557,9 @@ bool Socket::TimerController::start() {
  Socket::TimerController::~TimerController() {
 -    if (enabled && *timer_pp) {
 -        if (*timer_pp != reinterpret_cast<TimerNode *>(-1)) {
@@ -2030,7 +2122,7 @@ index 5a16f4c..25a45c8 100644
 +    }
 +    if (actions & SWR_HOOK_TIMER_CLEAR) {
          *timer_pp = nullptr;
-@@ -1686,13 +1597,17 @@ bool Socket::TimeoutController::has_timedout(TimeoutType _type) {
+@@ -1686,13 +1598,17 @@ bool Socket::TimeoutController::has_timedout(TimeoutType _type) {
      SW_ASSERT_1BYTE(_type);
 -    if (timeout > 0) {
 -        if (sw_unlikely(startup_time == 0)) {
@@ -2343,7 +2435,7 @@ index e6ef9c2..8eee08d 100644
 -    return true;
  }
 diff --git a/src/coroutine/uring_socket.cc b/src/coroutine/uring_socket.cc
-index 758765a..80a672f 100644
+index 758765a..4c1f907 100644
 --- a/src/coroutine/uring_socket.cc
 +++ b/src/coroutine/uring_socket.cc
 @@ -20,2 +20,7 @@
@@ -2354,11 +2446,95 @@ index 758765a..80a672f 100644
 +#include "swoole_rs_hooks.h"
 +
  #include "swoole_coroutine_socket.h"
+@@ -35,5 +40,5 @@ bool UringSocket::connect(const sockaddr *addr, socklen_t addrlen) {
+ 
+-    write_co = read_co = Coroutine::get_current_safe();
++    bind_co(SW_EVENT_RDWR, Coroutine::get_current_safe());
+     int retval = Iouring::connect(socket->get_fd(), addr, addrlen, socket->connect_timeout);
+-    write_co = read_co = nullptr;
++    bind_co(SW_EVENT_RDWR, nullptr);
+     if (retval < 0) {
 @@ -42,3 +47,3 @@ bool UringSocket::connect(const sockaddr *addr, socklen_t addrlen) {
  
 -    connected = true;
 +    swr_v1_hook_socket_connect(state_);
      socket->get_name();
+@@ -56,5 +61,5 @@ UringSocket *UringSocket::accept(double timeout) {
+ 
+-    read_co = Coroutine::get_current_safe();
++    bind_co(SW_EVENT_READ, Coroutine::get_current_safe());
+     network::Socket *conn = uring_accept(timeout == 0 ? socket->read_timeout : timeout);
+-    read_co = nullptr;
++    bind_co(SW_EVENT_READ, nullptr);
+ 
+@@ -121,5 +126,5 @@ ssize_t UringSocket::read(void *_buf, size_t _n) {
+     }
+-    read_co = Coroutine::get_current_safe();
++    bind_co(SW_EVENT_READ, Coroutine::get_current_safe());
+     ssize_t retval = Iouring::read(socket->get_fd(), _buf, _n, socket->read_timeout);
+-    read_co = nullptr;
++    bind_co(SW_EVENT_READ, nullptr);
+     check_return_value(retval);
+@@ -132,5 +137,5 @@ ssize_t UringSocket::write(const void *_buf, size_t _n) {
+     }
+-    write_co = Coroutine::get_current_safe();
++    bind_co(SW_EVENT_WRITE, Coroutine::get_current_safe());
+     ssize_t retval = Iouring::write(socket->get_fd(), _buf, _n, socket->write_timeout);
+-    write_co = nullptr;
++    bind_co(SW_EVENT_WRITE, nullptr);
+     check_return_value(retval);
+@@ -143,5 +148,5 @@ ssize_t UringSocket::recvmsg(msghdr *msg, int flags) {
+     }
+-    read_co = Coroutine::get_current_safe();
++    bind_co(SW_EVENT_READ, Coroutine::get_current_safe());
+     ssize_t retval = Iouring::recvmsg(socket->get_fd(), msg, flags, socket->read_timeout);
+-    read_co = nullptr;
++    bind_co(SW_EVENT_READ, nullptr);
+     check_return_value(retval);
+@@ -154,5 +159,5 @@ ssize_t UringSocket::sendmsg(const msghdr *msg, int flags) {
+     }
+-    write_co = Coroutine::get_current_safe();
++    bind_co(SW_EVENT_WRITE, Coroutine::get_current_safe());
+     ssize_t retval = Iouring::sendmsg(socket->get_fd(), msg, flags, socket->write_timeout);
+-    write_co = nullptr;
++    bind_co(SW_EVENT_WRITE, nullptr);
+     check_return_value(retval);
+@@ -165,5 +170,5 @@ ssize_t UringSocket::recvfrom(void *_buf, size_t _n, sockaddr *_addr, socklen_t
+     }
+-    read_co = Coroutine::get_current_safe();
++    bind_co(SW_EVENT_READ, Coroutine::get_current_safe());
+     ssize_t retval = Iouring::recvfrom(socket->get_fd(), _buf, _n, _addr, _socklen, socket->read_timeout);
+-    read_co = nullptr;
++    bind_co(SW_EVENT_READ, nullptr);
+     check_return_value(retval);
+@@ -201,5 +206,5 @@ ssize_t UringSocket::sendto(const std::string &host, int port, const void *_buf,
+ 
+-    write_co = Coroutine::get_current_safe();
++    bind_co(SW_EVENT_WRITE, Coroutine::get_current_safe());
+     retval = Iouring::sendto(socket->get_fd(), _buf, _n, 0, &addr.addr.ss, addr.len, socket->write_timeout);
+-    write_co = nullptr;
++    bind_co(SW_EVENT_WRITE, nullptr);
+ 
+@@ -217,3 +222,3 @@ ssize_t UringSocket::recv(void *_buf, size_t _n) {
+     ssize_t retval;
+-    read_co = Coroutine::get_current_safe();
++    bind_co(SW_EVENT_READ, Coroutine::get_current_safe());
+     if (is_ssl()) {
+@@ -223,3 +228,3 @@ ssize_t UringSocket::recv(void *_buf, size_t _n) {
+     }
+-    read_co = nullptr;
++    bind_co(SW_EVENT_READ, nullptr);
+ 
+@@ -235,3 +240,3 @@ ssize_t UringSocket::send(const void *_buf, size_t _n) {
+     ssize_t retval;
+-    write_co = Coroutine::get_current_safe();
++    bind_co(SW_EVENT_WRITE, Coroutine::get_current_safe());
+     if (is_ssl()) {
+@@ -241,3 +246,3 @@ ssize_t UringSocket::send(const void *_buf, size_t _n) {
+     }
+-    write_co = nullptr;
++    bind_co(SW_EVENT_WRITE, nullptr);
+ 
 @@ -253,10 +258,11 @@ ssize_t UringSocket::recv_all(void *_buf, size_t _n) {
          retval = recv((char *) _buf + total_bytes, _n - total_bytes);
 -        if (retval <= 0) {
@@ -2391,6 +2567,36 @@ index 758765a..80a672f 100644
 -    return retval < 0 && total_bytes == 0 ? -1 : total_bytes;
 +    return swr_v1_hook_transfer_result(retval, total_bytes);
  }
+@@ -322,3 +329,3 @@ bool UringSocket::sendfile(const char *filename, off_t offset, size_t length) {
+ 
+-    write_co = Coroutine::get_current_safe();
++    bind_co(SW_EVENT_WRITE, Coroutine::get_current_safe());
+     if (is_ssl()) {
+@@ -328,3 +335,3 @@ bool UringSocket::sendfile(const char *filename, off_t offset, size_t length) {
+     }
+-    write_co = nullptr;
++    bind_co(SW_EVENT_WRITE, nullptr);
+ 
+@@ -339,3 +346,3 @@ ssize_t UringSocket::readv(network::IOVector *io_vector) {
+ 
+-    read_co = Coroutine::get_current_safe();
++    bind_co(SW_EVENT_READ, Coroutine::get_current_safe());
+     do {
+@@ -348,3 +355,3 @@ ssize_t UringSocket::readv(network::IOVector *io_vector) {
+     } while (retval < 0 && errno == EINTR);
+-    read_co = nullptr;
++    bind_co(SW_EVENT_READ, nullptr);
+ 
+@@ -360,3 +367,3 @@ ssize_t UringSocket::writev(network::IOVector *io_vector) {
+ 
+-    write_co = Coroutine::get_current_safe();
++    bind_co(SW_EVENT_WRITE, Coroutine::get_current_safe());
+     do {
+@@ -369,3 +376,3 @@ ssize_t UringSocket::writev(network::IOVector *io_vector) {
+     } while (retval < 0 && errno == EINTR);
+-    write_co = nullptr;
++    bind_co(SW_EVENT_WRITE, nullptr);
+ 
 @@ -388,3 +395,3 @@ ssize_t UringSocket::readv_all(network::IOVector *io_vector) {
      check_return_value(retval);
 -    return retval < 0 && total_bytes == 0 ? -1 : total_bytes;

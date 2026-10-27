@@ -77,10 +77,8 @@ enum swr_hook_retry_action { SWR_HOOK_RETRY_DONE = 0, SWR_HOOK_RETRY_IO = 1, SWR
 typedef struct { uint32_t phase; int32_t action; } swr_v1_hook_retry_plan;
 swr_v1_hook_retry_plan swr_v1_hook_retry(uint32_t phase, int64_t result, bool success);
 swr_v1_hook_retry_plan swr_v1_hook_retry_interrupt(uint32_t phase, int64_t result, bool success, bool interrupted);
-uint32_t swr_v1_hook_bound(uint32_t event, uint32_t read, uint32_t write, bool read_bound, bool write_bound);
 uint32_t swr_v1_hook_socket_status(bool closed, bool close_wait);
 uint32_t swr_v1_hook_check_result(int64_t result, bool has_error);
-uint32_t swr_v1_hook_event_name(uint32_t event, uint32_t read, uint32_t write, bool read_bound, bool write_bound);
 double swr_v1_hook_timeval(double seconds, double micros);
 uint32_t swr_v1_hook_timeout_action(double timeout, double startup);
 typedef struct { double remaining; bool expired; } swr_v1_hook_timeout_plan;
@@ -135,6 +133,12 @@ void swr_v1_hook_socket_state_free(swr_v1_hook_socket_state *state);
 swr_v1_hook_socket_flags_t swr_v1_hook_socket_flags(const swr_v1_hook_socket_state *state);
 void swr_v1_hook_socket_set_flags(swr_v1_hook_socket_state *state, swr_v1_hook_socket_flags_t flags);
 void swr_v1_hook_socket_connect(swr_v1_hook_socket_state *state);
+/* The coroutine bound for reading or writing (event SW_EVENT_READ/WRITE; bind accepts both bits).
+   bound_co follows get_bound_co; event_name returns 0 reading, 1 writing, 2 reading or writing. */
+void *swr_v1_hook_socket_co(const swr_v1_hook_socket_state *state, uint32_t event);
+void swr_v1_hook_socket_bind(swr_v1_hook_socket_state *state, uint32_t event, void *co);
+void *swr_v1_hook_socket_bound_co(const swr_v1_hook_socket_state *state, uint32_t event);
+uint32_t swr_v1_hook_socket_event_name(const swr_v1_hook_socket_state *state, uint32_t event);
 /* Socket::cancel/close. release marks the descriptor closed and runs the destructor
    callback once; the socket may be gone afterwards. resume wakes the coroutine bound
    to the event (read or write). */

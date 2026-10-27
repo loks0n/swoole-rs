@@ -41,7 +41,9 @@ def main():
             selected_only=['swr_v1_hook_socket_ops Socket::lifecycle_ops('] if variant=='selected' else []
             bodies=[block(texts[unit],signature)+(';' if signature.startswith('struct ') else '') for signature in signatures+selected_only]
             (tree/(variant+'-lifecycle.inc')).write_text('\n'.join(bodies))
-            (tree/(variant+'-lifecycle-inline.inc')).write_text('\n'.join(block(texts['include/swoole_coroutine_socket.h'],signature) for signature in inline))
+            # The selected header's bound-coroutine accessors over its Rust state (#439).
+            inline_selected=['Coroutine *event_co(', 'void bind_co('] if variant=='selected' else []
+            (tree/(variant+'-lifecycle-inline.inc')).write_text('\n'.join(block(texts['include/swoole_coroutine_socket.h'],signature) for signature in inline+inline_selected))
         command=['c++','-std=c++14','-O1','-g','-I'+str(tree),'-I'+str(ROOT/'native/hooks'),'-I'+str(ROOT/'tests/modules/hooks'),str(ROOT/'tests/modules/hooks/lifecycle_gate.cc'),str(a.archive.resolve()),'-lpthread','-o',str(tree/'lifecycle')]
         if a.sanitize:command+=['-fsanitize=address,undefined','-fno-omit-frame-pointer']
         if sys.platform.startswith('linux'):command+=['-ldl','-lm']
