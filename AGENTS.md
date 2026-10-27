@@ -95,13 +95,20 @@ follow-ups) need no one. For an open question, resolve it yourself first:
 reread the issue, its goal and earlier decisions, and gather data (reproduce,
 measure both engines, read upstream). Only when that can't settle it, add
 `needs:decision` with the evidence and the options, release the claim, and take
-another issue. Size is never a reason to skip a ticket or stop the loop: split
-it into PRs that each land on their own. The loop ends only when nothing is
-claimable.
+another issue. Size is never a reason to skip a ticket or stop the loop. The
+loop ends only when nothing is claimable.
 
 Migration moves code into Rust, never back. Restoring upstream C++ in place of
 Rust needs a goal decision on the issue first; to drop a step machine, move the
 whole operation into Rust.
+
+Migration PRs are large. Each one moves a whole unit: a group of state together
+with every operation over it, or a family of functions, so that their upstream
+bodies are deleted. One function or one decision per PR is too small, and a
+decision moved without its effect deletes nothing. Aim for 500 or more upstream
+lines deleted per PR, and state the count in the PR: `python3 tools/badges.py
+--source target/upstream/src --output target/badges` on `main` and on the branch.
+Verify once per PR, not per function.
 
 ## Reviewer agents
 
