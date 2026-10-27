@@ -543,7 +543,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('--url-positive-only', commands['http-url-encode-positive'])
         self.assertNotIn('--sanitize', commands['http-url-encode-positive'])
         self.assertNotIn('--url-positive-only', commands['http-native'])
-        self.assertIn('--require-output-workflow', commands['reactor-production-socket-output'])
         self.assertIn('--socket-output', commands['reactor-production-socket-output'])
         self.assertIn('--sdk-export', commands['phpevents-sdk'])
         self.assertIn('--native-export', commands['phpevents-sdk'])

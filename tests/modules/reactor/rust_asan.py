@@ -102,7 +102,7 @@ def main():
         if len(libc) != 1: raise ValueError('Ambiguous exact Cargo libc artifact')
         base=['rustc','--extern','libc='+str(libc[0]),'-L','dependency='+str(libc[0].parent),'-Ccodegen-units=1','--edition=2024','--crate-name','swoole_rs_reactor','-g','-Copt-level=2','-Zsanitizer=address',source]
         run('unit-compile',base+['--test','-o',unit])
-        run('unit', [unit,'--nocapture', *(['iov_owned_positive'] if args.iov_owned_only else ['output_workflow'] if args.forwarding_only else ['iov_progress_positive'] if args.iov_progress_only else ['output_positive'] if args.output_only else ['builtins_positive'] if args.builtins_only else ['callbacks_positive'] if args.callbacks_only else ['batch_positive'] if args.batch_only else ['wait_positive'] if args.wait_only else ['backend_positive'] if args.backend_only else [])])
+        run('unit', [unit,'--nocapture', *(['iov_owned_positive'] if args.iov_owned_only else ['output::'] if args.forwarding_only else ['iov_progress_positive'] if args.iov_progress_only else ['output::'] if args.output_only else ['builtins_positive'] if args.builtins_only else ['callbacks_positive'] if args.callbacks_only else ['batch_positive'] if args.batch_only else ['wait_positive'] if args.wait_only else ['backend_positive'] if args.backend_only else [])])
         archive=out/'libswoole_rs_reactor.a'
         run('archive-compile',base+['--crate-type','staticlib','-Zexternal-clangrt=yes','-o',archive])
         members=run('archive-members',['ar','t',archive]).splitlines()

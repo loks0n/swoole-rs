@@ -14,7 +14,6 @@ from tools.harness import ROOT,Engine,parse_engines,run_isolated,write_report
 from tools.hybrid_identity import attest,sha
 from tools.build_upstream import require_build_space
 import owned_iov_identity as owned_iov
-import output_workflow_identity as output_workflow
 import buffer_typed_identity as typed_buffer
 
 # Reuse the already-qualified exact source/config mirror and immutable-export
@@ -36,7 +35,6 @@ p.add_argument('--php-extension',action='append',default=[])
 p.add_argument('--output',type=Path,required=True)
 p.add_argument('--require-owned-defer',action='store_true',help='Require the selected Rust deferred queue imports/origins and a Native control; builtins profile only')
 p.add_argument('--require-owned-iov',action='store_true',help='Require the selected Rust-owned IOVector imports/origins and a Native control; blocking profile only')
-p.add_argument('--require-output-workflow',action='store_true',help='Require exact complete output workflow/caller source and selected origin; unchanged socket-output profile only')
 p.add_argument('--require-typed-buffer',action='store_true',help='Require literal typed Buffer request/SDK/source for every profile; Buffer execution credit only in existing socket-output profile')
 p.add_argument('--require-batch',action='store_true',help='Refuse older production sources before compiling/running the consumer')
 profiles=p.add_mutually_exclusive_group()
@@ -62,15 +60,6 @@ try:
         report['typed_buffer_requests']={'selected':typed_buffer.requested(inputs,True),'native':typed_buffer.requested(json.loads((a.native_export.parent/'build-manifest.json').read_text())['inputs'],False)}
         files={name:subprocess.check_output(['git','-C',str(ROOT),'show',a.source_ref+':'+name]) for name in (*typed_buffer.SOURCES,*typed_buffer.PATCHES)}
         typed_buffer.prepared(inputs,files)
-    report['require_output_workflow']=a.require_output_workflow
-    if a.require_output_workflow:
-        if not a.socket_output:raise ValueError('--require-output-workflow requires --socket-output')
-        inputs=json.loads(a.build_manifest.read_text())['inputs']
-        if output_workflow.SOURCE not in inputs.get('rust_sources_sha256',{}):
-            raise ValueError('Selected source predates complete output workflow; refusing before engine commands')
-        compiled=subprocess.check_output(['git','-C',str(ROOT),'show',a.source_ref+':'+output_workflow.SOURCE])
-        patch=subprocess.check_output(['git','-C',str(ROOT),'show',a.source_ref+':'+output_workflow.PATCH])
-        output_workflow.prepared(inputs,compiled,patch)
     if a.require_owned_iov:
         if not a.blocking:raise ValueError('--require-owned-iov requires --blocking')
     if a.require_owned_defer:
@@ -102,9 +91,6 @@ try:
     if a.builtins and not report['selected_builtins_compiled']:raise ValueError('Selected source predates Rust builtin orchestration; no current caller qualification')
     report['selected_socket_output_compiled']='crates/reactor/src/output.rs' in selected_inputs
     if a.socket_output and not report['selected_socket_output_compiled']:raise ValueError('Selected source predates Rust Socket output; no current caller qualification')
-    if a.socket_output:
-        compiled=subprocess.check_output(['git','-C',str(ROOT),'show',a.source_ref+':crates/reactor/src/output.rs'],text=True)
-        if 'fn swr_v1_reactor_output_parameters(' not in compiled:raise ValueError('Selected source predates whole parameter helper; no new helper credit')
     report['selected_blocking_iov_compiled']='crates/reactor/src/iov_owned.rs' in selected_inputs
     if a.blocking and not report['selected_blocking_iov_compiled']:raise ValueError('Selected source predates the Rust-owned IOVector; no new-source qualification')
     source=Path(__file__).parent;fixture=source/('production_blocking.php' if a.blocking else 'production_output.php' if a.socket_output else 'production_builtins.php' if a.builtins else 'production_callbacks.php' if a.callbacks else 'production_supported.php');addon_source=source/'production_supported.cc'
@@ -136,9 +122,8 @@ try:
             symbols=['_ZN6swoole7network6Socket11handle_sendEv','_ZN6swoole7network6Socket15handle_sendfileEv','_ZN6swoole7network6Socket14sendfile_asyncEPKc'+('x' if sys.platform=='darwin' else 'l')+'m']
             if any(symbol not in undefined for symbol in symbols):raise ValueError('Addon must call all genuine production Socket output methods')
             if result['cases']!=9 or any(result[key]!=str(engine.extension) for key in ['sendfile_image','request_image']):raise ValueError('Actual output method origins/cases differ')
-            if selected and any(result[key]!=str(engine.extension) for key in ['data_policy_image','file_policy_image','request_policy_image','parameters_policy_image']):raise ValueError('Actual compiled Rust output/parameters origins differ')
+            if selected and any(result[key]!=str(engine.extension) for key in ['send_policy_image','sendfile_cork_image','sendfile_sent_image','request_policy_image']):raise ValueError('Actual compiled Rust output/parameters origins differ')
         if a.require_typed_buffer and a.socket_output:typed_buffer.consumer(result,undefined,str(engine.extension),selected)
-        if a.require_output_workflow:output_workflow.consumer(result,str(engine.extension),selected)
         if a.require_owned_defer:
             defer_symbol='_ZN6swoole7Reactor5deferERKNSt3__18functionIFvPvEEES3_' if sys.platform=='darwin' else '_ZN6swoole7Reactor5deferERKSt8functionIFvPvEES2_'
             imports={line.split()[-1].lstrip('_') for line in undefined.splitlines() if line.split()}

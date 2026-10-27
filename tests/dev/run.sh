@@ -34,7 +34,6 @@ for test in \
     tests/modules/ports/test_count_checkpoints.py \
     tests/modules/reactor/test_buffer_typed_identity.py \
     tests/modules/reactor/test_gnu_source_body.py \
-    tests/modules/reactor/test_output_workflow_identity.py \
     tests/modules/reactor/test_owned_iov_identity.py \
     tests/modules/reactor/test_rust_asan.py \
     tests/modules/tls/test_gate.py \
