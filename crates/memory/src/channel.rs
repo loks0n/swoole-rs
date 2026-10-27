@@ -307,7 +307,7 @@ impl StoragePlan {
             .checked_add(length)?
             .checked_add(4)?
             .checked_add(header_size)?;
-        (total <= isize::MAX as usize).then_some(Self {
+        isize::try_from(total).is_ok().then_some(Self {
             total,
             size,
             header_size,

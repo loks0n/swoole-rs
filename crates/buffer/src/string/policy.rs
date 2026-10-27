@@ -65,7 +65,7 @@ fn grown(current: usize, minimum: usize, alignment: usize) -> Result<usize, i32>
     while capacity < minimum {
         capacity = capacity
             .checked_mul(2)
-            .filter(|&n| n <= isize::MAX as usize)
+            .filter(|&n| isize::try_from(n).is_ok())
             .ok_or(OVERFLOW)?;
     }
     Ok(capacity)
@@ -123,14 +123,14 @@ pub unsafe extern "C" fn swr_v1_string_grow(
     }
     let Some(length) = length
         .checked_add(increment)
-        .filter(|&n| n <= isize::MAX as usize)
+        .filter(|&n| isize::try_from(n).is_ok())
     else {
         return OVERFLOW;
     };
     let requested = if length == capacity {
         let Some(size) = capacity
             .checked_mul(2)
-            .filter(|&n| n <= isize::MAX as usize)
+            .filter(|&n| isize::try_from(n).is_ok())
         else {
             return OVERFLOW;
         };
@@ -171,7 +171,7 @@ pub(super) fn formatting(
     let needed = formatted
         .checked_add(1)
         .and_then(|n| n.checked_add(offset))
-        .filter(|&n| n <= isize::MAX as usize)
+        .filter(|&n| isize::try_from(n).is_ok())
         .ok_or(OVERFLOW)?;
     let desired = if flags & 2 != 0 {
         grown(capacity, needed, alignment)?
@@ -231,7 +231,7 @@ pub(super) fn random_storage(
     let needed = length
         .checked_add(count)
         .and_then(|n| n.checked_add(encoded_capacity))
-        .filter(|&n| n <= isize::MAX as usize)
+        .filter(|&n| isize::try_from(n).is_ok())
         .ok_or(OVERFLOW)?;
     let capacity = if needed > capacity {
         aligned(

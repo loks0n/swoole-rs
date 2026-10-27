@@ -453,7 +453,7 @@ pub unsafe extern "C" fn swr_v2_http_context_format(
     }
     let Some(capacity) = length
         .checked_add(usize::from(kind == 1))
-        .filter(|&value| value <= isize::MAX as usize)
+        .filter(|&value| isize::try_from(value).is_ok())
     else {
         return OVERFLOW;
     };

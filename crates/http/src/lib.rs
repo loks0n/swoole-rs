@@ -140,7 +140,7 @@ fn encoded_length(input: &[u8]) -> Result<usize, i32> {
         .len()
         .checked_add(1)
         .and_then(|length| length.checked_add(escaped.checked_mul(2)?))
-        .filter(|&length| length <= isize::MAX as usize)
+        .filter(|&length| isize::try_from(length).is_ok())
         .ok_or(OVERFLOW)
 }
 /// Required encoded capacity, INCLUDING the trailing NUL. No allocation occurs.
@@ -258,7 +258,10 @@ pub unsafe extern "C" fn swr_v1_http_url_decode(
     unsafe {
         written.write(0);
     }
-    let Some(_capacity) = length.checked_add(1).filter(|&n| n <= isize::MAX as usize) else {
+    let Some(_capacity) = length
+        .checked_add(1)
+        .filter(|&n| isize::try_from(n).is_ok())
+    else {
         return OVERFLOW;
     };
     if data.is_null() {

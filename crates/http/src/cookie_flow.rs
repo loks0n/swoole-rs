@@ -47,7 +47,10 @@ pub unsafe extern "C" fn swr_v2_http_cookie_flow(
         return INVALID;
     }
     if flow.phase == 0 {
-        let Some(required) = length.checked_add(1).filter(|&n| n <= isize::MAX as usize) else {
+        let Some(required) = length
+            .checked_add(1)
+            .filter(|&n| isize::try_from(n).is_ok())
+        else {
             return OVERFLOW;
         };
         let base = scratch as usize;

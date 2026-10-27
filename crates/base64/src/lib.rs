@@ -270,7 +270,7 @@ fn decode(input: &[u8], output: &mut [MaybeUninit<u8>]) -> usize {
 }
 
 fn valid_range(pointer: *const u8, length: usize) -> bool {
-    length <= isize::MAX as usize
+    isize::try_from(length).is_ok()
         && (!pointer.is_null() || length == 0)
         && (pointer as usize).checked_add(length).is_some()
 }

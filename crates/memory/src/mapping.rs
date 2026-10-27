@@ -12,7 +12,7 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_size(requested: usize, total: *mu
         .checked_add(7)
         .map(|n| n & !7)
         .and_then(|n| n.checked_add(8))
-        .filter(|&n| n <= isize::MAX as usize)
+        .filter(|&n| isize::try_from(n).is_ok())
     else {
         return -1;
     };

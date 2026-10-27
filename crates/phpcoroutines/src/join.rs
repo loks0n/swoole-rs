@@ -29,7 +29,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_clone(owner: *const JoinOwner
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
                 count
                     .checked_add(1)
-                    .filter(|next| *next <= isize::MAX as usize)
+                    .filter(|next| isize::try_from(*next).is_ok())
             })
             .is_ok(),
     )
