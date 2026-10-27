@@ -106,6 +106,24 @@ docker run --rm -it -v "$PWD:/work" -w /work swoole-rs-dev bash
 
 Tooling tests: `tests/dev/run.sh` (parallel; prints only failing files), or `python3 -m unittest discover -b -s tests/dev` (`-b` hides output from passing tests).
 
+## Cloud executors
+
+Executor agents (AGENTS.md) run in a cloud environment by default, not on a shared
+laptop. The image above is all an executor needs: the toolchain, and `gh` for the
+GitHub work. Nothing is installed by hand. In a fresh environment:
+
+```sh
+export GH_TOKEN=<token with repo scope>   # the cloud host usually injects this
+git clone https://github.com/loks0n/swoole-rs && cd swoole-rs
+git config core.hooksPath .githooks        # pre-commit/pre-push checks
+```
+
+Then run the executor loop (claim, branch, PR, `gh pr merge --auto --squash`,
+`python3 tools/ci.py wait`, close). A GitHub Codespace or any devcontainer host
+builds `.devcontainer/` automatically and injects `GH_TOKEN`, so the clone and the
+hooks line are the only steps. Keep builds, profiles and clones under the
+environment's own disk; `python3 tools/dev.py prune` clears a day's leavings.
+
 ## Native core-tests
 
 `tools/native_core.py` builds upstream's CMake/GoogleTest `core-tests` binary from
