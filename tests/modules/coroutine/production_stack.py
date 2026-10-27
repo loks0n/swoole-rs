@@ -4,6 +4,7 @@ import argparse
 import importlib.util
 import json
 from pathlib import Path
+import platform
 import shlex
 import subprocess
 import sys
@@ -61,13 +62,25 @@ try:
         target=mirror/'actual-context.inc';target.write_bytes(original.read_bytes())
         addon=work/(label+'-markers.so')
         command=['c++','-std=c++17','-O2','-fPIC','-shared','-fvisibility=hidden','-DHAVE_CONFIG_H','-DSW_CONTEXT_DETECT_STACK_USAGE',*shlex.split(subprocess.check_output([a.php_config,'--includes'],text=True)),*shlex.split(subprocess.check_output(['pkg-config','--cflags','openssl'],text=True)),'-I'+str(mirror/'include'),'-I'+str(mirror),cpp,'-o',addon]
-        command+=['-undefined','dynamic_lookup'] if sys.platform=='darwin' else ['-ldl']
+        if sys.platform=='darwin':
+            command+=['-undefined','dynamic_lookup']
+        else:
+            # The extension keeps its boost context-switch symbols local, so the addon assembles
+            # its own copy, chosen as config.m4 does.
+            flavour={'x86_64':'x86_64_sysv_elf_gas','aarch64':'arm64_aapcs_elf_gas'}[platform.machine()]
+            for kind in ['make','jump']:
+                name='thirdparty/boost/asm/'+kind+'_'+flavour+'.S'
+                asm=mirror/name;asm.parent.mkdir(parents=True,exist_ok=True)
+                asm.write_bytes(subprocess.check_output(['git','-C',str(a.source),'show',shared.COMMIT+':'+name]))
+                command.insert(-2,asm)
+            command+=['-ldl']
         run(command)
         symbols=subprocess.check_output(['nm',str(addon)],text=True)
         identity['whole_context_definitions']=[line for line in symbols.splitlines() if any(name in line for name in ['ContextC1','ContextD1','Context15get_stack_usageEv']) and len(line.split())>=3 and line.split()[-2] in ['t','T']]
         if len(identity['whole_context_definitions'])!=3:raise ValueError('Addon lacks whole constructor/destructor/query definitions')
         undefined=subprocess.check_output(['nm','-u',str(addon)],text=True)
-        for symbol in ['swr_v1_context_stack_mark','swr_v1_context_stack_usage']:
+        # The patched Context marks and measures its stack through the one stack step.
+        for symbol in ['swr_v1_context_stack_step']:
             if (symbol in undefined)!=(label=='selected'):raise ValueError('Whole Context caller does not bind expected Rust symbols')
         result=json.loads(run(engine.command('-d','extension='+str(addon),fixture)))
         if label=='selected' and result['marker_image']!=str(extension):raise ValueError('Marker Rust symbol belongs to another image')
