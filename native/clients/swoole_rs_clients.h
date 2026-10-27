@@ -1,11 +1,20 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 #ifndef SWOOLE_RS_CLIENTS_H
 #define SWOOLE_RS_CLIENTS_H
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
+int swr_v1_clients_address_assign(void *address, uint32_t *length, int kind, const char *host, size_t host_length, int port, int (*resolve)(int family, const char *name, char *address));
+bool swr_v1_clients_verify_ip(int family, const char *host, void *destination);
+int swr_v1_clients_dns_query(const char *domain, int family, uint16_t request_id, void *context, bool (*send)(void *context, const uint8_t *data, size_t length), long (*recv)(void *context, uint8_t *data, size_t capacity), void (*push)(void *context, const uint8_t *text, size_t length), bool signed_char);
+int swr_v1_clients_gethostbyname(int flags, const char *name, char *addr);
+int swr_v1_clients_resolv_conf(const char *path, char *server);
+bool swr_v1_clients_hosts_lookup(const char *path, const uint8_t *domain, size_t domain_length, const uint8_t *spaces, void *context, void (*push)(void *context, const uint8_t *text, size_t length));
+typedef struct { int error; int count; } swr_v1_clients_resolved;
+swr_v1_clients_resolved swr_v1_clients_getaddrinfo(const char *host, const char *service, int family, int socktype, int protocol, void *results, size_t capacity, void (*unknown)(int family));
 enum swr_v1_clients_object_action {
     SWR_CLIENTS_OBJECT_RETURN=0, SWR_CLIENTS_OBJECT_FD_STREAM=1,
     SWR_CLIENTS_OBJECT_FD_DGRAM=2, SWR_CLIENTS_OBJECT_MAKE=3,
