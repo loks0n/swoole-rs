@@ -452,15 +452,9 @@ mod tests {
         ] {
             let mut output = [0xa5; 32];
             assert_eq!(encode(plain.as_bytes(), slots(&mut output)), coded.len());
-            assert_eq!(
-                &output[..coded.len() + 1],
-                [coded.as_bytes(), &[0]].concat()
-            );
+            assert_eq!(&output[..=coded.len()], [coded.as_bytes(), &[0]].concat());
             assert_eq!(decode(coded.as_bytes(), slots(&mut output)), plain.len());
-            assert_eq!(
-                &output[..plain.len() + 1],
-                [plain.as_bytes(), &[0]].concat()
-            );
+            assert_eq!(&output[..=plain.len()], [plain.as_bytes(), &[0]].concat());
         }
     }
 

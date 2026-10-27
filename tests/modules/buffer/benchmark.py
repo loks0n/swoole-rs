@@ -88,7 +88,7 @@ def measure(report, binaries, args):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, default=ROOT / 'target/upstream/src')
-    parser.add_argument('--build-manifest', type=Path, default=ROOT / 'target/hybrid/rust-buffer-websocket/build-manifest.json')
+    parser.add_argument('--build-manifest', type=Path, default=ROOT / 'target/hybrid/rust/build-manifest.json')
     parser.add_argument('--previous-build-manifest', type=Path, help='Compare a previous immutable hybrid in the same trial series')
     parser.add_argument('--iterations', type=int, default=50000)
     parser.add_argument('--repeat', type=int, default=5)

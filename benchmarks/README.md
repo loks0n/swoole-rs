@@ -28,7 +28,7 @@ most, for graduation criterion 3 (#117, #118). They ride the same ratchet in
 
 ```sh
 python3 benchmarks/callgrind.py --requests 1000 --workload plaintext --workload echo-1k --limits benchmarks/callgrind_limits.json \
-  --engine hybrid=target/hybrid/rust-buffer-websocket/modules/swoole.so \
+  --engine hybrid=target/hybrid/rust/modules/swoole.so \
   --engine upstream=target/upstream/src/modules/swoole.so
 ```
 
@@ -44,8 +44,8 @@ scratch directory, so every build and profile stays inside this checkout where
 
 ```sh
 git worktree add target/worktrees/base origin/main
-(cd target/worktrees/base && python3 tools/build_upstream.py && python3 tools/build_hybrid.py --module buffer)
-python3 tools/build_hybrid.py --module buffer
+(cd target/worktrees/base && python3 tools/build_upstream.py && python3 tools/build_hybrid.py)
+python3 tools/build_hybrid.py
 python3 benchmarks/callgrind.py --requests 1000 --workload plaintext --profiles \
   --engine base=target/worktrees/base/target/hybrid/rust-buffer/modules/swoole.so \
   --engine branch=target/hybrid/rust-buffer/modules/swoole.so

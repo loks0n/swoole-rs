@@ -21,7 +21,7 @@ pub extern "C" fn swr_v1_reactor_builtin_step(
     let reply = |phase, action| ReactorBuiltinReply { phase, action };
     match (role, phase) {
         (0, 0) if flags & 1 == 0 => reply(1, 1),
-        (0, 0) | (0, 1) => reply(2, 2),
+        (0, 0 | 1) => reply(2, 2),
         (0, 2) => reply(2, 0),
         (1, 0) if flags & 1 == 0 => reply(3, 0),
         (1, 0) => reply(1, 3),

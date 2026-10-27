@@ -69,6 +69,7 @@ mod portable {
 }
 
 /// Return IEEE CRC32 with the upstream initial and final XOR.
+#[must_use]
 pub fn crc32(input: &[u8]) -> u32 {
     #[cfg(all(target_arch = "aarch64", target_feature = "crc"))]
     // SAFETY: the selected compile target already guarantees the crc feature.

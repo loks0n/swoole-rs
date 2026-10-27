@@ -65,10 +65,9 @@ Rust/Cargo. Run from the repository root.
 python3 tools/check_migration.py
 python3 tools/build_upstream.py
 
-python3 tools/build_hybrid.py                      # ABI bridge only
+python3 tools/build_hybrid.py                      # bridge and graduated modules
 python3 tools/build_hybrid.py --backend upstream   # patched build, Rust bridge disabled
-python3 tools/build_hybrid.py --module websocket
-python3 tools/build_hybrid.py --module buffer --module websocket
+python3 tools/build_hybrid.py --module timer
 ```
 
 `--backend rust` is the default; `--module` requires it. Module names and

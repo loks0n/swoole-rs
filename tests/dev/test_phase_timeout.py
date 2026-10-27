@@ -32,7 +32,7 @@ class PhaseTimeout(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             patches = [patch.object(dev, 'ROOT', root), patch.object(dev, 'plan', return_value=planned),
-                       patch('sys.argv', ['dev.py', 'integrate', '--module', 'websocket', *extra])]
+                       patch('sys.argv', ['dev.py', 'integrate', '--module', 'locks', *extra])]
             if execute:
                 patches.append(patch.object(dev, 'execute', side_effect=execute))
             for p in patches:

@@ -22,7 +22,7 @@ python3 tools/build_upstream.py
 python3 corpus/upstream/run.py \
   --engine upstream=target/upstream/src/modules/swoole.so --require-all
 python3 corpus/upstream/run.py \
-  --engine hybrid=target/hybrid/rust-buffer-websocket/modules/swoole.so
+  --engine hybrid=target/hybrid/rust/modules/swoole.so
 # Target a migration module:
 python3 corpus/upstream/run.py \
   --engine upstream=target/upstream/src/modules/swoole.so --module timers --require-all
@@ -193,7 +193,7 @@ not on the hybrid, find the module by building single-module hybrids and running
 just that test (graduated modules are always on):
 
 ```sh
-python3 tools/build_hybrid.py --module http
+python3 tools/build_hybrid.py --module timer
 python3 corpus/upstream/run.py --source target/upstream/src \
   --case tests/swoole_http_server/example.phpt \
   --engine upstream=target/upstream/src/modules/swoole.so \

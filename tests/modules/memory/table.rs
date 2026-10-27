@@ -1327,7 +1327,7 @@ fn clear_cursor_uses_live_facts_in_order_across_batch_boundaries() {
         // Rust policy. The model copies scalar facts only after each return.
         let tokens: Vec<*mut c_void> = columns
             .iter_mut()
-            .map(|c| (c as *mut Column).cast())
+            .map(|c| std::ptr::from_mut::<Column>(c).cast())
             .collect();
         let mut bytes = vec![0xa5u8; 88 + count * 16];
         let mut state = Clear {

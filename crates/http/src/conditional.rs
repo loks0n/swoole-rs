@@ -100,10 +100,10 @@ pub unsafe extern "C" fn swr_v1_http_conditional(state: *mut HttpConditional) ->
         }
         7 => {
             state.phase = 10;
-            if state.parsed_time != state.value {
-                8
-            } else {
+            if state.parsed_time == state.value {
                 0
+            } else {
+                8
             }
         }
         // Legacy If-Range calls gmtime even if all date formats failed.

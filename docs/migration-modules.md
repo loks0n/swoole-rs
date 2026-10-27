@@ -34,7 +34,7 @@ Feature values come from `MODULES` in `tools/build_hybrid.py`.
 | --- | --- | ---: | --- | --- |
 | M00 | (always) | — | `config.m4`, `CMakeLists.txt`, `ext-src/php_swoole.cc`, `include/swoole_server.h`, `src/server/master.cc` | ABI base (`native/include/`, `crates/ffi/`), build registration, startup ABI check. See [ABI v1](abi-v1.md). |
 | M01 | `buffer` | 2 | `src/core/buffer.cc`, `src/core/string.cc` and headers | Output buffer queue and `String` storage. [Contract](buffer-abi-v1.md). Graduated: always on. |
-| M02 | `websocket` | 1 | `src/protocol/websocket.cc` (+ header, `ext-src/swoole_websocket_server.cc`) | Frame length, header writing, masking. [Boundary](websocket-boundary.md). |
+| M02 | `websocket` | 1 | `src/protocol/websocket.cc` (+ header, `ext-src/swoole_websocket_server.cc`) | Frame length, header writing, masking. [Boundary](websocket-boundary.md). Graduated: always on. |
 | M03 | `timer` | 4 | `src/core/timer.cc`, `ext-src/swoole_timer.cc`, `src/wrapper/timer.cc`, `src/os/timer.cc` (+ header) | Timer queue. [Contract](timer-abi-v1.md), [subsystem](timer-subsystem.md). Graduated: always on. |
 | M04 | `http` | 256 | `src/protocol/http.cc`, `src/server/static_handler.cc` (+ header) | HTTP framing, header/cookie/URL/multipart helpers, method/status, ranges, static responses. Third-party parsers stay. Graduated: always on. [Contract](../native/http/contract.md). |
 | M05 | `reactor` | 16384 | `src/reactor/`, `src/network/{socket,stream}.cc`, `src/server/{base,reactor_thread}.cc`, `ext-src/swoole_admin_server.cc` (+ headers) | Readiness policy and socket output. [Boundary](reactor-abi-v1.md). |

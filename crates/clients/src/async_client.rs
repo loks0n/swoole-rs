@@ -120,7 +120,7 @@ pub extern "C" fn swr_v1_clients_async_next(
         (2, 36) => (55, 35),
         (2, 35) => (56, 37),
         (2, 37) if facts != 0 => (57, 38),
-        (2, 37) | (2, 38) => (6, 0),
+        (2, 37 | 38) => (6, 0),
         _ => (6, 0),
     };
     ClientsAsyncPlan { action, stage }

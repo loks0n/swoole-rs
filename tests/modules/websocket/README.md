@@ -32,7 +32,7 @@ ABI header whose checksum differs from that manifest:
 
 ```sh
 python3 -m pytest tests/modules/websocket/test_prefix.py --sanitize \
-  --manifest target/hybrid/rust-buffer-websocket/build-manifest.json
+  --manifest target/hybrid/rust/build-manifest.json
 ```
 
 `test_codec.py` is the differential for the codec/policy seam; see [codec.md](codec.md).
