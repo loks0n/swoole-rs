@@ -20,12 +20,20 @@ struct NativeSocket {
 };
 struct Socket {
  int sock_fd=77,errCode=9;const char *errMsg="";
+#ifdef SELECTED_STATE
+ swr_v1_hook_socket_state *state_=swr_v1_hook_socket_state_new();
+#else
  bool connected=false,shutdown_read=false,shutdown_write=false;
+#endif
  Coroutine *read_co=nullptr,*write_co=nullptr;
  NativeSocket native;NativeSocket *socket=&native;
  std::function<void(Socket*)> dtor_;
  void *read_timer=nullptr,*write_timer=nullptr;
- ~Socket(){record("socket:destroy");}
+ ~Socket(){record("socket:destroy");
+#ifdef SELECTED_STATE
+  swr_v1_hook_socket_state_free(state_);
+#endif
+ }
  static void timer_callback(){}
  struct TimerController {
   TimerController(void *,double,Socket *,void(*)()){record("timer:new");}
@@ -39,3 +47,11 @@ struct Socket {
  swr_v1_hook_socket_ops lifecycle_ops();
 };
 #include ACTUAL_BODIES
+// The selected socket's connection state is Rust's (#439); scenarios set and read it the same way.
+#ifdef SELECTED_STATE
+static void set_state(Socket *s,bool c,bool r,bool w){swr_v1_hook_socket_set_flags(s->state_,{c,r,w});}
+static swr_v1_hook_socket_flags_t state_of(Socket *s){return swr_v1_hook_socket_flags(s->state_);}
+#else
+static void set_state(Socket *s,bool c,bool r,bool w){s->connected=c;s->shutdown_read=r;s->shutdown_write=w;}
+static swr_v1_hook_socket_flags_t state_of(Socket *s){return {s->connected,s->shutdown_read,s->shutdown_write};}
+#endif

@@ -861,7 +861,7 @@ index 0f7b169..36caf7b 100644
 -    }
      RETURN_TRUE;
 diff --git a/include/swoole_coroutine_socket.h b/include/swoole_coroutine_socket.h
-index cffe31a..097225e 100644
+index cffe31a..76334a0 100644
 --- a/include/swoole_coroutine_socket.h
 +++ b/include/swoole_coroutine_socket.h
 @@ -20,2 +20,7 @@
@@ -872,6 +872,11 @@ index cffe31a..097225e 100644
 +#include "swoole_rs_hooks.h"
 +
  #include "swoole_coroutine.h"
+@@ -68,3 +73,3 @@ class Socket {
+     bool is_connected() const {
+-        return connected && !is_closed();
++        return swr_v1_hook_socket_flags(state_).connected && !is_closed();
+     }
 @@ -287,13 +292,7 @@ class Socket {
      Coroutine *get_bound_co(const EventType event) const {
 -        if (event & SW_EVENT_READ) {
@@ -895,7 +900,14 @@ index cffe31a..097225e 100644
 -        set_timeout((double) timeout->tv_sec + ((double) timeout->tv_usec / 1000 / 1000), _type);
 +        set_timeout(swr_v1_hook_timeval((double) timeout->tv_sec, (double) timeout->tv_usec), _type);
      }
-@@ -462,6 +461,6 @@ class Socket {
+@@ -440,5 +439,3 @@ class Socket {
+ 
+-    bool connected = false;
+-    bool shutdown_read = false;
+-    bool shutdown_write = false;
++    swr_v1_hook_socket_state *state_ = swr_v1_hook_socket_state_new();
+ 
+@@ -462,6 +459,6 @@ class Socket {
      void check_return_value(ssize_t retval) {
 -        if (retval >= 0) {
 -            set_err(0);
@@ -906,13 +918,13 @@ index cffe31a..097225e 100644
 +        case 2: set_err(errno); break;
 +        default: break;
          }
-@@ -486,5 +485,2 @@ class Socket {
+@@ -486,5 +483,2 @@ class Socket {
  
 -    ssize_t recv_packet_with_length_protocol();
 -    ssize_t recv_packet_with_eof_protocol();
 -
      bool is_available(const EventType event) {
-@@ -493,8 +489,6 @@ class Socket {
+@@ -493,8 +487,6 @@ class Socket {
          }
 -        if (sw_unlikely(is_closed())) {
 -            set_err(EBADF);
@@ -925,7 +937,7 @@ index cffe31a..097225e 100644
 +        if (sw_unlikely(status != 0)) {
 +            set_err(status == 1 ? EBADF : SW_ERROR_CO_SOCKET_CLOSE_WAIT);
              return false;
-@@ -530,2 +524,5 @@ class Socket {
+@@ -530,2 +522,5 @@ class Socket {
  
 +    ssize_t vector_all(network::IOVector *io_vector, TimerController *timer, bool write);
 +    swr_v1_hook_socket_ops lifecycle_ops();
@@ -1123,7 +1135,7 @@ index 63ca2f2..f0514c6 100644
 +            break;
          }
 diff --git a/src/coroutine/socket.cc b/src/coroutine/socket.cc
-index 5a16f4c..8ef587e 100644
+index 5a16f4c..25a45c8 100644
 --- a/src/coroutine/socket.cc
 +++ b/src/coroutine/socket.cc
 @@ -20,2 +20,7 @@
@@ -1134,6 +1146,11 @@ index 5a16f4c..8ef587e 100644
 +#include "swoole_rs_hooks.h"
 +
  #include "swoole_util.h"
+@@ -395,3 +400,3 @@ Socket::Socket(network::Socket *sock, const Socket *server_sock) {
+     protocol = server_sock->protocol;
+-    connected = true;
++    swr_v1_hook_socket_connect(state_);
+     ssl_context = server_sock->ssl_context;
 @@ -458,8 +463,6 @@ void Socket::set_timeout(double timeout, int _type) const {
  const char *Socket::get_event_str(const EventType event) const {
 -    if (event == SW_EVENT_READ) {
@@ -1168,6 +1185,11 @@ index 5a16f4c..8ef587e 100644
 +                int option_result = socket->get_option(SOL_SOCKET, SO_ERROR, &errCode);
 +                if (swr_v1_hook_connect_option(option_result, option_result < 0 ? 0 : errCode)) {
                      set_err(errCode);
+@@ -527,3 +533,3 @@ bool Socket::connect(const sockaddr *addr, socklen_t addrlen) {
+     }
+-    connected = true;
++    swr_v1_hook_socket_connect(state_);
+     socket->get_name();
 @@ -661,9 +667,6 @@ bool Socket::check_liveness() {
      }
 -    if (!socket->check_liveness()) {
@@ -1699,7 +1721,7 @@ index 5a16f4c..8ef587e 100644
 +    ssize_t recv_bytes = swr_v1_hook_recv_packet(&ops);
 +    context.store();
      return recv_bytes;
-@@ -1517,33 +1444,16 @@ bool Socket::shutdown(int _how) {
+@@ -1517,33 +1444,12 @@ bool Socket::shutdown(int _how) {
      set_err(0);
 -    int error = 0;
 -    if (!is_connected() || (_how == SHUT_RD && shutdown_read) || (_how == SHUT_WR && shutdown_write)) {
@@ -1732,32 +1754,28 @@ index 5a16f4c..8ef587e 100644
 -            }
 -            return true;
 -        }
-+    swr_v1_hook_shutdown_flags flags{connected, shutdown_read, shutdown_write};
 +    int error = swr_v1_hook_shutdown(
 +        ::shutdown,
 +        sock_fd,
 +        _how,
-+        is_connected(),
-+        &flags,
++        is_closed(),
++        state_,
 +        socket->ssl ? +[](void *s) { static_cast<decltype(socket)>(s)->ssl_shutdown(); } : nullptr,
 +        socket);
-+    connected = flags.connected;
-+    shutdown_read = flags.read;
-+    shutdown_write = flags.write;
 +    if (error == 0) {
 +        return true;
      }
-@@ -1557,18 +1467,36 @@ void Socket::ssl_close() const {
+@@ -1557,18 +1463,36 @@ void Socket::ssl_close() const {
  
 +// Rust decides the cancel and close; these are the socket's effects.
 +swr_v1_hook_socket_ops Socket::lifecycle_ops() {
 +    return {
 +        this,
++        state_,
 +        SW_EVENT_READ,
 +        SW_EVENT_WRITE,
 +        SW_ERROR_CO_SOCKET_CLOSE_WAIT,
 +        [](void *s) -> bool { return static_cast<Socket *>(s)->is_closed(); },
-+        [](void *s) -> bool { return static_cast<Socket *>(s)->connected; },
 +        [](void *s) { static_cast<Socket *>(s)->shutdown(); },
 +        [](void *s, uint32_t event) -> bool {
 +            return static_cast<Socket *>(s)->has_bound(static_cast<EventType>(event));
@@ -1799,7 +1817,7 @@ index 5a16f4c..8ef587e 100644
 +    const swr_v1_hook_socket_ops ops = lifecycle_ops();
 +    return swr_v1_hook_cancel(&ops, event);
  }
-@@ -1583,24 +1511,4 @@ bool Socket::cancel(const EventType event) {
+@@ -1583,24 +1507,4 @@ bool Socket::cancel(const EventType event) {
  bool Socket::close() {
 -    if (is_closed()) {
 -        set_err(EBADF);
@@ -1826,7 +1844,11 @@ index 5a16f4c..8ef587e 100644
 +    const swr_v1_hook_socket_ops ops = lifecycle_ops();
 +    return swr_v1_hook_close(&ops);
  }
-@@ -1636,8 +1544,11 @@ Socket::~Socket() {
+@@ -1625,2 +1529,3 @@ Socket::~Socket() {
+     delete write_buffer;
++    swr_v1_hook_socket_state_free(state_);
+     if (socket == nullptr) {
+@@ -1636,8 +1541,11 @@ Socket::~Socket() {
  bool Socket::TimerController::start() {
 -    if (timeout != 0 && !*timer_pp) {
 +    auto actions = swr_v1_hook_timer(0, enabled, timeout != 0 && *timer_pp != nullptr, false, timeout);
@@ -1843,7 +1865,7 @@ index 5a16f4c..8ef587e 100644
 +    }
 +    if (actions & SWR_HOOK_TIMER_SENTINEL) {
          *timer_pp = reinterpret_cast<TimerNode *>(-1);
-@@ -1648,6 +1559,9 @@ bool Socket::TimerController::start() {
+@@ -1648,6 +1556,9 @@ bool Socket::TimerController::start() {
  Socket::TimerController::~TimerController() {
 -    if (enabled && *timer_pp) {
 -        if (*timer_pp != reinterpret_cast<TimerNode *>(-1)) {
@@ -1857,7 +1879,7 @@ index 5a16f4c..8ef587e 100644
 +    }
 +    if (actions & SWR_HOOK_TIMER_CLEAR) {
          *timer_pp = nullptr;
-@@ -1686,13 +1600,17 @@ bool Socket::TimeoutController::has_timedout(TimeoutType _type) {
+@@ -1686,13 +1597,17 @@ bool Socket::TimeoutController::has_timedout(TimeoutType _type) {
      SW_ASSERT_1BYTE(_type);
 -    if (timeout > 0) {
 -        if (sw_unlikely(startup_time == 0)) {
@@ -2013,7 +2035,7 @@ index e6ef9c2..78becda 100644
 -    return true;
  }
 diff --git a/src/coroutine/uring_socket.cc b/src/coroutine/uring_socket.cc
-index 758765a..800e5ef 100644
+index 758765a..80a672f 100644
 --- a/src/coroutine/uring_socket.cc
 +++ b/src/coroutine/uring_socket.cc
 @@ -20,2 +20,7 @@
@@ -2024,6 +2046,11 @@ index 758765a..800e5ef 100644
 +#include "swoole_rs_hooks.h"
 +
  #include "swoole_coroutine_socket.h"
+@@ -42,3 +47,3 @@ bool UringSocket::connect(const sockaddr *addr, socklen_t addrlen) {
+ 
+-    connected = true;
++    swr_v1_hook_socket_connect(state_);
+     socket->get_name();
 @@ -253,10 +258,11 @@ ssize_t UringSocket::recv_all(void *_buf, size_t _n) {
          retval = recv((char *) _buf + total_bytes, _n - total_bytes);
 -        if (retval <= 0) {
