@@ -435,7 +435,7 @@ mod tests {
     ) -> (i32, *mut u8) {
         SIZES.with(|s| s.borrow_mut().clear());
         let mut result = ptr::null_mut();
-        let source = source.map_or(ptr::null(), |s| s as *const _);
+        let source = source.map_or(ptr::null(), std::ptr::from_ref);
         // SAFETY: live test objects.
         (
             unsafe {

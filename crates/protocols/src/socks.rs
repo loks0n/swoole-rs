@@ -9,6 +9,7 @@ pub struct SocksTransition {
 
 /// Native callback execution happens after this decision. State advances before
 /// send/packing, including a failed send, as it does in the pinned implementation.
+#[must_use]
 pub fn socks_transition(state: u8, method: u8, response: &[u8]) -> SocksTransition {
     let mut result = SocksTransition {
         state,

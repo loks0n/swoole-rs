@@ -35,7 +35,16 @@ fn next(input: &[u8], size: usize, state: &mut HttpRangeState) -> Result<Option<
         let mut at = state.cursor;
         spaces(input, &mut at);
         let (start, mut end);
-        if input.get(at) != Some(&b'-') {
+        if input.get(at) == Some(&b'-') {
+            at += 1;
+            let suffix = decimal(input, &mut at).ok_or(INVALID)?;
+            spaces(input, &mut at);
+            if !matches!(input.get(at), None | Some(b',' | b'\r')) {
+                return Err(INVALID);
+            }
+            start = size.saturating_sub(suffix);
+            end = size;
+        } else {
             start = decimal(input, &mut at).ok_or(INVALID)?;
             spaces(input, &mut at);
             if input.get(at) != Some(&b'-') {
@@ -53,15 +62,6 @@ fn next(input: &[u8], size: usize, state: &mut HttpRangeState) -> Result<Option<
                 }
                 end = if end >= size { size } else { end + 1 };
             }
-        } else {
-            at += 1;
-            let suffix = decimal(input, &mut at).ok_or(INVALID)?;
-            spaces(input, &mut at);
-            if !matches!(input.get(at), None | Some(b',' | b'\r')) {
-                return Err(INVALID);
-            }
-            start = size.saturating_sub(suffix);
-            end = size;
         }
         if input.get(at) == Some(&b',') && !matches!(input.get(at + 1), None | Some(b'\r')) {
             state.cursor = at + 1;

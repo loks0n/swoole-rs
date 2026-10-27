@@ -1,5 +1,6 @@
 /// Parse MQTT remaining-length bytes; packet type and nonminimal representations
 /// are intentionally not validated, matching the pinned protocol.
+#[must_use]
 pub fn mqtt_frame_length(bytes: &[u8]) -> i64 {
     let mut length = 0;
     for (position, byte) in (0i64..).zip(bytes.iter().skip(1).take(4)) {

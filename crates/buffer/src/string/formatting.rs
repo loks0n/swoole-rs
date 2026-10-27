@@ -54,15 +54,15 @@ pub unsafe extern "C" fn swr_v1_string_format_step(
         0 if formatted == 0 => Ok(StringFormatStep::default()),
         0 => {
             let plan = policy::formatting(length, capacity, formatted, flags, alignment)?;
-            if plan.capacity != capacity {
+            if plan.capacity == capacity {
+                write(length, capacity, flags)
+            } else {
                 Ok(StringFormatStep {
                     capacity: plan.capacity,
                     action: 1,
                     next: 1,
                     ..Default::default()
                 })
-            } else {
-                write(length, capacity, flags)
             }
         }
         1 => write(length, capacity, flags),
