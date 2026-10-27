@@ -95,19 +95,16 @@ def main():
             if engine == 'rust':
                 symbols = subprocess.check_output(['nm', '-g', str(binary)], text=True)
                 # Exports the profile's native callers reach; Rust-only callees may be inlined or stripped.
-                if args.original_only:
-                    required = ['swr_v1_string_edit_in_place', 'swr_v1_string_append_in_place']
-                elif args.integer_only:
-                    required = ['swr_v1_string_edit_object']  # append(int) is a whole Rust edit
-                elif args.split_only:
-                    required = []  # only the split plan below; no move/release/ownership path
-                else:
-                    required = ['swr_v1_string_transition']
-                if args.random_only: required.append('swr_v1_string_random_step')
-                if args.format_only: required.append('swr_v1_string_format_step')
-                if args.allocation_only: required.append('swr_v1_string_allocation_plan')
-                if args.ownership_only: required.append('swr_v1_string_ownership_plan')
-                if args.split_only: required.append('swr_v1_string_split_plan')
+                # Each profile's own entry point. Others are linked only if a caller survives:
+                # since #392 inlined dispose, move/release (transition) is not always reachable.
+                if args.original_only: required = ['swr_v1_string_edit_in_place', 'swr_v1_string_append_in_place']
+                elif args.integer_only: required = ['swr_v1_string_edit_object']
+                elif args.random_only: required = ['swr_v1_string_random_step']
+                elif args.format_only: required = ['swr_v1_string_format_step']
+                elif args.allocation_only: required = ['swr_v1_string_allocation_plan']
+                elif args.ownership_only: required = ['swr_v1_string_ownership_plan']
+                elif args.split_only: required = ['swr_v1_string_split_plan']
+                else: required = ['swr_v1_string_transition']
                 assert all(name in symbols for name in required)
             if args.prepare_benchmark:
                 row['untimed_checks'] = {}
