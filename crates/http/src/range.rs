@@ -154,7 +154,13 @@ mod tests {
         let mut parts = Vec::new();
         loop {
             let status = unsafe {
-                swr_v1_http_range_next(input.as_ptr(), input.len(), size, &mut state, &mut output)
+                swr_v1_http_range_next(
+                    input.as_ptr(),
+                    input.len(),
+                    size,
+                    &raw mut state,
+                    &raw mut output,
+                )
             };
             if status != 1 {
                 return (status, parts);

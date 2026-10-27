@@ -132,7 +132,7 @@ mod tests {
             unused: 7,
             constant: 12,
         };
-        unsafe { swr_v1_phpcoroutines_exit(state, &config, kind, fact) }
+        unsafe { swr_v1_phpcoroutines_exit(state, &raw const config, kind, fact) }
     }
     fn flags(kind: u32, current: i64, server: i64, started: i64) -> (ExitState, ExitPlan) {
         let mut state = ExitState { phase: 0, flags: 0 };

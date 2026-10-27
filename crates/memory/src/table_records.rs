@@ -108,7 +108,7 @@ pub unsafe extern "C" fn swr_v1_memory_records_declare(
     }
     let mut width = 0;
     // SAFETY: `width` is a writable local.
-    if unsafe { swr_v1_memory_table_column_size(kind, requested, &mut width) } != 0 {
+    if unsafe { swr_v1_memory_table_column_size(kind, requested, &raw mut width) } != 0 {
         return -1;
     }
     // SAFETY: `item_size` is non-null (checked above), aligned and initialized per the caller contract.

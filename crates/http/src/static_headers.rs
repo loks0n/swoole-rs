@@ -198,13 +198,20 @@ mod tests {
         let h = header();
         let mut length = 0;
         assert_eq!(
-            unsafe { swr_v1_http_static_headers(&h, std::ptr::null_mut(), 0, &mut length) },
+            unsafe {
+                swr_v1_http_static_headers(&raw const h, std::ptr::null_mut(), 0, &raw mut length)
+            },
             0
         );
         let mut complete = vec![0; length + 1];
         assert_eq!(
             unsafe {
-                swr_v1_http_static_headers(&h, complete.as_mut_ptr(), complete.len(), &mut length)
+                swr_v1_http_static_headers(
+                    &raw const h,
+                    complete.as_mut_ptr(),
+                    complete.len(),
+                    &raw mut length,
+                )
             },
             0
         );
@@ -215,7 +222,12 @@ mod tests {
             let mut written = 0;
             assert_eq!(
                 unsafe {
-                    swr_v1_http_static_headers(&h, output.as_mut_ptr(), capacity, &mut written)
+                    swr_v1_http_static_headers(
+                        &raw const h,
+                        output.as_mut_ptr(),
+                        capacity,
+                        &raw mut written,
+                    )
                 },
                 0
             );
@@ -234,7 +246,12 @@ mod tests {
             h.variant = variant;
             assert_eq!(
                 unsafe {
-                    swr_v1_http_static_headers(&h, output.as_mut_ptr(), output.len(), &mut count)
+                    swr_v1_http_static_headers(
+                        &raw const h,
+                        output.as_mut_ptr(),
+                        output.len(),
+                        &raw mut count,
+                    )
                 },
                 INVALID
             );
@@ -243,7 +260,14 @@ mod tests {
         }
         h.variant = 0;
         assert_eq!(
-            unsafe { swr_v1_http_static_headers(&h, output.as_mut_ptr(), usize::MAX, &mut count) },
+            unsafe {
+                swr_v1_http_static_headers(
+                    &raw const h,
+                    output.as_mut_ptr(),
+                    usize::MAX,
+                    &raw mut count,
+                )
+            },
             OVERFLOW
         );
         assert_eq!(output, [0xcc; 8]);

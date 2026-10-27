@@ -301,7 +301,7 @@ pub unsafe extern "C" fn swr_v1_string_split_plan(
                 prefix,
                 delimiter,
                 delimiter_length,
-                &mut plan.step,
+                &raw mut plan.step,
             )
         };
         if status < 0 {
@@ -350,9 +350,9 @@ mod continuation_tests {
                     0,
                     b"\r\n".as_ptr(),
                     2,
-                    &initial,
+                    &raw const initial,
                     1,
-                    &mut plan
+                    &raw mut plan
                 ),
                 0
             )
@@ -371,9 +371,9 @@ mod continuation_tests {
                     0,
                     b"\r\n".as_ptr(),
                     2,
-                    &cursor,
+                    &raw const cursor,
                     1,
-                    &mut plan
+                    &raw mut plan
                 ),
                 0
             )
@@ -391,9 +391,9 @@ mod continuation_tests {
                     5,
                     b"\r\n".as_ptr(),
                     2,
-                    &cursor,
+                    &raw const cursor,
                     0,
-                    &mut plan
+                    &raw mut plan
                 ),
                 0
             )
@@ -408,9 +408,9 @@ mod continuation_tests {
                     3,
                     b"\r\n".as_ptr(),
                     2,
-                    &cursor,
+                    &raw const cursor,
                     1,
-                    &mut plan
+                    &raw mut plan
                 ),
                 0
             )
@@ -425,9 +425,9 @@ mod continuation_tests {
                     6,
                     b"\r\n".as_ptr(),
                     2,
-                    &cursor,
+                    &raw const cursor,
                     1,
-                    &mut plan
+                    &raw mut plan
                 ),
                 INVALID
             )

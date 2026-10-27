@@ -171,14 +171,14 @@ mod tests {
             let mut cursor = 0;
             let mut token = 99;
             let mut actual = Vec::new();
-            while swr_v1_phpcoroutines_join_next(owner, &mut cursor, &mut token) != 0 {
+            while swr_v1_phpcoroutines_join_next(owner, &raw mut cursor, &raw mut token) != 0 {
                 actual.push(token);
             }
             assert_eq!(actual, vec![0, 19, 71, usize::MAX]);
             assert_eq!(swr_v1_phpcoroutines_join_empty(owner), 0);
             let before = (cursor, token);
             assert_eq!(
-                swr_v1_phpcoroutines_join_next(owner, &mut cursor, &mut token),
+                swr_v1_phpcoroutines_join_next(owner, &raw mut cursor, &raw mut token),
                 0
             );
             assert_eq!((cursor, token), before);

@@ -672,8 +672,9 @@ pub unsafe extern "C" fn swr_v1_memory_table_mutation_step(state: *mut Mutation)
     match (m.mode, m.phase) {
         (0, 0) => {
             // SAFETY: `root` is a non-null live bucket row and the key was validated above.
-            let status =
-                unsafe { swr_v1_memory_table_set_plan(m.root, m.key, m.key_length, &mut m.plan) };
+            let status = unsafe {
+                swr_v1_memory_table_set_plan(m.root, m.key, m.key_length, &raw mut m.plan)
+            };
             m.row = m.plan.row.cast();
             if status < 0 {
                 return -1;
@@ -698,7 +699,13 @@ pub unsafe extern "C" fn swr_v1_memory_table_mutation_step(state: *mut Mutation)
             let mut removed = ptr::null_mut();
             // SAFETY: `root` is a live bucket row, the key was validated, `removed` is a local.
             let status = unsafe {
-                swr_v1_memory_table_delete(m.root, m.key, m.key_length, m.item_size, &mut removed)
+                swr_v1_memory_table_delete(
+                    m.root,
+                    m.key,
+                    m.key_length,
+                    m.item_size,
+                    &raw mut removed,
+                )
             };
             m.removed = removed.cast();
             if status < 0 {
@@ -806,8 +813,8 @@ pub unsafe extern "C" fn swr_v1_memory_table_iterator_step(
                     index,
                     f.current,
                     f.row_size,
-                    &mut collision,
-                    &mut advance,
+                    &raw mut collision,
+                    &raw mut advance,
                 )
             };
             if result < 0 {
@@ -1352,7 +1359,8 @@ pub unsafe extern "C" fn swr_v1_memory_table_declaration_step(cursor: *mut Decla
         }
         let mut width = 0;
         // SAFETY: `width` is a writable local.
-        if unsafe { swr_v1_memory_table_column_size(state.kind, state.requested, &mut width) } != 0
+        if unsafe { swr_v1_memory_table_column_size(state.kind, state.requested, &raw mut width) }
+            != 0
         {
             return -1;
         }
@@ -1463,7 +1471,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_metadata_initialize(
     let mut conflict = 0.0;
     if !fields.valid()
         // SAFETY: `rows` and `conflict` are writable locals.
-        || unsafe { swr_v1_memory_table_config(requested, proportion, &mut rows, &mut conflict) }
+        || unsafe { swr_v1_memory_table_config(requested, proportion, &raw mut rows, &raw mut conflict) }
             != 0
     {
         return -1;
@@ -1537,7 +1545,12 @@ pub unsafe extern "C" fn swr_v1_memory_table_factory_step(
             let (mut rows, mut conflict) = (0, 0.0);
             // SAFETY: `rows` and `conflict` are writable locals.
             if unsafe {
-                swr_v1_memory_table_config(state.rows, state.conflict, &mut rows, &mut conflict)
+                swr_v1_memory_table_config(
+                    state.rows,
+                    state.conflict,
+                    &raw mut rows,
+                    &raw mut conflict,
+                )
             } != 0
             {
                 return -1;
@@ -1575,7 +1588,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_factory_step(
     }
     if state.legacy == 1
         // SAFETY: `state.index` is a writable field of the caller's cursor.
-        && unsafe { crate::table_columns::swr_v1_memory_table_columns_create(&mut state.index) }
+        && unsafe { crate::table_columns::swr_v1_memory_table_columns_create(&raw mut state.index) }
             != 0
     {
         return -1;
@@ -1624,9 +1637,9 @@ pub unsafe extern "C" fn swr_v1_memory_table_creation_step(
     let mut logical = Layout::default();
     let mut physical = Layout::default();
     // SAFETY: both outputs are writable locals.
-    if unsafe { swr_v1_memory_table_layout(rows, item, conflict, &mut logical) } != 0
+    if unsafe { swr_v1_memory_table_layout(rows, item, conflict, &raw mut logical) } != 0
         // SAFETY: as above.
-        || unsafe { swr_v1_memory_table_storage_layout(rows, item, conflict, &mut physical) } != 0
+        || unsafe { swr_v1_memory_table_storage_layout(rows, item, conflict, &raw mut physical) } != 0
     {
         return -1;
     }
@@ -1710,7 +1723,9 @@ pub unsafe extern "C" fn swr_v1_memory_table_construction_step(
         }
         1 => {
             // SAFETY: native code allocated `memory` with the planned physical layout.
-            if unsafe { swr_v1_memory_table_arena(storage.memory, &storage.physical) } != 0 {
+            if unsafe { swr_v1_memory_table_arena(storage.memory, &raw const storage.physical) }
+                != 0
+            {
                 return -1;
             }
             ConstructionEffect {

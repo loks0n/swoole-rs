@@ -414,7 +414,7 @@ mod tests {
             length: bytes.len(),
             capacity,
             offset: 0,
-            allocator: &SYSTEM,
+            allocator: &raw const SYSTEM,
         }
     }
     fn edit(operation: u32, bytes: &[u8], count: usize, offset: i64) -> StringEdit {
@@ -438,7 +438,9 @@ mod tests {
         let source = source.map_or(ptr::null(), |s| s as *const _);
         // SAFETY: live test objects.
         (
-            unsafe { swr_v1_string_edit_object(object, source, edit, &SYSTEM, &mut result) },
+            unsafe {
+                swr_v1_string_edit_object(object, source, edit, &raw const SYSTEM, &raw mut result)
+            },
             result,
         )
     }
@@ -514,7 +516,7 @@ mod tests {
             (bytes(&s), s.offset, s.capacity, sizes()),
             (b"abc".to_vec(), 1, 8, vec![8])
         );
-        assert!(ptr::eq(s.allocator, &SYSTEM));
+        assert!(ptr::eq(s.allocator, &raw const SYSTEM));
     }
     #[test]
     fn integer_and_terminator() {
@@ -534,10 +536,10 @@ mod tests {
             length: 0,
             capacity: 0,
             offset: 0,
-            allocator: &FAILING,
+            allocator: &raw const FAILING,
         };
         assert_eq!(run(&mut s, None, &edit(APPEND, b"abc", 0, 0)).0, OK);
-        assert!(ptr::eq(s.allocator, &SYSTEM));
+        assert!(ptr::eq(s.allocator, &raw const SYSTEM));
         assert_eq!(bytes(&s), b"abc");
     }
     #[test]
@@ -557,7 +559,7 @@ mod tests {
             (status, result, bytes(&s), s.capacity, s.offset),
             (OK, old, b"cdefg".to_vec(), 8, 0)
         );
-        s.allocator = &FAILING;
+        s.allocator = &raw const FAILING;
         let before = s.data;
         assert_eq!(
             run(&mut s, None, &edit(POP, b"", 0, 0)),
@@ -568,7 +570,7 @@ mod tests {
     #[test]
     fn failed_realloc_changes_nothing() {
         let mut s = string(b"abcd", 4);
-        s.allocator = &FAILING;
+        s.allocator = &raw const FAILING;
         assert_eq!(run(&mut s, None, &edit(APPEND, b"e", 0, 0)).0, NOMEM);
         assert_eq!((bytes(&s), s.capacity), (b"abcd".to_vec(), 4));
     }

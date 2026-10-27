@@ -3,21 +3,27 @@ use super::*;
 fn mapping_bounds_exclude_header_and_limit_shrinking_copies() {
     unsafe {
         let mut size = 99;
-        assert_eq!(swr_v1_memory_mapping_size(0, &mut size), 0);
+        assert_eq!(swr_v1_memory_mapping_size(0, &raw mut size), 0);
         assert_eq!(size, 8);
-        assert_eq!(swr_v1_memory_mapping_size(9, &mut size), 0);
+        assert_eq!(swr_v1_memory_mapping_size(9, &raw mut size), 0);
         assert_eq!(size, 24);
-        assert_eq!(swr_v1_memory_mapping_size(usize::MAX, &mut size), -1);
+        assert_eq!(swr_v1_memory_mapping_size(usize::MAX, &raw mut size), -1);
         assert_eq!(size, 0);
-        assert_eq!(swr_v1_memory_mapping_product(usize::MAX, 2, &mut size), -1);
+        assert_eq!(
+            swr_v1_memory_mapping_product(usize::MAX, 2, &raw mut size),
+            -1
+        );
         assert_eq!(size, 0);
-        assert_eq!(swr_v1_memory_mapping_product(usize::MAX, 0, &mut size), 0);
+        assert_eq!(
+            swr_v1_memory_mapping_product(usize::MAX, 0, &raw mut size),
+            0
+        );
         assert_eq!(size, 0);
-        assert_eq!(swr_v1_memory_mapping_copy(65544, 16, &mut size), 0);
+        assert_eq!(swr_v1_memory_mapping_copy(65544, 16, &raw mut size), 0);
         assert_eq!(size, 8);
-        assert_eq!(swr_v1_memory_mapping_copy(16, 65544, &mut size), 0);
+        assert_eq!(swr_v1_memory_mapping_copy(16, 65544, &raw mut size), 0);
         assert_eq!(size, 8);
-        assert_eq!(swr_v1_memory_mapping_copy(0, 16, &mut size), -1);
+        assert_eq!(swr_v1_memory_mapping_copy(0, 16, &raw mut size), -1);
         assert_eq!(size, 0);
     }
 }
@@ -42,7 +48,7 @@ fn actual_mapping_headers_and_payload_relocation_remain_in_their_live_arenas() {
                 assert_eq!(swr_v1_memory_mapping_relocate(source, destination), 0);
                 assert_eq!(old, original);
                 let mut view = Extent::default();
-                assert_eq!(swr_v1_memory_mapping_extent(destination, &mut view), 0);
+                assert_eq!(swr_v1_memory_mapping_extent(destination, &raw mut view), 0);
                 assert_eq!((view.base, view.total), (new.as_mut_ptr().cast(), new_size));
                 assert_eq!(new[0] as usize, new_size);
                 let copied = old_size.min(new_size) - 8;

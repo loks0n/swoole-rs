@@ -169,9 +169,9 @@ mod tests {
         assert_eq!(plan(0, 0), Some([FALSE].as_slice()));
         assert_eq!(plan(1, 0), Some([WARN, FALSE].as_slice()));
         let mut count = 71;
-        assert!(unsafe { swr_v1_http_request_lifecycle(5, 0, &mut count) }.is_null());
+        assert!(unsafe { swr_v1_http_request_lifecycle(5, 0, &raw mut count) }.is_null());
         assert_eq!(count, 71);
-        assert!(unsafe { swr_v1_http_request_lifecycle(1, 2, &mut count) }.is_null());
+        assert!(unsafe { swr_v1_http_request_lifecycle(1, 2, &raw mut count) }.is_null());
         assert_eq!(count, 71);
         assert!(unsafe { swr_v1_http_request_lifecycle(0, 1, std::ptr::null_mut()) }.is_null());
     }

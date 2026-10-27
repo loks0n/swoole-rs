@@ -115,7 +115,8 @@ pub unsafe extern "C" fn swr_v1_memory_columns_v2_declare_step(cursor: *mut Decl
         }
         let mut width = 0;
         // SAFETY: `width` is a writable local.
-        if unsafe { swr_v1_memory_table_column_size(state.kind, state.requested, &mut width) } != 0
+        if unsafe { swr_v1_memory_table_column_size(state.kind, state.requested, &raw mut width) }
+            != 0
         {
             return -1;
         }

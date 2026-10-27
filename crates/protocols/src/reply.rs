@@ -170,12 +170,12 @@ mod tests {
             ..ReplyParts::default()
         };
         assert_eq!(
-            unsafe { swr_v1_resp_reply_parts(255, 0, 0, std::ptr::null(), 0, &mut output) },
+            unsafe { swr_v1_resp_reply_parts(255, 0, 0, std::ptr::null(), 0, &raw mut output) },
             -1
         );
         assert_eq!(output.prefix_length, 17);
         assert_eq!(
-            unsafe { swr_v1_resp_reply_parts(4, 1, 0, std::ptr::null(), 1, &mut output) },
+            unsafe { swr_v1_resp_reply_parts(4, 1, 0, std::ptr::null(), 1, &raw mut output) },
             -1
         );
         assert_eq!(output.prefix_length, 17);

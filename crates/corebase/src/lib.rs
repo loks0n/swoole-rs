@@ -42,7 +42,7 @@ pub unsafe extern "C" fn swr_v1_corebase_parse_stoi(
     }
     let mut end = ptr::null_mut();
     // SAFETY: `input` is a non-null, NUL-terminated string; `end` is a live local.
-    let value = unsafe { strtol(input, &mut end, 10) };
+    let value = unsafe { strtol(input, &raw mut end, 10) };
     if end.cast_const() == input {
         return 0;
     }
@@ -230,9 +230,9 @@ pub unsafe extern "C" fn swr_v1_corebase_version(
     loop {
         let (mut left_end, mut right_end) = (ptr::null_mut(), ptr::null_mut());
         // SAFETY: see above; `left_end` is a live local.
-        let first = unsafe { strtoul(left, &mut left_end, 10) };
+        let first = unsafe { strtoul(left, &raw mut left_end, 10) };
         // SAFETY: see above; `right_end` is a live local.
-        let second = unsafe { strtoul(right, &mut right_end, 10) };
+        let second = unsafe { strtoul(right, &raw mut right_end, 10) };
         match first.cmp(&second) {
             Ordering::Less => return -1,
             Ordering::Greater => return 1,
@@ -362,7 +362,7 @@ mod tests {
                         input.len(),
                         storage.as_mut_ptr().cast(),
                         storage.len(),
-                        &mut state,
+                        &raw mut state,
                     )
                 };
                 if step == 0 {
@@ -417,7 +417,7 @@ mod tests {
             let input = std::ffi::CString::new(text).unwrap();
             let mut output = 0x13579bdf;
             assert_eq!(
-                unsafe { swr_v1_corebase_parse_stoi(input.as_ptr(), &mut output) },
+                unsafe { swr_v1_corebase_parse_stoi(input.as_ptr(), &raw mut output) },
                 1
             );
             assert_eq!(output, expected);
@@ -426,7 +426,7 @@ mod tests {
             let input = std::ffi::CString::new(text).unwrap();
             let mut output = 0x13579bdf;
             assert_eq!(
-                unsafe { swr_v1_corebase_parse_stoi(input.as_ptr(), &mut output) },
+                unsafe { swr_v1_corebase_parse_stoi(input.as_ptr(), &raw mut output) },
                 0
             );
             assert_eq!(output, 0x13579bdf);
@@ -438,11 +438,11 @@ mod tests {
         let mut parsed = 0;
         unsafe {
             assert_eq!(
-                swr_v1_corebase_hex(c"FFtail".as_ptr(), &mut parsed),
+                swr_v1_corebase_hex(c"FFtail".as_ptr(), &raw mut parsed),
                 16833333
             );
             assert_eq!(parsed, 6);
-            assert_eq!(swr_v1_corebase_hex(c"0x".as_ptr(), &mut parsed), 0);
+            assert_eq!(swr_v1_corebase_hex(c"0x".as_ptr(), &raw mut parsed), 0);
             assert_eq!(parsed, 2);
         }
     }

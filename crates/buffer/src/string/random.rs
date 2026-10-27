@@ -121,7 +121,15 @@ mod tests {
         assert_eq!(
             unsafe {
                 swr_v1_string_random_step(
-                    phase, length, capacity, count, read, encoded, 8, 4096, &mut out,
+                    phase,
+                    length,
+                    capacity,
+                    count,
+                    read,
+                    encoded,
+                    8,
+                    4096,
+                    &raw mut out,
                 )
             },
             OK
@@ -203,7 +211,15 @@ mod tests {
             assert!(
                 unsafe {
                     swr_v1_string_random_step(
-                        phase, length, capacity, count, count, encoded, 8, 4096, &mut out,
+                        phase,
+                        length,
+                        capacity,
+                        count,
+                        count,
+                        encoded,
+                        8,
+                        4096,
+                        &raw mut out,
                     )
                 } < 0
             );

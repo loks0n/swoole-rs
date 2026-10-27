@@ -126,12 +126,12 @@ mod tests {
                 ..Default::default()
             };
             for action in 1..=4 {
-                assert_eq!(unsafe { swr_v1_http_conditional(&mut state) }, action);
+                assert_eq!(unsafe { swr_v1_http_conditional(&raw mut state) }, action);
             }
             if kind == 1 {
-                assert_eq!(unsafe { swr_v1_http_conditional(&mut state) }, 5);
+                assert_eq!(unsafe { swr_v1_http_conditional(&raw mut state) }, 5);
             }
-            assert_eq!(unsafe { swr_v1_http_conditional(&mut state) }, 0);
+            assert_eq!(unsafe { swr_v1_http_conditional(&raw mut state) }, 0);
         }
     }
     #[test]
@@ -143,7 +143,7 @@ mod tests {
             timezone: 1,
             ..Default::default()
         };
-        assert_eq!(unsafe { swr_v1_http_conditional(&mut state) }, OVERFLOW);
+        assert_eq!(unsafe { swr_v1_http_conditional(&raw mut state) }, OVERFLOW);
         state = HttpConditional {
             kind: 0,
             phase: 6,
@@ -152,13 +152,13 @@ mod tests {
             file_mtime: 99,
             ..Default::default()
         };
-        assert_eq!(unsafe { swr_v1_http_conditional(&mut state) }, 8);
+        assert_eq!(unsafe { swr_v1_http_conditional(&raw mut state) }, 8);
         state = HttpConditional {
             kind: 0,
             length: 64,
             ..Default::default()
         };
-        assert_eq!(unsafe { swr_v1_http_conditional(&mut state) }, 0);
+        assert_eq!(unsafe { swr_v1_http_conditional(&raw mut state) }, 0);
         assert!(swr_v1_http_date_format(4).is_null());
     }
 }

@@ -118,38 +118,38 @@ mod tests {
         assert_eq!(std::mem::align_of::<InterruptState>(), 1);
         let mut state = state();
         unsafe {
-            assert_eq!(record(&mut state), 0);
+            assert_eq!(record(&raw mut state), 0);
             let mut start = 0;
             assert_eq!(
-                swr_v1_phpcoroutines_interrupt(&mut state, &mut start, 0, 10).action,
+                swr_v1_phpcoroutines_interrupt(&raw mut state, &raw mut start, 0, 10).action,
                 1
             );
-            assert_eq!(record(&mut state), 0); // VM publication must happen first
+            assert_eq!(record(&raw mut state), 0); // VM publication must happen first
             assert_eq!(
-                swr_v1_phpcoroutines_interrupt(&mut state, &mut start, 0, 10).action,
+                swr_v1_phpcoroutines_interrupt(&raw mut state, &raw mut start, 0, 10).action,
                 2
             );
-            assert_eq!(record(&mut state), 6);
+            assert_eq!(record(&raw mut state), 6);
             assert_eq!(
-                swr_v1_phpcoroutines_interrupt(&mut state, &mut start, 0, 10).action,
+                swr_v1_phpcoroutines_interrupt(&raw mut state, &raw mut start, 0, 10).action,
                 0
             );
             assert_eq!(
-                swr_v1_phpcoroutines_interrupt(&mut state, &mut 0, 0, 10).action,
+                swr_v1_phpcoroutines_interrupt(&raw mut state, &mut 0, 0, 10).action,
                 0
             );
             let mut stop = 0;
             assert_eq!(
-                swr_v1_phpcoroutines_interrupt(&mut state, &mut stop, 1, 10).action,
+                swr_v1_phpcoroutines_interrupt(&raw mut state, &raw mut stop, 1, 10).action,
                 3
             );
-            assert_eq!(record(&mut state), 0); // false before Native join
+            assert_eq!(record(&raw mut state), 0); // false before Native join
             assert_eq!(
-                swr_v1_phpcoroutines_interrupt(&mut state, &mut stop, 1, 10).action,
+                swr_v1_phpcoroutines_interrupt(&raw mut state, &raw mut stop, 1, 10).action,
                 0
             );
             assert_eq!(
-                swr_v1_phpcoroutines_interrupt(&mut state, &mut 0, 1, 10).action,
+                swr_v1_phpcoroutines_interrupt(&raw mut state, &mut 0, 1, 10).action,
                 0
             );
         }
@@ -160,27 +160,30 @@ mod tests {
             let mut parent = state();
             let mut child = state();
             unsafe {
-                store(&mut parent, 1);
+                store(&raw mut parent, 1);
                 assert_eq!(
-                    swr_v1_phpcoroutines_interrupt(&mut child, &mut 0, 2, maximum).action,
+                    swr_v1_phpcoroutines_interrupt(&raw mut child, &mut 0, 2, maximum).action,
                     0
                 );
-                store(&mut child, 1);
+                store(&raw mut child, 1);
                 let mut stage = 0;
                 for _ in 0..3 {
                     assert_eq!(
-                        swr_v1_phpcoroutines_interrupt(&mut child, &mut stage, 2, maximum).action,
+                        swr_v1_phpcoroutines_interrupt(&raw mut child, &raw mut stage, 2, maximum)
+                            .action,
                         4
                     );
-                    let sleep = swr_v1_phpcoroutines_interrupt(&mut child, &mut stage, 2, maximum);
+                    let sleep =
+                        swr_v1_phpcoroutines_interrupt(&raw mut child, &raw mut stage, 2, maximum);
                     assert_eq!((sleep.action, sleep.value), (5, u64::from(maximum) / 2));
                 }
-                store(&mut child, 0);
+                store(&raw mut child, 0);
                 assert_eq!(
-                    swr_v1_phpcoroutines_interrupt(&mut child, &mut stage, 2, maximum).action,
+                    swr_v1_phpcoroutines_interrupt(&raw mut child, &raw mut stage, 2, maximum)
+                        .action,
                     0
                 );
-                assert_eq!(record(&mut parent), 6); // no implicit parent lookup
+                assert_eq!(record(&raw mut parent), 6); // no implicit parent lookup
             }
         }
     }

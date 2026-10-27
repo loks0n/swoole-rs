@@ -314,7 +314,7 @@ mod tests {
         let context = Context::directory();
         context.load(&[b"z", b"index.html", b"z", b"a"]);
         assert_eq!(
-            unsafe { swr_v2_http_directory_count(&(*context.0).directory) },
+            unsafe { swr_v2_http_directory_count(&raw const (*context.0).directory) },
             3
         );
         assert_eq!(context.scan(0, b""), 1);
@@ -369,7 +369,7 @@ mod tests {
         assert_eq!(context.index(0, 0, b"", &mut cursor), 1);
         assert_eq!(unsafe { &(*context.0).index }, b"existing");
         assert_eq!(
-            unsafe { swr_v2_http_context_index(context.0, 0, 0, ptr::null(), 0, &mut cursor) },
+            unsafe { swr_v2_http_context_index(context.0, 0, 0, ptr::null(), 0, &raw mut cursor) },
             1
         );
     }
@@ -388,25 +388,25 @@ mod tests {
             for _ in 0..2 {
                 let mut index = usize::MAX;
                 assert_eq!(
-                    unsafe { swr_v2_http_context_page_step(context.0, 1, &mut index) },
+                    unsafe { swr_v2_http_context_page_step(context.0, 1, &raw mut index) },
                     1
                 );
                 assert_eq!(index, 0);
                 let count = usize::from(!names.is_empty()) * 2;
                 for expected in 0..count {
                     assert_eq!(
-                        unsafe { swr_v2_http_context_page_step(context.0, 0, &mut index) },
+                        unsafe { swr_v2_http_context_page_step(context.0, 0, &raw mut index) },
                         2
                     );
                     assert_eq!(index, expected);
                 }
                 assert_eq!(
-                    unsafe { swr_v2_http_context_page_step(context.0, 0, &mut index) },
+                    unsafe { swr_v2_http_context_page_step(context.0, 0, &raw mut index) },
                     3
                 );
                 assert_eq!(index, 0);
                 assert_eq!(
-                    unsafe { swr_v2_http_context_page_step(context.0, 0, &mut index) },
+                    unsafe { swr_v2_http_context_page_step(context.0, 0, &raw mut index) },
                     0
                 );
                 assert_eq!(unsafe { &(*context.0).directory_path }, b"/normal/");
@@ -442,7 +442,14 @@ mod tests {
             let mut count = 0;
             assert_eq!(
                 unsafe {
-                    swr_v2_http_context_page(context.0, 0, &input, ptr::null_mut(), 0, &mut count)
+                    swr_v2_http_context_page(
+                        context.0,
+                        0,
+                        &raw const input,
+                        ptr::null_mut(),
+                        0,
+                        &raw mut count,
+                    )
                 },
                 0
             );
@@ -453,10 +460,10 @@ mod tests {
                     swr_v2_http_context_page(
                         context.0,
                         0,
-                        &input,
+                        &raw const input,
                         expected.as_mut_ptr(),
                         count,
-                        &mut count,
+                        &raw mut count,
                     )
                 },
                 0
@@ -468,11 +475,11 @@ mod tests {
                     swr_v2_http_context_page_emit(
                         context.0,
                         0,
-                        &input,
+                        &raw const input,
                         buffer.as_mut_ptr(),
                         6,
                         6,
-                        &mut result,
+                        &raw mut result,
                     )
                 },
                 if part == 2 { 1 } else { 2 }
@@ -487,11 +494,11 @@ mod tests {
                     swr_v2_http_context_page_emit(
                         context.0,
                         0,
-                        &input,
+                        &raw const input,
                         buffer.as_mut_ptr(),
                         6,
                         capacity,
-                        &mut result,
+                        &raw mut result,
                     )
                 },
                 3
@@ -528,11 +535,11 @@ mod tests {
                 swr_v2_http_context_page_emit(
                     context.0,
                     0,
-                    &input,
+                    &raw const input,
                     buffer.as_mut_ptr(),
                     6,
                     6,
-                    &mut result,
+                    &raw mut result,
                 )
             },
             0

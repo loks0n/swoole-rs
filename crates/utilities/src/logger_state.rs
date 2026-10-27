@@ -500,7 +500,7 @@ mod tests {
     fn normal_owned_state_and_atomic_publication() {
         unsafe {
             let mut state = std::ptr::null_mut();
-            assert_eq!(swr_v1_utils_log_state_create(32, &mut state), OK);
+            assert_eq!(swr_v1_utils_log_state_create(32, &raw mut state), OK);
             assert_eq!(swr_v1_utils_log_state_scalar_get(state, 3), 2);
             assert_eq!(swr_v1_utils_log_state_scalar_set(state, 3, 999), OK);
             assert_eq!(swr_v1_utils_log_state_scalar_get(state, 3), 6);

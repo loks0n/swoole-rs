@@ -811,12 +811,12 @@ mod tests {
         assert_eq!(
             unsafe {
                 swr_v2_http_request_frame(
-                    &mut *owner,
+                    &raw mut *owner,
                     0,
                     input.as_ptr(),
                     input.len(),
                     offset,
-                    &mut offset,
+                    &raw mut offset,
                 )
             },
             0
@@ -824,12 +824,12 @@ mod tests {
         assert_eq!(
             unsafe {
                 swr_v2_http_request_frame(
-                    &mut *owner,
+                    &raw mut *owner,
                     1,
                     input.as_ptr(),
                     input.len(),
                     offset,
-                    &mut offset,
+                    &raw mut offset,
                 )
             },
             0
@@ -846,7 +846,7 @@ mod tests {
                     operation,
                     input.as_ptr(),
                     input.len(),
-                    &mut result,
+                    &raw mut result,
                 )
             };
             assert_eq!(result.number_errors, 0);
@@ -880,12 +880,12 @@ mod tests {
         assert_eq!(
             unsafe {
                 swr_v2_http_request_header(
-                    &*owner,
+                    &raw const *owner,
                     input.as_ptr(),
                     input.len(),
                     b"Host".as_ptr(),
                     4,
-                    &mut value,
+                    &raw mut value,
                 )
             },
             1
@@ -936,12 +936,12 @@ mod tests {
             assert_eq!(
                 unsafe {
                     swr_v2_http_request_text_snapshot_new(
-                        &owner,
+                        &raw const owner,
                         1,
                         scratch.as_mut_ptr(),
                         scratch.len(),
-                        &mut span,
-                        &mut lease,
+                        &raw mut span,
+                        &raw mut lease,
                     )
                 },
                 0
@@ -970,12 +970,15 @@ mod tests {
         assert_eq!(owner.set_text(1, b"Content-Disposition"), 0);
         assert_eq!(owner.set_text(0, b"/ordinary"), 0);
         let mut count = 0;
-        let plan = unsafe { swr_v2_http_request_upload_plan(&owner, 0, 0, &mut count) };
+        let plan =
+            unsafe { swr_v2_http_request_upload_plan(&raw const owner, 0, 0, &raw mut count) };
         assert!(!plan.is_null());
         assert_eq!(unsafe { std::slice::from_raw_parts(plan, count) }, &[1]);
         // Normal accepted-file effects resume outside Rust; the plan is static.
         for (stage, expected) in [(1, &[2, 3][..]), (2, &[4][..]), (3, &[7, 0][..])] {
-            let plan = unsafe { swr_v2_http_request_upload_plan(&owner, stage, 1, &mut count) };
+            let plan = unsafe {
+                swr_v2_http_request_upload_plan(&raw const owner, stage, 1, &raw mut count)
+            };
             assert!(!plan.is_null());
             assert_eq!(unsafe { std::slice::from_raw_parts(plan, count) }, expected);
         }
@@ -983,7 +986,11 @@ mod tests {
         let mut native = [0xcc; 128];
         assert_eq!(
             unsafe {
-                swr_v2_http_request_upload_template(&mut owner, native.as_mut_ptr(), native.len())
+                swr_v2_http_request_upload_template(
+                    &raw mut owner,
+                    native.as_mut_ptr(),
+                    native.len(),
+                )
             },
             0
         );
@@ -1004,19 +1011,33 @@ mod tests {
         assert_eq!(owner.set_text(0, b"/private/tmp/proof"), 0);
         let mut name = b"Content-Disposition".to_vec();
         assert_eq!(
-            unsafe { swr_v2_http_request_text_set(&mut *owner, 1, name.as_ptr(), name.len()) },
+            unsafe { swr_v2_http_request_text_set(&raw mut *owner, 1, name.as_ptr(), name.len()) },
             0
         );
         name.fill(b'x');
         let mut count = 0;
         assert_eq!(
-            unsafe { swr_v2_http_request_text_copy(&*owner, 1, ptr::null_mut(), 0, &mut count) },
+            unsafe {
+                swr_v2_http_request_text_copy(
+                    &raw const *owner,
+                    1,
+                    ptr::null_mut(),
+                    0,
+                    &raw mut count,
+                )
+            },
             0
         );
         let mut native = vec![b'?'; count + 8];
         assert_eq!(
             unsafe {
-                swr_v2_http_request_text_copy(&*owner, 1, native.as_mut_ptr(), count, &mut count)
+                swr_v2_http_request_text_copy(
+                    &raw const *owner,
+                    1,
+                    native.as_mut_ptr(),
+                    count,
+                    &raw mut count,
+                )
             },
             0
         );
@@ -1041,17 +1062,17 @@ mod tests {
         assert_eq!(owner.control(1, 128, 0), 0);
         assert_eq!(owner.control(9, 100, 0), 0);
         assert_eq!(
-            unsafe { swr_v2_http_request_data(&mut owner, 0, 1, 4, 9, 0) },
+            unsafe { swr_v2_http_request_data(&raw mut owner, 0, 1, 4, 9, 0) },
             2
         );
         assert_eq!(owner.observe().upload_size, 4);
         assert_eq!(
-            unsafe { swr_v2_http_request_data(&mut owner, 1, 0, 0, 0, 4) },
+            unsafe { swr_v2_http_request_data(&raw mut owner, 1, 0, 0, 0, 4) },
             0
         );
         assert_eq!(owner.observe().upload_size, 4);
         assert_eq!(
-            unsafe { swr_v2_http_request_data(&mut owner, 0, 0, 3, 9, 0) },
+            unsafe { swr_v2_http_request_data(&raw mut owner, 0, 0, 3, 9, 0) },
             1
         );
         assert_eq!(owner.observe().upload_size, 4);
@@ -1067,12 +1088,12 @@ mod tests {
         assert_eq!(
             unsafe {
                 swr_v2_http_request_chunk(
-                    &mut *owner,
+                    &raw mut *owner,
                     0,
                     input.as_ptr(),
                     input.len(),
                     offset,
-                    &mut step,
+                    &raw mut step,
                 )
             },
             1
@@ -1080,7 +1101,14 @@ mod tests {
         assert_eq!(step.chunk_length, 3);
         assert_eq!(
             unsafe {
-                swr_v2_http_request_chunk(&mut *owner, 1, input.as_ptr(), input.len(), 0, &mut step)
+                swr_v2_http_request_chunk(
+                    &raw mut *owner,
+                    1,
+                    input.as_ptr(),
+                    input.len(),
+                    0,
+                    &raw mut step,
+                )
             },
             2
         );

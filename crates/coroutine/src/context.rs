@@ -167,35 +167,63 @@ mod tests {
         let mut completion = MaybeUninit::<ContextCompletion>::uninit();
         unsafe {
             assert_eq!(
-                swr_v1_context_prepare(completion.as_mut_ptr(), &extent),
+                swr_v1_context_prepare(completion.as_mut_ptr(), &raw const extent),
                 bytes.len()
             );
             assert_eq!(swr_v1_context_completed(completion.as_ptr()), 0);
             // Native allocation returns before the previously uninitialized
             // pointer cell is admitted. No actual Context/allocator is invoked.
             let pointer = bytes.as_mut_ptr().cast();
-            let view = swr_v1_context_stack_step(stack.as_mut_ptr(), &extent, 0, pointer, 0);
+            let view =
+                swr_v1_context_stack_step(stack.as_mut_ptr(), &raw const extent, 0, pointer, 0);
             assert_eq!(
                 (view.pointer, view.size, view.present),
                 (pointer, bytes.len(), 1)
             );
-            let top = swr_v1_context_stack_step(stack.as_mut_ptr(), &extent, 2, ptr::null_mut(), 0);
+            let top = swr_v1_context_stack_step(
+                stack.as_mut_ptr(),
+                &raw const extent,
+                2,
+                ptr::null_mut(),
+                0,
+            );
             assert_eq!(top.top, bytes.as_mut_ptr().add(bytes.len()).cast());
-            swr_v1_context_stack_step(stack.as_mut_ptr(), &extent, 4, ptr::null_mut(), bytes.len());
-            let usage =
-                swr_v1_context_stack_step(stack.as_mut_ptr(), &extent, 5, ptr::null_mut(), 0);
+            swr_v1_context_stack_step(
+                stack.as_mut_ptr(),
+                &raw const extent,
+                4,
+                ptr::null_mut(),
+                bytes.len(),
+            );
+            let usage = swr_v1_context_stack_step(
+                stack.as_mut_ptr(),
+                &raw const extent,
+                5,
+                ptr::null_mut(),
+                0,
+            );
             assert_eq!(usage.size, 64 * 1024);
             swr_v1_context_finish(completion.as_mut_ptr());
             assert_eq!(swr_v1_context_completed(completion.as_ptr()), 1);
             // Clear follows the external free barrier and never destroys bytes.
-            let cleared =
-                swr_v1_context_stack_step(stack.as_mut_ptr(), &extent, 3, ptr::null_mut(), 0);
+            let cleared = swr_v1_context_stack_step(
+                stack.as_mut_ptr(),
+                &raw const extent,
+                3,
+                ptr::null_mut(),
+                0,
+            );
             assert_eq!(
                 (cleared.pointer, cleared.size, cleared.present),
                 (ptr::null_mut(), 0, 0)
             );
-            let read =
-                swr_v1_context_stack_step(stack.as_mut_ptr(), &extent, 1, ptr::null_mut(), 0);
+            let read = swr_v1_context_stack_step(
+                stack.as_mut_ptr(),
+                &raw const extent,
+                1,
+                ptr::null_mut(),
+                0,
+            );
             assert_eq!(
                 (read.pointer, read.size, read.present),
                 (ptr::null_mut(), bytes.len(), 0)

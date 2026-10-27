@@ -64,7 +64,13 @@ mod tests {
         for requested in [1, 7, 8, 9, 16, 63, 64, 65] {
             assert_eq!(
                 unsafe {
-                    swr_v1_string_allocation_plan(0, std::ptr::null(), requested, 8, &mut result)
+                    swr_v1_string_allocation_plan(
+                        0,
+                        std::ptr::null(),
+                        requested,
+                        8,
+                        &raw mut result,
+                    )
                 },
                 OK
             );
@@ -81,7 +87,15 @@ mod tests {
                     offset: 0,
                 };
                 assert_eq!(
-                    unsafe { swr_v1_string_allocation_plan(1, &state, requested, 8, &mut result) },
+                    unsafe {
+                        swr_v1_string_allocation_plan(
+                            1,
+                            &raw const state,
+                            requested,
+                            8,
+                            &raw mut result,
+                        )
+                    },
                     OK
                 );
                 assert_eq!(
@@ -106,14 +120,15 @@ mod tests {
             action: 99,
         };
         for (op, source, size, alignment) in [
-            (99, &state as *const _, 32, 8),
+            (99, &raw const state, 32, 8),
             (1, std::ptr::null(), 32, 8),
-            (1, &state, 8, 8),
+            (1, &raw const state, 8, 8),
             (0, std::ptr::null(), 32, 3),
             (0, std::ptr::null(), usize::MAX, 8),
         ] {
             assert!(
-                unsafe { swr_v1_string_allocation_plan(op, source, size, alignment, &mut out) } < 0
+                unsafe { swr_v1_string_allocation_plan(op, source, size, alignment, &raw mut out) }
+                    < 0
             );
             assert_eq!((out.capacity, out.action), (0, 0));
         }

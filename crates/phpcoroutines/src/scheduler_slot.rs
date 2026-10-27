@@ -93,41 +93,47 @@ mod tests {
         };
         unsafe {
             assert_eq!(
-                swr_v1_phpcoroutines_scheduler_next_slot(&mut slot, &mut out),
+                swr_v1_phpcoroutines_scheduler_next_slot(&raw mut slot, &raw mut out),
                 0
             );
             assert_eq!((out.token, out.repetitions), (99, 7));
-            swr_v1_phpcoroutines_scheduler_drop_slot(&mut slot);
-            assert_eq!(swr_v1_phpcoroutines_scheduler_prepare_slot(&mut slot), 1);
+            swr_v1_phpcoroutines_scheduler_drop_slot(&raw mut slot);
+            assert_eq!(
+                swr_v1_phpcoroutines_scheduler_prepare_slot(&raw mut slot),
+                1
+            );
             let first = slot;
-            assert_eq!(swr_v1_phpcoroutines_scheduler_prepare_slot(&mut slot), 1);
+            assert_eq!(
+                swr_v1_phpcoroutines_scheduler_prepare_slot(&raw mut slot),
+                1
+            );
             assert_eq!(slot, first);
             assert_eq!(
-                swr_v1_phpcoroutines_scheduler_next_slot(&mut slot, &mut out),
+                swr_v1_phpcoroutines_scheduler_next_slot(&raw mut slot, &raw mut out),
                 1
             );
             assert_eq!((out.token, out.repetitions), (99, 7));
             for (token, count) in [(41, -2), (0, 0), (usize::MAX, 3)] {
                 assert_eq!(
-                    swr_v1_phpcoroutines_scheduler_try_push_slot(&mut slot, token, count),
+                    swr_v1_phpcoroutines_scheduler_try_push_slot(&raw mut slot, token, count),
                     1
                 );
             }
             for expected in [(41, 0), (0, 0), (usize::MAX, 3)] {
                 assert_eq!(
-                    swr_v1_phpcoroutines_scheduler_next_slot(&mut slot, &mut out),
+                    swr_v1_phpcoroutines_scheduler_next_slot(&raw mut slot, &raw mut out),
                     2
                 );
                 assert_eq!((out.token, out.repetitions), expected);
             }
             assert_eq!(
-                swr_v1_phpcoroutines_scheduler_next_slot(&mut slot, &mut out),
+                swr_v1_phpcoroutines_scheduler_next_slot(&raw mut slot, &raw mut out),
                 1
             );
-            swr_v1_phpcoroutines_scheduler_drop_slot(&mut slot);
+            swr_v1_phpcoroutines_scheduler_drop_slot(&raw mut slot);
             assert!(slot.is_null());
             assert_eq!(
-                swr_v1_phpcoroutines_scheduler_next_slot(&mut slot, &mut out),
+                swr_v1_phpcoroutines_scheduler_next_slot(&raw mut slot, &raw mut out),
                 0
             );
         }

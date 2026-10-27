@@ -40,7 +40,7 @@ pub unsafe extern "C" fn swr_v1_memory_mapping_product(
     };
     let mut total = 0;
     // SAFETY: `total` is a writable local.
-    if unsafe { swr_v1_memory_mapping_size(size, &mut total) } != 0 {
+    if unsafe { swr_v1_memory_mapping_size(size, &raw mut total) } != 0 {
         return -1;
     }
     // SAFETY: `requested` is non-null (checked above), aligned and writable.

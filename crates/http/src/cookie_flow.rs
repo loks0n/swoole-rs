@@ -107,7 +107,12 @@ pub unsafe extern "C" fn swr_v2_http_cookie_flow(
     // SAFETY: the scratch holds the NUL-terminated cookie text in `capacity` bytes; the
     // cursor and cookie are fields of the caller's exclusive flow.
     let result = unsafe {
-        crate::swr_v1_http_cookie_next(scratch, capacity, &mut flow.cursor, &mut flow.cookie)
+        crate::swr_v1_http_cookie_next(
+            scratch,
+            capacity,
+            &raw mut flow.cursor,
+            &raw mut flow.cookie,
+        )
     };
     if result == CALLBACK {
         flow.phase = RESUME;
@@ -164,7 +169,7 @@ mod tests {
         assert_eq!(
             unsafe {
                 swr_v2_http_cookie_flow(
-                    &mut flow,
+                    &raw mut flow,
                     source.as_ptr(),
                     source.len(),
                     scratch.as_mut_ptr(),
@@ -179,7 +184,7 @@ mod tests {
         assert_eq!(
             unsafe {
                 swr_v2_http_cookie_flow(
-                    &mut flow,
+                    &raw mut flow,
                     source.as_ptr(),
                     source.len(),
                     scratch.as_mut_ptr(),
@@ -201,7 +206,7 @@ mod tests {
         assert_eq!(
             unsafe {
                 swr_v2_http_cookie_flow(
-                    &mut flow,
+                    &raw mut flow,
                     source.as_ptr(),
                     source.len(),
                     scratch.as_mut_ptr(),
@@ -216,7 +221,7 @@ mod tests {
         assert_eq!(
             unsafe {
                 swr_v2_http_cookie_flow(
-                    &mut flow,
+                    &raw mut flow,
                     source.as_ptr(),
                     source.len(),
                     scratch.as_mut_ptr(),

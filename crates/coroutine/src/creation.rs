@@ -135,30 +135,49 @@ mod tests {
         let mut cursor = CoroutineCreationCursor { phase: 0 };
         let mut cid = MaybeUninit::<CoroutineCid>::uninit();
         unsafe {
-            let step =
-                swr_v1_coroutine_create_step(&mut cursor, &mut scheduler, cid.as_mut_ptr(), 0);
+            let step = swr_v1_coroutine_create_step(
+                &raw mut cursor,
+                &raw mut scheduler,
+                cid.as_mut_ptr(),
+                0,
+            );
             assert_eq!((step.action, step.cid), (INSERT, 1));
             assert_eq!(swr_v1_coroutine_cid_read(cid.as_ptr()), 1);
             assert_eq!(scheduler.peak_num, 0);
             assert_eq!(
-                swr_v1_coroutine_create_step(&mut cursor, &mut scheduler, cid.as_mut_ptr(), 0)
-                    .action,
+                swr_v1_coroutine_create_step(
+                    &raw mut cursor,
+                    &raw mut scheduler,
+                    cid.as_mut_ptr(),
+                    0
+                )
+                .action,
                 COUNT
             );
             assert_eq!(
-                swr_v1_coroutine_create_step(&mut cursor, &mut scheduler, cid.as_mut_ptr(), 7)
-                    .action,
+                swr_v1_coroutine_create_step(
+                    &raw mut cursor,
+                    &raw mut scheduler,
+                    cid.as_mut_ptr(),
+                    7
+                )
+                .action,
                 COUNT
             );
             assert_eq!(
-                swr_v1_coroutine_create_step(&mut cursor, &mut scheduler, cid.as_mut_ptr(), 5)
-                    .action,
+                swr_v1_coroutine_create_step(
+                    &raw mut cursor,
+                    &raw mut scheduler,
+                    cid.as_mut_ptr(),
+                    5
+                )
+                .action,
                 ACTIVATE
             );
             assert_eq!(scheduler.peak_num, 5);
             // Terminal only reads the caller-local cursor, not object/state.
             assert_eq!(
-                swr_v1_coroutine_create_step(&mut cursor, ptr::null_mut(), ptr::null_mut(), 0)
+                swr_v1_coroutine_create_step(&raw mut cursor, ptr::null_mut(), ptr::null_mut(), 0)
                     .action,
                 DONE
             );

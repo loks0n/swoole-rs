@@ -242,7 +242,7 @@ mod tests {
     fn normal_rotated_value_capture_and_transfer() {
         unsafe {
             let mut state = std::ptr::null_mut();
-            assert_eq!(swr_v1_utils_log_state_create(1024, &mut state), OK);
+            assert_eq!(swr_v1_utils_log_state_create(1024, &raw mut state), OK);
             let logical = b"original\0hidden";
             assert_eq!(
                 swr_v1_utils_log_state_text_set(state, 0, logical.as_ptr(), logical.len()),
@@ -250,7 +250,7 @@ mod tests {
             );
             let mut captured = std::ptr::null_mut();
             assert_eq!(
-                swr_v1_utils_log_path_create(state, 0, std::ptr::null(), 0, &mut captured),
+                swr_v1_utils_log_path_create(state, 0, std::ptr::null(), 0, &raw mut captured),
                 OK
             );
             swr_v1_utils_log_state_clear(state, 0);
@@ -269,7 +269,7 @@ mod tests {
                             1,
                             file.as_ptr(),
                             file.len(),
-                            &mut path
+                            &raw mut path
                         ),
                         OK
                     );
@@ -278,7 +278,7 @@ mod tests {
                         OK
                     );
                     let mut length = 0;
-                    let pointer = swr_v1_utils_log_path_get(path, &mut length);
+                    let pointer = swr_v1_utils_log_path_get(path, &raw mut length);
                     let expected = [file, b".", date].concat();
                     assert_eq!(
                         std::slice::from_raw_parts(pointer.cast::<u8>(), length),
@@ -298,7 +298,7 @@ mod tests {
                     let mut frozen = 14;
                     let changed = expected.iter().position(|byte| *byte == 0).is_some();
                     let reference = crate::swr_v1_utils_log_emit_step(
-                        &mut frozen,
+                        &raw mut frozen,
                         3,
                         0,
                         0,
@@ -310,7 +310,7 @@ mod tests {
                         123,
                     );
                     assert_eq!(
-                        swr_v1_utils_log_path_emit_step(state, &mut current, 3, path, 0, 123),
+                        swr_v1_utils_log_path_emit_step(state, &raw mut current, 3, path, 0, 123),
                         reference
                     );
                     assert_eq!(current, frozen);

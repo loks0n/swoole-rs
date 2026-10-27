@@ -122,22 +122,22 @@ mod tests {
             assert_eq!(swr_v1_error_ignore(std::ptr::null_mut(), 1), -1);
             assert_eq!(swr_v1_error_is_ignored(state, 1), 0);
             FAIL.with(|flag| flag.set(1));
-            assert_eq!(swr_v1_error_ignore(&mut state, 1), -2);
+            assert_eq!(swr_v1_error_ignore(&raw mut state, 1), -2);
             assert!(state.is_null());
             FAIL.with(|flag| flag.set(2)); // Fail handle allocation after bucket allocation.
-            assert_eq!(swr_v1_error_ignore(&mut state, 1), -2);
+            assert_eq!(swr_v1_error_ignore(&raw mut state, 1), -2);
             assert!(state.is_null());
-            assert_eq!(swr_v1_error_ignore(&mut state, 1), 0);
+            assert_eq!(swr_v1_error_ignore(&raw mut state, 1), 0);
             // Fill the actual allocation so the next distinct value must reserve.
             let capacity = (*state).0.capacity();
             for code in 2..=i32::try_from(capacity).expect("capacity fits an error code") {
-                assert_eq!(swr_v1_error_ignore(&mut state, code), 0);
+                assert_eq!(swr_v1_error_ignore(&raw mut state, code), 0);
             }
             FAIL.with(|flag| flag.set(1));
-            assert_eq!(swr_v1_error_ignore(&mut state, i32::MIN), -2);
+            assert_eq!(swr_v1_error_ignore(&raw mut state, i32::MIN), -2);
             assert_eq!(swr_v1_error_is_ignored(state, i32::MIN), 0);
             assert_eq!(swr_v1_error_is_ignored(state, 1), 1);
-            assert_eq!(swr_v1_error_ignore(&mut state, 1), 0);
+            assert_eq!(swr_v1_error_ignore(&raw mut state, 1), 0);
             swr_v1_error_ignored_release(state);
             swr_v1_error_ignored_release(std::ptr::null_mut());
         }

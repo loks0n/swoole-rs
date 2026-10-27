@@ -111,7 +111,14 @@ mod tests {
         assert_eq!(
             unsafe {
                 swr_v1_string_format_step(
-                    phase, length, capacity, formatted, rendered, flags, 8, &mut out,
+                    phase,
+                    length,
+                    capacity,
+                    formatted,
+                    rendered,
+                    flags,
+                    8,
+                    &raw mut out,
                 )
             },
             OK
@@ -187,7 +194,14 @@ mod tests {
             assert!(
                 unsafe {
                     swr_v1_string_format_step(
-                        phase, length, capacity, formatted, rendered, 1, 8, &mut out,
+                        phase,
+                        length,
+                        capacity,
+                        formatted,
+                        rendered,
+                        1,
+                        8,
+                        &raw mut out,
                     )
                 } < 0
             );

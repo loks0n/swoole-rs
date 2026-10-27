@@ -97,10 +97,16 @@ mod tests {
         for (fact, expected) in [(9, 4), (-3, 5), (104, 2), (0, 6), (7, 7)] {
             let mut stage = 0;
             unsafe {
-                assert_eq!(swr_v1_phpcoroutines_fiber(&mut stage, 0, 0, &states), 1);
-                assert_eq!(swr_v1_phpcoroutines_fiber(&mut stage, 0, 0, &states), 3);
                 assert_eq!(
-                    swr_v1_phpcoroutines_fiber(&mut stage, 0, fact, &states),
+                    swr_v1_phpcoroutines_fiber(&raw mut stage, 0, 0, &raw const states),
+                    1
+                );
+                assert_eq!(
+                    swr_v1_phpcoroutines_fiber(&raw mut stage, 0, 0, &raw const states),
+                    3
+                );
+                assert_eq!(
+                    swr_v1_phpcoroutines_fiber(&raw mut stage, 0, fact, &raw const states),
                     expected
                 );
             }
@@ -108,11 +114,11 @@ mod tests {
         let mut stage = 0;
         unsafe {
             assert_eq!(
-                swr_v1_phpcoroutines_fiber(&mut stage, 0, 0, std::ptr::null()),
+                swr_v1_phpcoroutines_fiber(&raw mut stage, 0, 0, std::ptr::null()),
                 1
             );
             assert_eq!(
-                swr_v1_phpcoroutines_fiber(&mut stage, 0, 1, std::ptr::null()),
+                swr_v1_phpcoroutines_fiber(&raw mut stage, 0, 1, std::ptr::null()),
                 2
             );
         }
@@ -125,7 +131,7 @@ mod tests {
             let mut actions = Vec::new();
             loop {
                 let action = unsafe {
-                    swr_v1_phpcoroutines_fiber(&mut stage, 1, notified, std::ptr::null())
+                    swr_v1_phpcoroutines_fiber(&raw mut stage, 1, notified, std::ptr::null())
                 };
                 if action == 0 {
                     break;
@@ -145,7 +151,7 @@ mod tests {
             let mut actions = Vec::new();
             loop {
                 let action = unsafe {
-                    swr_v1_phpcoroutines_fiber(&mut stage, 2, observation, std::ptr::null())
+                    swr_v1_phpcoroutines_fiber(&raw mut stage, 2, observation, std::ptr::null())
                 };
                 if action == 0 {
                     break;
@@ -169,7 +175,7 @@ mod tests {
             let mut actions = Vec::new();
             loop {
                 let action = unsafe {
-                    swr_v1_phpcoroutines_fiber(&mut stage, 3, observation, std::ptr::null())
+                    swr_v1_phpcoroutines_fiber(&raw mut stage, 3, observation, std::ptr::null())
                 };
                 if action == 0 {
                     break;

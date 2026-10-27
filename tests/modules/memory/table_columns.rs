@@ -3,7 +3,7 @@ use super::*;
 fn byte_keys_first_duplicate_lookup_and_native_token_custody() {
     unsafe {
         let mut columns = ptr::null_mut();
-        assert_eq!(swr_v1_memory_table_columns_create(&mut columns), 0);
+        assert_eq!(swr_v1_memory_table_columns_create(&raw mut columns), 0);
         let first = ptr::without_provenance_mut::<c_void>(101);
         let second = ptr::without_provenance_mut::<c_void>(202);
         assert_eq!(
@@ -51,7 +51,7 @@ fn byte_keys_first_duplicate_lookup_and_native_token_custody() {
 fn binary_prefixes_and_every_hash_word_tail_retain_first_token_through_growth() {
     unsafe {
         let mut columns = ptr::null_mut();
-        assert_eq!(swr_v1_memory_table_columns_create(&mut columns), 0);
+        assert_eq!(swr_v1_memory_table_columns_create(&raw mut columns), 0);
         let mut names = Vec::new();
         for length in 0..=256usize {
             let name: Vec<u8> = (0..length)

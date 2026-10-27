@@ -206,7 +206,7 @@ mod tests {
         let mut original = std::mem::MaybeUninit::<ErrorCell>::uninit();
         let mut temporary = std::mem::MaybeUninit::<ErrorCell>::uninit();
         let cells = ContextCells {
-            silence: &mut flag,
+            silence: &raw mut flag,
             original: original.as_mut_ptr(),
             temporary: temporary.as_mut_ptr(),
             ..empty()
@@ -214,38 +214,39 @@ mod tests {
         unsafe {
             let mut stage = 0;
             assert_eq!(
-                swr_v1_phpcoroutines_metadata(&mut stage, 0, &cells, 0, 0).action,
+                swr_v1_phpcoroutines_metadata(&raw mut stage, 0, &raw const cells, 0, 0).action,
                 1
             );
             assert_eq!(flag.started, 1); // before the Native mask observation
             assert_eq!(
-                swr_v1_phpcoroutines_metadata(&mut stage, 0, &cells, -17, 0).action,
+                swr_v1_phpcoroutines_metadata(&raw mut stage, 0, &raw const cells, -17, 0).action,
                 0
             );
             assert_eq!((*cells.original).value, -17);
             stage = 0;
             assert_eq!(
-                swr_v1_phpcoroutines_metadata(&mut stage, 2, &cells, 0, 0).action,
+                swr_v1_phpcoroutines_metadata(&raw mut stage, 2, &raw const cells, 0, 0).action,
                 1
             );
-            let result = swr_v1_phpcoroutines_metadata(&mut stage, 2, &cells, 23, 0);
+            let result = swr_v1_phpcoroutines_metadata(&raw mut stage, 2, &raw const cells, 23, 0);
             assert_eq!((result.action, result.value), (2, -17));
             assert_eq!((*cells.temporary).value, 23);
             stage = 0;
-            let result = swr_v1_phpcoroutines_metadata(&mut stage, 3, &cells, 0, 0);
+            let result = swr_v1_phpcoroutines_metadata(&raw mut stage, 3, &raw const cells, 0, 0);
             assert_eq!((result.action, result.value), (2, 23));
             stage = 0;
-            swr_v1_phpcoroutines_metadata(&mut stage, 1, &cells, 0, 0);
+            swr_v1_phpcoroutines_metadata(&raw mut stage, 1, &raw const cells, 0, 0);
             assert_eq!(flag.started, 0);
             // Disabled silence must not access either uninitialized mask cell.
             let cells = ContextCells {
-                silence: &mut flag,
+                silence: &raw mut flag,
                 ..empty()
             };
             for kind in [2, 3] {
                 stage = 0;
                 assert_eq!(
-                    swr_v1_phpcoroutines_metadata(&mut stage, kind, &cells, 0, 0).action,
+                    swr_v1_phpcoroutines_metadata(&raw mut stage, kind, &raw const cells, 0, 0)
+                        .action,
                     0
                 );
             }
@@ -256,65 +257,66 @@ mod tests {
         unsafe {
             let mut stage = 0;
             assert_eq!(
-                swr_v1_phpcoroutines_metadata(&mut stage, 4, &empty(), 0, 0).value,
+                swr_v1_phpcoroutines_metadata(&raw mut stage, 4, &empty(), 0, 0).value,
                 0
             );
             stage = 0;
             assert_eq!(
-                swr_v1_phpcoroutines_metadata(&mut stage, 7, &empty(), 0, 0).value,
+                swr_v1_phpcoroutines_metadata(&raw mut stage, 7, &empty(), 0, 0).value,
                 0
             );
             let mut flag = SchedulerPhase { started: 0 };
             let mut cells = ContextCells {
-                scheduler: &mut flag,
+                scheduler: &raw mut flag,
                 ..empty()
             };
             stage = 0;
             assert_eq!(
-                swr_v1_phpcoroutines_metadata(&mut stage, 6, &cells, 0, 10).action,
+                swr_v1_phpcoroutines_metadata(&raw mut stage, 6, &raw const cells, 0, 10).action,
                 4
             ); // no clock pointer/read
             stage = 0;
             assert_eq!(
-                swr_v1_phpcoroutines_metadata(&mut stage, 4, &cells, 0, 0).value,
+                swr_v1_phpcoroutines_metadata(&raw mut stage, 4, &raw const cells, 0, 0).value,
                 1
             );
             stage = 0;
             assert_eq!(
-                swr_v1_phpcoroutines_metadata(&mut stage, 4, &cells, 0, 0).value,
+                swr_v1_phpcoroutines_metadata(&raw mut stage, 4, &raw const cells, 0, 0).value,
                 0
             );
             let mut clock = ClockCell { value: 100 };
-            cells.clock = &mut clock;
+            cells.clock = &raw mut clock;
             stage = 0;
             assert_eq!(
-                swr_v1_phpcoroutines_metadata(&mut stage, 6, &cells, 0, 10).action,
+                swr_v1_phpcoroutines_metadata(&raw mut stage, 6, &raw const cells, 0, 10).action,
                 3
             );
             clock.value = 105; // fresh cell read only after Native clock access
             assert_eq!(
-                swr_v1_phpcoroutines_metadata(&mut stage, 6, &cells, 115, 10).action,
+                swr_v1_phpcoroutines_metadata(&raw mut stage, 6, &raw const cells, 115, 10).action,
                 4
             );
             stage = 0;
-            swr_v1_phpcoroutines_metadata(&mut stage, 9, &cells, -3, 0);
+            swr_v1_phpcoroutines_metadata(&raw mut stage, 9, &raw const cells, -3, 0);
             assert_eq!(clock.value, -3);
             let mut parent = std::mem::MaybeUninit::<ParentCell>::uninit();
             cells.parent = parent.as_mut_ptr();
             stage = 0;
-            swr_v1_phpcoroutines_metadata(&mut stage, 8, &cells, -8, 0);
+            swr_v1_phpcoroutines_metadata(&raw mut stage, 8, &raw const cells, -8, 0);
             stage = 0;
             assert_eq!(
-                swr_v1_phpcoroutines_metadata(&mut stage, 7, &cells, 0, 0).value,
+                swr_v1_phpcoroutines_metadata(&raw mut stage, 7, &raw const cells, 0, 0).value,
                 -8
             );
             let mut notified = SchedulerPhase { started: 0 };
-            cells.notified = &mut notified;
+            cells.notified = &raw mut notified;
             for expected in [vec![8, 9, 11, 12, 13], vec![8, 9, 12]] {
                 stage = 0;
                 let mut actual = Vec::new();
                 loop {
-                    let result = swr_v1_phpcoroutines_metadata(&mut stage, 10, &cells, 0, 0);
+                    let result =
+                        swr_v1_phpcoroutines_metadata(&raw mut stage, 10, &raw const cells, 0, 0);
                     if result.action == 0 {
                         break;
                     }
@@ -329,11 +331,11 @@ mod tests {
             let mut seed = std::mem::MaybeUninit::<SchedulerPhase>::uninit();
             cells.scheduler = seed.as_mut_ptr();
             stage = 0;
-            swr_v1_phpcoroutines_metadata(&mut stage, 11, &cells, 0, 0);
+            swr_v1_phpcoroutines_metadata(&raw mut stage, 11, &raw const cells, 0, 0);
             assert_eq!((*cells.scheduler).started, 1);
             cells.notified = seed.as_mut_ptr();
             stage = 0;
-            swr_v1_phpcoroutines_metadata(&mut stage, 12, &cells, 0, 0);
+            swr_v1_phpcoroutines_metadata(&raw mut stage, 12, &raw const cells, 0, 0);
             assert_eq!((*cells.notified).started, 1);
         }
     }

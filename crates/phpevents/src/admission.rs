@@ -95,7 +95,7 @@ mod tests {
         let (mut phase, mut observation) = (0, 0);
         let mut actions = Vec::new();
         loop {
-            let action = unsafe { swr_v1_phpevents_reactor_init(&mut phase, observation) };
+            let action = unsafe { swr_v1_phpevents_reactor_init(&raw mut phase, observation) };
             actions.push(action);
             if action <= 1 {
                 return actions;
@@ -140,7 +140,7 @@ mod tests {
             let mut phase = 0;
             let mut actions = Vec::new();
             loop {
-                let action = unsafe { swr_v1_phpevents_handlers(&mut phase, present) };
+                let action = unsafe { swr_v1_phpevents_handlers(&raw mut phase, present) };
                 actions.push(action);
                 if action == 0 {
                     break;

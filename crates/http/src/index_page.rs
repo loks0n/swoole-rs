@@ -170,7 +170,7 @@ pub(crate) unsafe fn emit_page(
         count
     } else {
         let mut count = 0;
-        let result = render(std::ptr::null_mut(), 0, &mut count);
+        let result = render(std::ptr::null_mut(), 0, &raw mut count);
         if result < 0 {
             return result;
         }
@@ -199,7 +199,7 @@ pub(crate) unsafe fn emit_page(
     }
     let mut written = 0;
     // In range: `length + count + terminator == required <= capacity`.
-    let result = render(buffer.wrapping_add(length), count, &mut written);
+    let result = render(buffer.wrapping_add(length), count, &raw mut written);
     if result < 0 {
         return result;
     }
@@ -239,12 +239,21 @@ mod tests {
             };
             let mut count = 0;
             assert_eq!(
-                unsafe { swr_v1_http_index_page(&page, std::ptr::null_mut(), 0, &mut count) },
+                unsafe {
+                    swr_v1_http_index_page(&raw const page, std::ptr::null_mut(), 0, &raw mut count)
+                },
                 0
             );
             let mut expected = vec![0; count];
             assert_eq!(
-                unsafe { swr_v1_http_index_page(&page, expected.as_mut_ptr(), count, &mut count) },
+                unsafe {
+                    swr_v1_http_index_page(
+                        &raw const page,
+                        expected.as_mut_ptr(),
+                        count,
+                        &raw mut count,
+                    )
+                },
                 0
             );
             let mut output = b"prefix".to_vec();
@@ -252,12 +261,12 @@ mod tests {
             assert_eq!(
                 unsafe {
                     swr_v2_http_index_page_emit(
-                        &page,
+                        &raw const page,
                         count,
                         output.as_mut_ptr(),
                         6,
                         6,
-                        &mut result,
+                        &raw mut result,
                     )
                 },
                 if part == 2 { 1 } else { 2 }
@@ -270,12 +279,12 @@ mod tests {
             assert_eq!(
                 unsafe {
                     swr_v2_http_index_page_emit(
-                        &page,
+                        &raw const page,
                         count,
                         output.as_mut_ptr(),
                         6,
                         capacity,
-                        &mut result,
+                        &raw mut result,
                     )
                 },
                 3
@@ -300,7 +309,9 @@ mod tests {
         };
         let mut length = 99;
         assert_eq!(
-            unsafe { swr_v1_http_index_page(&page, std::ptr::null_mut(), 0, &mut length) },
+            unsafe {
+                swr_v1_http_index_page(&raw const page, std::ptr::null_mut(), 0, &raw mut length)
+            },
             0
         );
         assert_eq!(length, 0);
@@ -310,7 +321,12 @@ mod tests {
             let mut output = vec![0xcc; capacity + 1];
             assert_eq!(
                 unsafe {
-                    swr_v1_http_index_page(&page, output.as_mut_ptr(), capacity, &mut length)
+                    swr_v1_http_index_page(
+                        &raw const page,
+                        output.as_mut_ptr(),
+                        capacity,
+                        &raw mut length,
+                    )
                 },
                 0
             );

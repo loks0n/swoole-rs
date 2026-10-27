@@ -57,7 +57,7 @@ mod tests {
         let mut state = FlushState::default();
         observations
             .iter()
-            .map(|&fact| unsafe { workflow(&mut state, fact) })
+            .map(|&fact| unsafe { workflow(&raw mut state, fact) })
             .collect()
     }
     #[test]

@@ -77,7 +77,7 @@ mod tests {
                                     same,
                                     allocator,
                                     owner,
-                                    &mut result,
+                                    &raw mut result,
                                 )
                             },
                             OK
@@ -117,13 +117,13 @@ mod tests {
     #[test]
     fn invalid_operation_clears_output_and_null_output_is_refused() {
         let mut token = 0u8;
-        let owner = &mut token as *mut u8;
+        let owner = &raw mut token;
         let mut output = StringOwnershipPlan {
             owner,
             actions: u64::MAX,
         };
         assert_eq!(
-            unsafe { swr_v1_string_ownership_plan(3, 0, 1, owner, &mut output) },
+            unsafe { swr_v1_string_ownership_plan(3, 0, 1, owner, &raw mut output) },
             INVALID
         );
         assert!(output.owner.is_null());

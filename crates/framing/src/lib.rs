@@ -416,8 +416,9 @@ pub unsafe extern "C" fn swr_v1_framing_default(
     }
     let mut value = 0;
     // SAFETY: `width <= len - offset`, so `width` bytes from `offset` lie inside `v`.
-    let result =
-        unsafe { swr_v1_framing_unpack(format, v[offset as usize..].as_ptr(), width, &mut value) };
+    let result = unsafe {
+        swr_v1_framing_unpack(format, v[offset as usize..].as_ptr(), width, &raw mut value)
+    };
     if result != 0 || value < 0 {
         return -1;
     }

@@ -217,7 +217,7 @@ mod tests {
         assert_eq!(mem::size_of::<Detached>(), 16);
         unsafe {
             let mut queue = ptr::null_mut();
-            assert_eq!(swr_v1_buffer_typed_create(3, &mut queue), OK);
+            assert_eq!(swr_v1_buffer_typed_create(3, &raw mut queue), OK);
             assert_eq!(swr_v1_buffer_append(queue, b"abcdefg".as_ptr(), 7), OK);
             assert_eq!(
                 swr_v1_buffer_typed_push(queue, 2, ptr::null_mut(), None),
@@ -227,7 +227,7 @@ mod tests {
             let mut detached = Detached::default();
             let mut total = 7;
             for bytes in [b"abc".as_slice(), b"def".as_slice(), b"g".as_slice()] {
-                assert_eq!(swr_v1_buffer_typed_front(queue, &mut view), OK);
+                assert_eq!(swr_v1_buffer_typed_front(queue, &raw mut view), OK);
                 assert_eq!(view.kind, 0);
                 assert_eq!(view.offset, 0);
                 assert_eq!(
@@ -236,31 +236,31 @@ mod tests {
                 );
                 let generation = view.generation;
                 assert_eq!(swr_v1_buffer_typed_consume(queue, generation, 0, 1), OK);
-                assert_eq!(swr_v1_buffer_typed_front(queue, &mut view), OK);
+                assert_eq!(swr_v1_buffer_typed_front(queue, &raw mut view), OK);
                 assert_eq!(view.offset, 1);
                 assert_eq!((*queue).length, total);
                 assert_eq!(
                     swr_v1_buffer_typed_consume(queue, generation, 1, view.length - 1),
                     OK
                 );
-                assert_eq!(swr_v1_buffer_typed_pop(queue, &mut detached), OK);
+                assert_eq!(swr_v1_buffer_typed_pop(queue, &raw mut detached), OK);
                 assert!(detached.token.is_null() && detached.dispose.is_none());
                 total -= u32::try_from(bytes.len()).unwrap();
                 assert_eq!((*queue).length, total);
             }
-            assert_eq!(swr_v1_buffer_typed_front(queue, &mut view), OK);
+            assert_eq!(swr_v1_buffer_typed_front(queue, &raw mut view), OK);
             assert_eq!(view.kind, 2);
-            assert_eq!(swr_v1_buffer_typed_pop(queue, &mut detached), OK);
-            assert_eq!(swr_v1_buffer_typed_front(queue, &mut view), EMPTY);
+            assert_eq!(swr_v1_buffer_typed_pop(queue, &raw mut detached), OK);
+            assert_eq!(swr_v1_buffer_typed_front(queue, &raw mut view), EMPTY);
             let mut native_payload = 37u32;
             let token = ptr::from_mut(&mut native_payload).cast();
             assert_eq!(
                 swr_v1_buffer_typed_push(queue, 1, token, Some(never_called)),
                 OK
             );
-            assert_eq!(swr_v1_buffer_typed_front(queue, &mut view), OK);
+            assert_eq!(swr_v1_buffer_typed_front(queue, &raw mut view), OK);
             assert_eq!((view.kind, view.token), (1, token));
-            assert_eq!(swr_v1_buffer_typed_pop(queue, &mut detached), OK);
+            assert_eq!(swr_v1_buffer_typed_pop(queue, &raw mut detached), OK);
             assert_eq!(detached.token, token);
             assert!(std::ptr::fn_addr_eq(
                 detached.dispose.unwrap(),

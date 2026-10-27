@@ -739,9 +739,9 @@ mod tests {
             swr_v1_resp_php_next(
                 wire.as_ptr(),
                 wire.len(),
-                &mut state,
-                &mut event,
-                &mut range,
+                &raw mut state,
+                &raw mut event,
+                &raw mut range,
             )
         } == 1
         {
@@ -764,9 +764,9 @@ mod tests {
                 swr_v1_resp_php_next(
                     malformed.as_ptr(),
                     malformed.len(),
-                    &mut state,
-                    &mut event,
-                    &mut range,
+                    &raw mut state,
+                    &raw mut event,
+                    &raw mut range,
                 )
             },
             -1
@@ -810,7 +810,7 @@ mod tests {
                     wire.len(),
                     std::ptr::null_mut(),
                     0,
-                    &mut range,
+                    &raw mut range,
                 );
             }
             assert_eq!(range, u8::from(expected), "{wire:?}");
@@ -834,7 +834,7 @@ mod tests {
                         wire.len(),
                         output.as_mut_ptr(),
                         capacity,
-                        &mut range,
+                        &raw mut range,
                     )
                 },
                 3
@@ -858,7 +858,7 @@ mod tests {
                     wire.len(),
                     output.as_mut_ptr(),
                     2,
-                    &mut range,
+                    &raw mut range,
                 )
             },
             -1

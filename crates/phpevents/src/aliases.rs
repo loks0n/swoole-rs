@@ -132,7 +132,13 @@ mod tests {
                 let mut output = record(index, legacy).unwrap();
                 assert_eq!(
                     unsafe {
-                        swr_v1_phpevents_catalogue(index, legacy as u8, 0x100, 0x40, &mut output)
+                        swr_v1_phpevents_catalogue(
+                            index,
+                            legacy as u8,
+                            0x100,
+                            0x40,
+                            &raw mut output,
+                        )
                     },
                     1
                 );
@@ -147,7 +153,7 @@ mod tests {
                 assert_eq!(output.alias.function, direct.alias.function);
                 let saved = output.alias.method;
                 assert_eq!(
-                    unsafe { swr_v1_phpevents_catalogue(11, legacy as u8, 0, 0, &mut output) },
+                    unsafe { swr_v1_phpevents_catalogue(11, legacy as u8, 0, 0, &raw mut output) },
                     0
                 );
                 assert_eq!(output.alias.method, saved);

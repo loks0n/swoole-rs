@@ -221,7 +221,7 @@ mod tests {
         let mut trace = Vec::new();
         loop {
             let action =
-                unsafe { swr_v2_utils_log_frontdoor_step(&mut state, op, a, b, 0, 0) }.action;
+                unsafe { swr_v2_utils_log_frontdoor_step(&raw mut state, op, a, b, 0, 0) }.action;
             if action == 0 {
                 return trace;
             }
@@ -259,7 +259,7 @@ mod tests {
             let mut state = SwrLogHex::default();
             let (mut previous, mut rows, mut bytes, mut headers, mut footers) = (0, 0, 0, 0, 0);
             loop {
-                let action = unsafe { swr_v2_utils_log_hex_step(&mut state, length, previous) };
+                let action = unsafe { swr_v2_utils_log_hex_step(&raw mut state, length, previous) };
                 match action {
                     0 => break,
                     1 => headers += 1,

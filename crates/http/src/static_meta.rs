@@ -155,7 +155,12 @@ mod tests {
         let mut written = 99;
         assert_eq!(
             unsafe {
-                swr_v1_http_static_content_type(&boundary, output.as_mut_ptr(), 1, &mut written)
+                swr_v1_http_static_content_type(
+                    &raw const boundary,
+                    output.as_mut_ptr(),
+                    1,
+                    &raw mut written,
+                )
             },
             OVERFLOW
         );
@@ -164,10 +169,10 @@ mod tests {
         assert_eq!(
             unsafe {
                 swr_v1_http_static_content_type(
-                    &boundary,
+                    &raw const boundary,
                     output.as_mut_ptr(),
                     output.len(),
-                    &mut written,
+                    &raw mut written,
                 )
             },
             0

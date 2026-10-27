@@ -53,7 +53,7 @@ mod tests {
     fn invalid_cursor_does_not_select_a_native_effect() {
         for state in [14, u32::MAX] {
             let mut phase = state;
-            assert_eq!(unsafe { swr_v1_httpbindings_write(&mut phase, 1) }, -1);
+            assert_eq!(unsafe { swr_v1_httpbindings_write(&raw mut phase, 1) }, -1);
             assert_eq!(phase, state);
         }
         assert_eq!(

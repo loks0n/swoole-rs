@@ -635,7 +635,7 @@ mod number_tests {
                     let mut detached = ptr::null_mut();
                     assert_eq!(
                         unsafe {
-                            apply_plan(&mut state, &edit, &plan, ptr::null_mut(), &mut detached)
+                            apply_plan(&mut state, &edit, &plan, ptr::null_mut(), &raw mut detached)
                         },
                         INVALID
                     );
@@ -696,7 +696,7 @@ mod number_tests {
             data[..3].copy_from_slice(b"abc");
             let mut used = 3;
             assert_eq!(
-                unsafe { swr_v1_string_append_i32(data.as_mut_ptr(), &mut used, 15, value) },
+                unsafe { swr_v1_string_append_i32(data.as_mut_ptr(), &raw mut used, 15, value) },
                 OK
             );
             assert_eq!(&data[..3], b"abc");
@@ -704,7 +704,7 @@ mod number_tests {
             assert_eq!(data[15], 255);
             used = 0;
             assert_eq!(
-                unsafe { swr_v1_string_append_i32(ptr::null_mut(), &mut used, 0, value) },
+                unsafe { swr_v1_string_append_i32(ptr::null_mut(), &raw mut used, 0, value) },
                 1
             );
             assert_eq!(used, 0);
@@ -713,9 +713,9 @@ mod number_tests {
         let mut used = 1;
         for (data, length, capacity) in [
             (bytes.as_mut_ptr(), ptr::null_mut(), 12),
-            (ptr::null_mut(), &mut used, 12),
-            (bytes.as_mut_ptr(), &mut used, 0),
-            (bytes.as_mut_ptr(), &mut used, usize::MAX),
+            (ptr::null_mut(), &raw mut used, 12),
+            (bytes.as_mut_ptr(), &raw mut used, 0),
+            (bytes.as_mut_ptr(), &raw mut used, usize::MAX),
         ] {
             assert_eq!(
                 unsafe { swr_v1_string_append_i32(data, length, capacity, 0) },
@@ -725,7 +725,7 @@ mod number_tests {
             assert_eq!(bytes, [255; 12]);
         }
         assert_eq!(
-            unsafe { swr_v1_string_append_i32(bytes.as_mut_ptr(), &mut used, 1, 0) },
+            unsafe { swr_v1_string_append_i32(bytes.as_mut_ptr(), &raw mut used, 1, 0) },
             1
         );
         assert_eq!((used, bytes), (1, [255; 12]));
@@ -758,7 +758,12 @@ mod terminator_tests {
         let mut detached = ptr::null_mut();
         assert_eq!(
             unsafe {
-                swr_v1_string_edit_in_place(&mut state, &edit, plan.as_mut_ptr(), &mut detached)
+                swr_v1_string_edit_in_place(
+                    &raw mut state,
+                    &raw const edit,
+                    plan.as_mut_ptr(),
+                    &raw mut detached,
+                )
             },
             OK
         );
@@ -770,7 +775,12 @@ mod terminator_tests {
         let before = bytes;
         assert_eq!(
             unsafe {
-                swr_v1_string_edit_in_place(&mut state, &edit, plan.as_mut_ptr(), &mut detached)
+                swr_v1_string_edit_in_place(
+                    &raw mut state,
+                    &raw const edit,
+                    plan.as_mut_ptr(),
+                    &raw mut detached,
+                )
             },
             1
         );
@@ -785,11 +795,11 @@ mod terminator_tests {
         assert_eq!(
             unsafe {
                 swr_v1_string_apply(
-                    &mut state,
-                    &edit,
-                    &plan,
+                    &raw mut state,
+                    &raw const edit,
+                    &raw const plan,
                     replacement.as_mut_ptr(),
-                    &mut detached,
+                    &raw mut detached,
                 )
             },
             OK
@@ -811,10 +821,10 @@ mod terminator_tests {
         assert_eq!(
             unsafe {
                 swr_v1_string_edit_in_place(
-                    &mut borrowed,
-                    &borrowed_edit,
+                    &raw mut borrowed,
+                    &raw const borrowed_edit,
                     rejected.as_mut_ptr(),
-                    &mut detached,
+                    &raw mut detached,
                 )
             },
             INVALID
@@ -828,10 +838,10 @@ mod terminator_tests {
         assert_eq!(
             unsafe {
                 swr_v1_string_edit_in_place(
-                    &mut borrowed,
-                    &borrowed_edit,
+                    &raw mut borrowed,
+                    &raw const borrowed_edit,
                     rejected.as_mut_ptr(),
-                    &mut detached,
+                    &raw mut detached,
                 )
             },
             OK
@@ -865,18 +875,21 @@ mod copy_tests {
         let mut detached = ptr::null_mut();
         let mut allocation = [0xcd; 9];
         unsafe {
-            assert_eq!(swr_v1_string_prepare(&target, &edit, &mut plan), OK);
+            assert_eq!(
+                swr_v1_string_prepare(&raw const target, &raw const edit, &raw mut plan),
+                OK
+            );
             assert_eq!(
                 (plan.capacity, plan.length, plan.offset, plan.allocation),
                 (8, 3, 2, 1)
             );
             assert_eq!(
                 swr_v1_string_apply(
-                    &mut target,
-                    &edit,
-                    &plan,
+                    &raw mut target,
+                    &raw const edit,
+                    &raw const plan,
                     allocation.as_mut_ptr(),
-                    &mut detached
+                    &raw mut detached
                 ),
                 OK
             );
@@ -893,10 +906,20 @@ mod copy_tests {
             capacity: 0,
             offset: 0,
         };
-        unsafe { assert_eq!(swr_v1_string_prepare(&target, &same, &mut plan), OK) };
+        unsafe {
+            assert_eq!(
+                swr_v1_string_prepare(&raw const target, &raw const same, &raw mut plan),
+                OK
+            )
+        };
         assert_eq!((plan.capacity, plan.length, plan.offset), (8, 0, 0));
         let invalid = StringEdit { count: 2, ..edit };
-        unsafe { assert_eq!(swr_v1_string_prepare(&target, &invalid, &mut plan), INVALID) };
+        unsafe {
+            assert_eq!(
+                swr_v1_string_prepare(&raw const target, &raw const invalid, &raw mut plan),
+                INVALID
+            )
+        };
         assert!(plan == StringPlan::ZERO);
     }
 }

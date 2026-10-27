@@ -699,53 +699,56 @@ mod tests {
     fn facade_plans_preserve_identity_live_callback_bytes_and_raw_api_compatibility() {
         let b = Owned::new(2);
         let mut identity = 0u8;
-        let identity = (&mut identity as *mut u8).cast();
+        let identity = (&raw mut identity).cast();
         let mut view = BufferView::ZERO;
         let mut effect = BufferAdvance::ZERO;
         let mut native = 7u8;
-        let native = (&mut native as *mut u8).cast();
+        let native = (&raw mut native).cast();
         unsafe {
             assert_eq!(swr_v1_buffer_append(b.0, b"abcde".as_ptr(), 5), OK);
-            assert_eq!(swr_v1_buffer_front_plan(b.0, identity, &mut view), OK);
+            assert_eq!(swr_v1_buffer_front_plan(b.0, identity, &raw mut view), OK);
             assert_eq!((view.kind, view.length, view.token), (2, 2, identity));
             let data = view.data;
-            assert_eq!(swr_v1_buffer_front_plan(b.0, identity, &mut view), OK);
+            assert_eq!(swr_v1_buffer_front_plan(b.0, identity, &raw mut view), OK);
             assert_eq!((view.kind, view.token), (3, identity));
             assert_eq!(swr_v1_buffer_append(b.0, b"fg".as_ptr(), 2), OK);
-            assert_eq!(swr_v1_buffer_advance(b.0, 2, 1, &mut effect), INVALID);
+            assert_eq!(swr_v1_buffer_advance(b.0, 2, 1, &raw mut effect), INVALID);
             assert_eq!(effect.action, 0);
-            assert_eq!(swr_v1_buffer_advance(b.0, 0, 1, &mut effect), OK);
+            assert_eq!(swr_v1_buffer_advance(b.0, 0, 1, &raw mut effect), OK);
             assert_eq!(
                 (effect.action, effect.reset_view, effect.token),
                 (1, 0, identity)
             );
             assert_eq!(slice::from_raw_parts(data, 2), b"ab");
             assert_eq!((&*b.0).length, 7); // callback observes data before any detach
-            assert_eq!(swr_v1_buffer_advance(b.0, 0, 0, &mut effect), OK);
+            assert_eq!(swr_v1_buffer_advance(b.0, 0, 0, &raw mut effect), OK);
             assert_eq!(
                 (effect.action, effect.reset_view, effect.token),
                 (2, 1, ptr::null_mut())
             );
             assert_eq!((&*b.0).length, 5);
-            assert_eq!(swr_v1_buffer_front_plan(b.0, identity, &mut view), OK);
+            assert_eq!(swr_v1_buffer_front_plan(b.0, identity, &raw mut view), OK);
             assert_eq!(view.kind, 2);
             let mut detached = ptr::null_mut();
-            assert_eq!(swr_v1_buffer_pop(b.0, &mut detached), OK);
+            assert_eq!(swr_v1_buffer_pop(b.0, &raw mut detached), OK);
             assert!(matches!((&*b.0).mode, Mode::Legacy(view) if view.is_null()));
-            assert_eq!(swr_v1_buffer_front_plan(b.0, identity, &mut view), OK);
+            assert_eq!(swr_v1_buffer_front_plan(b.0, identity, &raw mut view), OK);
             assert_eq!((view.kind, view.length), (2, 1));
             assert_eq!(swr_v1_buffer_push_native(b.0, native), OK);
             assert_eq!(swr_v1_buffer_release(b.0), PENDING_NATIVE);
             assert!(matches!((&*b.0).mode, Mode::Legacy(view) if view == identity)); // failed release is unchanged
-            assert_eq!(swr_v1_buffer_advance(b.0, 1, 0, &mut effect), OK);
+            assert_eq!(swr_v1_buffer_advance(b.0, 1, 0, &raw mut effect), OK);
             assert_eq!(
                 (effect.action, effect.reset_view, effect.token),
                 (2, 1, native)
             );
             assert_eq!((&*b.0).length, 0);
-            assert_eq!(swr_v1_buffer_advance(b.0, 1, 0, &mut effect), OK);
+            assert_eq!(swr_v1_buffer_advance(b.0, 1, 0, &raw mut effect), OK);
             assert_eq!((effect.action, effect.reset_view), (0, 0));
-            assert_eq!(swr_v1_buffer_front_plan(b.0, identity, &mut view), EMPTY);
+            assert_eq!(
+                swr_v1_buffer_front_plan(b.0, identity, &raw mut view),
+                EMPTY
+            );
             assert!(view.token.is_null());
         }
     }
@@ -754,7 +757,7 @@ mod tests {
     impl Owned {
         fn new(size: u32) -> Self {
             let mut buffer = ptr::null_mut();
-            assert_eq!(unsafe { swr_v1_buffer_create(size, &mut buffer) }, OK);
+            assert_eq!(unsafe { swr_v1_buffer_create(size, &raw mut buffer) }, OK);
             Self(buffer)
         }
         fn append(&self, bytes: &[u8]) -> i32 {
@@ -763,19 +766,19 @@ mod tests {
         fn stats(&self) -> (u32, usize) {
             let (mut length, mut count) = (0, 0);
             assert_eq!(
-                unsafe { swr_v1_buffer_stats(self.0, &mut length, &mut count) },
+                unsafe { swr_v1_buffer_stats(self.0, &raw mut length, &raw mut count) },
                 OK
             );
             (length, count)
         }
         fn view(&self) -> BufferView {
             let mut view = BufferView::ZERO;
-            assert_eq!(unsafe { swr_v1_buffer_front(self.0, &mut view) }, OK);
+            assert_eq!(unsafe { swr_v1_buffer_front(self.0, &raw mut view) }, OK);
             view
         }
         fn pop(&self) -> *mut c_void {
             let mut token = ptr::null_mut();
-            assert_eq!(unsafe { swr_v1_buffer_pop(self.0, &mut token) }, OK);
+            assert_eq!(unsafe { swr_v1_buffer_pop(self.0, &raw mut token) }, OK);
             token
         }
     }
@@ -981,7 +984,7 @@ mod tests {
             length: 1,
         };
         assert_eq!(
-            unsafe { swr_v1_buffer_appendv(buffer.0, &invalid, 1, 1) },
+            unsafe { swr_v1_buffer_appendv(buffer.0, &raw const invalid, 1, 1) },
             INVALID
         );
         assert_eq!(
@@ -1015,21 +1018,27 @@ mod tests {
         assert_eq!(buffer.stats(), (3, 1));
         let mut view = buffer.view();
         assert_eq!(
-            unsafe { swr_v1_buffer_front(ptr::null(), &mut view) },
+            unsafe { swr_v1_buffer_front(ptr::null(), &raw mut view) },
             INVALID
         );
         assert_eq!(view.length, 0);
         assert!(view.data.is_null());
         let (mut length, mut count) = (123, 456);
         assert_eq!(
-            unsafe { swr_v1_buffer_stats(ptr::null(), &mut length, &mut count) },
+            unsafe { swr_v1_buffer_stats(ptr::null(), &raw mut length, &raw mut count) },
             INVALID
         );
         assert_eq!((length, count), (123, 456));
         buffer.pop();
-        assert_eq!(unsafe { swr_v1_buffer_front(buffer.0, &mut view) }, EMPTY);
+        assert_eq!(
+            unsafe { swr_v1_buffer_front(buffer.0, &raw mut view) },
+            EMPTY
+        );
         let mut token = ptr::dangling_mut();
-        assert_eq!(unsafe { swr_v1_buffer_pop(buffer.0, &mut token) }, EMPTY);
+        assert_eq!(
+            unsafe { swr_v1_buffer_pop(buffer.0, &raw mut token) },
+            EMPTY
+        );
         assert!(token.is_null());
         assert_eq!(unsafe { swr_v1_buffer_release(ptr::null_mut()) }, OK);
     }
@@ -1101,7 +1110,7 @@ mod tests {
     fn every_allocation_failure_is_atomic() {
         let mut handle = ptr::dangling_mut();
         FAIL_AFTER.set(Some(0));
-        let status = unsafe { swr_v1_buffer_create(4, &mut handle) };
+        let status = unsafe { swr_v1_buffer_create(4, &raw mut handle) };
         FAIL_AFTER.set(None);
         assert_eq!(status, NOMEM);
         assert!(handle.is_null());

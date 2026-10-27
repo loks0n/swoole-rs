@@ -85,7 +85,7 @@ pub unsafe extern "C" fn swr_v2_memory_mapping_step(
     match (state.kind, state.phase) {
         (ALLOCATE, 0) => {
             // SAFETY: `state.total` is a writable field of the caller's exclusive state.
-            if unsafe { swr_v1_memory_mapping_size(state.requested, &mut state.total) } != 0 {
+            if unsafe { swr_v1_memory_mapping_size(state.requested, &raw mut state.total) } != 0 {
                 return finish(state, output, ptr::null_mut(), -1);
             }
             state.descriptor = -1;

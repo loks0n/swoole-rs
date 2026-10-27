@@ -151,11 +151,11 @@ mod owner_tests {
             }
             let mut result = 123;
             for token in [0, 17, 0, usize::MAX] {
-                assert_eq!(swr_v1_phpcoroutines_autoload_pop(queue, &mut result), 1);
+                assert_eq!(swr_v1_phpcoroutines_autoload_pop(queue, &raw mut result), 1);
                 assert_eq!(result, token);
                 assert_eq!(swr_v1_phpcoroutines_autoload_is_owner(queue, 73), 1);
             }
-            assert_eq!(swr_v1_phpcoroutines_autoload_pop(queue, &mut result), 0);
+            assert_eq!(swr_v1_phpcoroutines_autoload_pop(queue, &raw mut result), 0);
             swr_v1_phpcoroutines_autoload_drop(queue);
         }
     }

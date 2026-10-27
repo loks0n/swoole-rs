@@ -382,16 +382,22 @@ mod tests {
             let mut token = 0;
             for (kind, key, value) in [(0, 3, 103), (0, 1, 101), (1, 2, 202)] {
                 assert_eq!(
-                    swr_v1_reactor_callbacks_ensure(&mut source, kind, key, 0, &mut token),
+                    swr_v1_reactor_callbacks_ensure(&raw mut source, kind, key, 0, &raw mut token),
                     2
                 );
                 assert_eq!(
-                    swr_v1_reactor_callbacks_ensure(&mut source, kind, key, value, &mut token),
+                    swr_v1_reactor_callbacks_ensure(
+                        &raw mut source,
+                        kind,
+                        key,
+                        value,
+                        &raw mut token
+                    ),
                     3
                 );
                 assert_eq!(token, value);
                 assert_eq!(
-                    swr_v1_reactor_callbacks_ensure(&mut source, kind, key, 0, &mut token),
+                    swr_v1_reactor_callbacks_ensure(&raw mut source, kind, key, 0, &raw mut token),
                     1
                 );
                 assert_eq!(token, value);
@@ -400,7 +406,8 @@ mod tests {
             let mut copy = ReactorCallbackCopy::default();
             let mut observed = Vec::new();
             loop {
-                let action = swr_v1_reactor_callbacks_copy_next(source, &mut copy, &mut token);
+                let action =
+                    swr_v1_reactor_callbacks_copy_next(source, &raw mut copy, &raw mut token);
                 if action == 0 {
                     break;
                 }
@@ -409,21 +416,21 @@ mod tests {
                 let value = token + 1000;
                 assert_eq!(
                     swr_v1_reactor_callbacks_ensure(
-                        &mut target,
+                        &raw mut target,
                         kind,
                         copy.cursor.key,
                         0,
-                        &mut token
+                        &raw mut token
                     ),
                     2
                 );
                 assert_eq!(
                     swr_v1_reactor_callbacks_ensure(
-                        &mut target,
+                        &raw mut target,
                         kind,
                         copy.cursor.key,
                         value,
-                        &mut token
+                        &raw mut token
                     ),
                     3
                 );
@@ -432,7 +439,7 @@ mod tests {
             for owner in [&mut source, &mut target] {
                 let mut released = Vec::new();
                 loop {
-                    let action = swr_v1_reactor_callbacks_clear_next(owner, &mut token);
+                    let action = swr_v1_reactor_callbacks_clear_next(owner, &raw mut token);
                     if action == 0 {
                         break;
                     }

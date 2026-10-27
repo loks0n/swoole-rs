@@ -277,7 +277,7 @@ pub unsafe extern "C" fn swr_v1_memory_ring_storage_alloc(
         free_count,
     };
     // SAFETY: `state` is a local snapshot of the producer cursor.
-    let result = unsafe { allocate(&mut state, requested) };
+    let result = unsafe { allocate(&raw mut state, requested) };
     // A failed allocation can still collect/wrap, exactly as the snapshot ABI.
     // SAFETY: as for the reads above.
     unsafe { field::<u32>(storage, offset_of!(Storage, alloc_offset)).write(state.alloc_offset) };

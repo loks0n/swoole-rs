@@ -159,7 +159,7 @@ pub unsafe extern "C" fn swr_v1_memory_global_open(
     let mut page_size = 0;
     if shared > 1
         // SAFETY: `page_size` is a writable local.
-        || unsafe { swr_v1_memory_global_page_size(requested, system_page, &mut page_size) } != 0
+        || unsafe { swr_v1_memory_global_page_size(requested, system_page, &raw mut page_size) } != 0
     {
         return -2;
     }

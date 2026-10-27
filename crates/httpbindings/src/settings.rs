@@ -182,7 +182,7 @@ mod tests {
         ] {
             let mut action = Action::default();
             assert_eq!(
-                unsafe { swr_v1_httpbindings_settings(&mut cursor, 1, 0, &mut action) },
+                unsafe { swr_v1_httpbindings_settings(&raw mut cursor, 1, 0, &raw mut action) },
                 -1
             );
             assert_eq!(action.kind, 0);

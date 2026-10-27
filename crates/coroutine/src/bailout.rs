@@ -137,19 +137,19 @@ mod tests {
         };
         unsafe {
             assert_eq!(
-                swr_v1_coroutine_bailout_step(&mut cursor, &current, 0, 0).action,
+                swr_v1_coroutine_bailout_step(&raw mut cursor, &raw const current, 0, 0).action,
                 1
             );
             current.token = ptr::null_mut(); // Saved snapshot, not fresh current.
             assert!(current.token.is_null());
             assert_eq!(
-                swr_v1_coroutine_bailout_step(&mut cursor, ptr::null(), 1, 0).action,
+                swr_v1_coroutine_bailout_step(&raw mut cursor, ptr::null(), 1, 0).action,
                 3
             );
             // Metadata-only copy-barrier witness: fresh links after effects.
             middle.origin.token = ptr::null_mut();
             let final_step = swr_v1_coroutine_bailout_step(
-                &mut cursor,
+                &raw mut cursor,
                 ptr::null(),
                 0,
                 offset_of!(Foreign, origin),
@@ -157,7 +157,7 @@ mod tests {
             assert_eq!(final_step.action, 4);
             assert_eq!(final_step.coroutine, ptr::from_mut(&mut middle).cast());
             assert_eq!(
-                swr_v1_coroutine_bailout_step(&mut cursor, ptr::null(), 0, usize::MAX).action,
+                swr_v1_coroutine_bailout_step(&raw mut cursor, ptr::null(), 0, usize::MAX).action,
                 5
             );
             assert_eq!(leaf.tail, 77);
@@ -176,11 +176,12 @@ mod tests {
         };
         unsafe {
             assert_eq!(
-                swr_v1_coroutine_bailout_step(&mut cursor, &current, 0, usize::MAX).action,
+                swr_v1_coroutine_bailout_step(&raw mut cursor, &raw const current, 0, usize::MAX)
+                    .action,
                 0
             );
             assert_eq!(
-                swr_v1_coroutine_bailout_step(&mut cursor, ptr::null(), 0, usize::MAX).action,
+                swr_v1_coroutine_bailout_step(&raw mut cursor, ptr::null(), 0, usize::MAX).action,
                 5
             );
         }
@@ -192,11 +193,11 @@ mod tests {
         cursor.phase = 0;
         unsafe {
             assert_eq!(
-                swr_v1_coroutine_bailout_step(&mut cursor, &current, 0, 0).action,
+                swr_v1_coroutine_bailout_step(&raw mut cursor, &raw const current, 0, 0).action,
                 1
             );
             assert_eq!(
-                swr_v1_coroutine_bailout_step(&mut cursor, ptr::null(), 0, 0).action,
+                swr_v1_coroutine_bailout_step(&raw mut cursor, ptr::null(), 0, 0).action,
                 2
             );
         }

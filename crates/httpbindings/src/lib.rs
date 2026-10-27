@@ -381,15 +381,19 @@ mod tests {
         let input = input();
         unsafe {
             assert_eq!(
-                swr_v1_httpbindings_cookie(core::ptr::null(), &mut phase, &mut action),
+                swr_v1_httpbindings_cookie(core::ptr::null(), &raw mut phase, &raw mut action),
                 -1
             );
             assert_eq!(
-                swr_v1_httpbindings_cookie(&input, core::ptr::null_mut(), &mut action),
+                swr_v1_httpbindings_cookie(
+                    &raw const input,
+                    core::ptr::null_mut(),
+                    &raw mut action
+                ),
                 -1
             );
             assert_eq!(
-                swr_v1_httpbindings_cookie(&input, &mut phase, core::ptr::null_mut()),
+                swr_v1_httpbindings_cookie(&raw const input, &raw mut phase, core::ptr::null_mut()),
                 -1
             );
         }
@@ -402,7 +406,9 @@ mod tests {
         let mut action = Action::default();
         input.fields[0].length = 1;
         assert_eq!(
-            unsafe { swr_v1_httpbindings_cookie(&input, &mut phase, &mut action) },
+            unsafe {
+                swr_v1_httpbindings_cookie(&raw const input, &raw mut phase, &raw mut action)
+            },
             -1
         );
         input.fields[0] = Text {
@@ -410,7 +416,9 @@ mod tests {
             length: isize::MAX as usize + 1,
         };
         assert_eq!(
-            unsafe { swr_v1_httpbindings_cookie(&input, &mut phase, &mut action) },
+            unsafe {
+                swr_v1_httpbindings_cookie(&raw const input, &raw mut phase, &raw mut action)
+            },
             -1
         );
         assert_eq!(phase, 0);
@@ -425,7 +433,9 @@ mod tests {
             ..Action::default()
         };
         assert_eq!(
-            unsafe { swr_v1_httpbindings_cookie(&input, &mut phase, &mut action) },
+            unsafe {
+                swr_v1_httpbindings_cookie(&raw const input, &raw mut phase, &raw mut action)
+            },
             -1
         );
         assert_eq!(phase, u32::MAX);

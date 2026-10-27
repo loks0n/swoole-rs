@@ -104,8 +104,9 @@ pub unsafe extern "C" fn swr_v2_http_context_serve(
             3 => continue, // Directory bytes were published by the owned path step.
             7 => {
                 // SAFETY: `owner.facts.status` is a live, exclusive field.
-                let result =
-                    unsafe { swr_v1_http_static_catch(owner.path.last, &mut owner.facts.status) };
+                let result = unsafe {
+                    swr_v1_http_static_catch(owner.path.last, &raw mut owner.facts.status)
+                };
                 owner.serve.pending = result;
                 return result;
             }
@@ -139,7 +140,7 @@ mod tests {
             data: b"/root".as_ptr(),
             length: 5,
         };
-        unsafe { swr_v2_http_context_serve(owner, &root, &observation(event)) }
+        unsafe { swr_v2_http_context_serve(owner, &raw const root, &observation(event)) }
     }
     fn stat(owner: *mut HttpStaticContext, kind: u32) {
         let facts = HttpStaticObservation {
@@ -147,7 +148,10 @@ mod tests {
             kind,
             ..HttpStaticObservation::default()
         };
-        assert_eq!(unsafe { swr_v2_http_context_observed(owner, 0, &facts) }, 0);
+        assert_eq!(
+            unsafe { swr_v2_http_context_observed(owner, 0, &raw const facts) },
+            0
+        );
     }
     #[test]
     fn owned_fact_flow_preserves_configured_location_and_repeated_entry() {
@@ -161,7 +165,7 @@ mod tests {
             let mut begin = observation(0);
             begin.has_locations = 1;
             assert_eq!(
-                unsafe { swr_v2_http_context_serve(owner, &root, &begin) },
+                unsafe { swr_v2_http_context_serve(owner, &raw const root, &raw const begin) },
                 2
             );
             assert_eq!(
@@ -194,7 +198,7 @@ mod tests {
             length: 5,
         };
         assert_eq!(
-            unsafe { swr_v2_http_context_serve(owner, &root, &canonical) },
+            unsafe { swr_v2_http_context_serve(owner, &raw const root, &raw const canonical) },
             4
         );
         assert_eq!(unsafe { &(&(*owner).filename)[..15] }, b"/root/file.txt\0");

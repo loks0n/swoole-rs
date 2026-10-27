@@ -5,7 +5,7 @@ fn arbitrary_heap_removal_and_updates_match_independent_min_max_oracle() {
     for max in [0u32, 1] {
         let mut handle = ptr::null_mut();
         unsafe {
-            assert_eq!(swr_v1_memory_heap_create(0, max, &mut handle), 0);
+            assert_eq!(swr_v1_memory_heap_create(0, max, &raw mut handle), 0);
             let mut model = BTreeMap::<usize, (*mut Node, u64)>::new();
             let mut seed = 17u64;
             for index in 1..6000usize {
@@ -69,7 +69,7 @@ fn arbitrary_heap_removal_and_updates_match_independent_min_max_oracle() {
 fn equal_priorities_keep_upstream_swap_last_order() {
     unsafe {
         let mut handle = ptr::null_mut();
-        assert_eq!(swr_v1_memory_heap_create(3, 0, &mut handle), 0);
+        assert_eq!(swr_v1_memory_heap_create(3, 0, &raw mut handle), 0);
         for id in 1..=3 {
             assert!(!swr_v1_memory_heap_push(handle, 1, ptr::without_provenance_mut(id)).is_null());
         }
@@ -86,7 +86,7 @@ fn root_pop_zero_one_and_tied_min_max_boundaries_keep_swap_last_order() {
     unsafe {
         for max in [0, 1] {
             let mut heap = ptr::null_mut();
-            assert_eq!(swr_v1_memory_heap_create(0, max, &mut heap), 0);
+            assert_eq!(swr_v1_memory_heap_create(0, max, &raw mut heap), 0);
             for count in 0..=64 {
                 for id in 1..=count {
                     let node = swr_v1_memory_heap_push(heap, 7, ptr::without_provenance_mut(id));
@@ -118,7 +118,7 @@ fn diagnostic_snapshot_preserves_storage_order_positions_tokens_and_empty_peek()
     unsafe {
         for max in 0..=1 {
             let mut heap = ptr::null_mut();
-            assert_eq!(swr_v1_memory_heap_create(4, max, &mut heap), 0);
+            assert_eq!(swr_v1_memory_heap_create(4, max, &raw mut heap), 0);
             let mut index = 0;
             let mut output = Node {
                 priority: 99,
@@ -126,7 +126,7 @@ fn diagnostic_snapshot_preserves_storage_order_positions_tokens_and_empty_peek()
                 data: ptr::dangling_mut(),
             };
             assert_eq!(
-                swr_v1_memory_heap_debug_step(heap, &mut index, &mut output),
+                swr_v1_memory_heap_debug_step(heap, &raw mut index, &raw mut output),
                 0
             );
             assert_eq!((output.priority, output.position, index), (0, 0, 0));
@@ -140,7 +140,7 @@ fn diagnostic_snapshot_preserves_storage_order_positions_tokens_and_empty_peek()
             for i in 0..4 {
                 let actual = swr_v1_memory_heap_at(heap, i);
                 assert_eq!(
-                    swr_v1_memory_heap_debug_step(heap, &mut index, &mut output),
+                    swr_v1_memory_heap_debug_step(heap, &raw mut index, &raw mut output),
                     1
                 );
                 assert_eq!(index, i + 1);
@@ -150,7 +150,7 @@ fn diagnostic_snapshot_preserves_storage_order_positions_tokens_and_empty_peek()
                 );
             }
             assert_eq!(
-                swr_v1_memory_heap_debug_step(heap, &mut index, &mut output),
+                swr_v1_memory_heap_debug_step(heap, &raw mut index, &raw mut output),
                 0
             );
             assert!(output.data.is_null());

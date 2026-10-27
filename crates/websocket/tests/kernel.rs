@@ -87,10 +87,10 @@ fn invalid_pointers_lengths_and_short_outputs_do_not_write() {
     let mut header = 99;
     let mut output = [0xa5; 10];
     unsafe {
-        assert_eq!(swr_v1_ws_frame_length(null(), 0, &mut header), 0);
-        assert_eq!(swr_v1_ws_frame_length(null(), 1, &mut header), -1);
+        assert_eq!(swr_v1_ws_frame_length(null(), 0, &raw mut header), 0);
+        assert_eq!(swr_v1_ws_frame_length(null(), 1, &raw mut header), -1);
         assert_eq!(
-            swr_v1_ws_frame_length(output.as_ptr(), usize::MAX, &mut header),
+            swr_v1_ws_frame_length(output.as_ptr(), usize::MAX, &raw mut header),
             -1
         );
         assert_eq!(swr_v1_ws_frame_length(output.as_ptr(), 2, null_mut()), -1);

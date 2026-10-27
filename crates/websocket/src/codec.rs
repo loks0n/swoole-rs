@@ -54,7 +54,7 @@ pub unsafe extern "C" fn swr_v1_ws_decode(
     )]
     let available = length as u32 as usize;
     // SAFETY: Input was checked above; header is a disjoint local variable.
-    let total = unsafe { swr_v1_ws_frame_length(data, available, &mut header) };
+    let total = unsafe { swr_v1_ws_frame_length(data, available, &raw mut header) };
     let mut frame = DecodedFrame {
         header_length: header as usize,
         ..DecodedFrame::default()
