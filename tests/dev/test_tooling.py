@@ -669,11 +669,8 @@ class Lanes(unittest.TestCase):
         self.assertIn('--archive',commands['ossupport-policy'])
         self.assertIn('--archive',commands['httpbindings-cookie'])
         self.assertIn('--archive', commands['httpbindings-server'])
-        self.assertIn('--source-ref', commands['httpbindings-php'])
-        self.assertIn('--archive', commands['httpbindings-php'])
-        self.assertNotIn('--source-receipt', commands['httpbindings-php'])
-        command = commands['httpbindings-php']
-        self.assertTrue(command[command.index('--engine') + 1].startswith('upstream='))
+        self.assertNotIn('httpbindings-php', commands)
+        self.assertNotIn('httpbindings-codec-0', commands)
         self.assertIn('--archive', commands['phpcollections-policy'])
         self.assertIn('--source', commands['memory-source-compatibility'])
         self.assertNotIn('--archive', commands['memory-source-compatibility'])
@@ -737,8 +734,9 @@ class Lanes(unittest.TestCase):
         self.assertNotIn('--without-compression', commands['httpbindings-request'])
         self.assertIn('--without-compression', commands['httpbindings-request-without-compression'])
         for capabilities in range(8):
-            codec = commands['httpbindings-codec-' + str(capabilities)]
-            self.assertEqual(codec[codec.index('--capabilities') + 1], str(capabilities))
+            if capabilities:
+                codec = commands['httpbindings-codec-' + str(capabilities)]
+                self.assertEqual(codec[codec.index('--capabilities') + 1], str(capabilities))
             command = commands['httpbindings-payload-' + str(capabilities)]
             self.assertEqual(command[command.index('--capabilities') + 1], str(capabilities))
         for locale in ['C', 'C.UTF-8', 'en_US.ISO8859-1', 'tr_TR.ISO8859-9', 'tr_TR.UTF-8']:

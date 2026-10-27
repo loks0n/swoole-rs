@@ -83,7 +83,6 @@
  "httpbindings-payload-3": 5,
  "httpbindings-payload-4": 7,
  "httpbindings-payload-6": 6,
- "httpbindings-php": 11,
  "httpbindings-request": 7,
  "httpbindings-request-without-compression": 9,
  "httpbindings-response": 15,
