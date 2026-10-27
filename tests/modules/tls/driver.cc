@@ -92,7 +92,8 @@ int main(int argc, char **argv) {
         prefix.cert_file = certs + "does-not-exist-m21-cert.pem";
         ERR_clear_error();errno = 71;
         bool result = prefix.create();
-        if (!result) return 6;
+        // v6.2.4's create() fails on a missing certificate, as on a missing key or CA below.
+        if (result) return 6;
         std::cout << "partial-prefix " << result << ' ' << prefix.protocols << '\n';
     }
 
