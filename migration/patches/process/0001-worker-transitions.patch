@@ -38,6 +38,205 @@ index 143d001..e7b3ac3 100644
 +            continue;
 +        } else if (action == 2) {
              swoole_sys_warning("kill(%d, SIGTERM) [%d] failed", pid, iter->second->id);
+diff --git a/src/os/signal.cc b/src/os/signal.cc
+index e05a2d9..e5d1cac 100644
+--- a/src/os/signal.cc
++++ b/src/os/signal.cc
+@@ -20,2 +20,7 @@
+ 
++#ifndef SWOOLE_RS_PROCESS
++#error "Process overlay requires --enable-swoole-rs-process"
++#endif
++#include "swoole_rs_process.h"
++
+ #ifdef HAVE_SIGNALFD
+@@ -56,5 +61,2 @@ static void swoole_signal_kqueue_clear();
+ 
+-static void signal_handler_safety(int signo);
+-static void signal_handler_simple(int signo);
+-
+ #ifdef HAVE_SIGNALFD
+@@ -68,4 +70,7 @@ static inline bool swoole_signalfd_is_available() {
+ #endif
+-static Signal signals[SW_SIGNO_MAX];
+-static bool triggered_signals[SW_SIGNO_MAX];
++static Signal *const signals = reinterpret_cast<Signal *>(swr_v1_signals);
++
++static bool signal_has_reactor() {
++    return sw_reactor() != nullptr;
++}
+ 
+@@ -82,13 +87,3 @@ char *swoole_signal_to_str(int sig) {
+ void swoole_signal_block_all() {
+-    if (SwooleTG.signal_blocking_all) {
+-        return;
+-    }
+-    sigset_t mask;
+-    sigfillset(&mask);
+-    int ret = pthread_sigmask(SIG_BLOCK, &mask, nullptr);
+-    if (ret < 0) {
+-        swoole_sys_warning("pthread_sigmask(SIG_BLOCK) failed");
+-    } else {
+-        SwooleTG.signal_blocking_all = true;
+-    }
++    swr_v1_signal_mask_all(true, &SwooleTG.signal_blocking_all);
+ }
+@@ -96,13 +91,3 @@ void swoole_signal_block_all() {
+ void swoole_signal_unblock_all() {
+-    if (!SwooleTG.signal_blocking_all) {
+-        return;
+-    }
+-    sigset_t mask;
+-    sigfillset(&mask);
+-    int ret = pthread_sigmask(SIG_UNBLOCK, &mask, nullptr);
+-    if (ret < 0) {
+-        swoole_sys_warning("pthread_sigmask(SIG_UNBLOCK) failed");
+-    } else {
+-        SwooleTG.signal_blocking_all = false;
+-    }
++    swr_v1_signal_mask_all(false, &SwooleTG.signal_blocking_all);
+ }
+@@ -113,31 +98,4 @@ void swoole_signal_unblock_all() {
+ SignalHandler swoole_signal_set(int signo, SignalHandler func, int restart, int mask) {
+-    // ignore
+-    if (func == nullptr) {
+-        func = SIG_IGN;
+-    }
+-    // clear
+-    else if ((long) func == -1) {
+-        func = SIG_DFL;
+-    }
+-
+-    if (func == SIG_IGN || func == SIG_DFL) {
+-        signals[signo].handler = nullptr;
+-        signals[signo].activated = false;
+-    }
+-
+-    struct sigaction act{}, oact{};
+-    act.sa_handler = func;
+-    if (mask) {
+-        sigfillset(&act.sa_mask);
+-    } else {
+-        sigemptyset(&act.sa_mask);
+-    }
+-    act.sa_flags = 0;
+-    if (restart) {
+-        act.sa_flags |= SA_RESTART;
+-    }
+-    if (sigaction(signo, &act, &oact) < 0) {
+-        return nullptr;
+-    }
+-    return oact.sa_handler;
++    return reinterpret_cast<SignalHandler>(
++        swr_v1_signal_set_action(signo, reinterpret_cast<uintptr_t>(func), restart, mask));
+ }
+@@ -145,3 +103,3 @@ SignalHandler swoole_signal_set(int signo, SignalHandler func, int restart, int
+ SW_API bool swoole_signal_isset(int signo) {
+-    return signals[signo].handler && signals[signo].activated;
++    return swr_v1_signal_isset(signo);
+ }
+@@ -166,26 +124,4 @@ SignalHandler swoole_signal_set(int signo, SignalHandler handler, bool safety) {
+ 
+-    signals[signo].handler = handler;
+-    signals[signo].activated = true;
+-    signals[signo].signo = signo;
+-    return swoole_signal_set(signo, safety ? signal_handler_safety : signal_handler_simple, 0, 1);
+-}
+-
+-static void signal_handler_safety(int signo) {
+-    triggered_signals[signo] = true;
+-    SwooleG.signal_dispatch = true;
+-}
+-
+-static void signal_handler_simple(int signo) {
+-    if (sw_reactor()) {
+-        signal_handler_safety(signo);
+-    } else {
+-        static int _lock = 0;
+-        // discard signal
+-        if (_lock) {
+-            return;
+-        }
+-        _lock = 1;
+-        swoole_signal_callback(signo);
+-        _lock = 0;
+-    }
++    return reinterpret_cast<SignalHandler>(swr_v1_signal_set(
++        signo, reinterpret_cast<uintptr_t>(handler), safety, swoole_signal_callback, signal_has_reactor));
+ }
+@@ -193,12 +129,3 @@ static void signal_handler_simple(int signo) {
+ void swoole_signal_dispatch() {
+-    if (!SwooleG.signal_dispatch) {
+-        return;
+-    }
+-    SW_LOOP_N(SW_SIGNO_MAX) {
+-        if (triggered_signals[i]) {
+-            swoole_signal_callback(i);
+-            triggered_signals[i] = false;
+-        }
+-    }
+-    SwooleG.signal_dispatch = false;
++    swr_v1_signal_dispatch(swoole_signal_callback);
+ }
+@@ -206,16 +133,11 @@ void swoole_signal_dispatch() {
+ void swoole_signal_callback(int signo) {
+-    if (signo >= SW_SIGNO_MAX) {
++    const auto lookup = swr_v1_signal_lookup(signo);
++    if (lookup.status == 1) {
+         swoole_warning("signal[%d] numberis invalid", signo);
+-        return;
+-    }
+-    SignalHandler callback = signals[signo].handler;
+-    if (!callback) {
++    } else if (lookup.status == 2) {
+         swoole_error_log(
+             SW_LOG_WARNING, SW_ERROR_UNREGISTERED_SIGNAL, SW_UNREGISTERED_SIGNAL_FMT, swoole_signal_to_str(signo));
+-        return;
+-    }
+-    if (callback == SIG_IGN || callback == SIG_DFL) {
+-        return;
++    } else if (lookup.status == 0) {
++        reinterpret_cast<SignalHandler>(lookup.handler)(signo);
+     }
+-    callback(signo);
+ }
+@@ -223,8 +145,7 @@ void swoole_signal_callback(int signo) {
+ SignalHandler swoole_signal_get_handler(int signo) {
+-    if (signo >= SW_SIGNO_MAX) {
++    const auto lookup = swr_v1_signal_lookup(signo);
++    if (lookup.status == 1) {
+         swoole_warning("signal[%d] numberis invalid", signo);
+-        return nullptr;
+-    } else {
+-        return signals[signo].handler;
+     }
++    return reinterpret_cast<SignalHandler>(lookup.handler);
+ }
+@@ -250,8 +171,3 @@ void swoole_signal_clear() {
+ 
+-    SW_LOOP_N(SW_SIGNO_MAX) {
+-        if (signals[i].activated) {
+-            swoole_signal_set(signals[i].signo, reinterpret_cast<SignalHandler>(-1), 1, 0);
+-        }
+-    }
+-    sw_memset_zero(signals, sizeof(signals));
++    swr_v1_signal_clear();
+ }
+@@ -261,3 +177,3 @@ void swoole_signalfd_init() {
+     sigemptyset(&signalfd_mask);
+-    sw_memset_zero(signals, sizeof(signals));
++    swr_v1_signal_reset();
+ }
+@@ -355,3 +271,3 @@ static void swoole_signalfd_clear() {
+     }
+-    sw_memset_zero(signals, sizeof(signals));
++    swr_v1_signal_reset();
+     sw_memset_zero(&signalfd_mask, sizeof(signalfd_mask));
+@@ -436,3 +352,3 @@ static void swoole_signal_kqueue_clear() {
+     }
+-    sw_memset_zero(signals, sizeof(signals));
++    swr_v1_signal_reset();
+ }
 diff --git a/src/server/manager.cc b/src/server/manager.cc
 index ee4229d..e611104 100644
 --- a/src/server/manager.cc
