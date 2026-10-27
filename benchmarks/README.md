@@ -20,6 +20,12 @@ The merge tier's `callgrind` job runs it for `plaintext`, `echo-1k`, `json` and
 rather than `echo-64k`: how a 64 KiB request is split across reads differs between
 runners, and that changes how much of it the Expect-header scan walks (#338).
 
+The same job also runs `websocket` (a WebSocket echo against `06-websocket`) and
+`timer` (an endpoint in `08-timers/server.php` that adds and clears a batch of
+far-future timers per request): the workloads that exercise those two modules
+most, for graduation criterion 3 (#117, #118). They ride the same ratchet in
+`callgrind_limits.json`; the fixed +5% graduation ceiling moves to Phase 6 (#430).
+
 ```sh
 python3 benchmarks/callgrind.py --requests 1000 --workload plaintext --workload echo-1k --limits benchmarks/callgrind_limits.json \
   --engine hybrid=target/hybrid/rust-buffer-websocket/modules/swoole.so \

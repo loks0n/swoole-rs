@@ -24,10 +24,12 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.harness import ROOT, parse_engines
+from corpus.run import WebSocket
 
 NOISE = 1.01  # counts for the same binaries drift well under 1% between runs
 PAYLOAD = bytes(range(256)) * 256
-# (corpus application, method, path, body, expected response body)
+# (corpus application, method, path, body, expected response body). method 'WS' opens a
+# WebSocket to the app and echoes `body` frame by frame instead of sending HTTP.
 WORKLOADS = {
     'plaintext': ('01-hello', 'GET', '/', None, b'Hello, Swoole!\n'),
     'json': ('02-router', 'GET', '/inspect?q=benchmark', None,
@@ -35,6 +37,10 @@ WORKLOADS = {
     'echo-64k': ('02-router', 'POST', '/echo', PAYLOAD, PAYLOAD),
     'echo-1k': ('02-router', 'POST', '/echo', PAYLOAD[:1024], PAYLOAD[:1024]),
     'service-health': ('04-job-service', 'GET', '/health', None, b'{"ok":true}'),
+    # Graduation gates for the websocket (#117) and timer (#118) modules: the workload
+    # that exercises each most, held to --max-ratio 1.05 rather than the ratchet.
+    'websocket': ('06-websocket', 'WS', '/chat', b'ping', b'ping'),
+    'timer': ('08-timers', 'GET', '/', None, b'timers\n'),
 }
 
 
@@ -53,6 +59,17 @@ def wait_for_port(port, proc, seconds=180):
 
 def send(port, workload, count):
     _, method, path, payload, expected = workload
+    if method == 'WS':
+        client = WebSocket(port)
+        try:
+            for _ in range(count):
+                client.send(payload)
+                body = client.receive()
+                if body != expected:
+                    raise RuntimeError(f'unexpected WebSocket frame: {body[:80]!r}')
+        finally:
+            client.close()
+        return
     conn = http.client.HTTPConnection('127.0.0.1', port, timeout=60)
     for _ in range(count):
         conn.request(method, path, payload)
