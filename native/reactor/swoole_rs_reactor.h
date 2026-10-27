@@ -149,6 +149,11 @@ void swr_v1_socket_clean(int fd);
 ssize_t swr_v1_socket_recvfrom(int fd, void *buffer, size_t length, int flags, struct sockaddr *address, socklen_t *address_length, uint32_t retries);
 int swr_v1_socket_accept(int fd, struct sockaddr *address, socklen_t *address_length, bool nonblock, bool *listener_cloexec);
 swr_v1_socket_io_result swr_v1_socket_connect(int fd, const struct sockaddr *address, socklen_t length);
+/* getsockname/getpeername/bind: caller sets *address_length to the storage
+ * capacity; native code keeps the address type and the bound flag. */
+bool swr_v1_socket_get_name(int fd, struct sockaddr *address, socklen_t *address_length);
+bool swr_v1_socket_get_peer_name(int fd, struct sockaddr *address, socklen_t *address_length);
+bool swr_v1_socket_bind(int fd, const struct sockaddr *address, socklen_t length);
 swr_v1_socket_io_result swr_v1_socket_pending_error(int fd);
 /* network::Socket's per-request reads and writes: recv/send/peek with EINTR and
  * dont_restart, driving `tls` (ssl_recv/ssl_send/SSL_peek on `socket`) when set;
