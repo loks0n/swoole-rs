@@ -50,6 +50,17 @@ For packet framing (`open_length_check`), `framing_unpack` compares
 `Protocol::default_length_func` over a length type, field offset, body offset and
 any received bytes. Where upstream's behaviour is undefined (private advisory), Rust's -1 only has to match an upstream error.
 
+For the clients, `clients_url` compares `Address::assign(url)` from the pinned
+address.cc with the same body after
+`migration/patches/clients/0001-rust-address-client-policy.patch` (type, host,
+port, or a `std::stoi` throw), on URLs up to 256 bytes because libstdc++'s
+`std::regex` recurses per character. `clients_cookie` compares
+`swr_v1_clients_cookie` with the Set-Cookie split in
+`php_swoole_http_parse_set_cookies`, and `clients_domain_decode` compares
+`swr_v1_clients_domain_decode` with dns.cc's `domain_decode` wherever Rust stays
+in bounds; elsewhere upstream's behaviour is undefined (private advisory), so it
+isn't run.
+
 libFuzzer writes new inputs to the first corpus directory, so keep `corpus/`
 (ignored) first and the committed `seeds/` second. A failure leaves its input in
 `artifacts/<target>/`; replay it with `cargo +nightly fuzz run <target> <file>`.

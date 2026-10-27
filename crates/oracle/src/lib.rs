@@ -242,3 +242,56 @@ pub mod protocols {
         resp_parse: swr_oracle_resp_parse_candidate,
     };
 }
+
+pub mod clients {
+    use std::ffi::c_char;
+
+    /// `Address::assign(url)` over `length` bytes, from one engine's sources:
+    /// `upstream` is the pinned file, `candidate` the file with the clients overlay
+    /// patch, which calls the Rust export (the caller's binary must link it).
+    /// 1 assigned, 0 rejected, -1 `std::stoi` threw; the host goes to `host`
+    /// (`length` bytes) and its length to `*host_length`.
+    pub type Url = unsafe extern "C" fn(
+        *const c_char,
+        usize,
+        *mut i32,
+        *mut i32,
+        *mut c_char,
+        *mut usize,
+    ) -> i32;
+
+    unsafe extern "C" {
+        fn swr_oracle_clients_url_upstream(
+            data: *const c_char,
+            length: usize,
+            kind: *mut i32,
+            port: *mut i32,
+            host: *mut c_char,
+            host_length: *mut usize,
+        ) -> i32;
+        fn swr_oracle_clients_url_candidate(
+            data: *const c_char,
+            length: usize,
+            kind: *mut i32,
+            port: *mut i32,
+            host: *mut c_char,
+            host_length: *mut usize,
+        ) -> i32;
+        /// `php_swoole_http_parse_set_cookies`'s split of `length` bytes: key
+        /// length, value offset and value length.
+        #[link_name = "swr_oracle_clients_cookie"]
+        pub fn cookie(
+            at: *const c_char,
+            length: usize,
+            key: *mut usize,
+            offset: *mut usize,
+            value: *mut usize,
+        );
+        /// `domain_decode` in place over a NUL-terminated name.
+        #[link_name = "swr_oracle_clients_domain_decode"]
+        pub fn domain_decode(name: *mut c_char);
+    }
+
+    pub const UPSTREAM_URL: Url = swr_oracle_clients_url_upstream;
+    pub const CANDIDATE_URL: Url = swr_oracle_clients_url_candidate;
+}
