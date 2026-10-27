@@ -1058,7 +1058,7 @@ index 6a4aacf..58ab349 100644
 +    return outcome.result;
  }
 diff --git a/src/coroutine/hook.cc b/src/coroutine/hook.cc
-index 964a906..fae66ad 100644
+index 964a906..72080a8 100644
 --- a/src/coroutine/hook.cc
 +++ b/src/coroutine/hook.cc
 @@ -27,2 +27,7 @@
@@ -1069,11 +1069,162 @@ index 964a906..fae66ad 100644
 +#include "swoole_rs_hooks.h"
 +
  #include "swoole_socket_impl.h"
-@@ -56,3 +61,4 @@ static int fdatasync(int fd) {
+@@ -56,3 +61,12 @@ static int fdatasync(int fd) {
  static sw_inline bool is_no_coro() {
 -    return SwooleTG.reactor == nullptr || !Coroutine::get_current();
 +    return swr_v1_hook_no_coro(SwooleTG.reactor != nullptr,
 +                               SwooleTG.reactor != nullptr && Coroutine::get_current() != nullptr);
++}
++
++static bool hook_async(void (*job)(void *), void *context) {
++    return async([job, context]() { job(context); });
++}
++
++static swr_v1_hook_offload hook_offload() {
++    return is_no_coro() ? nullptr : hook_async;
+ }
+@@ -251,9 +265,3 @@ uint8_t swoole_coroutine_socket_exists(int fd) {
+ FILE *swoole_coroutine_fopen(const char *pathname, const char *mode) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return fopen(pathname, mode);
+-    }
+-
+-    FILE *retval = nullptr;
+-    async([&]() { retval = fopen(pathname, mode); });
+-    return retval;
++    return swr_v1_hook_fopen(pathname, mode, hook_offload());
+ }
+@@ -261,9 +269,3 @@ FILE *swoole_coroutine_fopen(const char *pathname, const char *mode) {
+ FILE *swoole_coroutine_fdopen(int fd, const char *mode) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return fdopen(fd, mode);
+-    }
+-
+-    FILE *retval = nullptr;
+-    async([&]() { retval = fdopen(fd, mode); });
+-    return retval;
++    return swr_v1_hook_fdopen(fd, mode, hook_offload());
+ }
+@@ -271,9 +273,3 @@ FILE *swoole_coroutine_fdopen(int fd, const char *mode) {
+ FILE *swoole_coroutine_freopen(const char *pathname, const char *mode, FILE *stream) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return freopen(pathname, mode, stream);
+-    }
+-
+-    FILE *retval = nullptr;
+-    async([&]() { retval = freopen(pathname, mode, stream); });
+-    return retval;
++    return swr_v1_hook_freopen(pathname, mode, stream, hook_offload());
+ }
+@@ -281,9 +277,3 @@ FILE *swoole_coroutine_freopen(const char *pathname, const char *mode, FILE *str
+ size_t swoole_coroutine_fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return fread(ptr, size, nmemb, stream);
+-    }
+-
+-    size_t retval = 0;
+-    async([&]() { retval = fread(ptr, size, nmemb, stream); });
+-    return retval;
++    return swr_v1_hook_fread(ptr, size, nmemb, stream, hook_offload());
+ }
+@@ -291,9 +281,3 @@ size_t swoole_coroutine_fread(void *ptr, size_t size, size_t nmemb, FILE *stream
+ size_t swoole_coroutine_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return fwrite(ptr, size, nmemb, stream);
+-    }
+-
+-    size_t retval = 0;
+-    async([&]() { retval = fwrite(ptr, size, nmemb, stream); });
+-    return retval;
++    return swr_v1_hook_fwrite(ptr, size, nmemb, stream, hook_offload());
+ }
+@@ -301,9 +285,3 @@ size_t swoole_coroutine_fwrite(const void *ptr, size_t size, size_t nmemb, FILE
+ char *swoole_coroutine_fgets(char *s, int size, FILE *stream) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return fgets(s, size, stream);
+-    }
+-
+-    char *retval = nullptr;
+-    async([&]() { retval = fgets(s, size, stream); });
+-    return retval;
++    return swr_v1_hook_fgets(s, size, stream, hook_offload());
+ }
+@@ -311,9 +289,3 @@ char *swoole_coroutine_fgets(char *s, int size, FILE *stream) {
+ int swoole_coroutine_fputs(const char *s, FILE *stream) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return fputs(s, stream);
+-    }
+-
+-    int retval = -1;
+-    async([&]() { retval = fputs(s, stream); });
+-    return retval;
++    return swr_v1_hook_fputs(s, stream, hook_offload());
+ }
+@@ -321,9 +293,3 @@ int swoole_coroutine_fputs(const char *s, FILE *stream) {
+ int swoole_coroutine_feof(FILE *stream) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return feof(stream);
+-    }
+-
+-    int retval = -1;
+-    async([&]() { retval = feof(stream); });
+-    return retval;
++    return swr_v1_hook_feof(stream, hook_offload());
+ }
+@@ -331,9 +297,3 @@ int swoole_coroutine_feof(FILE *stream) {
+ int swoole_coroutine_fflush(FILE *stream) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return fflush(stream);
+-    }
+-
+-    int retval = -1;
+-    async([&]() { retval = fflush(stream); });
+-    return retval;
++    return swr_v1_hook_fflush(stream, hook_offload());
+ }
+@@ -341,9 +301,3 @@ int swoole_coroutine_fflush(FILE *stream) {
+ int swoole_coroutine_fclose(FILE *stream) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return fclose(stream);
+-    }
+-
+-    int retval = -1;
+-    async([&]() { retval = fclose(stream); });
+-    return retval;
++    return swr_v1_hook_fclose(stream, hook_offload());
+ }
+@@ -351,9 +305,3 @@ int swoole_coroutine_fclose(FILE *stream) {
+ DIR *swoole_coroutine_opendir(const char *name) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return opendir(name);
+-    }
+-
+-    DIR *retval = nullptr;
+-    async([&]() { retval = opendir(name); });
+-    return retval;
++    return swr_v1_hook_opendir(name, hook_offload());
+ }
+@@ -361,9 +309,3 @@ DIR *swoole_coroutine_opendir(const char *name) {
+ struct dirent *swoole_coroutine_readdir(DIR *dirp) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return readdir(dirp);
+-    }
+-
+-    struct dirent *retval;
+-    async([&retval, dirp]() { retval = readdir(dirp); });
+-    return retval;
++    return swr_v1_hook_readdir(dirp, hook_offload());
+ }
+@@ -371,9 +313,3 @@ struct dirent *swoole_coroutine_readdir(DIR *dirp) {
+ int swoole_coroutine_closedir(DIR *dirp) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return closedir(dirp);
+-    }
+-
+-    int retval = -1;
+-    async([&]() { retval = closedir(dirp); });
+-    return retval;
++    return swr_v1_hook_closedir(dirp, hook_offload());
  }
 diff --git a/src/coroutine/iouring.cc b/src/coroutine/iouring.cc
 index 63ca2f2..f0514c6 100644
