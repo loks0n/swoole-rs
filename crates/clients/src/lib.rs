@@ -16,6 +16,8 @@ pub mod ip;
 pub mod object;
 pub mod pool;
 pub mod resolver;
+mod sha1;
+pub mod ws;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

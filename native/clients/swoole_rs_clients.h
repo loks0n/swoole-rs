@@ -43,6 +43,9 @@ struct swr_v1_clients_cookie_plan swr_v1_clients_cookie(const uint8_t *, size_t)
 struct swr_v1_clients_exec_plan { uint32_t action, stage, iteration; };
 /* Stages0 send/1 defer-receive/2 retry-close; actions0 fail/1 send/2 receive/3 close/4 success. */
 struct swr_v1_clients_exec_plan swr_v1_clients_http_exec(uint32_t stage, uint32_t iteration, uint8_t retries, uint8_t deferred, uint16_t status);
+/* WebSocket client handshake: 1 if base64(SHA-1(key + GUID)) equals accept.
+ * Zend header extraction and the Upgrade/Connection token checks stay native. */
+uint8_t swr_v1_clients_ws_accept_valid(const uint8_t *key, size_t key_len, const uint8_t *accept, size_t accept_len);
 /* Caller-owned bounded DNS codec buffers; no native execution or retained state. */
 int32_t swr_v1_clients_domain_encode(const uint8_t *, size_t, uint8_t *, size_t);
 uint8_t swr_v1_clients_domain_decode(uint8_t *, size_t, uint8_t signed_char);

@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_client.cc b/ext-src/swoole_client.cc
-index e340dc2f1..512b579e7 100644
+index e340dc2..512b579 100644
 --- a/ext-src/swoole_client.cc
 +++ b/ext-src/swoole_client.cc
 @@ -17,2 +17,7 @@
@@ -192,7 +192,7 @@ index e340dc2f1..512b579e7 100644
 +            long_connections.push(cli->server_id, cli);
          }
 diff --git a/ext-src/swoole_client_async.cc b/ext-src/swoole_client_async.cc
-index 2593ab9f3..d0f7b0f3e 100644
+index 2593ab9..d0f7b0f 100644
 --- a/ext-src/swoole_client_async.cc
 +++ b/ext-src/swoole_client_async.cc
 @@ -17,2 +17,8 @@
@@ -529,7 +529,7 @@ index 2593ab9f3..d0f7b0f3e 100644
 +    *clients_async_slot(client_obj, slot) = cb;
      RETURN_TRUE;
 diff --git a/ext-src/swoole_client_coro.cc b/ext-src/swoole_client_coro.cc
-index 40673b572..f2439bc65 100644
+index 40673b5..f2439bc 100644
 --- a/ext-src/swoole_client_coro.cc
 +++ b/ext-src/swoole_client_coro.cc
 @@ -17,2 +17,6 @@
@@ -819,7 +819,7 @@ index 40673b572..f2439bc65 100644
 +    if (swr_v1_clients_coro_next(10, 0, _socket->close(), 0, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
          php_swoole_socket_set_error_properties(ZEND_THIS, _socket);
 diff --git a/ext-src/swoole_http_client_coro.cc b/ext-src/swoole_http_client_coro.cc
-index e7f60d217..2869d05d8 100644
+index e7f60d2..06980c3 100644
 --- a/ext-src/swoole_http_client_coro.cc
 +++ b/ext-src/swoole_http_client_coro.cc
 @@ -20,2 +20,6 @@
@@ -850,7 +850,22 @@ index e7f60d217..2869d05d8 100644
 -        size_t n = sw_snprintf(SW_STRS(content_length_str), "Content-Length: %zu\r\n\r\n", length);
 +        size_t n = clients_format_request(0, {}, {}, {}, {}, length, SW_STRS(content_length_str));
          buf->append(content_length_str, n);
-@@ -406,20 +423,6 @@ static const zend_function_entry swoole_http_client_coro_methods[] =
+@@ -317,10 +334,6 @@ static bool websocket_verify_server_handshake(zval *zobject) {
+ 
+-    char sec_buf[128];
+-    size_t sec_len = sw_snprintf(sec_buf, sizeof(sec_buf), "%s%s", Z_STRVAL_P(zkey), SW_WEBSOCKET_GUID);
+-    unsigned char sha1_str[20];
+-    php_swoole_sha1(sec_buf, sec_len, sha1_str);
+-
+-    char accept_buf[64];
+-    int accept_len = swoole::base64_encode(sha1_str, sizeof(sha1_str), accept_buf);
+-    return accept_len == (int) Z_STRLEN_P(zaccept) && memcmp(accept_buf, Z_STRVAL_P(zaccept), accept_len) == 0;
++    return swr_v1_clients_ws_accept_valid(reinterpret_cast<const uint8_t *>(Z_STRVAL_P(zkey)),
++                                          Z_STRLEN_P(zkey),
++                                          reinterpret_cast<const uint8_t *>(Z_STRVAL_P(zaccept)),
++                                          Z_STRLEN_P(zaccept)) != 0;
+ }
+@@ -406,20 +419,6 @@ static const zend_function_entry swoole_http_client_coro_methods[] =
  void php_swoole_http_parse_set_cookies(const char *at, size_t length, zval *zcookies, zval *zset_cookie_headers) {
 -    const char *eof = at + length;
 -    size_t key_len = 0, value_len = 0;
@@ -874,7 +889,7 @@ index e7f60d217..2869d05d8 100644
 -    }
 -    value_len = eof - p;
      if (value_len != 0) {
-@@ -853,52 +856,64 @@ void Client::add_header(const char *key, size_t key_len, const char *str, size_t
+@@ -853,52 +852,64 @@ void Client::add_header(const char *key, size_t key_len, const char *str, size_t
  bool Client::connect() {
 -    if (socket) {
 -        return true;
@@ -984,7 +999,7 @@ index e7f60d217..2869d05d8 100644
 -    zend_update_property_bool(swoole_http_client_coro_ce, SW_Z8_OBJ_P(zobject), ZEND_STRL("connected"), 1);
 -    return true;
  }
-@@ -914,5 +929,16 @@ void Client::set_error(int error, const char *msg, int status) const {
+@@ -914,5 +925,16 @@ void Client::set_error(int error, const char *msg, int status) const {
  bool Client::keep_liveness() {
 -    if (!socket || !socket->check_liveness()) {
 -        if (socket) {
@@ -1004,7 +1019,7 @@ index e7f60d217..2869d05d8 100644
 +        case SWR_CLIENTS_HC_LIVENESS: effect_result = socket->check_liveness(); break;
 +        case SWR_CLIENTS_HC_CLOSE_DEAD:
              socket->check_bound_co(SW_EVENT_RDWR);
-@@ -920,11 +946,9 @@ bool Client::keep_liveness() {
+@@ -920,11 +942,9 @@ bool Client::keep_liveness() {
              close(false);
 +            break;
 +        case SWR_CLIENTS_HC_RETRY_CONNECT: effect_result = connect(); break;
@@ -1021,7 +1036,7 @@ index e7f60d217..2869d05d8 100644
      }
 -    return true;
  }
-@@ -1022,7 +1046,4 @@ bool Client::send_request() {
+@@ -1022,7 +1042,4 @@ bool Client::send_request() {
          char *proxy_uri = (char *) emalloc(proxy_uri_len);
 -        if (nullptr == memchr(_host, ':', _host_len)) {
 -            proxy_uri_len = sw_snprintf(proxy_uri, proxy_uri_len, "%s%s:%u%s", pre, _host, port, path.c_str());
@@ -1031,7 +1046,7 @@ index e7f60d217..2869d05d8 100644
 +        proxy_uri_len = clients_format_request(1, clients_format_span(_host, _host_len),
 +            clients_format_span(path.data(), path.length()), {}, {}, port, proxy_uri, proxy_uri_len);
          buffer->append(proxy_uri, proxy_uri_len);
-@@ -1177,7 +1198,4 @@ bool Client::send_request() {
+@@ -1177,7 +1194,4 @@ bool Client::send_request() {
                               sizeof(boundary_str) - sizeof(SW_HTTP_CLIENT_BOUNDARY_PREKEY));
 -        ssize_t n = sw_snprintf(header_buf,
 -                                sizeof(header_buf),
@@ -1041,7 +1056,7 @@ index e7f60d217..2869d05d8 100644
 +        ssize_t n = clients_format_request(2, clients_format_span(boundary_str, sizeof(boundary_str) - 1),
 +            {}, {}, {}, 0, SW_STRS(header_buf));
          buffer->append(header_buf, n);
-@@ -1244,9 +1262,4 @@ bool Client::send_request() {
+@@ -1244,9 +1258,4 @@ bool Client::send_request() {
                  zend::String str_value(zvalue);
 -                n = sw_snprintf(header_buf,
 -                                sizeof(header_buf),
@@ -1053,7 +1068,7 @@ index e7f60d217..2869d05d8 100644
 +                n = clients_format_request(3, clients_format_span(boundary_str, sizeof(boundary_str) - 1),
 +                    clients_format_span(key, keylen), {}, {}, 0, SW_STRS(header_buf));
                  buffer->append(header_buf, n);
-@@ -1297,13 +1310,6 @@ bool Client::send_request() {
+@@ -1297,13 +1306,6 @@ bool Client::send_request() {
                   */
 -                n = sw_snprintf(header_buf,
 -                                sizeof(header_buf),
@@ -1071,12 +1086,12 @@ index e7f60d217..2869d05d8 100644
 +                    clients_format_span(Z_STRVAL_P(zfilename), Z_STRLEN_P(zfilename)),
 +                    clients_format_span(Z_STRVAL_P(ztype), Z_STRLEN_P(ztype)), 0, SW_STRS(header_buf));
                  /**
-@@ -1339,3 +1345,3 @@ bool Client::send_request() {
+@@ -1339,3 +1341,3 @@ bool Client::send_request() {
  
 -        n = sw_snprintf(header_buf, sizeof(header_buf), "--%.*s--\r\n", (int) (sizeof(boundary_str) - 1), boundary_str);
 +        n = clients_format_request(5, clients_format_span(boundary_str, sizeof(boundary_str) - 1), {}, {}, {}, 0, SW_STRS(header_buf));
          if (socket->send_all(header_buf, n) != n) {
-@@ -1408,20 +1414,28 @@ bool Client::exec(const std::string &_path) {
+@@ -1408,20 +1410,28 @@ bool Client::exec(const std::string &_path) {
      }
 -    SW_LOOP_N(max_retries + 1) {
 -        if (send_request() == false) {
@@ -1119,37 +1134,25 @@ index e7f60d217..2869d05d8 100644
      }
 -    return false;
  }
-@@ -1429,3 +1443,3 @@ bool Client::exec(const std::string &_path) {
+@@ -1429,3 +1439,3 @@ bool Client::exec(const std::string &_path) {
  bool Client::recv_response(double timeout) {
 -    if (!wait_response) {
 +    if (swr_v1_clients_http_response_next(0, wait_response, 0, 0, 0).action == SWR_CLIENTS_HR_FALSE) {
          return false;
-@@ -1437,6 +1451,3 @@ bool Client::recv_response(double timeout) {
+@@ -1437,6 +1447,3 @@ bool Client::recv_response(double timeout) {
      off_t header_crlf_offset = 0;
 -
 -    // re-init http response parser
      swoole_llhttp_parser_init(&parser, HTTP_RESPONSE, (void *) this);
 -
      if (timeout == 0) {
-@@ -1445,103 +1456,80 @@ bool Client::recv_response(double timeout) {
+@@ -1445,103 +1452,80 @@ bool Client::recv_response(double timeout) {
      Socket::TimeoutController tc(socket, timeout, SW_TIMEOUT_READ);
 -    bool success = false;
 +    uint32_t stage = 1;
 +    bool header_found = false;
      while (true) {
 -        if (sw_unlikely(tc.has_timedout(SW_TIMEOUT_READ))) {
--            break;
--        }
--        retval = socket->recv(buffer->str + buffer->length, buffer->size - buffer->length);
--        if (sw_unlikely(retval <= 0)) {
--            if (retval == 0) {
--                socket->set_err(ECONNRESET);
--                if (total_bytes > 0 && !llhttp_should_keep_alive(&parser)) {
--                    llhttp_finish(&parser);
--                    success = true;
--                    break;
--                }
--            }
 +        uint32_t facts = 0;
 +        size_t size = 0;
 +        switch (stage) {
@@ -1172,6 +1175,18 @@ index e7f60d217..2869d05d8 100644
 +        case SWR_CLIENTS_HR_RECV:
 +            retval = socket->recv(buffer->str + buffer->length, buffer->size - buffer->length);
              break;
+-        }
+-        retval = socket->recv(buffer->str + buffer->length, buffer->size - buffer->length);
+-        if (sw_unlikely(retval <= 0)) {
+-            if (retval == 0) {
+-                socket->set_err(ECONNRESET);
+-                if (total_bytes > 0 && !llhttp_should_keep_alive(&parser)) {
+-                    llhttp_finish(&parser);
+-                    success = true;
+-                    break;
+-                }
+-            }
+-            break;
 -        }
 -
 -        if (!header_completed) {
@@ -1303,7 +1318,7 @@ index e7f60d217..2869d05d8 100644
 -
 -    return true;
  }
-@@ -1696,19 +1684,30 @@ bool Client::close(const bool should_be_reset) {
+@@ -1696,19 +1680,30 @@ bool Client::close(const bool should_be_reset) {
      SocketImpl *_socket = socket;
 -    if (!_socket) {
 -        return false;
@@ -1351,7 +1366,7 @@ index e7f60d217..2869d05d8 100644
 -    return true;
  }
 diff --git a/ext-src/swoole_name_resolver.cc b/ext-src/swoole_name_resolver.cc
-index e959b5edc..fe217f5cc 100644
+index e959b5e..fe217f5 100644
 --- a/ext-src/swoole_name_resolver.cc
 +++ b/ext-src/swoole_name_resolver.cc
 @@ -17,2 +17,6 @@
@@ -1475,7 +1490,7 @@ index e959b5edc..fe217f5cc 100644
 -    return result;
  }
 diff --git a/src/network/address.cc b/src/network/address.cc
-index 04e04624d..23ca25959 100644
+index 04e0462..23ca259 100644
 --- a/src/network/address.cc
 +++ b/src/network/address.cc
 @@ -18,7 +18,7 @@
@@ -1606,7 +1621,7 @@ index 04e04624d..23ca25959 100644
 +        return swr_v1_clients_loopback(6, addr.inet_v6.sin6_addr.s6_addr);
      }
 diff --git a/src/network/client.cc b/src/network/client.cc
-index 56678c753..54b4c87e7 100644
+index 56678c7..54b4c87 100644
 --- a/src/network/client.cc
 +++ b/src/network/client.cc
 @@ -25,2 +25,6 @@
@@ -2615,7 +2630,7 @@ index 56678c753..54b4c87e7 100644
 -    return SW_OK;
  }
 diff --git a/src/network/dns.cc b/src/network/dns.cc
-index 9d40a7cb0..15b8f7cfa 100644
+index 9d40a7c..15b8f7c 100644
 --- a/src/network/dns.cc
 +++ b/src/network/dns.cc
 @@ -22,7 +22,12 @@
