@@ -58,7 +58,7 @@ def allocation_fixture(directory):
                  for name in row['filenames'] if name.endswith('.rlib')}
     fixture = directory / 'libbuffer_model.a'
     compiled = run_compiler(['rustc', '--edition=2024', '--crate-type=staticlib', '--crate-name=swr_buffer_model',
-                             '-C', 'opt-level=3',
+                             '-C', 'opt-level=3', '-C', 'panic=abort',  # as the release profile builds its dependencies
                              *[arg for name, path in sorted(libraries.items()) for arg in ['--extern', f'{name}={path}']],
                              str(Path(__file__).with_name('model_allocator.rs')), '-o', str(fixture)], timeout=60)
     assert compiled['returncode'] == 0, compiled['stderr']

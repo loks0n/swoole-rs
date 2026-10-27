@@ -113,7 +113,7 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_front(buffer: *const Buffer, out: *
     match queue.entries.front() {
         None => return EMPTY,
         Some(Entry::Data(bytes)) => {
-            result.length = crate::chunk_length(bytes);
+            result.length = super::chunk_length(bytes);
             result.data = bytes.as_ptr().cast_mut();
         }
         Some(Entry::TypedToken(token)) => {
@@ -151,7 +151,7 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_consume(
     };
     if generation != cursor.generation
         || offset != cursor.offset
-        || count > crate::chunk_length(bytes) - cursor.offset
+        || count > super::chunk_length(bytes) - cursor.offset
     {
         return INVALID;
     }
@@ -183,7 +183,7 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_pop(buffer: *mut Buffer, out: *mut 
     };
     let effect = match entry {
         Entry::Data(bytes) => {
-            queue.length -= crate::chunk_length(&bytes);
+            queue.length -= super::chunk_length(&bytes);
             Detached::default()
         }
         Entry::TypedToken(token) => Detached {
