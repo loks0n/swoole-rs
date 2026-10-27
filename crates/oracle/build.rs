@@ -127,7 +127,7 @@ fn definition(text: &str, signature: &str) -> String {
         match char {
             '{' => depth += 1,
             '}' if depth == 1 => {
-                let body = &text[start..start + offset + 1];
+                let body = &text[start..=(start + offset)];
                 assert!(
                     !body.contains("\n#"),
                     "no preprocessor branches in {signature}"

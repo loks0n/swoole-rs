@@ -693,7 +693,7 @@ mod number_tests {
             let expected = value.to_string();
             let mut output = [255u8; 14];
             let length = unsafe { swr_v1_string_format_i32(value, output.as_mut_ptr().add(1)) };
-            assert_eq!(&output[1..length + 1], expected.as_bytes());
+            assert_eq!(&output[1..=length], expected.as_bytes());
             assert_eq!(output[length + 1], 0);
             assert_eq!((output[0], output[13]), (255, 255));
             let mut data = [255; 16];

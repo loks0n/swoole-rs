@@ -267,7 +267,7 @@ pub unsafe extern "C" fn swr_v1_clients_domain_encode(
     };
     // SAFETY: `output` is non-null and `required <= isize::MAX` (checked above); the caller lends `required` writable bytes for this call.
     let output = unsafe { std::slice::from_raw_parts_mut(output, required) };
-    output[1..length + 1].copy_from_slice(input);
+    output[1..=length].copy_from_slice(input);
     output[length + 1] = b'.';
     output[length + 2] = 0;
     let mut position = 0;
