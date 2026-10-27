@@ -2,6 +2,7 @@
 #define SWOOLE_RS_PROCESS_H
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -17,6 +18,8 @@ uint32_t swr_v1_process_reload_action(bool all, bool task);
 uint32_t swr_v1_process_reload_kill(bool failed, bool no_child, bool no_process);
 typedef struct { uint32_t status; int32_t error; } swr_v1_process_affinity_outcome;
 swr_v1_process_affinity_outcome swr_v1_process_worker_affinity(uint32_t worker_id, const int32_t *available, int32_t available_len, bool thread);
+typedef struct { uint32_t status; int32_t error; int32_t fd; size_t read; } swr_v1_process_task_file_read_result;
+swr_v1_process_task_file_read_result swr_v1_process_task_file_read(const char *path, uint8_t *buffer, size_t length, bool peek);
 #ifdef __cplusplus
 }
 #endif

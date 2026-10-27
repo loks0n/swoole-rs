@@ -7,8 +7,8 @@ Opt-in feature bit 524288 (`process`). ABI: `docs/process-abi-v1.md` and
 Rust decides worker-exit observation and timeout plans, discard triage,
 task-kind/finish diagnostic/result-flag precedence, ordinary manager reload
 selection and stale-PID/reload-kill result actions. All APIs take copied
-bool/int facts and return POD/scalars (CPU pinning also reads the native
-CPU list). No allocator, callback, borrow,
+bool/int facts and return POD/scalars (CPU pinning and task files also take
+native pointers). No allocator, callback, borrow,
 registry or native handle enters Rust. Server/Worker/ProcessPool/ReloadTask
 state, counters, maps, PID snapshot and kill queue stay native, as do logging,
 signals, syscalls, timers, reactor, callbacks, fork, atomics and coroutines,
@@ -38,6 +38,10 @@ which run after Rust returns.
   read the process's affinity, keep `cpu_affinity_available`, pick the
   `worker_id % count`-th CPU and pin the thread (thread mode) or process. Native
   sets errno from the outcome and logs upstream's warnings.
+- A task's temporary file (`Server::task_unpack`) is read in Rust: open, pread
+  `length` bytes retrying EINTR/EAGAIN, close, unlink unless `SW_TASK_PEEK`.
+  Native sizes the buffer first (upstream did so after a successful open), then
+  logs the open/pread warnings and builds the packet.
 
 `python3 tests/modules/process/gate.py` builds the crate and runs the C++
 differential under ASan/UBSan; `--archive ARCHIVE` tests an existing archive.

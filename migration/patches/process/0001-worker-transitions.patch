@@ -63,7 +63,7 @@ index ee4229d..e611104 100644
 +            } else if (reload_action == 2) {  // only reload task workers
                  pool->reload_init = reload_task_worker = false;
 diff --git a/src/server/task_worker.cc b/src/server/task_worker.cc
-index 324abb3..80273e4 100644
+index 324abb3..cfa34a0 100644
 --- a/src/server/task_worker.cc
 +++ b/src/server/task_worker.cc
 @@ -18,2 +18,7 @@
@@ -89,7 +89,35 @@ index 324abb3..80273e4 100644
 -    } else if (task->info.type == SW_SERVER_EVENT_COMMAND_REQUEST) {
 +    } else if (action == 3) {
          ret = TaskWorker_call_command_handler(pool, worker, task);
-@@ -442,3 +449,6 @@ bool Server::finish(const char *data, size_t data_len, int flags, const EventDat
+@@ -319,7 +326,2 @@ bool Server::task_unpack(EventData *task, String *buffer, PacketPtr *packet) {
+ 
+-    File fp(_pkg.tmpfile, O_RDONLY);
+-    if (!fp.ready()) {
+-        swoole_sys_warning("open(%s) failed", _pkg.tmpfile);
+-        return false;
+-    }
+     if (buffer->size < _pkg.length) {
+@@ -327,8 +329,15 @@ bool Server::task_unpack(EventData *task, String *buffer, PacketPtr *packet) {
+     }
+-    if (fp.read_all(buffer->str, _pkg.length) != _pkg.length) {
++    const auto read = swr_v1_process_task_file_read(
++        _pkg.tmpfile, reinterpret_cast<uint8_t *>(buffer->str), _pkg.length, task->info.ext_flags & SW_TASK_PEEK);
++    if (read.status != 0) {
++        if (read.error != 0) {
++            errno = read.error;
++        }
++        if (read.status == 1) {
++            swoole_sys_warning("open(%s) failed", _pkg.tmpfile);
++        } else if (read.status == 3) {
++            swoole_sys_warning("pread(%d, %p, %lu, %lu) failed", read.fd, buffer->str, _pkg.length - read.read, read.read);
++        }
+         return false;
+     }
+-    if (!(task->info.ext_flags & SW_TASK_PEEK)) {
+-        unlink(_pkg.tmpfile);
+-    }
+     buffer->length = _pkg.length;
+@@ -442,3 +451,6 @@ bool Server::finish(const char *data, size_t data_len, int flags, const EventDat
      }
 -    if (current_task->info.type == SW_SERVER_EVENT_PIPE_MESSAGE) {
 +    const bool pipe_message = current_task->info.type == SW_SERVER_EVENT_PIPE_MESSAGE;
@@ -97,12 +125,12 @@ index 324abb3..80273e4 100644
 +        !pipe_message && (current_task->info.ext_flags & SW_TASK_NOREPLY));
 +    if (finish_error == 1) {
          swoole_warning("Server::task()/Server::finish() is not supported in onPipeMessage callback");
-@@ -446,3 +456,3 @@ bool Server::finish(const char *data, size_t data_len, int flags, const EventDat
+@@ -446,3 +458,3 @@ bool Server::finish(const char *data, size_t data_len, int flags, const EventDat
      }
 -    if (current_task->info.ext_flags & SW_TASK_NOREPLY) {
 +    if (finish_error == 2) {
          swoole_warning("Server::finish() can only be used in the worker process");
-@@ -469,7 +479,6 @@ bool Server::finish(const char *data, size_t data_len, int flags, const EventDat
+@@ -469,7 +481,6 @@ bool Server::finish(const char *data, size_t data_len, int flags, const EventDat
          // callback function
 -        if (current_task->info.ext_flags & SW_TASK_CALLBACK) {
 -            flags |= SW_TASK_CALLBACK;
