@@ -29,8 +29,6 @@ with tempfile.TemporaryDirectory(prefix='reactor-declarations-') as temporary:
 defined = {m.group(1) for line in ''.join(n.stdout for n in outputs).splitlines()
            if (m := re.search(r'\b[TDBR] _?(swr_v1_\w+)$', line))}
 missing = sorted(declared - defined)
-required = {'swr_v1_reactor_epoll_registration', 'swr_v1_reactor_kqueue_registration'}
-assert required <= declared, 'generic policies must remain available on every target'
 result = {'status': 'failed' if missing else 'passed', 'platform': sys.platform,
           'preprocess': preprocess, 'declarations': sorted(declared), 'missing': missing,
           'members': members, 'nm_stderr': ''.join(n.stderr for n in outputs), 'scope': 'target declarations only; no behavior or parity claim'}

@@ -84,7 +84,7 @@ PHP_FUNCTION(swr_reactor_supported) {
 PHP_FUNCTION(swr_reactor_callbacks_supported) {
     ZEND_PARSE_PARAMETERS_NONE();array_init(return_value);
     image(return_value,"method_image","_ZN6swoole7ReactorC1EiNS0_4TypeE");
-    image(return_value,"callbacks_image","swr_v1_reactor_callbacks_insert");
+    image(return_value,"callbacks_image","swr_v1_reactor_callbacks_ensure");
     zval rows;array_init(&rows);
     auto check=[&](bool value){add_next_index_bool(&rows,value);};
     try {
@@ -125,54 +125,6 @@ PHP_FUNCTION(swr_reactor_callbacks_supported) {
         // All captures stay live and no custom destruction observer is used.
         add_assoc_zval(return_value,"outcomes",&rows);
     } catch(const std::exception &error) {zval_ptr_dtor(&rows);zend_throw_exception(zend_ce_exception,error.what(),0);}
-}
-namespace {
-unsigned handler_invocations;
-int handler_one(Reactor*,Event*){++handler_invocations;return 1;}
-int handler_two(Reactor*,Event*){++handler_invocations;return 2;}
-int handler_three(Reactor*,Event*){++handler_invocations;return 3;}
-int handler_four(Reactor*,Event*){++handler_invocations;return 4;}
-int handler_five(Reactor*,Event*){++handler_invocations;return 5;}
-}
-PHP_FUNCTION(swr_reactor_handlers_supported) {
-    ZEND_PARSE_PARAMETERS_NONE();array_init(return_value);
-    image(return_value,"method_image","_ZN6swoole7ReactorC1EiNS0_4TypeE");
-    image(return_value,"setter_image","_ZN6swoole7Reactor11set_handlerEiiPFiPS0_PNS_5EventEE");
-    image(return_value,"isset_image","_ZNK6swoole7Reactor13isset_handlerEii");
-    image(return_value,"handlers_image","swr_v1_reactor_handler_select");
-    zval rows;array_init(&rows);unsigned cases=0;handler_invocations=0;
-    auto check=[&](bool value){add_next_index_bool(&rows,value);};
-    try {
-        Reactor r(8,Reactor::TYPE_POLL);
-        if(!r.ready_)throw std::runtime_error("private poll reactor not ready");
-        ReactorHandler pointers[]={handler_one,handler_two,handler_three,handler_four,handler_five};
-        for(unsigned present=0;present<32;++present)for(auto fd:{SW_FD_USER,SW_FD_STREAM}) {
-            ReactorHandler values[5];for(unsigned slot=0;slot<5;++slot)values[slot]=(present&(1u<<slot))?pointers[slot]:nullptr;
-            r.read_handler[fd]=values[0];r.write_handler[fd]=values[1];r.error_handler[fd]=values[2];r.default_write_handler=values[3];r.default_error_handler=values[4];
-            for(int mask=0;mask<8;++mask)for(int once=0;once<2;++once){
-                int event=(mask<<9)|(once?SW_EVENT_ONCE:0);int slot=(event<SW_EVENT_DEAULT||(mask&1))?0:(mask&2)?1:(mask&4)?2:-1;
-                check(r.isset_handler(fd,event)==(slot>=0&&values[slot]!=nullptr));++cases;
-            }
-            for(int slot=0;slot<3;++slot){
-                auto result=r.get_handler(static_cast<FdType>(fd),static_cast<EventType>(1<<(9+slot)));
-                auto expected=values[slot]?values[slot]:slot==1?values[3]:slot==2?values[4]:nullptr;
-                check(result==expected);if(result)check(result(&r,nullptr)==(expected==pointers[0]?1:expected==pointers[1]?2:expected==pointers[2]?3:expected==pointers[3]?4:5));++cases;
-            }
-            auto expected=values[2]?values[2]:values[4]?values[4]:values[0]?values[0]:values[1]?values[1]:values[3];
-            auto result=r.get_error_handler(static_cast<FdType>(fd));check(result==expected);if(result)check(result(&r,nullptr)>0);++cases;
-        }
-        for(int mask=0;mask<8;++mask)for(int once=0;once<2;++once)for(int candidate=0;candidate<6;++candidate)for(auto fd:{SW_FD_USER,SW_FD_STREAM}){
-            if(mask==0&&once)continue;
-            for(auto index:{SW_FD_USER,SW_FD_STREAM}){r.read_handler[index]=handler_one;r.write_handler[index]=handler_two;r.error_handler[index]=handler_three;}
-            auto value=candidate?pointers[candidate-1]:nullptr;int event=(mask<<9)|(once?SW_EVENT_ONCE:0);
-            r.set_handler(fd,event,value);int slot=(event<SW_EVENT_DEAULT||(mask&1))?0:(mask&2)?1:2;
-            check(r.read_handler[fd]==(slot==0?value:handler_one));check(r.write_handler[fd]==(slot==1?value:handler_two));check(r.error_handler[fd]==(slot==2?value:handler_three));
-            auto other=fd==SW_FD_USER?SW_FD_STREAM:SW_FD_USER;
-            check(r.read_handler[other]==handler_one&&r.write_handler[other]==handler_two&&r.error_handler[other]==handler_three);++cases;
-        }
-        for(int legacy:{7,255}){r.set_handler(SW_FD_USER,legacy,handler_one);check(r.read_handler[SW_FD_USER]==handler_one);check(r.isset_handler(SW_FD_USER,legacy));++cases;}
-        add_assoc_long(return_value,"cases",cases);add_assoc_long(return_value,"native_invocations",handler_invocations);add_assoc_zval(return_value,"outcomes",&rows);
-    } catch(const std::exception &error){zval_ptr_dtor(&rows);zend_throw_exception(zend_ce_exception,error.what(),0);}
 }
 PHP_FUNCTION(swr_reactor_builtins_supported) {
     ZEND_PARSE_PARAMETERS_NONE();array_init(return_value);
@@ -316,11 +268,6 @@ PHP_FUNCTION(swr_reactor_blocking_supported) {
     image(return_value,"file_image","_ZN6swoole7network6Socket13sendfile_syncEPKclm");
     image(return_value,"wait_image","_ZN6swoole7network6Socket8wait_forERKSt8functionIF12swReturnCodevEEii");
 #endif
-    image(return_value,"wait_policy_image","swr_v1_reactor_blocking_wait");
-    image(return_value,"io_policy_image","swr_v1_reactor_blocking_io");
-    image(return_value,"file_policy_image","swr_v1_reactor_blocking_file");
-    image(return_value,"event_policy_image","swr_v1_reactor_blocking_event");
-    image(return_value,"iov_policy_image","swr_v1_reactor_iov_progress");
     zval rows;array_init(&rows);auto check=[&](bool value){add_next_index_bool(&rows,value);if(!value)throw std::runtime_error("ordinary blocking assertion failed");};unsigned cases=0;
     try {
         std::string payload;for(unsigned i=0;i<47;++i)payload+=static_cast<char>(i);
@@ -346,143 +293,7 @@ PHP_FUNCTION(swr_reactor_blocking_supported) {
     }catch(const std::exception &error){zval_ptr_dtor(&rows);zend_throw_exception(zend_ce_exception,error.what(),0);}
 }
 
-PHP_FUNCTION(swr_reactor_ordinary_supported) {
-    ZEND_PARSE_PARAMETERS_NONE();array_init(return_value);
-    image(return_value,"method_image","_ZN6swoole7network6Socket4sendEPKvmi");
-    image(return_value,"recv_image","_ZN6swoole7network6Socket4recvEPvmi");
-    image(return_value,"peek_image","_ZNK6swoole7network6Socket4peekEPvmi");
-    image(return_value,"readv_image","_ZN6swoole7network6Socket5readvEPNS0_8IOVectorE");
-    image(return_value,"writev_image","_ZN6swoole7network6Socket6writevEPNS0_8IOVectorE");
-    image(return_value,"read_image","_ZN6swoole7network6Socket9read_syncEPvm");
-    image(return_value,"write_image","_ZN6swoole7network6Socket10write_syncEPKvm");
-    image(return_value,"receive_image","_ZN6swoole7network6Socket9recv_syncEPvmi");
-    image(return_value,"fd_image","_ZN6swoole7network6Socket13set_fd_optionEii");
-    image(return_value,"buffer_image","_ZNK6swoole7network6Socket15set_buffer_sizeEj");
-    image(return_value,"set_timeout_image","_ZN6swoole7network6Socket11set_timeoutEdi");
-    image(return_value,"get_timeout_image","_ZNK6swoole7network6Socket11get_timeoutE13swTimeoutType");
-    image(return_value,"kernel_read_image","_ZN6swoole7network6Socket23set_kernel_read_timeoutEd");
-    image(return_value,"kernel_write_image","_ZN6swoole7network6Socket24set_kernel_write_timeoutEd");
-    image(return_value,"poll_image","_ZNK6swoole7network6Socket10wait_eventEii");
-    image(return_value,"error_image","_ZN6swoole7network6Socket11catch_errorEi");
-    image(return_value,"timedout_image","_ZNK6swoole7network6Socket12has_timedoutEv");
-    image(return_value,"ordinary_policy_image","swr_v1_reactor_ordinary_io");
-    image(return_value,"blocking_policy_image","swr_v1_reactor_blocking_io");
-    image(return_value,"buffer_policy_image","swr_v1_reactor_socket_buffers");
-    image(return_value,"timeout_policy_image","swr_v1_reactor_socket_timeout");
-    image(return_value,"poll_policy_image","swr_v1_reactor_socket_poll");
-    image(return_value,"error_policy_image","swr_v1_reactor_socket_error");
-    image(return_value,"fd_policy_image","swr_v1_reactor_fd_options");
-    zval rows,values;array_init(&rows);array_init(&values);
-    auto check=[&](bool value){add_next_index_bool(&rows,value);if(!value)throw std::runtime_error("ordinary Socket assertion failed");};
-    auto guard=[](bool value){if(!value)throw std::runtime_error("positive ordinary Socket prerequisite/effect failed");};unsigned cases=0;
-    try {
-        std::string payload;for(unsigned i=0;i<47;++i)payload+=static_cast<char>(i);
-        auto preload=[&](OrdinaryOutputPair &pair,const std::string &data){guard(::send(pair.peer,data.data(),data.size(),0)==static_cast<ssize_t>(data.size()));};
-        auto finish=[&](network::Socket *socket,const std::string &data,const std::string &expected,size_t tx,size_t rx,size_t sent,size_t received){
-            check(data==expected);check(socket->out_buffer==nullptr&&!socket->send_wait&&!socket->close_wait);
-            check(socket->total_send_bytes==tx+sent&&socket->total_recv_bytes==rx+received);
-            check(socket->fd>=0&&socket->ssl==nullptr);int flags=::fcntl(socket->fd,F_GETFL);guard(flags>=0);check(bool(flags&O_NONBLOCK)==bool(socket->nonblock));
-        };
-        for(size_t length:{size_t(1),size_t(7),size_t(31)})for(unsigned operation=0;operation<7;++operation){
-            OrdinaryOutputPair pair;auto *socket=pair.socket;guard(socket!=nullptr);size_t tx=socket->total_send_bytes,rx=socket->total_recv_bytes;std::string expected=payload.substr(0,length),data(length,char(0));bool sending=operation==0||operation==4;
-            if(!sending)preload(pair,expected);
-            if(operation==2){ssize_t n=socket->peek(&data[0],length,0);guard(n>0&&static_cast<size_t>(n)<=length);check(data.substr(0,n)==expected.substr(0,n));}
-            size_t offset=0;unsigned calls=0;
-            while(offset<length){guard(++calls<=64);ssize_t n=0;switch(operation){
-                case 0:n=socket->send(expected.data()+offset,length-offset,0);break;
-                case 1:case 2:n=socket->recv(&data[offset],length-offset,0);break;
-                case 3:n=socket->read_sync(&data[offset],length-offset);break;
-                case 4:n=socket->write_sync(expected.data()+offset,length-offset);break;
-                case 5:case 6:n=socket->recv_sync(&data[offset],length-offset,operation==6?MSG_WAITALL:0);break;
-                default:throw std::runtime_error("ordinary fixture operation");
-            }guard(n>0&&static_cast<size_t>(n)<=length-offset);offset+=n;}
-            if(sending)data=pair.receive(length);
-            finish(socket,data,expected,tx,rx,operation==0?length:0,(operation==1||operation==2||operation>=5)?length:0);++cases;
-        }
-        for(bool sending:{false,true}){OrdinaryOutputPair pair;auto *socket=pair.socket;guard(socket!=nullptr);size_t tx=socket->total_send_bytes,rx=socket->total_recv_bytes;std::string expected=payload.substr(0,12),data=sending?expected:std::string(12,char(0));
-            if(!sending)preload(pair,expected);iovec parts[]={{&data[0],2},{&data[2],3},{&data[5],7}};network::IOVector vector(parts,3);unsigned calls=0;
-            while(vector.get_remain_count()>0){guard(++calls<=16);ssize_t n=sending?socket->writev(&vector):socket->readv(&vector);guard(n>0);}
-            if(sending)data=pair.receive(12);finish(socket,data,expected,tx,rx,0,0);check(vector.count==3&&vector.get_index()==3&&vector.get_remain_count()==0);
-            bool original=true;for(int i=0;i<3;++i)original=original&&vector.iov[i].iov_base==parts[i].iov_base&&vector.iov[i].iov_len==parts[i].iov_len;check(original);++cases;
-        }
-        for(auto mode:{std::pair<int,int>{0,0},{1,0},{1,1}}){OrdinaryOutputPair pair;auto *socket=pair.socket;guard(socket!=nullptr);check(socket->set_fd_option(mode.first,mode.second));int flags=::fcntl(socket->fd,F_GETFL),descriptor=::fcntl(socket->fd,F_GETFD);guard(flags>=0&&descriptor>=0);check(bool(flags&O_NONBLOCK)==bool(mode.first)&&socket->nonblock==mode.first);check(bool(descriptor&FD_CLOEXEC)==bool(mode.second)&&socket->cloexec==mode.second);++cases;}
-        for(uint32_t size:{512u,4096u,16384u}){OrdinaryOutputPair pair;auto *socket=pair.socket;guard(socket!=nullptr);auto before=socket->buffer_size;check(socket->set_buffer_size(size));int send=0,recv=0;socklen_t length=sizeof(int);guard(::getsockopt(socket->fd,SOL_SOCKET,SO_SNDBUF,&send,&length)==0&&length==sizeof(int));length=sizeof(int);guard(::getsockopt(socket->fd,SOL_SOCKET,SO_RCVBUF,&recv,&length)==0&&length==sizeof(int));check(send>0&&recv>0);check(socket->buffer_size==before);add_next_index_long(&values,send);add_next_index_long(&values,recv);++cases;}
-        for(double value:{0.125,1.25,7.75}){OrdinaryOutputPair pair;auto *socket=pair.socket;guard(socket!=nullptr);socket->set_timeout(value,SW_TIMEOUT_ALL);check(socket->get_timeout(SW_TIMEOUT_DNS)==value);check(socket->get_timeout(SW_TIMEOUT_CONNECT)==value);check(socket->get_timeout(SW_TIMEOUT_READ)==value);check(socket->get_timeout(SW_TIMEOUT_WRITE)==value);socket->set_timeout(0,SW_TIMEOUT_ALL);check(socket->dns_timeout==value&&socket->connect_timeout==value&&socket->read_timeout==value&&socket->write_timeout==value);
-            socket->set_timeout(value+0.5,SW_TIMEOUT_ALL);check(socket->set_kernel_read_timeout(value));check(socket->write_timeout==value&&socket->read_timeout==value+0.5);timeval time{};socklen_t length=sizeof(time);guard(::getsockopt(socket->fd,SOL_SOCKET,SO_SNDTIMEO,&time,&length)==0&&length==sizeof(time));check(time.tv_sec>=0&&time.tv_usec>=0&&(time.tv_sec>0||time.tv_usec>0));add_next_index_long(&values,time.tv_sec);add_next_index_long(&values,time.tv_usec);
-            check(socket->set_kernel_write_timeout(value+0.25));check(socket->read_timeout==value+0.25&&socket->write_timeout==value);length=sizeof(time);guard(::getsockopt(socket->fd,SOL_SOCKET,SO_RCVTIMEO,&time,&length)==0&&length==sizeof(time));check(time.tv_sec>=0&&time.tv_usec>=0&&(time.tv_sec>0||time.tv_usec>0));add_next_index_long(&values,time.tv_sec);add_next_index_long(&values,time.tv_usec);++cases;
-        }
-        {OrdinaryOutputPair pair;auto *socket=pair.socket;guard(socket!=nullptr);swoole_set_last_error(0);errno=0;check(!socket->has_timedout());check(socket->catch_error(0)==SW_WAIT);check(!socket->kernel_nobufs);++cases;}
-        for(bool readable:{false,true}){OrdinaryOutputPair pair;auto *socket=pair.socket;guard(socket!=nullptr);if(readable)preload(pair,"x");check(socket->wait_event(1000,readable?SW_EVENT_READ:SW_EVENT_WRITE)==SW_OK);if(readable){char byte=0;guard(::recv(socket->fd,&byte,1,0)==1&&byte=='x');}check(socket->out_buffer==nullptr&&!socket->send_wait&&!socket->close_wait);++cases;}
-        add_assoc_long(return_value,"cases",cases);add_assoc_zval(return_value,"outcomes",&rows);add_assoc_zval(return_value,"kernel_values",&values);
-    }catch(const std::exception &error){zval_ptr_dtor(&rows);zval_ptr_dtor(&values);zend_throw_exception(zend_ce_exception,error.what(),0);}
-}
-
-PHP_FUNCTION(swr_reactor_datagram_supported) {
-    ZEND_PARSE_PARAMETERS_NONE();array_init(return_value);
-    image(return_value,"method_image","_ZN6swoole7network6Socket11sendto_syncERKNS0_7AddressEPKvmi");
-    image(return_value,"receive_image","_ZNK6swoole7network6Socket8recvfromEPcmiP8sockaddrPj");
-    image(return_value,"sync_image","_ZN6swoole7network6Socket13recvfrom_syncEPcmiP8sockaddrPj");
-    image(return_value,"address_image","_ZN6swoole7network6Socket13recvfrom_syncEPcmiPNS0_7AddressE");
-    image(return_value,"ordinary_policy_image","swr_v1_reactor_ordinary_io");
-    image(return_value,"blocking_policy_image","swr_v1_reactor_blocking_io");
-    zval rows;array_init(&rows);unsigned cases=0;
-    auto check=[&](bool value){add_next_index_bool(&rows,value);if(!value)throw std::runtime_error("ordinary datagram assertion failed");};
-    auto guard=[](bool value){if(!value)throw std::runtime_error("positive datagram prerequisite/effect failed");};
-    try {
-        std::string payload;for(unsigned i=0;i<47;++i)payload+=static_cast<char>(i);
-        for(size_t length:{size_t(1),size_t(7),size_t(31)}){
-            // A bounded private filesystem UNIX endpoint exercises actual sendto.
-            // Native owns all resources; no external network or shared port.
-            char directory[]="/tmp/swr-reactor-datagram-XXXXXX";
-            guard(::mkdtemp(directory)!=nullptr);
-            std::string path=std::string(directory)+"/receiver";
-            int descriptor=-1,receiver=-1;network::Socket *socket=nullptr;
-            try {
-                receiver=::socket(AF_UNIX,SOCK_DGRAM,0);guard(receiver>=0);
-                network::Address destination{};destination.addr.un.sun_family=AF_UNIX;
-                guard(path.size()<sizeof(destination.addr.un.sun_path));
-                std::memcpy(destination.addr.un.sun_path,path.c_str(),path.size()+1);
-                destination.len=sizeof(destination.addr.un);
-                guard(::bind(receiver,&destination.addr.ss,destination.len)==0);
-                timeval limit{1,0};guard(::setsockopt(receiver,SOL_SOCKET,SO_RCVTIMEO,&limit,sizeof(limit))==0);
-                descriptor=::socket(AF_UNIX,SOCK_DGRAM,0);guard(descriptor>=0);
-                socket=make_socket(descriptor,SW_FD_USER);guard(socket!=nullptr);descriptor=-1;
-                size_t tx=socket->total_send_bytes,rx=socket->total_recv_bytes;
-                check(socket->sendto_sync(destination,payload.data(),length,0)==static_cast<ssize_t>(length));
-                std::string received(length,char(0));auto n=::recv(receiver,&received[0],length,0);
-                check(n==static_cast<ssize_t>(length));check(received==payload.substr(0,length));
-                check(socket->out_buffer==nullptr&&!socket->close_wait&&!socket->send_wait);
-                check(socket->total_send_bytes==tx&&socket->total_recv_bytes==rx);
-                check(socket->fd>=0&&socket->ssl==nullptr);++cases;
-            } catch(...){if(socket)socket->free();if(descriptor>=0)::close(descriptor);if(receiver>=0)::close(receiver);::unlink(path.c_str());::rmdir(directory);throw;}
-            socket->free();::close(receiver);guard(::unlink(path.c_str())==0);guard(::rmdir(directory)==0);
-            for(unsigned operation=0;operation<3;++operation){
-                int pair[2];guard(::socketpair(AF_UNIX,SOCK_DGRAM,0,pair)==0);
-                network::Socket *socket=nullptr;
-                try {
-                    socket=make_socket(pair[0],SW_FD_USER);guard(socket!=nullptr);pair[0]=-1;
-                    timeval limit{1,0};guard(::setsockopt(socket->fd,SOL_SOCKET,SO_RCVTIMEO,&limit,sizeof(limit))==0);
-                    guard(::send(pair[1],payload.data(),length,0)==static_cast<ssize_t>(length));
-                    size_t tx=socket->total_send_bytes,rx=socket->total_recv_bytes;
-                    network::Address address{};address.len=sizeof(address.addr);
-                    std::string data(length,char(0));ssize_t n;
-                    if(operation==0)n=socket->recvfrom(&data[0],length,0,&address.addr.ss,&address.len);
-                    else if(operation==1)n=socket->recvfrom_sync(&data[0],length,0,&address.addr.ss,&address.len);
-                    else n=socket->recvfrom_sync(&data[0],length,0,&address);
-                    check(n==static_cast<ssize_t>(length));check(data==payload.substr(0,length));
-                    check(address.len<=sizeof(address.addr));
-                    check(socket->out_buffer==nullptr&&!socket->close_wait&&!socket->send_wait);
-                    check(socket->total_send_bytes==tx&&socket->total_recv_bytes==rx);
-                    check(socket->fd>=0&&socket->ssl==nullptr);++cases;
-                }catch(...){if(socket)socket->free();if(pair[0]>=0)::close(pair[0]);::close(pair[1]);throw;}
-                socket->free();::close(pair[1]);
-            }
-        }
-        add_assoc_long(return_value,"cases",cases);add_assoc_zval(return_value,"outcomes",&rows);
-    }catch(const std::exception &error){zval_ptr_dtor(&rows);zend_throw_exception(zend_ce_exception,error.what(),0);}
-}
-
-static const zend_function_entry functions[]={PHP_FE(swr_reactor_supported,arginfo_swr_reactor_supported) PHP_FE(swr_reactor_callbacks_supported,arginfo_swr_reactor_supported) PHP_FE(swr_reactor_handlers_supported,arginfo_swr_reactor_supported) PHP_FE(swr_reactor_builtins_supported,arginfo_swr_reactor_supported) PHP_FE(swr_reactor_output_supported,arginfo_swr_reactor_supported) PHP_FE(swr_reactor_blocking_supported,arginfo_swr_reactor_supported) PHP_FE(swr_reactor_ordinary_supported,arginfo_swr_reactor_supported) PHP_FE(swr_reactor_datagram_supported,arginfo_swr_reactor_supported) PHP_FE_END};
+static const zend_function_entry functions[]={PHP_FE(swr_reactor_supported,arginfo_swr_reactor_supported) PHP_FE(swr_reactor_callbacks_supported,arginfo_swr_reactor_supported) PHP_FE(swr_reactor_builtins_supported,arginfo_swr_reactor_supported) PHP_FE(swr_reactor_output_supported,arginfo_swr_reactor_supported) PHP_FE(swr_reactor_blocking_supported,arginfo_swr_reactor_supported) PHP_FE_END};
 extern "C" {
 zend_module_entry swr_reactor_supported_module_entry={STANDARD_MODULE_HEADER,"swr_reactor_supported",functions,
     nullptr,nullptr,nullptr,nullptr,nullptr,"1",STANDARD_MODULE_PROPERTIES};

@@ -41,14 +41,13 @@ p.add_argument('--require-typed-buffer',action='store_true',help='Require litera
 p.add_argument('--require-batch',action='store_true',help='Refuse older production sources before compiling/running the consumer')
 profiles=p.add_mutually_exclusive_group()
 profiles.add_argument('--callbacks',action='store_true',help='Separate genuine ordered callback-storage profile; require new matching production source')
-profiles.add_argument('--handlers',action='store_true',help='Separate actual complete handler-routing profile; require matching new source')
 profiles.add_argument('--builtins',action='store_true',help='Separate actual deferred/begin/idle/exit profile; require matching new source')
 profiles.add_argument('--socket-output',action='store_true',help='Separate actual ordinary Socket DATA/small-positive-file profile; matching current output/parameters source required')
-profiles.add_argument('--blocking',action='store_true',help='Genuine whole blocking Socket/writable wait/Native IOVector positive consumer; matching new producer required')
-profiles.add_argument('--ordinary-io',action='store_true',help='Broad actual ordinary Socket I/O/fd/buffer/timeouts; require matching new-source producer');profiles.add_argument('--datagram',action='store_true',help='Positive actual private UNIX datagram I/O; require matching new-source producer');a=p.parse_args();output=a.output.resolve()
+profiles.add_argument('--blocking',action='store_true',help='Genuine blocking Socket/writable wait/IOVector positive consumer')
+a=p.parse_args();output=a.output.resolve()
 if output.exists():raise ValueError('Receipt exists; choose a unique new attempt path')
 work=output.parent/('reactor-supported-'+uuid.uuid4().hex);work.mkdir(parents=True)
-report=dict(compiler_identity=subprocess.check_output(['c++','--version'],text=True),openssl_sdk_version=subprocess.check_output(['pkg-config','--modversion','openssl'],text=True).strip(),passed=False,scope=__doc__,assigned_to='@loks0n',work=str(work),profile='ordinary-datagram-positive' if a.datagram else 'ordinary-socket-io-options-positive' if a.ordinary_io else 'ordinary-blocking-socket-iov-positive' if a.blocking else 'ordinary-socket-output-positive' if a.socket_output else 'installed-builtins-positive' if a.builtins else 'handler-routing-positive' if a.handlers else 'ordered-callback-storage-positive' if a.callbacks else 'installed-filter-single-kqueue-record-positive',commands=[],bindings=[],results=[],limits=['Private AF_UNIX positive readiness/timeout/ONCE with live tokens only. No error, allocation failure, reentry, fd reuse, lifetime, external network or timing probes.','Compiled source identities are separate from the later fixture identity; old artifacts never receive new decoder credit.'])
+report=dict(compiler_identity=subprocess.check_output(['c++','--version'],text=True),openssl_sdk_version=subprocess.check_output(['pkg-config','--modversion','openssl'],text=True).strip(),passed=False,scope=__doc__,assigned_to='@loks0n',work=str(work),profile='ordinary-blocking-socket-iov-positive' if a.blocking else 'ordinary-socket-output-positive' if a.socket_output else 'installed-builtins-positive' if a.builtins else 'ordered-callback-storage-positive' if a.callbacks else 'installed-filter-single-kqueue-record-positive',commands=[],bindings=[],results=[],limits=['Private AF_UNIX positive readiness/timeout/ONCE with live tokens only. No error, allocation failure, reentry, fd reuse, lifetime, external network or timing probes.','Compiled source identities are separate from the later fixture identity; old artifacts never receive new decoder credit.'])
 def run(command):
     require_build_space(work)
     r=run_isolated(list(map(str,command)),cwd=work,timeout=30)
@@ -99,8 +98,6 @@ try:
     if a.require_batch and not report['selected_batch_decoder_compiled']:raise ValueError('Selected source predates the Rust batch decoder; no current caller qualification')
     report['selected_callback_storage_compiled']='crates/reactor/src/callbacks.rs' in selected_inputs
     if a.callbacks and not report['selected_callback_storage_compiled']:raise ValueError('Selected source predates Rust callback storage; no current caller qualification')
-    report['selected_handler_routing_compiled']='crates/reactor/src/handlers.rs' in selected_inputs
-    if a.handlers and not report['selected_handler_routing_compiled']:raise ValueError('Selected source predates Rust handler routing; no current caller qualification')
     report['selected_builtins_compiled']='crates/reactor/src/builtins.rs' in selected_inputs
     if a.builtins and not report['selected_builtins_compiled']:raise ValueError('Selected source predates Rust builtin orchestration; no current caller qualification')
     report['selected_socket_output_compiled']='crates/reactor/src/output.rs' in selected_inputs
@@ -108,17 +105,9 @@ try:
     if a.socket_output:
         compiled=subprocess.check_output(['git','-C',str(ROOT),'show',a.source_ref+':crates/reactor/src/output.rs'],text=True)
         if 'fn swr_v1_reactor_output_parameters(' not in compiled:raise ValueError('Selected source predates whole parameter helper; no new helper credit')
-    report['selected_blocking_iov_compiled']=all(name in selected_inputs for name in ['crates/reactor/src/blocking.rs','crates/reactor/src/iov_progress.rs'])
-    if a.blocking and not report['selected_blocking_iov_compiled']:raise ValueError('Selected source predates whole blocking/IOVector policy; no new-source qualification')
-    report['selected_ordinary_options_compiled']=all(name in selected_inputs for name in ['crates/reactor/src/ordinary_io.rs','crates/reactor/src/fd_options.rs','crates/reactor/src/socket_policy.rs','crates/reactor/src/socket_options.rs'])
-    if a.ordinary_io and not report['selected_ordinary_options_compiled']:raise ValueError('Selected source predates whole ordinary Socket/options policy; no new-source qualification')
-    if a.datagram:
-        for name,marker in [('ordinary_io.rs','0 if kind == 9'),('blocking.rs','if kind > 6')]:
-            key='crates/reactor/src/'+name
-            if key not in selected_inputs:raise ValueError('Selected source predates datagram policy')
-            compiled=subprocess.check_output(['git','-C',str(ROOT),'show',a.source_ref+':'+key],text=True)
-            if marker not in compiled:raise ValueError('Selected source predates whole datagram policy; no new caller credit')
-    source=Path(__file__).parent;fixture=source/('production_datagram.php' if a.datagram else 'production_ordinary.php' if a.ordinary_io else 'production_blocking.php' if a.blocking else 'production_output.php' if a.socket_output else 'production_builtins.php' if a.builtins else 'production_handlers.php' if a.handlers else 'production_callbacks.php' if a.callbacks else 'production_supported.php');addon_source=source/'production_supported.cc'
+    report['selected_blocking_iov_compiled']='crates/reactor/src/iov_owned.rs' in selected_inputs
+    if a.blocking and not report['selected_blocking_iov_compiled']:raise ValueError('Selected source predates the Rust-owned IOVector; no new-source qualification')
+    source=Path(__file__).parent;fixture=source/('production_blocking.php' if a.blocking else 'production_output.php' if a.socket_output else 'production_builtins.php' if a.builtins else 'production_callbacks.php' if a.callbacks else 'production_supported.php');addon_source=source/'production_supported.cc'
     for engine,row in zip(engines,identities):
         selected=bool(row['rust_feature_bits']&16384);export=a.selected_export if selected else a.native_export
         manifest=a.build_manifest if selected else export.parent/'build-manifest.json'
@@ -137,29 +126,12 @@ try:
         undefined=subprocess.check_output(['nm','-u',str(addon)],text=True)
         if '_ZN6swoole7ReactorC1EiNS0_4TypeE' not in undefined:raise ValueError('Addon does not call genuine production constructor')
         result=json.loads(run(engine.command('-d','extension='+str(addon),fixture)))
-        if result['checks']!=(72 if a.datagram else 180 if a.ordinary_io else 61 if a.blocking else 78 if a.socket_output else 31 if a.builtins else 2194 if a.handlers else 22 if a.callbacks else 210 if sys.platform=='darwin' else 240) or result['method_image']!=str(engine.extension):raise ValueError('Actual production consumer/origin differs')
-        if a.datagram:
-            origins=['receive_image','sync_image','address_image']
-            literal_scope=addon_source.read_text().split('PHP_FUNCTION(swr_reactor_datagram_supported)')[1].split('static const zend_function_entry')[0]
-            images=dict(re.findall(r'image\(return_value,"([^"]+)","([^"]+)"\)',literal_scope))
-            symbols={key:value for key,value in images.items() if not value.startswith('swr_')}
-            if set(symbols)!=set(origins+['method_image']) or any(symbol not in undefined for symbol in symbols.values()):raise ValueError('Addon must invoke all4 genuine datagram methods')
-            if result['cases']!=12 or any(result[key]!=str(engine.extension) for key in origins):raise ValueError('Actual datagram origins/cases differ')
-            if selected and any(result[key]!=str(engine.extension) for key in ['ordinary_policy_image','blocking_policy_image']):raise ValueError('Actual datagram Rust origins differ')
-        if a.ordinary_io:
-            origins=['recv_image','peek_image','readv_image','writev_image','read_image','write_image','receive_image','fd_image','buffer_image','set_timeout_image','get_timeout_image','kernel_read_image','kernel_write_image','poll_image','error_image','timedout_image']
-            literal_scope=addon_source.read_text().split('PHP_FUNCTION(swr_reactor_ordinary_supported)')[1].split('\nPHP_FUNCTION(')[0]
-            literal_images=dict(re.findall(r'image\(return_value,"([^"]+)","([^"]+)"\)',literal_scope))
-            native_symbols={key:value for key,value in literal_images.items() if not value.startswith('swr_')}
-            if set(native_symbols)!=set(origins+['method_image']) or any(symbol not in undefined for symbol in native_symbols.values()):raise ValueError('Addon must invoke all17 genuine ordinary Socket methods')
-            if result['cases']!=35 or any(result[key]!=str(engine.extension) for key in origins):raise ValueError('Actual ordinary method origins/cases differ')
-            if selected and any(result[key]!=str(engine.extension) for key in ['ordinary_policy_image','blocking_policy_image','buffer_policy_image','timeout_policy_image','poll_policy_image','error_policy_image','fd_policy_image']):raise ValueError('Actual ordinary Rust policy origins differ')
+        if result['checks']!=(61 if a.blocking else 78 if a.socket_output else 31 if a.builtins else 22 if a.callbacks else 210 if sys.platform=='darwin' else 240) or result['method_image']!=str(engine.extension):raise ValueError('Actual production consumer/origin differs')
         if a.blocking:
             if a.require_owned_iov:owned_iov.consumer(result,undefined,str(engine.extension),selected)
             symbols=['_ZN6swoole7network6Socket9send_syncEPKvmi','_ZN6swoole7network6Socket11writev_syncEPK5iovecm','_ZN6swoole7network6Socket13sendfile_syncEPKc'+('x' if sys.platform=='darwin' else 'l')+'m','_ZN6swoole7network8IOVector15update_iteratorEl']
             if any(symbol not in undefined for symbol in symbols):raise ValueError('Addon must invoke all real blocking Socket/IOVector methods')
             if result['cases']!=8 or any(result[key]!=str(engine.extension) for key in ['vector_image','file_image','wait_image','event_image','iov_image']):raise ValueError('Actual blocking method origins/cases differ')
-            if selected and any(result[key]!=str(engine.extension) for key in ['wait_policy_image','io_policy_image','file_policy_image','event_policy_image','iov_policy_image']):raise ValueError('Actual compiled blocking/IOVector policy origins differ')
         if a.socket_output:
             symbols=['_ZN6swoole7network6Socket11handle_sendEv','_ZN6swoole7network6Socket15handle_sendfileEv','_ZN6swoole7network6Socket14sendfile_asyncEPKc'+('x' if sys.platform=='darwin' else 'l')+'m']
             if any(symbol not in undefined for symbol in symbols):raise ValueError('Addon must call all genuine production Socket output methods')
@@ -175,14 +147,11 @@ try:
             if selected and any(result.get(key)!=str(engine.extension) for key in ['defer_push_image','defer_step_image','defer_clear_image']):raise ValueError('Actual selected Rust deferred queue origins differ')
         if a.builtins and (result['begin_image']!=str(engine.extension) or result['end_image']!=str(engine.extension)):raise ValueError('Actual production builtin method origins differ')
         if selected and a.builtins and result['builtins_image']!=str(engine.extension):raise ValueError('Actual Rust builtin origin differs')
-        if a.handlers and (result['setter_image']!=str(engine.extension) or result['isset_image']!=str(engine.extension)):raise ValueError('Actual production handler method origin differs')
-        if selected and a.handlers and (result['handlers_image']!=str(engine.extension) or 'swr_v1_reactor_handler_select' not in undefined):raise ValueError('Addon is not an actual Rust handler consumer')
         if selected and a.callbacks and result['callbacks_image']!=str(engine.extension):raise ValueError('Rust callback storage origin differs')
-        if selected and not (a.callbacks or a.handlers or a.builtins or a.socket_output or a.blocking or a.ordinary_io or a.datagram) and result['storage_image']!=str(engine.extension):raise ValueError('Rust storage origin differs')
-        if selected and not (a.callbacks or a.handlers or a.builtins or a.socket_output or a.blocking or a.ordinary_io or a.datagram) and report['selected_batch_decoder_compiled'] and result['batch_image']!=str(engine.extension):raise ValueError('Compiled Rust decoder origin differs')
+        if selected and not (a.callbacks or a.builtins or a.socket_output or a.blocking) and result['storage_image']!=str(engine.extension):raise ValueError('Rust storage origin differs')
+        if selected and not (a.callbacks or a.builtins or a.socket_output or a.blocking) and report['selected_batch_decoder_compiled'] and result['batch_image']!=str(engine.extension):raise ValueError('Compiled Rust decoder origin differs')
         if any(sha(mirror/name)!=digest for name,digest in row['headers']['files_sha256'].items()):raise ValueError('Attested headers changed')
         report['results'].append(dict(engine=engine.name,**result))
-    if a.ordinary_io and report['results'][0]['kernel_values']!=report['results'][1]['kernel_values']:raise ValueError('Native/selected actual kernel option values differ')
     report['typed_buffer_execution_qualified']=bool(a.require_typed_buffer and a.socket_output)
     report['typed_buffer_scope']='existing9/78output consumer plus exact constructor/front/source/origins' if a.require_typed_buffer and a.socket_output else 'capability/source/SDK preconditions only; no typed Buffer execution claim' if a.require_typed_buffer else 'not requested'
     report['passed']=True

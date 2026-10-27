@@ -251,9 +251,8 @@ def plan(args, reports):
     if 'reactor' in modules:
         if integrate:
             for phase, extra in [('reactor-production-supported', []), ('reactor-production-callbacks', ['--callbacks']),
-                                 ('reactor-production-handlers', ['--handlers']), ('reactor-production-builtins', ['--builtins']),
+                                 ('reactor-production-builtins', ['--builtins']),
                                  ('reactor-production-socket-output', ['--socket-output', '--require-output-workflow']),
-                                 ('reactor-production-blocking', ['--blocking']), ('reactor-production-ordinary-io', ['--ordinary-io']), ('reactor-production-datagram', ['--datagram']),
                                  ('reactor-production-owned-iov', ['--blocking', '--require-owned-iov']),
                                  ('reactor-production-owned-defer', ['--builtins', '--require-owned-defer'])]:
                 script(phase, 'tests/modules/reactor/production_supported.py',
@@ -264,7 +263,7 @@ def plan(args, reports):
                        '--selected-export', selected_export / 'export.json', '--native-export', native_export / 'export.json',
                        '--require-batch', *(['--require-typed-buffer'] if typed_buffer(args) else []),
                        *extra, *report(phase))
-        for name in ['registration', 'write_positive', 'write_arguments', 'output', 'wait', 'callbacks', 'initialize', 'handlers', 'builtins']:
+        for name in ['output', 'wait', 'callbacks', 'initialize', 'builtins']:
             phase = 'reactor-' + name.replace('_', '-')
             script(phase, 'tests/modules/reactor/' + name + '.py', '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
@@ -273,11 +272,7 @@ def plan(args, reports):
                '--source', ROOT / 'target/upstream/src', '--sanitize',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                '--report', reports / 'reactor-callback-queues.json')
-        script('reactor-write-workflow', 'tests/modules/reactor/write_positive.py',
-               '--source', ROOT / 'target/upstream/src', '--workflow', '--sanitize',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-               '--report', reports / 'reactor-write-workflow.json')
-        for phase, flag in [('reactor-blocking-output', '--blocking'), ('reactor-iov-progress', '--iov-progress'), ('reactor-ordinary-io', '--ordinary-io'), ('reactor-socket-policy', '--socket-policy'), ('reactor-fd-options', '--fd-options'), ('reactor-socket-options', '--socket-options'), ('reactor-forwarding', '--forwarding'), ('reactor-datagram', '--datagram'), ('reactor-connect', '--connect')]:
+        for phase, flag in [('reactor-iov-progress', '--iov-progress'), ('reactor-forwarding', '--forwarding')]:
             script(phase, 'tests/modules/reactor/output.py', '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', flag,
                    '--report', reports / (phase + '.json'))
@@ -290,9 +285,6 @@ def plan(args, reports):
         script('reactor-poll-snapshot', 'tests/modules/reactor/poll_snapshot.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
                '--report', reports / 'reactor-poll-snapshot.json')
-        script('reactor-filters', 'tests/modules/reactor/filters_gate.py', '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
-               '--report', reports / 'reactor-filters.json')
         script('reactor-compile', 'tests/modules/reactor/compile_gate.py', '--source', ROOT / 'target/upstream/src',
                '--report', reports / 'reactor-compile.json')
     if typed_buffer(args):

@@ -44,9 +44,6 @@ impl ReactorCallbacks {
             0
         }
     }
-    fn is_empty(&self) -> bool {
-        self.entries.iter().all(Vec::is_empty)
-    }
 }
 #[repr(C)]
 #[derive(Default)]
@@ -87,36 +84,6 @@ pub unsafe extern "C" fn swr_v1_reactor_callbacks_lookup(
     } else {
         0
     }
-}
-
-/// Publish a Native empty payload before its Native copy assignment, preserving
-/// the original map operator[] logical prefix if that later assignment throws.
-///1 inserted/0 existing (actual token returned)/-2 capacity/-1 invalid.
-/// # Safety
-/// Owner slot/output are live, exclusive, aligned and disjoint; input token is a
-/// stable nonzero Native payload identity. Caller retains candidate ownership
-/// unless insertion succeeds. No Native function or destructor is called here.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_reactor_callbacks_insert(
-    slot: *mut *mut ReactorCallbacks,
-    kind: u32,
-    key: i32,
-    token: usize,
-    actual: *mut usize,
-) -> i32 {
-    // SAFETY: `slot` is null or live, aligned and exclusively lent for this call.
-    let slot = unsafe { slot.as_mut() };
-    // SAFETY: `actual` is null or live, aligned and exclusively lent for this call.
-    let actual = unsafe { actual.as_mut() };
-    let (Some(slot), Some(actual)) = (slot, actual) else {
-        return -1;
-    };
-    if kind > 1 || token == 0 {
-        return -1;
-    }
-    *actual = 0;
-    // SAFETY: `slot` is the caller's live, exclusive opaque owner slot.
-    unsafe { insert_metadata(slot, kind, key, token, actual) }
 }
 
 // Only the opaque slot's live-pointer admission remains unsafe. All actual
@@ -252,49 +219,6 @@ fn next_metadata(
         cursor.phase = 2;
         0
     }
-}
-
-/// Defined member destruction order is exit then end; within-map destruction
-/// order is not a new parity claim for the target's std::map implementation.
-/// # Safety
-/// Owner/output are live/exclusive/disjoint. Native destroys each detached
-/// payload after return before asking again; no Rust borrow spans that effect.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_reactor_callbacks_drain(
-    owner: *mut ReactorCallbacks,
-    kind: *mut u32,
-    token: *mut usize,
-) -> i32 {
-    // SAFETY: `kind` is null or live, aligned and exclusively lent for this call.
-    let kind = unsafe { kind.as_mut() };
-    // SAFETY: `token` is null or live, aligned and exclusively lent for this call.
-    let token = unsafe { token.as_mut() };
-    let (Some(kind), Some(token)) = (kind, token) else {
-        return -1;
-    };
-    *token = 0;
-    // SAFETY: `owner` is null or live, aligned and exclusively lent for this call.
-    let Some(owner) = (unsafe { owner.as_mut() }) else {
-        return 0;
-    };
-    owner.drain(kind, token)
-}
-
-/// Free only empty metadata; no Native payload is ever dropped by Rust.
-/// # Safety
-/// Owner is null or live/exclusive, detached from Native callback/array use.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_reactor_callbacks_free(owner: *mut ReactorCallbacks) -> i32 {
-    // SAFETY: `owner` is null or live and aligned for this call.
-    let Some(value) = (unsafe { owner.as_ref() }) else {
-        return 0;
-    };
-    if !value.is_empty() {
-        return -1;
-    }
-    // SAFETY: a live, empty, exclusively owned store, released once.
-    unsafe { release_metadata(owner) };
-    0
 }
 
 /// Complete empty-payload publication/retry policy. Candidate allocation and
@@ -517,77 +441,6 @@ mod tests {
                 assert_eq!(released, [(2, 202), (1, 103), (1, 101)]);
                 assert!(owner.is_null());
             }
-        }
-    }
-    #[test]
-    fn callbacks_positive_fresh_ordered_insert_erase_and_exit_stop() {
-        unsafe {
-            let mut owner = ptr::null_mut();
-            let mut token = 0;
-            for (kind, key, value) in [
-                (0, 20, 120),
-                (0, 10, 110),
-                (0, 30, 130),
-                (1, 1, 201),
-                (1, 2, 202),
-            ] {
-                assert_eq!(
-                    swr_v1_reactor_callbacks_insert(&mut owner, kind, key, value, &mut token),
-                    1
-                );
-                assert_eq!(token, value);
-            }
-            let mut cursor = ReactorCallbackCursor::default();
-            assert_eq!(
-                swr_v1_reactor_callbacks_next(owner, 0, &mut cursor, 1, &mut token),
-                1
-            );
-            assert_eq!((cursor.key, token), (10, 110));
-            assert_eq!(swr_v1_reactor_callbacks_erase(owner, 0, 20, &mut token), 1);
-            assert_eq!(token, 120);
-            assert_eq!(
-                swr_v1_reactor_callbacks_insert(&mut owner, 0, 25, 125, &mut token),
-                1
-            );
-            assert_eq!(
-                swr_v1_reactor_callbacks_next(owner, 0, &mut cursor, 1, &mut token),
-                1
-            );
-            assert_eq!((cursor.key, token), (25, 125));
-            // An insertion before the cursor moves its entry; the walk still continues after 25.
-            assert_eq!(
-                swr_v1_reactor_callbacks_insert(&mut owner, 0, 5, 105, &mut token),
-                1
-            );
-            assert_eq!(
-                swr_v1_reactor_callbacks_next(owner, 0, &mut cursor, 1, &mut token),
-                1
-            );
-            assert_eq!((cursor.key, token), (30, 130));
-            assert_eq!(
-                swr_v1_reactor_callbacks_next(owner, 0, &mut cursor, 1, &mut token),
-                0
-            );
-            let mut exit = ReactorCallbackCursor::default();
-            assert_eq!(
-                swr_v1_reactor_callbacks_next(owner, 1, &mut exit, 1, &mut token),
-                1
-            );
-            assert_eq!(token, 201);
-            assert_eq!(
-                swr_v1_reactor_callbacks_next(owner, 1, &mut exit, 0, &mut token),
-                2
-            );
-            let mut kind = 0;
-            let mut released = Vec::new();
-            while swr_v1_reactor_callbacks_drain(owner, &mut kind, &mut token) == 1 {
-                released.push((kind, token));
-            }
-            assert_eq!(
-                released,
-                [(1, 202), (1, 201), (0, 130), (0, 125), (0, 110), (0, 105)]
-            );
-            assert_eq!(swr_v1_reactor_callbacks_free(owner), 0);
         }
     }
 }

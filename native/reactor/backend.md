@@ -58,26 +58,8 @@ Native throws `bad_alloc` after Rust returns. Negative counts keep Native
 
 ## Registration
 
-Rust selects poll admission, epoll control-result/cleanup/publication and
-kqueue filter/result/cleanup/publication. Native keeps the single registry,
-kernel calls, warnings/backtraces and map publication.
-
-- Poll: existence is checked before capacity; removed before existence.
-- Epoll: `get_events` stays Native for compatibility but forwards flag
-  translation to the libc mask export (`epoll_mask`). Add publishes before its
-  trace; set/delete trace before publishing. Delete calls Native
-  `after_removal_failure` before passing fresh errno to Rust.
-- Kqueue: read before write, partial filter effects, default read, per-filter
-  deletion; fresh current events are supplied after successful effects. After
-  the Native removal observer, Rust decides errno cleanup before requesting
-  another event-field read.
-
-Observation guards (applies to write/flush shims too): admission capacity is
-captured before effects; no Socket fields are re-read after a full successful
-send; empty/length/TLS, output-presence and writable-interest facts are read
-only in the phases that need them; `close_wait` is read only after a negative
-send and `send_wait` only when `close_wait` was false; the timer is inspected
-only after draining; registration add/set do not read `removed`.
+`add`/`set`/`del` on all three backends, poll's event translators and the
+interest methods in `swoole_reactor.h` are upstream's code (#336).
 
 ## Wait
 

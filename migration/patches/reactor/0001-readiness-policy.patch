@@ -1,5 +1,5 @@
 diff --git a/include/swoole_reactor.h b/include/swoole_reactor.h
-index 238c0e6..84d8ff1 100644
+index 238c0e6..eadabda 100644
 --- a/include/swoole_reactor.h
 +++ b/include/swoole_reactor.h
 @@ -20,2 +20,8 @@
@@ -40,33 +40,6 @@ index 238c0e6..84d8ff1 100644
 +        for (auto &kv : sockets_)
 +        {
              callback(kv.first, kv.second);
-@@ -306,12 +312,3 @@ class Reactor {
-     ReactorHandler get_handler(const FdType fd_type, const EventType event) const {
--        switch (event) {
--        case SW_EVENT_READ:
--            return read_handler[fd_type];
--        case SW_EVENT_WRITE:
--            return write_handler[fd_type] ? write_handler[fd_type] : default_write_handler;
--        case SW_EVENT_ERROR:
--            return error_handler[fd_type] ? error_handler[fd_type] : default_error_handler;
--        default:
--            abort();
--        }
-+        return swr_reactor_resolve_handler(this, fd_type, event, 2);
-     }
-@@ -319,11 +316,3 @@ class Reactor {
-     ReactorHandler get_error_handler(const FdType fd_type) const {
--        ReactorHandler handler = get_handler(fd_type, SW_EVENT_ERROR);
--        // error callback is not set, try to use readable or writable callback
--        if (handler == nullptr) {
--            handler = get_handler(fd_type, SW_EVENT_READ);
--            if (handler == nullptr) {
--                handler = get_handler(fd_type, SW_EVENT_WRITE);
--            }
--        }
--        return handler;
-+        return swr_reactor_resolve_handler(this, fd_type, 0, 3);
-     }
 diff --git a/src/reactor/epoll.cc b/src/reactor/epoll.cc
 index cc871e3..d66a56b 100644
 --- a/src/reactor/epoll.cc

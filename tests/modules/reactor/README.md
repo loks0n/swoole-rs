@@ -10,23 +10,19 @@ Most gates take the pinned upstream source and a Rust FFI archive:
     python3 tests/modules/reactor/NAME.py --source target/upstream/src \
         --archive PATH/libswoole_rs_ffi.a --sanitize --report OUT.json
 
-`NAME` is one of `registration`, `write_positive` (`--workflow` for the write
-workflow), `write_arguments`, `output`, `wait`, `callbacks`, `callback_queues`,
-`initialize`, `handlers`, `builtins`, `backend_storage`,
-`flush`, `poll_snapshot`, `filters_gate`, `write_gate`,
-`stream_gate` and `iov_owned`. Each extracts the original and patched function
+`NAME` is one of `output`, `wait`, `callbacks`, `callback_queues`,
+`initialize`, `builtins`, `backend_storage`, `flush`, `poll_snapshot`,
+`write_gate`, `stream_gate` and `iov_owned`. Each extracts the original and patched function
 bodies from upstream after applying `migration/patches/reactor/` (patch
 checksums must match the manifest), compiles them against native facades and the
 archive, and checks that both variants behave the same. `output.py` also takes
-one of `--blocking`, `--iov-progress`, `--ordinary-io`, `--socket-policy`,
-`--fd-options`, `--socket-options`, `--forwarding`, `--datagram` or `--connect`.
+`--iov-progress` or `--forwarding`.
 
 Gates that need no upstream source:
 
 - `compile_gate.py --source S --report R`: original and patched backend translation units compile as C++14.
 - `buffer_typed_compile.py --source S --master-patch P --report R`: typed Buffer compositions compile.
 - `declarations.py --archive A --report R`: every `swr_v1_reactor_*`/`swr_v1_stream_*` declaration in the header is defined in the archive.
-- `callback_internal.py --report R`: compares current and control Rust callback metadata operations.
 - `sockets_gnu_source.py --candidate-dir D --report R`: compares the Rust socket store with GNU libstdc++ hashtable bodies (inputs pinned by checksum in `gnu_source_body.py`).
 
 
@@ -44,8 +40,7 @@ both engines:
         --require-batch --output OUT.json
 
 Profiles: default (readiness over AF_UNIX socketpairs), `--callbacks`,
-`--handlers`, `--builtins`, `--socket-output`, `--blocking`, `--ordinary-io`,
-`--datagram`. Extra identity checks: `--require-owned-iov` (with
+`--builtins`, `--socket-output`, `--blocking`. Extra identity checks: `--require-owned-iov` (with
 `--blocking`) and `--require-owned-defer` (with `--builtins`) check the Rust-owned storage
 imports and origins against the Native control; `--require-output-workflow`
 (with `--socket-output`) and `--require-typed-buffer` refuse a selected build
@@ -56,17 +51,13 @@ missing WRITE filter deletion warned, and its assertions assumed poll ordering
 and ONCE across separate kqueue records). The supported profile covers
 single-filter kqueue records only.
 
-## Sanitizer and benchmarks
+## Sanitizer
 
 `rust_asan.py --source S --target EMPTY_DIR --report R --PROFILE-only` builds
 the reactor crate with `-Zsanitizer=address`, runs its filtered unit tests and
 the matching facade gates against the instrumented archive. A profile flag is
 required. Cargo intermediates go in a keyed cache beside `--target` (or under
 `--dependency-target-root`).
-
-`performance.py --prepared P --backend poll|kqueue|epoll --output R` validates
-prepared upstream/reactor consumers; `--measure` runs the timing loop and should
-be used without concurrent workloads.
 
 ## Unit tests
 

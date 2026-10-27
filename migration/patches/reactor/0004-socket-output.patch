@@ -1,5 +1,5 @@
 diff --git a/src/network/socket.cc b/src/network/socket.cc
-index ed39457..ff2a527 100644
+index ed39457..93deb24 100644
 --- a/src/network/socket.cc
 +++ b/src/network/socket.cc
 @@ -21,2 +21,7 @@
@@ -76,56 +76,7 @@ index ed39457..ff2a527 100644
 +    offset_bytes = reply.offset_bytes;
 +    if (reply.action == 1) iov_iterator += reply.advance;
  }
-@@ -197,2 +172,27 @@ bool Socket::wait_for(const std::function<ReturnCode()> &fn, int event, int time
- 
-+// Native effects only; the synchronous callback remains outside every Rust
-+// frame. File offset facts are requested only after its actual send returns.
-+template<class Effect>
-+static ReturnCode swr_socket_blocking_io(Socket *socket, uint32_t kind, size_t length, ssize_t &bytes,
-+                                         const Effect &effect, off_t *offset = nullptr, off_t end = 0, int flags = 0) {
-+    uint32_t phase = 0;
-+    ssize_t result = 0;
-+    int observed = 0;
-+    int64_t begin_fact = flags, end_fact = 0;
-+    for (;;) {
-+        auto reply = swr_v1_reactor_blocking_io(kind, phase, length, bytes, result, observed, begin_fact, end_fact);
-+        phase = reply.phase;
-+        switch (reply.action) {
-+        case 0: return static_cast<ReturnCode>(reply.value);
-+        case 1: result = effect(reply.offset, reply.length, reply.value); break;
-+        case 2: observed = errno; break;
-+        case 3: observed = socket->catch_error(errno); break;
-+        case 4: swoole_set_last_error(errno); break;
-+        case 5: bytes = reply.value; break;
-+        case 6: begin_fact = *offset; end_fact = end; break;
-+        default: std::abort();
-+        }
-+    }
-+}
-+
- int Socket::sendfile_sync(const char *filename, off_t offset, size_t length) {
-@@ -432,14 +432,8 @@ ssize_t Socket::recvfrom_sync(char *buf, size_t len, int flags, sockaddr *addr,
-     ssize_t bytes = 0;
--
--    auto rv = wait_for(
--        [this, buf, len, flags, addr, addr_len, &bytes]() {
--            ssize_t n = recvfrom(buf, len, flags, addr, addr_len);
--            CHECK_RETURN_VALUE(n, SW_READY);
--            bytes = n;
--            return SW_READY;
--        },
--        SW_EVENT_READ,
--        sec2msec(read_timeout));
--
--    return rv ? bytes : -1;
-+    auto rv = wait_for([this, buf, len, flags, addr, addr_len, &bytes]() {
-+        return swr_socket_blocking_io(this, 6, 0, bytes, [this, buf, len, flags, addr, addr_len](size_t, size_t, int64_t) {
-+            return recvfrom(buf, len, flags, addr, addr_len);
-+        });
-+    }, SW_EVENT_READ, sec2msec(read_timeout));
-+    return swr_v1_reactor_blocking_io(3, 0, 0, bytes, 0, rv, 0, 0).value;
- }
-@@ -745,14 +739,21 @@ bool Socket::set_kernel_write_timeout(double timeout) {
+@@ -745,14 +720,21 @@ bool Socket::set_kernel_write_timeout(double timeout) {
  int Socket::handle_sendfile() {
 +    static_assert(SW_WAIT == 2 && SW_CLOSE == 3 && SW_ERROR == 4, "Native write classifications");
      Buffer *buffer = out_buffer;
@@ -156,7 +107,7 @@ index ed39457..ff2a527 100644
 +        case 2: task->corked = static_cast<int>(reply.value); break;
 +        case 3: {
      size_t sendn = get_sendfile_chunk_size(task->begin, task->end);
-@@ -761,34 +762,20 @@ int Socket::handle_sendfile() {
+@@ -761,34 +743,20 @@ int Socket::handle_sendfile() {
      swoole_trace("rv=%ld|begin=%ld|sendn=%lu|end=%lu", rv, (long) task->begin, sendn, task->end);
 -
 -    if (rv <= 0) {
@@ -205,7 +156,7 @@ index ed39457..ff2a527 100644
 -
 -    return SW_OK;
  }
-@@ -799,42 +786,61 @@ int Socket::handle_sendfile() {
+@@ -799,42 +767,61 @@ int Socket::handle_sendfile() {
  int Socket::handle_send() {
 +    static_assert(SW_WAIT == 2 && SW_CLOSE == 3 && SW_ERROR == 4, "Native write classifications");
      Buffer *buffer = out_buffer;
@@ -300,11 +251,11 @@ index ed39457..ff2a527 100644
 +
 +#if !defined(SWOOLE_RS_BUFFER_TYPED) || !SWOOLE_RS_BUFFER_TYPED
  static void Socket_sendfile_destructor(BufferChunk *chunk) {
-@@ -843,2 +849,3 @@ static void Socket_sendfile_destructor(BufferChunk *chunk) {
+@@ -843,2 +830,3 @@ static void Socket_sendfile_destructor(BufferChunk *chunk) {
  }
 +#endif
  
-@@ -853,17 +860,29 @@ ssize_t Socket::sendfile(const File &fp, off_t *offset, size_t length) {
+@@ -853,17 +841,29 @@ ssize_t Socket::sendfile(const File &fp, off_t *offset, size_t length) {
  int Socket::sendfile_async(const char *filename, off_t offset, size_t length) {
 -    std::unique_ptr<SendfileRequest> task(new SendfileRequest(filename, offset));
 -

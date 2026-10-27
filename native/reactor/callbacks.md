@@ -1,4 +1,4 @@
-# Reactor callbacks, handlers and builtin scheduling
+# Reactor callbacks and builtin scheduling
 
 ## Ordered end/exit callbacks
 
@@ -39,24 +39,8 @@ ABI.
 
 ## Handlers
 
-Rust owns routing for `set_handler`, `isset_handler`, `get_handler` and
-`get_error_handler`. Public arrays, default slots and function-pointer types are
-unchanged; function pointers never enter Rust.
-
-- set/isset: legacy events below 256 mean READ; then READ bit priority, then
-  WRITE, then ERROR.
-- get: exact event match, with the Native write/error defaults.
-- error resolution: error, default-error, read, write, default-write, stopping
-  at the first present slot.
-
-Native presence mask: bit (slot-1) for read=1, write=2, error=3,
-default-write=4, default-error=5. The high bit requests preflight: Rust either
-selects READ directly (returning its slot, possibly null) or asks Native for
-nonnull facts before any fd-indexed read, preserving the original access domain
-for empty isset and invalid get. The remaining reads have no intervening
-effects, so their nonnull facts are fused into one call; no snapshot survives
-it. Invalid set keeps the Native assert/NDEBUG behavior; invalid get aborts.
-Concurrent unsynchronized mutation is unqualified.
+`set_handler`, `isset_handler`, `get_handler` and `get_error_handler` are
+upstream's code (#336).
 
 ## Builtin defer/begin/idle/exit scheduling
 
