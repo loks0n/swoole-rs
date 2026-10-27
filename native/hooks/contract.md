@@ -100,6 +100,12 @@ are still never uninstalled.
   unregistering after it. Native passes the coroutine operations, signal
   registration (deferred under `SW_USE_THREAD_CONTEXT`), the reactor exit condition
   and `signal_async_listener_num`.
+- The hooked stdio and directory functions (`fopen`, `fdopen`, `freopen`, `fread`,
+  `fwrite`, `fgets`, `fputs`, `feof`, `fflush`, `fclose`, `opendir`, `readdir`,
+  `closedir`) are Rust (`hook_<name>`): outside a coroutine the libc call runs in
+  place; inside one it runs through native `async` (`hook_offload`), which parks the
+  coroutine and restores the worker's errno; a refused dispatch returns the
+  function's failure value.
 - `TimerController` selects activation/addition/negative-timeout sentinel and
   enabled-only destruction. Disabled destructors and zero-timeout starts do not
   dereference `timer_pp`. Positive allocation failure leaves enabled = true with

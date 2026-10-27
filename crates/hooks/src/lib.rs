@@ -15,6 +15,7 @@ pub mod lifecycle;
 pub mod packet;
 pub mod shutdown;
 pub mod sleep;
+pub mod stdio;
 pub mod vector;
 pub mod wait_event;
 pub mod wait_signal;
