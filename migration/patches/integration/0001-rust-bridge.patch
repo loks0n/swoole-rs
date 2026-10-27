@@ -1,8 +1,8 @@
 diff --git a/config.m4 b/config.m4
-index 230b1c0..0d15157 100644
+index 230b1c0..5f28025 100644
 --- a/config.m4
 +++ b/config.m4
-@@ -38,2 +38,122 @@ PHP_ARG_ENABLE([swoole],
+@@ -38,2 +38,117 @@ PHP_ARG_ENABLE([swoole],
  
 +PHP_ARG_WITH([swoole-rs],
 +  [Rust migration bridge prefix],
@@ -13,11 +13,6 @@ index 230b1c0..0d15157 100644
 +  [Rust WebSocket header/masking kernel],
 +  [AS_HELP_STRING([--enable-swoole-rs-websocket],
 +    [Use the Rust WebSocket kernel (requires --with-swoole-rs)])], [no], [no])
-+
-+PHP_ARG_ENABLE([swoole-rs-buffer],
-+  [Rust buffer queue],
-+  [AS_HELP_STRING([--enable-swoole-rs-buffer],
-+    [Use the Rust buffer queue (requires --with-swoole-rs)])], [no], [no])
 +
 +PHP_ARG_ENABLE([swoole-rs-timer],
 +  [Rust timer queue],
@@ -125,13 +120,10 @@ index 230b1c0..0d15157 100644
 +    [Use Rust PHP Coroutine policy (requires --with-swoole-rs)])], [no], [no])
 +
  PHP_ARG_ENABLE([mysqlnd],
-@@ -1301,2 +1421,178 @@ EOF
+@@ -1301,2 +1416,171 @@ EOF
  
 +    if test "$PHP_SWOOLE_RS_WEBSOCKET" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust WebSocket kernel requires --with-swoole-rs=DIR])
-+    fi
-+    if test "$PHP_SWOOLE_RS_BUFFER" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
-+        AC_MSG_ERROR([Rust buffer queue requires --with-swoole-rs=DIR])
 +    fi
 +    if test "$PHP_SWOOLE_RS_TIMER" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust timer queue requires --with-swoole-rs=DIR])
@@ -209,17 +201,13 @@ index 230b1c0..0d15157 100644
 +        if test ! -f "$PHP_SWOOLE_RS/lib/libswoole_rs_ffi.a"; then
 +            AC_MSG_ERROR([Rust bridge archive missing: $PHP_SWOOLE_RS/lib/libswoole_rs_ffi.a])
 +        fi
-+        if test "$PHP_SWOOLE_RS_BUFFER" != "no"; then
-+            AC_DEFINE(SWOOLE_RS_BUFFER, 1, [Use the Rust buffer queue])
-+        fi
-+        dnl With both the Rust Buffer and the Rust reactor, server callers use the typed Buffer queue.
-+        if test "$PHP_SWOOLE_RS_BUFFER" != "no" && test "$PHP_SWOOLE_RS_REACTOR" != "no"; then
++        dnl Buffer is graduated; with the Rust reactor, server callers use the typed Buffer queue.
++        if test "$PHP_SWOOLE_RS_REACTOR" != "no"; then
 +            AC_LANG_PUSH([C++])
 +            swr_buffer_typed_CPPFLAGS="$CPPFLAGS"
 +            CPPFLAGS="$CPPFLAGS -I$PHP_SWOOLE_RS/include"
 +            AC_MSG_CHECKING([for the staged typed Buffer facade])
 +            AC_COMPILE_IFELSE([AC_LANG_SOURCE([[
-+#define SWOOLE_RS_BUFFER 1
 +#define SWOOLE_RS_REACTOR 1
 +#define SWOOLE_RS_BUFFER_TYPED 1
 +#include "swoole_rs_buffer_typed.h"
@@ -305,7 +293,7 @@ index 230b1c0..0d15157 100644
 +
      if test "$PHP_MYSQLND" = "yes"; then
 diff --git a/ext-src/php_swoole.cc b/ext-src/php_swoole.cc
-index 66f2386..dbad451 100644
+index 66f2386..8e6f1e9 100644
 --- a/ext-src/php_swoole.cc
 +++ b/ext-src/php_swoole.cc
 @@ -21,2 +21,7 @@
@@ -316,7 +304,7 @@ index 66f2386..dbad451 100644
 +#endif
 +
  BEGIN_EXTERN_C()
-@@ -614,2 +619,151 @@ static void sw_after_fork(void *args) {
+@@ -614,2 +619,145 @@ static void sw_after_fork(void *args) {
  PHP_MINIT_FUNCTION(swoole) {
 +#ifdef SWOOLE_RS_BRIDGE
 +    const uint32_t rust_abi = swr_v1_abi_version();
@@ -329,12 +317,6 @@ index 66f2386..dbad451 100644
 +#ifdef SWOOLE_RS_WEBSOCKET
 +    if ((rust_features & 1) == 0) {
 +        php_error_docref(nullptr, E_WARNING, "Rust bridge missing WebSocket kernel feature");
-+        return FAILURE;
-+    }
-+#endif
-+#ifdef SWOOLE_RS_BUFFER
-+    if ((rust_features & 2) == 0) {
-+        php_error_docref(nullptr, E_WARNING, "Rust bridge missing buffer feature");
 +        return FAILURE;
 +    }
 +#endif
@@ -468,7 +450,7 @@ index 66f2386..dbad451 100644
 +    SW_REGISTER_LONG_CONSTANT("SWOOLE_RS_FEATURE_BITS", rust_features);
 +#endif
      ZEND_INIT_MODULE_GLOBALS(swoole, php_swoole_init_globals, nullptr);
-@@ -1106,2 +1260,7 @@ PHP_MINFO_FUNCTION(swoole) {
+@@ -1106,2 +1254,7 @@ PHP_MINFO_FUNCTION(swoole) {
      php_info_print_table_row(2, "Version", SWOOLE_VERSION);
 +#ifdef SWOOLE_RS_BRIDGE
 +    snprintf(buf, sizeof(buf), "ABI %u, features %llu", static_cast<unsigned>(swr_v1_abi_version()),

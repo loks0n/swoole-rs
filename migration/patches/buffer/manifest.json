@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-buffer-header.patch",
-      "sha256": "8fb86ffb4fd271f418622712835594dd2649d865aef61152ed8b9d74c7eda7f6",
+      "sha256": "15b3dff0cfd1053930de8cad5d9f6e533ee2b87aa9b5ea9567b1a446976e4edf",
       "upstream_paths": [
         "include/swoole_buffer.h"
       ]
