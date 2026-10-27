@@ -1,5 +1,5 @@
 diff --git a/src/network/socket.cc b/src/network/socket.cc
-index 02480c6..9f966d2 100644
+index 02480c6..374cc73 100644
 --- a/src/network/socket.cc
 +++ b/src/network/socket.cc
 @@ -62,2 +62,4 @@ void IOVector::update_iterator(ssize_t _n) {
@@ -100,7 +100,7 @@ index 02480c6..9f966d2 100644
 -            break;
 -        }
 +// SSL_read/SSL_write and their error classification are Rust's
-+// (crates/reactor/src/socket_tls.rs); the flags, errno and log stay here.
++// (crates/tls/src/socket.rs); the flags, errno and log stay here.
 +static ssize_t ssl_io(Socket *socket, swr_v1_socket_ssl_io_result result) {
 +    socket->ssl_want_read = result.want_read;
 +    socket->ssl_want_write = result.want_write;

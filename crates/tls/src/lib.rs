@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! First-party TLS/DTLS decisions. No OpenSSL calls, callbacks, allocation or stored pointers.
+//! First-party TLS/DTLS decisions. No OpenSSL calls, callbacks, allocation or stored pointers,
+//! except in `socket`: `network::Socket`'s TLS reads and writes, called from reactor's patch.
 #![cfg_attr(
     not(test),
     deny(
@@ -8,6 +9,11 @@
     )
 )]
 use core::ffi::c_long;
+
+#[cfg(unix)]
+mod socket;
+#[cfg(unix)]
+pub use socket::*;
 const ALL: u32 = 0x7e;
 const DTLS: u32 = 0x80;
 

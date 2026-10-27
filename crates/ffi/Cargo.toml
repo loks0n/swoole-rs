@@ -16,7 +16,7 @@ utilities = ["dep:swoole-rs-utilities"]
 locks = ["dep:swoole-rs-locks"]
 wrappers = ["dep:swoole-rs-wrappers"]
 
-reactor = ["dep:swoole-rs-reactor"]
+reactor = ["dep:swoole-rs-reactor", "dep:swoole-rs-tls"]
 
 corebase = ["dep:swoole-rs-corebase"]
 
