@@ -2,6 +2,7 @@
 # Re-run the PHPT gate's flagged tests up to three times per engine, upstream first. Upstream
 # stops at a test's first failed re-run; the hybrid then re-runs every flagged test until its
 # verdict is settled, once only when its first failure timed out (gate.py --print-pending).
+# An inconclusive re-run (the #200 runner abort) is replaced, up to six attempts in all.
 #   recheck.sh RESULTS_DIR ENGINES_DIR RECHECK_DIR [run.py arguments...]
 # ENGINES_DIR holds upstream.so and hybrid.so; RECHECK_DIR receives <engine>-<attempt>.json.
 set -eo pipefail
@@ -16,7 +17,7 @@ pending() {
   python3 corpus/upstream/gate.py "$@" --print-pending "$engine" | sed -n 's/^\(..*\)$/--case \1/p' | tr '\n' ' '
 }
 for engine in upstream hybrid; do
-  for attempt in 1 2 3; do
+  for attempt in 1 2 3 4 5 6; do
     cases=$(pending "$engine")
     [ -n "$cases" ] || break
     # shellcheck disable=SC2086 # one --case per word

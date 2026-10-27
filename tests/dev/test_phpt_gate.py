@@ -63,7 +63,7 @@ class PhptGate(unittest.TestCase):
         rechecked += [row('hybrid-blip', 'upstream', 'passed'), row('hybrid-blip', 'hybrid', 'passed')]
         # 'unrun' has no re-runs, so it stays a regression.
         self.assertEqual(recheck(flagged(results), rechecked),
-                         (['real', 'unrun'], ['upstream-flake'], ['hybrid-blip']))
+                         (['real', 'unrun'], ['upstream-flake'], ['hybrid-blip'], []))
         summary = markdown(results, rechecked)
         self.assertIn('2 regressions: pass on upstream, fail on a re-run here', summary)
         self.assertIn('1 flaky on upstream', summary)
@@ -77,7 +77,7 @@ class PhptGate(unittest.TestCase):
         rechecked += [row('flaky', 'upstream', 'failed'), row('flaky', 'hybrid', 'failed'), row('flaky', 'hybrid', 'passed')]
         rechecked += [row('unrun', 'upstream', 'failed')]
         # Upstream failing a re-run no longer excuses a hybrid that never passes.
-        self.assertEqual(recheck(['broken', 'flaky', 'unrun'], rechecked), (['broken', 'unrun'], ['flaky'], []))
+        self.assertEqual(recheck(['broken', 'flaky', 'unrun'], rechecked), (['broken', 'unrun'], ['flaky'], [], []))
         summary = markdown([row(t, 'upstream', 'passed') for t in ['broken', 'flaky']] +
                            [row(t, 'hybrid', 'failed') for t in ['broken', 'flaky']], rechecked)
         self.assertIn('1 regressions', summary)
@@ -100,8 +100,39 @@ class PhptGate(unittest.TestCase):
         self.assertEqual(pending(['flaky-failing'], rechecked + [row('flaky-failing', 'hybrid', 'failed')] * 2,
                                  'hybrid', results), [])
         # A first hybrid failure that timed out gets one re-run; timing out again is a regression.
-        self.assertEqual(recheck(['slow'], rechecked), (['slow'], [], []))
+        self.assertEqual(recheck(['slow'], rechecked), (['slow'], [], [], []))
         self.assertEqual(pending(['slow'], [row('slow', 'upstream', 'failed')], 'hybrid', results), ['slow'])
+
+    def test_the_runner_abort_is_inconclusive_on_either_engine(self):
+        abort = 'PASS x [tests/x.phpt]\n...\ncorrupted double-linked list\nAborted (core dumped)\n'
+        with tempfile.TemporaryDirectory() as temp:
+            report = Path(temp) / 'recheck.json'
+            report.write_text(json.dumps({'results': [
+                {'test': 'tests/x.phpt', 'module': 'x', 'status': 'failed', 'upstream_status': 'PASSED', 'detail': abort},
+                {'test': 'tests/y.phpt', 'module': 'y', 'status': 'failed', 'upstream_status': 'FAILED', 'detail': abort},
+                {'test': 'tests/z.phpt', 'module': 'z', 'status': 'failed', 'upstream_status': 'PASSED',
+                 'detail': 'Segmentation fault (core dumped)'}]}))
+            # Only a passing test followed by the #200 signature; never a failed test or other crashes.
+            self.assertEqual([r['inconclusive'] for r in rows([report])], [True, False, False])
+
+        def row(test, engine, status):
+            return {'test': test, 'family': 'a', 'engine': engine, 'status': 'failed' if status == 'aborted' else status,
+                    'category': 'other', 'inconclusive': status == 'aborted'}
+        rechecked = [row(t, 'upstream', 'passed') for t in ['replaced', 'regressed', 'never'] for _ in range(3)]
+        rechecked += [row('replaced', 'hybrid', 'aborted'), row('replaced', 'hybrid', 'passed'),
+                      row('replaced', 'hybrid', 'passed'), row('replaced', 'hybrid', 'passed')]
+        rechecked += [row('regressed', 'hybrid', 'aborted'), row('regressed', 'hybrid', 'failed')]
+        rechecked += [row('never', 'hybrid', 'aborted')] * 6
+        rechecked += [row('upstream-only', 'upstream', 'aborted')] * 6 + [row('upstream-only', 'hybrid', 'passed')] * 3
+        tests = ['never', 'regressed', 'replaced', 'upstream-only']
+        self.assertEqual(recheck(tests, rechecked), (['regressed'], [], ['replaced'], ['never', 'upstream-only']))
+        # An inconclusive re-run gets one more in its place, up to twice the budget in all.
+        self.assertEqual(pending(['replaced'], rechecked[:3] + [row('replaced', 'hybrid', 'aborted')], 'hybrid'), ['replaced'])
+        self.assertEqual(pending(['never'], rechecked, 'hybrid'), [])
+        self.assertEqual(pending(['x'], [row('x', 'upstream', 'aborted')] * 2 + [row('x', 'upstream', 'passed')], 'upstream'), ['x'])
+        self.assertEqual(pending(['upstream-only'], rechecked, 'upstream'), [])
+        summary = markdown([row(t, 'upstream', 'passed') for t in tests] + [row(t, 'hybrid', 'failed') for t in tests], rechecked)
+        self.assertIn('2 inconclusive: every re-run on an engine ended in the runner abort', summary)
 
     def test_incomplete_shards_are_refused(self):
         with tempfile.TemporaryDirectory() as temp:
