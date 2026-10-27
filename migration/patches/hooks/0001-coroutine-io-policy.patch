@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_runtime.cc b/ext-src/swoole_runtime.cc
-index 0f7b169f4..b980a8239 100644
+index 0f7b169..c9b70fa 100644
 --- a/ext-src/swoole_runtime.cc
 +++ b/ext-src/swoole_runtime.cc
 @@ -17,2 +17,7 @@
@@ -702,8 +702,126 @@ index 0f7b169f4..b980a8239 100644
      }
 +    flags = swr_v1_hook_filter(flags, unavailable);
  
+@@ -1873,2 +1816,19 @@ static PHP_METHOD(swoole_runtime, setHookFlags) {
+ 
++// The sleep family's checks, duration and sleep are Rust's (crates/hooks/src/sleep.rs).
++static int32_t hooks_coroutine_sleep(double seconds) {
++    return System::sleep(seconds);
++}
++
++static swr_v1_hooks_coroutine_sleep hooks_sleeper() {
++    return Coroutine::get_current() ? hooks_coroutine_sleep : nullptr;
++}
++
++static bool hooks_sleep_argument(const swr_v1_hooks_sleep_outcome &outcome) {
++    if (outcome.status != 1) {
++        return false;
++    }
++    zend_argument_value_error(outcome.value, "must be greater than or equal to 0");
++    return true;
++}
++
+ static PHP_FUNCTION(swoole_sleep) {
+@@ -1880,12 +1840,7 @@ static PHP_FUNCTION(swoole_sleep) {
+ 
+-    if (num < 0) {
+-        zend_argument_value_error(1, "must be greater than or equal to 0");
++    const auto outcome = swr_v1_hooks_sleep(num, hooks_sleeper());
++    if (hooks_sleep_argument(outcome)) {
+         RETURN_THROWS();
+     }
+-
+-    if (Coroutine::get_current()) {
+-        RETURN_LONG(System::sleep((double) num) < 0 ? num : 0);
+-    } else {
+-        RETURN_LONG(php_sleep((unsigned int) num));
+-    }
++    RETURN_LONG(outcome.value);
+ }
+@@ -1899,13 +1854,5 @@ static PHP_FUNCTION(swoole_usleep) {
+ 
+-    if (num < 0) {
+-        zend_argument_value_error(1, "must be greater than or equal to 0");
++    if (hooks_sleep_argument(swr_v1_hooks_usleep(num, hooks_sleeper()))) {
+         RETURN_THROWS();
+     }
+-
+-    double sec = (double) num / 1000000;
+-    if (Coroutine::get_current()) {
+-        System::sleep(sec);
+-    } else {
+-        usleep((unsigned int) num);
+-    }
+ }
+@@ -1920,28 +1867,12 @@ static PHP_FUNCTION(swoole_time_nanosleep) {
+ 
+-    if (tv_sec < 0) {
+-        zend_argument_value_error(1, "must be greater than or equal to 0");
+-        RETURN_THROWS();
+-    }
+-    if (tv_nsec < 0) {
+-        zend_argument_value_error(2, "must be greater than or equal to 0");
++    const auto outcome = swr_v1_hooks_nanosleep(tv_sec, tv_nsec, hooks_sleeper());
++    if (hooks_sleep_argument(outcome)) {
+         RETURN_THROWS();
+     }
+-
+-    double _time = (double) tv_sec + (double) tv_nsec / 1000000000.00;
+-    if (Coroutine::get_current()) {
+-        System::sleep(_time);
+-    } else {
+-        struct timespec php_req, php_rem;
+-        php_req.tv_sec = (time_t) tv_sec;
+-        php_req.tv_nsec = (long) tv_nsec;
+-
+-        if (nanosleep(&php_req, &php_rem) == 0) {
+-            RETURN_TRUE;
+-        } else if (errno == EINTR) {
+-            array_init(return_value);
+-            add_assoc_long_ex(return_value, "seconds", sizeof("seconds") - 1, php_rem.tv_sec);
+-            add_assoc_long_ex(return_value, "nanoseconds", sizeof("nanoseconds") - 1, php_rem.tv_nsec);
+-        } else if (errno == EINVAL) {
+-            php_swoole_error(E_WARNING, "nanoseconds was not in the range 0 to 999 999 999 or seconds was negative");
+-        }
++    if (outcome.status == 2) {
++        array_init(return_value);
++        add_assoc_long_ex(return_value, "seconds", sizeof("seconds") - 1, outcome.seconds);
++        add_assoc_long_ex(return_value, "nanoseconds", sizeof("nanoseconds") - 1, outcome.nanoseconds);
++    } else if (outcome.status == 3) {
++        php_swoole_error(E_WARNING, "nanoseconds was not in the range 0 to 999 999 999 or seconds was negative");
+     }
+@@ -1959,3 +1890,4 @@ static PHP_FUNCTION(swoole_time_sleep_until) {
+ 
+-    if (UNEXPECTED(!(target_secs >= 0 && target_secs <= top_target_sec))) {
++    const auto outcome = swr_v1_hooks_sleep_until(target_secs, top_target_sec, hooks_sleeper());
++    if (outcome.status == 1) {
+         zend_argument_value_error(1, "must be between 0 and %" PRIu64, (uint64_t) top_target_sec);
+@@ -1963,11 +1895,3 @@ static PHP_FUNCTION(swoole_time_sleep_until) {
+     }
+-
+-    using namespace std::chrono;
+-    using dseconds = duration<double>;
+-
+-    const auto now = system_clock::now();
+-    const auto target_duration = duration_cast<system_clock::duration>(dseconds(target_secs));
+-    const auto target_time = system_clock::time_point(target_duration);
+-
+-    if (target_time <= now) {
++    if (outcome.status == 3) {
+         php_error_docref(NULL, E_WARNING, "Argument #1 ($timestamp) must be greater than or equal to the current time");
+@@ -1975,10 +1899,2 @@ static PHP_FUNCTION(swoole_time_sleep_until) {
+     }
+-
+-    const auto sleep_duration = target_time - now;
+-    if (Coroutine::get_current()) {
+-        const double sleep_seconds = duration_cast<dseconds>(sleep_duration).count();
+-        System::sleep(sleep_seconds);
+-    } else {
+-        std::this_thread::sleep_until(target_time);
+-    }
+     RETURN_TRUE;
 diff --git a/include/swoole_coroutine_socket.h b/include/swoole_coroutine_socket.h
-index cffe31a58..5068ea917 100644
+index cffe31a..5068ea9 100644
 --- a/include/swoole_coroutine_socket.h
 +++ b/include/swoole_coroutine_socket.h
 @@ -20,2 +20,7 @@
@@ -762,7 +880,7 @@ index cffe31a58..5068ea917 100644
 +            set_err(status == 1 ? EBADF : SW_ERROR_CO_SOCKET_CLOSE_WAIT);
              return false;
 diff --git a/src/coroutine/file.cc b/src/coroutine/file.cc
-index 587f52489..aefc10130 100644
+index 587f524..aefc101 100644
 --- a/src/coroutine/file.cc
 +++ b/src/coroutine/file.cc
 @@ -17,2 +17,7 @@
@@ -799,7 +917,7 @@ index 587f52489..aefc10130 100644
 +    return swr_v1_hook_file_result(false, swoole_coroutine_fstat(fd, statbuf));
  }
 diff --git a/src/coroutine/file_lock.cc b/src/coroutine/file_lock.cc
-index 6a4aacf13..9e5f51e58 100644
+index 6a4aacf..9e5f51e 100644
 --- a/src/coroutine/file_lock.cc
 +++ b/src/coroutine/file_lock.cc
 @@ -19,2 +19,7 @@
@@ -845,7 +963,7 @@ index 6a4aacf13..9e5f51e58 100644
 +    case 3:
          return lock_release(fd);
 diff --git a/src/coroutine/hook.cc b/src/coroutine/hook.cc
-index 964a906d2..fae66ad89 100644
+index 964a906..fae66ad 100644
 --- a/src/coroutine/hook.cc
 +++ b/src/coroutine/hook.cc
 @@ -27,2 +27,7 @@
@@ -863,7 +981,7 @@ index 964a906d2..fae66ad89 100644
 +                               SwooleTG.reactor != nullptr && Coroutine::get_current() != nullptr);
  }
 diff --git a/src/coroutine/iouring.cc b/src/coroutine/iouring.cc
-index 63ca2f2f9..f0514c6b2 100644
+index 63ca2f2..f0514c6 100644
 --- a/src/coroutine/iouring.cc
 +++ b/src/coroutine/iouring.cc
 @@ -21,2 +21,7 @@
@@ -922,7 +1040,7 @@ index 63ca2f2f9..f0514c6b2 100644
 +            break;
          }
 diff --git a/src/coroutine/socket.cc b/src/coroutine/socket.cc
-index 5a16f4cca..e66476d0c 100644
+index 5a16f4c..e66476d 100644
 --- a/src/coroutine/socket.cc
 +++ b/src/coroutine/socket.cc
 @@ -20,2 +20,7 @@
@@ -1375,7 +1493,7 @@ index 5a16f4cca..e66476d0c 100644
 +        break;
      }
 diff --git a/src/coroutine/system.cc b/src/coroutine/system.cc
-index e6ef9c2f5..78becda7c 100644
+index e6ef9c2..78becda 100644
 --- a/src/coroutine/system.cc
 +++ b/src/coroutine/system.cc
 @@ -17,2 +17,7 @@
@@ -1502,7 +1620,7 @@ index e6ef9c2f5..78becda7c 100644
 -    return true;
  }
 diff --git a/src/coroutine/uring_socket.cc b/src/coroutine/uring_socket.cc
-index 758765a25..800e5efaa 100644
+index 758765a..800e5ef 100644
 --- a/src/coroutine/uring_socket.cc
 +++ b/src/coroutine/uring_socket.cc
 @@ -20,2 +20,7 @@

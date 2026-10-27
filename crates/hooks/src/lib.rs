@@ -1,5 +1,6 @@
-//! Coroutine I/O policy over copied scalars. No native callbacks, storage,
-//! syscalls, errno, allocation, retained borrows or context switching.
+//! Coroutine I/O policy over copied scalars, and whole hooked operations moving
+//! into Rust (`sleep`). Policy functions make no native callbacks, syscalls or
+//! allocations and retain no borrows.
 #![cfg_attr(
     not(test),
     deny(
@@ -7,6 +8,8 @@
         clippy::multiple_unsafe_ops_per_block
     )
 )]
+
+pub mod sleep;
 
 /// The original per-hook guard. Some DNS hooks intentionally do not use it.
 #[unsafe(no_mangle)]
