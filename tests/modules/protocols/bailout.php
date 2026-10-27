@@ -17,12 +17,8 @@ $server->set([
 $note = static function (array $value): void {
     file_put_contents(getenv('TEST_EVENTS'), json_encode($value, JSON_THROW_ON_ERROR)."\n", FILE_APPEND);
 };
-$server->on('workerStart', static function () use ($scenario, $process, $note): void {
-    $initial = memory_get_usage(true);
-    if ($scenario === 'oom' && ini_set('memory_limit', (string)($initial + ($process ? 6 : 8) * 1024 * 1024)) === false) {
-        throw new RuntimeException('Cannot configure private request memory limit');
-    }
-    $note(['start', $initial, ini_get('memory_limit')]);
+$server->on('workerStart', static function () use ($note): void {
+    $note(['start', memory_get_usage(true), ini_get('memory_limit')]);
 });
 $server->on('workerError', static function ($server, int $id, int $pid, int $code, int $signal) use ($note): void {
     $note(['worker-error', $code, $signal]);
@@ -37,9 +33,5 @@ $server->setHandler('THROW', static function () use ($note): void {
 $server->setHandler('EXIT', static function () use ($note): void {
     $note(['entered', 'exit']);
     exit(23);
-});
-$server->setHandler('OOM', static function (int $fd, array $params) use ($note, $server): void {
-    $note(['entered', 'oom', count($params)]);
-    $server->send($fd, "+UNEXPECTED\r\n");
 });
 $server->start();

@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
-"""Real request-side Zend throws, exits and parameter-allocation exhaustion."""
+"""Real request-side Zend throws and exits.
+
+No out-of-memory scenario: after a fatal allocation failure in a worker, upstream
+itself hangs in its event loop (no exit, no workerError, no restart), on both
+engines, so the outcome isn't decided by the engine (#506).
+"""
 import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
-import re
 import socket
 import sys
 import tempfile
@@ -14,15 +18,12 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, parse_engines, server, write_report
 
-PAYLOAD = 3 * 1024 * 1024
 HEALTH = b'*1\r\n$4\r\nECHO\r\n'
 
 
 def probe(engine, mode, coroutines, scenario):
     command = scenario.upper().encode()
     wire = b'*1\r\n$' + str(len(command)).encode() + b'\r\n' + command + b'\r\n'
-    if scenario == 'oom':
-        wire = b'*2' + wire[2:] + b'$' + str(PAYLOAD).encode() + b'\r\n' + b'x' * PAYLOAD + b'\r\n'
     row = {'mode': mode, 'coroutines': coroutines, 'scenario': scenario,
            'wire_bytes': len(wire), 'wire_sha256': hashlib.sha256(wire).hexdigest()}
     with tempfile.TemporaryDirectory(prefix='swr-request-bailout-') as directory:
@@ -65,21 +66,11 @@ def probe(engine, mode, coroutines, scenario):
     try:
         assert row['events'][0][0] == 'start', 'Missing worker-ready checkpoint'
         assert 'panicked at' not in row['log'], 'Unexpected Rust panic'
-        if scenario == 'oom':
-            allocations = re.findall(r'Allowed memory size of (\d+) bytes exhausted \(tried to allocate (\d+) bytes\)', row['log'])
-            assert allocations and not entered, 'Expected native allocation exhaustion before callback'
-            # PHP8.5/macOS reports payload+32; PHP8.2/Linux reports the next
-            # 4KiB page. Both exclude the earlier 4MiB receive-buffer failure.
-            attempts = {int(attempt) for _, attempt in allocations}
-            assert len(attempts) == 1 and attempts <= {PAYLOAD + 32, PAYLOAD + 4096}, allocations
-            row['witness']['oom'] = {'attempted_bytes': attempts.pop()}
-            assert row['master_exit'] == 255 or [255, 0] in errors, 'Expected PHP fatal status, never a signal abort'
-        else:
-            assert entered == [[scenario]], 'Callback did not enter'
-            assert healthy or row['master_exit'] == 255 or [255, 0] in errors, 'Expected recovery or original PHP fatal outcome'
-            expected = 'RuntimeException: request-boundary-exception' if scenario == 'throw' else 'Swoole\\ExitException: swoole exit'
-            assert expected in row['log'], 'Missing native callback exception diagnostic'
-            row['witness']['exception'] = expected
+        assert entered == [[scenario]], 'Callback did not enter'
+        assert healthy or row['master_exit'] == 255 or [255, 0] in errors, 'Expected recovery or original PHP fatal outcome'
+        expected = 'RuntimeException: request-boundary-exception' if scenario == 'throw' else 'Swoole\\ExitException: swoole exit'
+        assert expected in row['log'], 'Missing native callback exception diagnostic'
+        row['witness']['exception'] = expected
     except AssertionError as error:
         row['validation_error'] = str(error)
     return row
@@ -93,12 +84,12 @@ def main():
     parser.add_argument('--output', type=Path, default=ROOT / 'target/reports/protocols-bailout.json')
     args = parser.parse_args()
     report = {'created_utc': datetime.now(timezone.utc).isoformat(), 'engines': [], 'results': [],
-              'scope': 'Real native PHP request-side exceptional outcomes; expected OOM fatalities recorded separately from successful requests. EOF/reset transport races retained raw but classified as closed for differential comparison.'}
+              'scope': 'Real native PHP request-side exceptional outcomes. EOF/reset transport races retained raw but classified as closed for differential comparison.'}
     reference = {}
     for engine_index, engine in enumerate(parse_engines(args.engine, args.php, args.php_extension)):
         report['engines'].append(engine.metadata())
         for mode in ['base', 'process']:
-            for scenario, coroutines in [('throw', False), ('throw', True), ('exit', False), ('exit', True), ('oom', False)]:
+            for scenario, coroutines in [('throw', False), ('throw', True), ('exit', False), ('exit', True)]:
                 key = (mode, scenario, coroutines)
                 row = {'engine': engine.name, 'mode': mode, 'scenario': scenario, 'coroutines': coroutines, 'matched': False}
                 try:

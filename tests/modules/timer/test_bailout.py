@@ -25,10 +25,16 @@ def compare(engine, control, *arguments):
 
 
 # Exit and converted exceptions can return to the native loop; always clear
-# them. Fatal OOM must also preserve uncleared state.
-@pytest.mark.parametrize('mode,clear', [('exit', 1), ('throw', 1), ('oom', 1), ('oom', 0)])
-@pytest.mark.parametrize('coroutine', [0, 1])
-@pytest.mark.parametrize('kind', ['after', 'tick'])
+# them. Fatal OOM must also preserve uncleared state, except an uncleared plain
+# tick: upstream itself hangs after the fatal error while that tick is still
+# registered (#506), so `after` covers uncleared state there.
+CALLBACK_CASES = [(kind, coroutine, mode, clear)
+                  for kind in ['after', 'tick'] for coroutine in [0, 1]
+                  for mode, clear in [('exit', 1), ('throw', 1), ('oom', 1), ('oom', 0)]
+                  if (kind, coroutine, mode, clear) != ('tick', 0, 'oom', 0)]
+
+
+@pytest.mark.parametrize('kind,coroutine,mode,clear', CALLBACK_CASES)
 def test_callback(engine, control, kind, coroutine, mode, clear):
     arguments = ('-d', 'memory_limit=-1', HERE / 'bailout.php', kind, mode, coroutine, clear)
     returncode, stdout, stderr = observe(tuple(engine.command(*arguments)))
