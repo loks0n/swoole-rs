@@ -246,7 +246,7 @@ mod tests {
                 unsafe { swr_v1_clients_pool_push(handle, key.as_ptr(), key.len(), first) },
                 OUT_OF_MEMORY
             );
-            let expected = if budget == 2 { 1 } else { 0 };
+            let expected = u32::from(budget == 2);
             assert_eq!(
                 unsafe { swr_v1_clients_pool_state(handle, key.as_ptr(), key.len()) }.kind,
                 expected

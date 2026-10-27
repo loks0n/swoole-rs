@@ -440,7 +440,7 @@ pub extern "C" fn swr_v1_phphelpers_key(expected: u32, actual: u32, key: i64, co
 
 fn key_action(expected: u32, actual: u32, key: i64, count: u32) -> u32 {
     if expected != UNDEF {
-        return if actual == expected { 0 } else { 1 };
+        return u32::from(actual != expected);
     }
     if actual == LONG {
         return if key > i64::from(count) { 2 } else { 0 };
@@ -978,7 +978,7 @@ pub extern "C" fn swr_v1_phphelpers_operation(expected: u32, concat: u8) -> u32 
 
 fn operation_action(expected: u32, concat: u8) -> u32 {
     if concat != 0 {
-        if expected == 5 { 0 } else { 1 }
+        u32::from(expected != 5)
     } else if expected == LONG || expected == 4 {
         0
     } else {

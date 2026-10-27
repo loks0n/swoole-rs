@@ -189,5 +189,5 @@ pub unsafe extern "C" fn swr_v1_clients_http_format(
         }
         Some(())
     })();
-    writer.finish(if result.is_some() { 0 } else { 1 })
+    writer.finish(u32::from(result.is_none()))
 }

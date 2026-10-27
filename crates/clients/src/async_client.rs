@@ -82,7 +82,7 @@ pub extern "C" fn swr_v1_clients_async_next(
     facts: u32,
 ) -> ClientsAsyncPlan {
     let (action, stage) = match (operation, stage) {
-        (0, 1..=7) => (if facts != 0 { 1 } else { 0 }, stage + 1),
+        (0, 1..=7) => (u32::from(facts != 0), stage + 1),
         (0, _) => (2, 0), // delete native callback container after all frees
         (1, _) => (if facts != 0 { 4 } else { 3 }, 0),
         (2, 0) if facts == 0 => (32, 0),

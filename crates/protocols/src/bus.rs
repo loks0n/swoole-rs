@@ -173,10 +173,8 @@ pub extern "C" fn swr_v1_bus_receive_step(count: u16, end: u8, limit: u16) -> u3
     let count = count.wrapping_add(1);
     let action = if end != 0 {
         2
-    } else if count >= limit {
-        1
     } else {
-        0
+        u32::from(count >= limit)
     };
     u32::from(count) | (action << 16)
 }

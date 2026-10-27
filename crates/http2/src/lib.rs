@@ -621,10 +621,8 @@ pub extern "C" fn sw_rs_http2_stream_update(flags: u32, end: u32, receiving: u32
     flags
         | if receiving != 0 && end == 0 {
             4
-        } else if receiving == 0 && end != 0 {
-            1
         } else {
-            0
+            u32::from(receiving == 0 && end != 0)
         }
 }
 
