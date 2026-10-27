@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-timer-header.patch",
-      "sha256": "5d6c9c309b69fc4cd1f4ff74aca5dfbb3d53e08a6ee32c45562a03c98588b56e",
+      "sha256": "0595dfc5c0a4b671315bd3745f6d9daceaa6b9a80939d806e59f2053ff25a780",
       "upstream_paths": [
         "include/swoole_timer.h"
       ]

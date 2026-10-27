@@ -13,7 +13,7 @@ class PhaseReports(unittest.TestCase):
         for module, child, parent in [
             ('phphelpers','phphelpers-async-sqlite-sdk','phphelpers-sdk'),
             ('phphelpers','phphelpers-async-odbc-sdk','phphelpers-sdk'),
-            ('timer','base64-consumers-upstream','reference-identity')]:  # base64 is graduated, so always selected
+            ('websocket','base64-consumers-upstream','reference-identity')]:  # base64 is graduated, so always selected
             with self.subTest(child=child):
                 command=[sys.executable,'tools/dev.py','integrate','--module',module,'--phase',child,'--plan']
                 failed=subprocess.run(command,cwd=ROOT,capture_output=True,text=True)
@@ -27,7 +27,7 @@ class PhaseReports(unittest.TestCase):
                 self.assertLess(phases.index(parent),phases.index(child))
 
     def test_independent_selection_stays_independent(self):
-        result=subprocess.run([sys.executable,'tools/dev.py','integrate','--module', 'timer',
+        result=subprocess.run([sys.executable,'tools/dev.py','integrate','--module', 'websocket',
             '--phase','buffer-string-compatibility','--plan'],cwd=ROOT,capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertEqual([r['phase'] for r in json.loads(result.stdout)],['buffer-string-compatibility'])
@@ -35,7 +35,7 @@ class PhaseReports(unittest.TestCase):
 
 class ExternalNetwork(unittest.TestCase):
     def test_flag_reaches_local_phpt(self):
-        result=subprocess.run([sys.executable,'tools/dev.py','candidate','--module', 'timer','--external-network',
+        result=subprocess.run([sys.executable,'tools/dev.py','candidate','--module', 'websocket','--external-network',
             '--phase','phpt','--plan'],cwd=ROOT,capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertIn('--external-network',json.loads(result.stdout)[0]['command'])

@@ -10,8 +10,6 @@ crate-type = ["staticlib"]
 [features]
 default = []
 websocket = ["dep:swoole-rs-websocket"]
-timer = ["dep:swoole-rs-timer"]
-
 
 memory = ["dep:swoole-rs-memory"]
 
@@ -42,7 +40,7 @@ phpcoroutines = ["dep:swoole-rs-phpcoroutines"]
 [dependencies]
 swoole-rs-websocket = { path = "../websocket", optional = true }
 swoole-rs-buffer = { path = "../buffer" }
-swoole-rs-timer = { path = "../timer", optional = true }
+swoole-rs-timer = { path = "../timer" }
 swoole-rs-base64 = { path = "../base64" }
 swoole-rs-crc32 = { path = "../crc32" }
 swoole-rs-error = { path = "../error" }

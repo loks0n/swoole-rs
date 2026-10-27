@@ -126,9 +126,9 @@ All default off and get their own alias suffix and manifest input.
 
 ## Timer module
 
-`--module timer` (feature value 4) is opt-in only. `tests/modules/timer/test_fork.py`
-checks forking from an active timer callback, which aborted the child in the
-first adapter.
+The timer queue (feature value 4) is graduated: always on, no `--module` switch.
+`tests/modules/timer/test_fork.py` checks forking from an active timer callback,
+which aborted the child in the first adapter; it passes on Linux and macOS.
 
 ## Running the corpus and PHPTs against builds
 
