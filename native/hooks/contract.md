@@ -88,8 +88,18 @@ are still never uninstalled.
   claiming the single deferred wake, clears its timer and defers cleanup/resume
   once.
 - `EventWaiter` computes event bits and single-defer selection before native
-  defer runs; a deferred terminal resume may delete its owner. `System::wait_event`
-  normalizes error readiness after waiting completes.
+  defer runs; a deferred terminal resume may delete its owner.
+- `System::wait_event` is one Rust call, `hook_wait_event`: it masks to read/write
+  (none is EINVAL), answers a zero timeout with one `poll(2)` (POLLNVAL is EBADF,
+  nothing ready is ETIMEDOUT), and otherwise runs native's `EventWaiter` through a
+  function pointer, then turns error readiness into the requested read/write bits.
+  Native sets the last error and errno it returns.
+- `System::wait_signal` is one Rust call, `hook_wait_signal`: the listener table,
+  the EBUSY/EINVAL checks, registering through native `listen`, the park, the wake-up handler
+  `hook_signal_wake` (clears the slot, records the signal, resumes) and the
+  unregistering after it. Native passes the coroutine operations, signal
+  registration (deferred under `SW_USE_THREAD_CONTEXT`), the reactor exit condition
+  and `signal_async_listener_num`.
 - `TimerController` selects activation/addition/negative-timeout sentinel and
   enabled-only destruction. Disabled destructors and zero-timeout starts do not
   dereference `timer_pp`. Positive allocation failure leaves enabled = true with

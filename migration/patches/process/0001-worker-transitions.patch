@@ -654,7 +654,7 @@ index 324abb3..cfa34a0 100644
 +            SW_TASK_CALLBACK, SW_TASK_COROUTINE);
          buf.info.ext_flags |= flags;
 diff --git a/src/server/worker.cc b/src/server/worker.cc
-index b4624c6..3dcb40c 100644
+index b4624c6..8f824d9 100644
 --- a/src/server/worker.cc
 +++ b/src/server/worker.cc
 @@ -20,2 +20,7 @@
@@ -665,7 +665,27 @@ index b4624c6..3dcb40c 100644
 +#endif
 +#include "swoole_rs_process.h"
  #include "swoole_memory.h"
-@@ -78,15 +83,7 @@ void Server::worker_signal_handler(int signo) {
+@@ -56,4 +61,4 @@ void Server::worker_signal_handler(int signo) {
+     }
+-    switch (signo) {
+-    case SIGTERM:
++    switch (swr_v1_process_worker_signal_action(signo)) {
++    case 1:
+         if (swoole_event_is_available()) {
+@@ -64,3 +69,3 @@ void Server::worker_signal_handler(int signo) {
+         break;
+-    case SIGWINCH:
++    case 2:
+         Worker_reopen_logger();
+@@ -68,7 +73,2 @@ void Server::worker_signal_handler(int signo) {
+     default:
+-#ifdef SIGRTMIN
+-        if (signo == SIGRTMIN) {
+-            Worker_reopen_logger();
+-        }
+-#endif
+         break;
+@@ -78,15 +78,7 @@ void Server::worker_signal_handler(int signo) {
  static sw_inline bool Worker_discard_data(const Server *serv, const Connection *conn, const DataHead *info) {
 -    if (conn == nullptr) {
 -        if (serv->disable_notify && !serv->discard_timeout_request) {
@@ -685,14 +705,18 @@ index b4624c6..3dcb40c 100644
      }
 -_discard_data:
      swoole_error_log(SW_LOG_WARNING,
-@@ -243,44 +240,12 @@ void Server::worker_stop_callback(Worker *worker) {
+@@ -243,44 +235,12 @@ void Server::worker_stop_callback(Worker *worker) {
  static void Worker_set_cpu_affinity(const Server *serv, const Worker *worker) {
 -    cpu_set_t available;
 -    CPU_ZERO(&available);
 -    if (swoole_get_cpu_affinity(&available) < 0) {
 -        swoole_sys_warning("get CPU affinity for worker#%d failed", worker->id);
 -        return;
--    }
++    const auto outcome = swr_v1_process_worker_affinity(
++        worker->id, serv->cpu_affinity_available, serv->cpu_affinity_available_num, serv->is_thread_mode());
++    if (outcome.error != 0) {
++        errno = outcome.error;
+     }
 -    if (serv->cpu_affinity_available) {
 -        cpu_set_t filtered;
 -        CPU_ZERO(&filtered);
@@ -707,11 +731,7 @@ index b4624c6..3dcb40c 100644
 -    int count = 0;
 -    for (int cpu = 0; cpu < CPU_SETSIZE; cpu++) {
 -        count += CPU_ISSET(cpu, &available) ? 1 : 0;
-+    const auto outcome = swr_v1_process_worker_affinity(
-+        worker->id, serv->cpu_affinity_available, serv->cpu_affinity_available_num, serv->is_thread_mode());
-+    if (outcome.error != 0) {
-+        errno = outcome.error;
-     }
+-    }
 -    if (count == 0) {
 +    if (outcome.status == 1) {
 +        swoole_sys_warning("get CPU affinity for worker#%d failed", worker->id);
@@ -738,7 +758,7 @@ index b4624c6..3dcb40c 100644
 -        errno = error;
 +    } else if (outcome.status == 3) {
          swoole_sys_warning("set CPU affinity for worker#%d failed", worker->id);
-@@ -484,12 +449,14 @@ static void Worker_reactor_try_to_exit(Reactor *reactor) {
+@@ -484,12 +444,14 @@ static void Worker_reactor_try_to_exit(Reactor *reactor) {
      while (true) {
 -        if (reactor->if_exit()) {
 +        const bool can_exit = reactor->if_exit();
@@ -760,7 +780,7 @@ index b4624c6..3dcb40c 100644
 +            const auto budget = swr_v1_process_exit_budget(remaining_time, remaining_time > 0 ? reactor->timeout_msec : 0);
 +            if (budget.timed_out) {
                  swoole_error_log(
-@@ -497,7 +464,4 @@ static void Worker_reactor_try_to_exit(Reactor *reactor) {
+@@ -497,7 +459,4 @@ static void Worker_reactor_try_to_exit(Reactor *reactor) {
                  reactor->running = false;
 -            } else {
 -                int timeout_msec = remaining_time * 1000;

@@ -187,6 +187,19 @@ pub extern "C" fn swr_v1_process_manager_signal_action(signo: c_int) -> u32 {
         0
     }
 }
+/// `Server::worker_signal_handler`'s action for `signo`:0 none,1 terminate
+/// (SIGTERM),2 reopen the logger (SIGWINCH or SIGRTMIN). The running/worker guard
+/// and every effect stay native; SIGTERM's async-vs-sync stop is a native detail.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_process_worker_signal_action(signo: c_int) -> u32 {
+    if signo == libc::SIGTERM {
+        1
+    } else if signo == libc::SIGWINCH || is_sigrtmin(signo) {
+        2
+    } else {
+        0
+    }
+}
 /// Held by tests that install process-wide signal state (handlers, the signalfd
 /// mask), which `cargo test`'s parallel threads would otherwise race on (#534).
 #[cfg(test)]
