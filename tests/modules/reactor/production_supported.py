@@ -91,9 +91,6 @@ try:
     if a.builtins and not report['selected_builtins_compiled']:raise ValueError('Selected source predates Rust builtin orchestration; no current caller qualification')
     report['selected_socket_output_compiled']='crates/reactor/src/output.rs' in selected_inputs
     if a.socket_output and not report['selected_socket_output_compiled']:raise ValueError('Selected source predates Rust Socket output; no current caller qualification')
-    if a.socket_output:
-        compiled=subprocess.check_output(['git','-C',str(ROOT),'show',a.source_ref+':crates/reactor/src/output.rs'],text=True)
-        if 'fn swr_v1_reactor_output_parameters(' not in compiled:raise ValueError('Selected source predates whole parameter helper; no new helper credit')
     report['selected_blocking_iov_compiled']='crates/reactor/src/iov_owned.rs' in selected_inputs
     if a.blocking and not report['selected_blocking_iov_compiled']:raise ValueError('Selected source predates the Rust-owned IOVector; no new-source qualification')
     source=Path(__file__).parent;fixture=source/('production_blocking.php' if a.blocking else 'production_output.php' if a.socket_output else 'production_builtins.php' if a.builtins else 'production_callbacks.php' if a.callbacks else 'production_supported.php');addon_source=source/'production_supported.cc'

@@ -262,11 +262,10 @@ PHP_FUNCTION(swr_reactor_blocking_supported) {
 #endif
 #if defined(__APPLE__)
     image(return_value,"file_image","_ZN6swoole7network6Socket13sendfile_syncEPKcxm");
-    image(return_value,"wait_image","_ZN6swoole7network6Socket8wait_forERKNSt3__18functionIF12swReturnCodevEEEii");
 #else
     image(return_value,"file_image","_ZN6swoole7network6Socket13sendfile_syncEPKclm");
-    image(return_value,"wait_image","_ZN6swoole7network6Socket8wait_forERKSt8functionIF12swReturnCodevEEii");
 #endif
+    image(return_value,"wait_image","_ZN6swoole7network6Socket9recv_syncEPvmi");
     zval rows;array_init(&rows);auto check=[&](bool value){add_next_index_bool(&rows,value);if(!value)throw std::runtime_error("ordinary blocking assertion failed");};unsigned cases=0;
     try {
         std::string payload;for(unsigned i=0;i<47;++i)payload+=static_cast<char>(i);
@@ -279,9 +278,9 @@ PHP_FUNCTION(swr_reactor_blocking_supported) {
         {OrdinaryOutputPair pair;auto *socket=pair.socket;check(socket&&socket->fd>=0);check(socket->writev_sync(vectors,3)==12);check(pair.receive(12)==payload.substr(0,12));prepared(socket);++cases;}
         OrdinaryOutputFile file(payload);
         for(off_t offset:{off_t(0),off_t(2)}){OrdinaryOutputPair pair;auto *socket=pair.socket;check(socket&&socket->fd>=0);check(socket->sendfile_sync(file.path,offset,0)==SW_OK);check(pair.receive(payload.size()-offset)==payload.substr(offset));prepared(socket);++cases;}
-        {OrdinaryOutputPair pair;auto *socket=pair.socket;check(socket&&socket->fd>=0);unsigned callbacks=0;
-            check(socket->wait_for([&]()->ReturnCode{++callbacks;return callbacks==1?SW_CONTINUE:SW_READY;},SW_EVENT_WRITE,-1));
-            check(callbacks==2);check(socket->nonblock);check((::fcntl(socket->fd,F_GETFL)&O_NONBLOCK)!=0);check(!socket->kernel_nobufs);check(socket->out_buffer==nullptr&&!socket->send_wait&&!socket->close_wait);++cases;}
+        {OrdinaryOutputPair pair;auto *socket=pair.socket;check(socket&&socket->fd>=0);socket->read_timeout=0.05;char byte;
+            check(socket->recv_sync(&byte,1,0)==-1);
+            check(swoole_get_last_error()==SW_ERROR_SOCKET_POLL_TIMEOUT);check(socket->nonblock);check((::fcntl(socket->fd,F_GETFL)&O_NONBLOCK)!=0);check(!socket->kernel_nobufs);check(socket->out_buffer==nullptr&&!socket->send_wait&&!socket->close_wait);++cases;}
         {network::IOVector v(vectors,3);check(v.length()==12&&v.count==3);check(vectors[0].iov_len==2&&vectors[1].iov_len==3&&vectors[2].iov_len==7);
             v.update_iterator(1);check(v.get_remain_count()==3&&v.get_index()==0&&v.get_offset_bytes()==1);check(v.get_iterator()->iov_base==&payload[1]&&v.get_iterator()->iov_len==1);
             v.update_iterator(1);check(v.get_remain_count()==2&&v.get_index()==1&&v.get_offset_bytes()==1);check(v.get_iterator()->iov_base==&payload[2]&&v.get_iterator()->iov_len==3);
