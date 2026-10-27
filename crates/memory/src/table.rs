@@ -71,7 +71,7 @@ unsafe fn matches(row: *mut Row, key: &[u8]) -> bool {
         let tail = unsafe { left.wrapping_add(end).cast::<T>().read_unaligned() };
         // SAFETY: as above.
         let other_tail = unsafe { right.wrapping_add(end).cast::<T>().read_unaligned() };
-        (head == other_head) & (tail == other_tail)
+        (head == other_head) && (tail == other_tail)
     }
     // The stored key holds `length` (<= 63) initialized bytes, equal to `key.len()`.
     match length {
