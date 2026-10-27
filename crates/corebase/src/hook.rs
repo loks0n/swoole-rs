@@ -21,3 +21,21 @@ pub extern "C" fn swr_v1_corebase_hook_add_action(list_present: u8, push_back: i
         PUSH_FRONT
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn absent_list_is_created_before_native_callback_insertion() {
+        assert_eq!(swr_v1_corebase_hook_add_action(0, 0), CREATE_LIST_FRONT);
+        assert_eq!(swr_v1_corebase_hook_add_action(0, 1), CREATE_LIST_BACK);
+    }
+
+    #[test]
+    fn existing_list_selects_native_front_or_back_insertion() {
+        assert_eq!(swr_v1_corebase_hook_add_action(1, 0), PUSH_FRONT);
+        assert_eq!(swr_v1_corebase_hook_add_action(1, 1), PUSH_BACK);
+        assert_eq!(swr_v1_corebase_hook_add_action(1, -1), PUSH_BACK);
+    }
+}

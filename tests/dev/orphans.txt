@@ -28,11 +28,6 @@ tests/modules/clients/php_pool_fork.py
 tests/modules/clients/php_resolver.php
 tests/modules/clients/php_resolver.py
 tests/modules/clients/php_tu.py
-tests/modules/corebase/hook-policy.rs
-tests/modules/corebase/random-effects.cc
-tests/modules/corebase/random-logger.cc
-tests/modules/corebase/random-policy.rs
-tests/modules/corebase/random-runtime.cc
 tests/modules/coroutine/make_context_bookkeeping.py
 tests/modules/coroutine/make_coroutine_status.py
 tests/modules/coroutine/thread_context_audit.py

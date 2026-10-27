@@ -25,7 +25,6 @@
  "clippy": 5,
  "corebase-mkdir": 13,
  "corebase-native": 16,
- "corebase-php": 121,
  "coroutine-channel-state": 12,
  "coroutine-channel-state-sdk": 5,
  "coroutine-compile": 8,
