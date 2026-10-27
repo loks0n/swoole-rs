@@ -163,19 +163,15 @@ index ea22f03..719ccd9 100644
 +
  inline String *make_string(size_t size, const Allocator *allocator = nullptr) {
 diff --git a/src/core/string.cc b/src/core/string.cc
-index f478fde..cc1d7e4 100644
+index f478fde..1d97ca4 100644
 --- a/src/core/string.cc
 +++ b/src/core/string.cc
-@@ -20,33 +20,90 @@
+@@ -20,6 +20,82 @@
  #include <memory>
 +#include <stdexcept>
 +#include "swoole_rs_string.h"
  
  namespace swoole {
--
--void String::alloc(size_t _size, const Allocator *_allocator) {
--    if (_allocator == nullptr) {
--        _allocator = sw_std_allocator();
 +namespace {
 +void check_string_status(int32_t status) {
 +    if (status == 0) return;
@@ -212,7 +208,7 @@ index f478fde..cc1d7e4 100644
 +        // Native effects may change other live fields. Original reserve only
 +        // publishes the returned pointer and capacity after realloc succeeds.
 +        s.str = replacement; s.size = plan.capacity;
-     }
++    }
 +}
 +int32_t edit_string(String &s, swr_v1_string_edit edit) {
 +    // REDUCE is the sole remaining caller: its frozen v1 byte operation has
@@ -224,22 +220,13 @@ index f478fde..cc1d7e4 100644
 +    if (status == 0) publish_state(s, state);
 +    return status;
 +}
- 
--    _size = SW_MEM_ALIGNED_SIZE(_size);
--    length = 0;
--    size = _size;
--    offset = 0;
--    str = (char *) _allocator->malloc(_size);
--    allocator = _allocator;
++
 +swr_v1_string_edit string_edit(uint32_t operation, const char *data = nullptr, size_t length = 0,
 +                               int64_t offset = 0, size_t count = 0) {
 +    return {operation, reinterpret_cast<const uint8_t *>(data), length, count, offset,
 +            SW_DEFAULT_ALIGNMENT, static_cast<size_t>(swoole_pagesize())};
 +}
- 
--    if (str == nullptr) {
--        throw std::bad_alloc();
--    }
++
 +
 +static_assert(std::is_standard_layout<String>::value && sizeof(String) == sizeof(swr_v1_string_object) &&
 +              offsetof(String, offset) == offsetof(swr_v1_string_object, offset) &&
@@ -257,30 +244,30 @@ index f478fde..cc1d7e4 100644
 +        reinterpret_cast<const swr_v1_string_allocator *>(initial), &result));
 +    return reinterpret_cast<char *>(result);
 +}
- }
++}
  
--void String::move(String &&src) {
+ void String::alloc(size_t _size, const Allocator *_allocator) {
++    // Upstream's allocation: a trivial hot path stays inline (#366).
+     if (_allocator == nullptr) {
+@@ -41,12 +117,7 @@ void String::alloc(size_t _size, const Allocator *_allocator) {
+ void String::move(String &&src) {
 -    str = src.str;
 -    length = src.length;
 -    offset = src.offset;
 -    size = src.size;
 -    allocator = src.allocator;
-+void String::alloc(size_t _size, const Allocator *_allocator) {
-+    allocate_string(*this, SWR_STRING_ALLOCATION_INITIAL, nullptr, _size, _allocator);
-+}
- 
+-
 -    src.str = nullptr;
 -    src.length = 0;
 -    src.size = 0;
 -    src.offset = 0;
-+void String::move(String &&src) {
 +    const Allocator *source_allocator = src.allocator;
 +    auto plan = transition(src, SWR_STRING_TAKE);
 +    publish_state(*this, plan.owner);
 +    allocator = source_allocator;
 +    publish_state(src, plan.state);
  }
-@@ -54,9 +111,3 @@ void String::move(String &&src) {
+@@ -54,9 +125,3 @@ void String::move(String &&src) {
  String &String::operator=(const String &src) noexcept {
 -    if (&src == this) {
 -        return *this;
@@ -291,7 +278,7 @@ index f478fde..cc1d7e4 100644
 -    copy(src);
 +    ownership(SWR_STRING_OWNER_COPY, &src, nullptr);
      return *this;
-@@ -65,6 +116,3 @@ String &String::operator=(const String &src) noexcept {
+@@ -65,6 +130,3 @@ String &String::operator=(const String &src) noexcept {
  void String::copy(const String &src) {
 -    alloc(src.size, src.allocator);
 -    memcpy(str, src.str, src.length);
@@ -299,7 +286,7 @@ index f478fde..cc1d7e4 100644
 -    offset = src.offset;
 +    compat_string(*this, string_edit(SWR_STRING_COPY), &src);
  }
-@@ -72,9 +120,3 @@ void String::copy(const String &src) {
+@@ -72,9 +134,3 @@ void String::copy(const String &src) {
  String &String::operator=(String &&src) noexcept {
 -    if (&src == this) {
 -        return *this;
@@ -310,7 +297,7 @@ index f478fde..cc1d7e4 100644
 -    move(std::move(src));
 +    ownership(SWR_STRING_OWNER_MOVE, nullptr, &src);
      return *this;
-@@ -83,9 +125,3 @@ String &String::operator=(String &&src) noexcept {
+@@ -83,9 +139,3 @@ String &String::operator=(String &&src) noexcept {
  void String::append(const String &append_str) {
 -    size_t new_size = length + append_str.length;
 -    if (new_size > size) {
@@ -321,7 +308,7 @@ index f478fde..cc1d7e4 100644
 -    length += append_str.length;
 +    compat_string(*this, string_edit(SWR_STRING_APPEND), &append_str);
  }
-@@ -97,11 +133,3 @@ void String::write(off_t _offset, const String &write_str) {
+@@ -97,11 +147,3 @@ void String::write(off_t _offset, const String &write_str) {
  void String::write(off_t _offset, const char *write_str, size_t _length) {
 -    size_t new_length = _offset + _length;
 -    if (new_length > size) {
@@ -334,7 +321,7 @@ index f478fde..cc1d7e4 100644
 -    }
 +    compat_string(*this, string_edit(SWR_STRING_WRITE, write_str, _length, _offset));
  }
-@@ -109,6 +137,7 @@ void String::write(off_t _offset, const char *write_str, size_t _length) {
+@@ -109,6 +151,7 @@ void String::write(off_t _offset, const char *write_str, size_t _length) {
  void String::grow(size_t incr_value) {
 -    length += incr_value;
 -    if (length == size) {
@@ -346,7 +333,7 @@ index f478fde..cc1d7e4 100644
 +    length = next;
 +    if (status == 1) reserve(requested);
  }
-@@ -116,8 +145,6 @@ void String::grow(size_t incr_value) {
+@@ -116,8 +159,6 @@ void String::grow(size_t incr_value) {
  String String::substr(size_t _offset, size_t len) const {
 -    if (_offset + len > length) {
 -        return {};
@@ -359,7 +346,7 @@ index f478fde..cc1d7e4 100644
 +    result.append(_offset == 0 ? str : str + _offset, len);
 +    return result;
  }
-@@ -125,22 +152,3 @@ String String::substr(size_t _offset, size_t len) const {
+@@ -125,22 +166,3 @@ String String::substr(size_t _offset, size_t len) const {
  char *String::pop(size_t init_size) {
 -    assert(length >= (size_t) offset);
 -
@@ -383,7 +370,7 @@ index f478fde..cc1d7e4 100644
 -    return val;
 +    return compat_string(*this, string_edit(SWR_STRING_POP, nullptr, init_size));
  }
-@@ -151,12 +159,3 @@ char *String::pop(size_t init_size) {
+@@ -151,12 +173,3 @@ char *String::pop(size_t init_size) {
  void String::reduce(off_t _offset) {
 -    assert(_offset >= 0 && (size_t) _offset <= length);
 -    if (sw_unlikely(_offset == 0)) {
@@ -397,7 +384,7 @@ index f478fde..cc1d7e4 100644
 -    memmove(str, str + _offset, length);
 +    check_string_status(edit_string(*this, string_edit(SWR_STRING_REDUCE, nullptr, 0, _offset)));
  }
-@@ -172,12 +171,3 @@ void String::print(bool print_value) const {
+@@ -172,12 +185,3 @@ void String::print(bool print_value) const {
  void String::append(int value) {
 -    char buf[16];
 -    int s_len = swoole_itoa(buf, value);
@@ -411,16 +398,14 @@ index f478fde..cc1d7e4 100644
 -    length += s_len;
 +    compat_string(*this, string_edit(SWR_STRING_APPEND_I32, nullptr, 0, value));
  }
-@@ -185,9 +175,11 @@ void String::append(int value) {
+@@ -185,9 +189,9 @@ void String::append(int value) {
  void String::append(const char *append_str, size_t _length) {
 -    size_t new_size = length + _length;
 -    if (new_size > size) {
 -        reserve(new_size);
 +    // Appends that fit are upstream's inline copy (#366); growth is the whole Rust edit.
 +    if (_length <= size - length) {
-+        if (_length != 0) {
-+            memcpy(str + length, append_str, _length);
-+        }
++        memcpy(str + length, append_str, _length);
 +        length += _length;
 +        return;
      }
@@ -429,7 +414,7 @@ index f478fde..cc1d7e4 100644
 -    length += _length;
 +    compat_string(*this, string_edit(SWR_STRING_APPEND, append_str, _length));
  }
-@@ -195,28 +187,35 @@ void String::append(const char *append_str, size_t _length) {
+@@ -195,28 +199,35 @@ void String::append(const char *append_str, size_t _length) {
  bool String::append_random_bytes(size_t _length, bool base64) {
 -    size_t new_size = length + _length;
 -    size_t base_encode_size;
@@ -490,7 +475,7 @@ index f478fde..cc1d7e4 100644
 -
 -    return true;
  }
-@@ -224,15 +223,4 @@ bool String::append_random_bytes(size_t _length, bool base64) {
+@@ -224,15 +235,4 @@ bool String::append_random_bytes(size_t _length, bool base64) {
  void String::reserve(size_t new_size) {
 -    if (size == 0) {
 -        alloc(new_size, nullptr);
@@ -508,7 +493,7 @@ index f478fde..cc1d7e4 100644
 +    const auto source = state_of(*this);
 +    allocate_string(*this, SWR_STRING_ALLOCATION_RESERVE, &source, new_size, nullptr);
  }
-@@ -240,23 +228,15 @@ void String::reserve(size_t new_size) {
+@@ -240,23 +240,15 @@ void String::reserve(size_t new_size) {
  char *String::release() {
 -    char *tmp = str;
 -    str = nullptr;
@@ -541,7 +526,7 @@ index f478fde..cc1d7e4 100644
 -    }
 +    compat_string(*this, string_edit(SWR_STRING_REPEAT, data, len, 0, n));
  }
-@@ -272,49 +252,74 @@ ssize_t String::split(const char *delimiter, size_t delimiter_length, const Stri
+@@ -272,49 +264,74 @@ ssize_t String::split(const char *delimiter, size_t delimiter_length, const Stri
      static int count;
 -    count++;
 +    ++count;
@@ -633,7 +618,8 @@ index f478fde..cc1d7e4 100644
      }
 +}
 +}
-+
+ 
+-    return ret;
 +namespace swoole {
 +size_t String::grown_capacity(size_t minimum) const {
 +    size_t capacity = 0;
@@ -646,8 +632,7 @@ index f478fde..cc1d7e4 100644
 +                                                 SW_DEFAULT_ALIGNMENT, &result));
 +    return result;
 +}
- 
--    return ret;
++
 +size_t String::format_offset(int flags, size_t formatted) {
 +    swr_v1_string_format_plan_result plan{};
 +    check_string_status(swr_v1_string_format_plan(length, size, formatted, flags, SW_DEFAULT_ALIGNMENT, &plan));
