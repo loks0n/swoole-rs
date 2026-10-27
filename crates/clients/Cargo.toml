@@ -9,6 +9,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 swoole-rs-base64 = { path = "../base64" }
+libc = "=0.2.191"
 
 [lints]
 workspace = true

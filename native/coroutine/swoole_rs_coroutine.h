@@ -3,6 +3,7 @@
 #define SWOOLE_RS_COROUTINE_H
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
 #endif

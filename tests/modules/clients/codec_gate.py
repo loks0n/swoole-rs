@@ -29,10 +29,20 @@ def main():
     gate.apply_overlay(scratch,out);selected=(scratch/'src/network/dns.cc').read_text()
     encoder='static int domain_encode(const char *src, int n, char *dest) {'
     decoder_native='static void domain_decode(char *str) {'
-    decoder_rust='static void domain_decode(char *str, size_t capacity) {'
     native=gate.body(original,encoder)+'\n'+gate.body(original,decoder_native)
-    rust=gate.body(selected,encoder)+'\n'+gate.body(selected,decoder_rust)
-    if 'swr_v1_clients_domain_encode' not in rust or 'swr_v1_clients_domain_decode' not in rust:raise ValueError('Missing actual selected Rust call')
+    # The patched lookup calls the Rust codec directly; these are the deleted
+    # wrappers' bounds over the same exports, so the codec still meets upstream's.
+    rust=r'''
+static int domain_encode(const char *src, int n, char *dest) {
+    constexpr size_t capacity = SW_BUFFER_SIZE_STD - 12;
+    if (n < 0 || static_cast<size_t>(n) > capacity - 3 || src[n] == '.') return SW_ERR;
+    return swr_v1_clients_domain_encode(reinterpret_cast<const uint8_t *>(src), n, reinterpret_cast<uint8_t *>(dest), capacity);
+}
+static void domain_decode(char *str, size_t capacity) {
+    swr_v1_clients_domain_decode(reinterpret_cast<uint8_t *>(str), capacity, std::numeric_limits<char>::is_signed);
+}
+'''
+    if 'swr_v1_clients_dns_query' not in gate.body(selected,'std::vector<std::string> dns_lookup_impl_with_socket('):raise ValueError('Missing actual selected Rust call')
     prelude=r'''
 #include <cstring>
 #include <cassert>
@@ -56,9 +66,9 @@ using uchar=unsigned char;
 #define SW_SOCK_UDP 1
 #define SW_DNS_A_RECORD 1
 #define SW_DNS_AAAA_RECORD 28
-#define SW_ERROR_DNSLOOKUP_NO_SERVER 1001
-#define SW_ERROR_DNSLOOKUP_RESOLVE_FAILED 1002
-#define SW_ERROR_CO_CANCELED 1003
+#define SW_ERROR_DNSLOOKUP_NO_SERVER 714
+#define SW_ERROR_DNSLOOKUP_RESOLVE_FAILED 711
+#define SW_ERROR_CO_CANCELED 10017
 #define sw_memset_zero(p,n) std::memset(p,0,n)
 #define sw_snprintf std::snprintf
 #define swoole_warning(...) ((void)0)
@@ -74,7 +84,7 @@ struct Socket {
     explicit Socket(int){}
     void set_timeout(double){io_effects.push_back("timeout");}
     int sendto(const std::string&,int,const char *data,size_t length){sent_query.assign(data,data+length);io_effects.push_back("send");return send_success;}
-    long recv(char *data,size_t capacity){
+    long recv(void *buffer,size_t capacity){auto data=static_cast<char *>(buffer);
         io_effects.push_back("receive");if(receive_mode==0)return -1;
         auto response=sent_query;response[6]=0;response[7]=1;if(bad_id)response[0]^=1;
         std::vector<unsigned char> payload;

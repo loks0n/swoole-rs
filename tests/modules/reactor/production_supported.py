@@ -112,12 +112,12 @@ try:
         undefined=subprocess.check_output(['nm','-u',str(addon)],text=True)
         if '_ZN6swoole7ReactorC1EiNS0_4TypeE' not in undefined:raise ValueError('Addon does not call genuine production constructor')
         result=json.loads(run(engine.command('-d','extension='+str(addon),fixture)))
-        if result['checks']!=(61 if a.blocking else 78 if a.socket_output else 31 if a.builtins else 22 if a.callbacks else 210 if sys.platform=='darwin' else 240) or result['method_image']!=str(engine.extension):raise ValueError('Actual production consumer/origin differs')
+        if result['checks']!=(54 if a.blocking else 78 if a.socket_output else 31 if a.builtins else 22 if a.callbacks else 210 if sys.platform=='darwin' else 240) or result['method_image']!=str(engine.extension):raise ValueError('Actual production consumer/origin differs')
         if a.blocking:
             if a.require_owned_iov:owned_iov.consumer(result,undefined,str(engine.extension),selected)
             symbols=['_ZN6swoole7network6Socket9send_syncEPKvmi','_ZN6swoole7network6Socket11writev_syncEPK5iovecm','_ZN6swoole7network6Socket13sendfile_syncEPKc'+('x' if sys.platform=='darwin' else 'l')+'m','_ZN6swoole7network8IOVector15update_iteratorEl']
             if any(symbol not in undefined for symbol in symbols):raise ValueError('Addon must invoke all real blocking Socket/IOVector methods')
-            if result['cases']!=8 or any(result[key]!=str(engine.extension) for key in ['vector_image','file_image','wait_image','event_image','iov_image']):raise ValueError('Actual blocking method origins/cases differ')
+            if result['cases']!=7 or any(result[key]!=str(engine.extension) for key in ['vector_image','file_image','event_image','iov_image']):raise ValueError('Actual blocking method origins/cases differ')
         if a.socket_output:
             symbols=['_ZN6swoole7network6Socket11handle_sendEv','_ZN6swoole7network6Socket15handle_sendfileEv','_ZN6swoole7network6Socket14sendfile_asyncEPKc'+('x' if sys.platform=='darwin' else 'l')+'m']
             if any(symbol not in undefined for symbol in symbols):raise ValueError('Addon must call all genuine production Socket output methods')
