@@ -85,8 +85,13 @@ an issue, PR, commit message or code comment. Create a draft repository security
 advisory on this repo (visible only to admins) with the reproducer and the upstream
 location, then stop; a person handles disclosure.
 
-Don't stop to ask before routine next steps (merge on green, close, file
-follow-ups). Stop only for destructive or genuinely ambiguous decisions.
+Executors never ask the person running them: no question tool, no prompt
+waiting for an answer. Routine next steps (merge on green, close, file
+follow-ups) need no one. For an open question, resolve it yourself first:
+reread the issue, its goal and earlier decisions, and gather data (reproduce,
+measure both engines, read upstream). Only when that can't settle it, add
+`needs:decision` with the evidence and the options, release the claim, and take
+another issue.
 
 ## Reviewer agents
 
@@ -122,8 +127,9 @@ Use GitHub's own relationships, not comments or labels:
   unblocked by GitHub the moment the last one closes. Claimable issues:
   `gh issue list --search "is:open label:status:ready -is:blocked -label:needs:decision sort:created-asc"`.
 - **Waiting on a decision:** add `needs:decision` and comment the question (a
-  policy change, an open design choice). Whoever decides, the goal agent or a
-  person, answers on the issue and removes the label.
+  policy change, an open design choice), after trying to settle it with data.
+  Whoever decides, the goal agent or a person, answers on the issue and removes
+  the label.
 - **Waiting on a CI run or measurement:** make the issue that produces it the
   blocker, or file one.
 - **Goals:** a `kind:goal` issue's children are its sub-issues (`gh api -X POST
