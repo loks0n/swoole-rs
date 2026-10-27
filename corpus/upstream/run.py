@@ -57,6 +57,13 @@ def timed_phase(report, phase):
 FIXED_PORTS = {'tests/swoole_timer/bug_4794_8.phpt': 9601}
 
 
+# Originals whose verdict is decided by a race in the test itself, on upstream too.
+# They are recorded unsupported, never run or counted as passed.
+RACY = {'tests/swoole_websocket_server/send_close_frame.phpt':
+        'the parent kills the server as soon as its pushes return, usually before the server '
+        'handles the second frame (#111)'}
+
+
 def require_free_port(port):
     with socket.socket() as guard:
         guard.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -316,7 +323,10 @@ def main():
                     runnable = []
                     for case in cases:
                         missing = sorted(set(case['requires']) - set(metadata['capabilities']))
-                        if missing:
+                        if case['path'] in RACY:
+                            record_result(report, engine, case, {'status': 'unsupported',
+                                          'detail': f'racy original: {RACY[case["path"]]}', 'seconds': 0})
+                        elif missing:
                             record_result(report, engine, case, {'status': 'unsupported',
                                           'detail': f'missing capabilities: {", ".join(missing)}', 'seconds': 0})
                         else:
