@@ -13,8 +13,8 @@ bool swr_v1_hook_no_coro(bool reactor, bool coroutine);
 int32_t swr_v1_hook_transition(uint32_t requested, uint32_t installed, uint32_t bit);
 uint32_t swr_v1_hook_filter(uint32_t flags, uint32_t unavailable);
 bool swr_v1_hook_file_result(bool open, int64_t result);
-int32_t swr_v1_hook_flock(bool cooperative, int32_t operation, int32_t nonblock, int32_t exclusive, int32_t shared, int32_t unlock);
-int32_t swr_v1_hook_lock_result(int32_t result, bool would_block);
+typedef struct { int32_t result; bool invalid; } swr_v1_hook_flock_outcome;
+swr_v1_hook_flock_outcome swr_v1_hook_coroutine_flock(int32_t fd, int32_t operation, int (*coroutine_sleep)(double), double initial, double maximum);
 /* A hooked stream socket name's host and port, as parse_ip_address_ex splits it.
  * Status 0 parsed; 1 bracketed IPv6 without "]:"; 2 no ':' before the last byte. */
 typedef struct { int32_t status; size_t host_offset, host_length; int32_t port; } swr_v1_hooks_address_plan;

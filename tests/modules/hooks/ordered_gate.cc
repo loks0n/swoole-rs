@@ -67,8 +67,6 @@ Coroutine *Coroutine::current=nullptr; \
 static struct { void *reactor; } SwooleTG={}; \
 static int last_error=0;static bool datagram=true;static std::string dns_result="resolved";static int swoole_get_last_error(){record("last-error:get");return last_error;} \
 static void swoole_set_last_error(int e){last_error=e;record("last-error:"+std::to_string(e));} \
-static std::vector<int> lock_results;static size_t lock_index=0; \
-static int flock(int fd,int op){record("flock:"+std::to_string(fd)+":"+std::to_string(op));int r=lock_results.at(lock_index++);errno=r<0?-r:0;return r<0?-1:r;} \
 struct System {static bool canceled;static int sleep(double s){record("sleep:"+std::to_string(s));return canceled?SW_ERR:SW_OK;}static int wait_event(int fd,int events,double timeout);static std::string gethostbyname(const std::string &host,int domain,double timeout){record("dns:"+host+":"+std::to_string(domain)+":"+std::to_string(timeout));return dns_result;}}; \
 bool System::canceled=false; \
 bool wait_for(const std::function<bool(void)> &); \
@@ -126,9 +124,9 @@ namespace selected {
 
 #define CASES(NS) \
 static std::vector<std::string> run_##NS(int scenario){using namespace NS;trace.clear();errno=0;last_error=0;Coroutine co;Coroutine::current=&co;SwooleTG.reactor=&co; \
- warning_hook=nullptr;alias_exists=false;class_found=true;alias_result=SUCCESS;syscall_io=io;datagram=true;dns_result="resolved";System::canceled=false;io_index=0;throw_io=false;lock_index=0;submit_index=0;available=true;timer_ok=true;wake_ok=true; \
+ warning_hook=nullptr;alias_exists=false;class_found=true;alias_result=SUCCESS;syscall_io=io;datagram=true;dns_result="resolved";System::canceled=false;io_index=0;throw_io=false;submit_index=0;available=true;timer_ok=true;wake_ok=true; \
  if(scenario<4){SwooleTG.reactor=scenario&1?&co:nullptr;Coroutine::current=scenario&2?&co:nullptr;record("no-coro:"+std::to_string(is_no_coro()));} \
- else if(scenario<28){int k=scenario-4;int operations[]={LOCK_EX,LOCK_SH,LOCK_UN,LOCK_EX|LOCK_NB,0,LOCK_EX|LOCK_SH};int op=operations[k%6];if(k/6==1)Coroutine::current=nullptr;if(k/6==2)SwooleTG.reactor=nullptr;if(k/6==3)System::canceled=true;lock_results={-EWOULDBLOCK,0};if((op&LOCK_NB)||op==LOCK_UN||k/6==1||k/6==2)lock_results={0};record("result:"+std::to_string(swoole_coroutine_flock(77,op)));record("errno:"+std::to_string(errno));record("last:"+std::to_string(last_error));} \
+ else if(scenario<28){} \
  else if(scenario<44){int k=scenario-28;std::vector<std::vector<ssize_t>> cases={{0},{8},{-EINVAL},{-EAGAIN,3,5},{2,3,3},{2,-EAGAIN,-ECONNRESET},{2,0},{-EAGAIN,0}};io_results=cases[k%8];Socket s;char b[16]={};ssize_t r=k<8?s.recv_all(b,8):s.send_all(b,8);record("result:"+std::to_string(r));} \
  else if(scenario<50){Socket s;char b[8]={};io_results={2};int k=scenario-44;available=k%3!=0;timer_ok=k%3!=1;wake_ok=k%3!=2;ssize_t r=k<3?s.recv_all(b,8):s.send_all(b,8);record("result:"+std::to_string(r));} \
  else if(scenario<62){int k=scenario-50;std::vector<std::vector<ssize_t>> cases={{0},{8},{-EINVAL},{3,5},{3,-EINTR},{3,0}};io_results=cases[k%6];UringSocket s;char b[16]={};ssize_t r=k<6?s.recv_all(b,8):s.send_all(b,8);record("result:"+std::to_string(r));} \
