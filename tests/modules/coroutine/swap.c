@@ -2,10 +2,16 @@
 #include "swoole_rs_coroutine.h"
 #include <assert.h>
 #include <stdalign.h>
+/* The gate builds this file as C11 and as C++14/17; GCC has no _Static_assert in C++. */
+#ifdef __cplusplus
+#define SWR_STATIC_ASSERT static_assert
+#else
+#define SWR_STATIC_ASSERT _Static_assert
+#endif
 static void identity_only(void *task) { (void) task; }
 int main(void) {
-    _Static_assert(sizeof(swr_v1_coroutine_swap_callback)==sizeof(swr_v1_coroutine_swap_function),"typed function pointer size");
-    _Static_assert(alignof(swr_v1_coroutine_swap_callback)==alignof(swr_v1_coroutine_swap_function),"typed function pointer alignment");
+    SWR_STATIC_ASSERT(sizeof(swr_v1_coroutine_swap_callback)==sizeof(swr_v1_coroutine_swap_function),"typed function pointer size");
+    SWR_STATIC_ASSERT(alignof(swr_v1_coroutine_swap_callback)==alignof(swr_v1_coroutine_swap_function),"typed function pointer alignment");
     unsigned char token=1;
     swr_v1_coroutine_swap_callback callback;
     for (unsigned op=1;op<=4;op++) {
