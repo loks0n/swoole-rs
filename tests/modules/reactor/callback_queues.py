@@ -8,7 +8,7 @@ import sys
 import tempfile
 from ordered_gate import ROOT, PIN, block, apply_patch_verified
 from tools.build_upstream import require_build_space
-from tools.harness import run_compiler
+from tools.harness import run_compiler, archive_libs
 from tools.harness import run_isolated
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True);p.add_argument('--report',type=Path,required=True);p.add_argument('--sanitize',action='store_true');a=p.parse_args()
@@ -41,6 +41,7 @@ with tempfile.TemporaryDirectory(prefix='swr-inert-queues-') as temporary:
                 if selected:command+=['-DSWOOLE_RS_REACTOR=1']
                 if a.sanitize:command+=['-fsanitize=address,undefined','-fno-omit-frame-pointer']
                 if sys.platform.startswith('linux'):command+=['-ldl','-lm']
+                command+=archive_libs()
                 for stage,cmd in [('compile',command),('execute',[binary])]:
                     require_build_space(ROOT);require_build_space(tree)
                     result=run_compiler(cmd) if stage=='compile' else vars(run_isolated(list(map(str,cmd)),cwd=tree,timeout=60))

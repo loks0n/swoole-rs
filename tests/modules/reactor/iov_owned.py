@@ -10,7 +10,7 @@ from ordered_gate import ROOT,PIN,block
 sys.path.insert(0,str(ROOT))
 from tools.build_hybrid import apply_patch_verified
 from tools.build_upstream import require_build_space
-from tools.harness import run_isolated
+from tools.harness import run_isolated, archive_libs
 from tools.harness import run_compiler
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True);p.add_argument('--report',type=Path,required=True);p.add_argument('--sanitize',action='store_true');a=p.parse_args()
 if a.report.exists():raise ValueError('Choose a unique immutable receipt')
@@ -61,6 +61,7 @@ with tempfile.TemporaryDirectory(prefix='swr-iov-owned-') as temporary:
     binary=tree/('consumer-'+standard);cmd=['c++','-std='+standard,'-Werror','-O1','-g',*options,'-I'+str(tree),'-I'+str(ROOT/'native/reactor'),str(ROOT/'tests/modules/reactor/iov_owned.cc'),str(a.archive.resolve()),'-lpthread','-o',str(binary)]
     if a.sanitize:cmd+=['-fsanitize=address,undefined','-fno-omit-frame-pointer']
     if sys.platform.startswith('linux'):cmd+=['-ldl','-lm']
+    cmd+=archive_libs()
     for stage,command in [('compile',cmd),('execute',[str(binary)])]:
      require_build_space(t)
      r=run_compiler(command, timeout=60) if stage=='compile' else vars(run_isolated(command,cwd=t,timeout=60))

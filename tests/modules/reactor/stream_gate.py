@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 from ordered_gate import ROOT, PIN, block, apply_patch_verified
+from tools.harness import archive_libs
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('--source', type=Path, required=True)
@@ -45,6 +46,7 @@ with tempfile.TemporaryDirectory(prefix='swr-reactor-stream-') as tmp:
         cmd += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer']
     if sys.platform.startswith('linux'):
         cmd += ['-ldl', '-lm']
+    cmd+=archive_libs()
     subprocess.run(cmd, check=True)
     result = subprocess.run([str(exe)], capture_output=True, text=True, timeout=30)
     print(result.stdout, end='')

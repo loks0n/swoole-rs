@@ -14,7 +14,7 @@ import tempfile
 from ordered_gate import ROOT,PIN,block
 from poll_snapshot import digest
 sys.path.insert(0,str(ROOT))
-from tools.harness import run_isolated
+from tools.harness import run_isolated, archive_libs
 from tools.harness import run_compiler
 from tools.build_upstream import require_build_space
 from tools.build_hybrid import apply_patch_verified
@@ -66,6 +66,7 @@ with tempfile.TemporaryDirectory(prefix='swr-initialize-') as tmp:
                     if trim:cmd+=['-DSW_USE_MALLOC_TRIM']
                     if a.sanitize:cmd+=['-fsanitize=address,undefined','-fno-omit-frame-pointer']
                     if sys.platform.startswith('linux'):cmd+=['-ldl','-lm']
+                    cmd+=archive_libs()
                     for stage,command in [('compile',cmd),('execute',[str(binary)])]:
                         require_build_space(t)
                         result=run_compiler(command, timeout=60) if stage=='compile' else vars(run_isolated(command,cwd=t,timeout=60))

@@ -79,6 +79,12 @@ class Engine:
                 'php_extensions': list(self.php_extensions)}
 
 
+def archive_libs():
+    """System libraries the Rust FFI archive links against (crates bind them through
+    -sys crates, #439): what a fixture linking libswoole_rs_ffi.a must pass after it."""
+    return subprocess.check_output(['pkg-config', '--libs', 'openssl'], text=True).split()
+
+
 def parse_engines(values, php='php', php_extensions=()):
     engines = []
     for value in values:

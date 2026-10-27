@@ -11,6 +11,7 @@ import subprocess
 import sys
 import tempfile
 from ordered_gate import ROOT, PIN, block, apply_patch_verified
+from tools.harness import archive_libs
 from poll_snapshot import digest
 
 
@@ -58,6 +59,7 @@ def main():
         command = ['c++','-std=c++14','-O1','-g','-I'+str(tree),'-I'+str(ROOT/'native/reactor'),str(ROOT/'tests/modules/reactor/flush.cc'),str(args.archive.resolve()),'-lpthread','-o',str(binary)]
         if args.sanitize: command += ['-fsanitize=address,undefined','-fno-omit-frame-pointer']
         if sys.platform.startswith('linux'): command += ['-ldl','-lm']
+        command+=archive_libs()
         result = subprocess.run(command,capture_output=True,text=True)
         report = dict(pin=PIN,scope=__doc__,patches=patches,command=command,compile_returncode=result.returncode,compile_stdout=result.stdout,compile_stderr=result.stderr)
         if result.returncode == 0:

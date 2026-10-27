@@ -14,7 +14,7 @@ import tempfile
 from ordered_gate import ROOT,PIN,block
 from poll_snapshot import digest
 sys.path.insert(0,str(ROOT))
-from tools.harness import run_isolated
+from tools.harness import run_isolated, archive_libs
 from tools.harness import run_compiler
 from tools.build_upstream import require_build_space
 from tools.build_hybrid import apply_patch_verified
@@ -59,6 +59,7 @@ with tempfile.TemporaryDirectory(prefix='swr-callbacks-') as temporary:
             command=['c++','-std=c++14','-O1','-g','-I'+str(tree),'-I'+str(ROOT/'native/reactor'),str(ROOT/'tests/modules/reactor/callbacks.cc'),str(a.archive.resolve()),'-lpthread','-o',str(binary)]
             if a.sanitize:command+=['-fsanitize=address,undefined','-fno-omit-frame-pointer']
             if sys.platform.startswith('linux'):command+=['-ldl','-lm']
+            command+=archive_libs()
             for stage,cmd in [('compile',command),('execute',[str(binary)])]:
                 require_build_space(tree)
                 result=run_compiler(cmd, timeout=60) if stage=='compile' else vars(run_isolated(cmd,cwd=tree,timeout=60))

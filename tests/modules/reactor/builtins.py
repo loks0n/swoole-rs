@@ -17,7 +17,7 @@ from ordered_gate import ROOT,PIN,block
 sys.path.insert(0,str(ROOT))
 from tools.build_hybrid import apply_patch_verified
 from tools.build_upstream import require_build_space
-from tools.harness import run_isolated
+from tools.harness import run_isolated, archive_libs
 from tools.harness import run_compiler
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True);p.add_argument('--report',type=Path,required=True);p.add_argument('--sanitize',action='store_true');a=p.parse_args()
@@ -68,6 +68,7 @@ with tempfile.TemporaryDirectory(prefix='swr-builtins-') as tmp:
                 if variant!='original':cmd+=['-DSWOOLE_RS_REACTOR=1']
                 if a.sanitize:cmd+=['-fsanitize=address,undefined','-fno-omit-frame-pointer']
                 if sys.platform.startswith('linux'):cmd+=['-ldl','-lm']
+                cmd+=archive_libs()
                 for stage,command in [('compile',cmd),('execute',[binary])]:
                     require_build_space(ROOT);require_build_space(t)
                     result=run_compiler(command, timeout=60) if stage=='compile' else vars(run_isolated(list(map(str,command)),cwd=t,timeout=60))

@@ -12,7 +12,7 @@ from ordered_gate import ROOT,PIN,block
 sys.path.insert(0,str(ROOT))
 from tools.build_hybrid import apply_patch_verified
 from tools.build_upstream import require_build_space
-from tools.harness import run_isolated
+from tools.harness import run_isolated, archive_libs
 from tools.harness import run_compiler
 p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True);p.add_argument('--report',type=Path,required=True);p.add_argument('--sanitize',action='store_true');profile=p.add_mutually_exclusive_group();profile.add_argument('--iov-progress',action='store_true',help='Separate genuine IOVector Native-array progression inventory');profile.add_argument('--forwarding',action='store_true',help='Whole file/event forwarding positive source effects; clean Native effects not executed');a=p.parse_args()
 if a.report.exists():raise ValueError('Choose a unique receipt path')
@@ -68,6 +68,7 @@ with tempfile.TemporaryDirectory(prefix='swr-output-') as tmp:
    (tree/(fixture_name+'.inc')).write_text(extracted);binary=tree/'consumer';command=['c++','-std=c++14','-O1','-g','-I'+str(tree),'-I'+str(ROOT/'native/reactor'),str(ROOT/('tests/modules/reactor/'+fixture_name+'.cc')),str(a.archive.resolve()),'-lpthread','-o',str(binary)]
    if a.sanitize:command+=['-fsanitize=address,undefined','-fno-omit-frame-pointer']
    if sys.platform.startswith('linux'):command+=['-ldl','-lm']
+   command+=archive_libs()
    for stage,cmd in [('compile',command),('execute',[str(binary)])]:
     require_build_space(ROOT);require_build_space(t)
     result=run_compiler(cmd, timeout=60) if stage=='compile' else vars(run_isolated(cmd,cwd=t,timeout=60))

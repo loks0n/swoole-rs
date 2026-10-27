@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 from ordered_gate import ROOT, PIN, block, apply_patch_verified
+from tools.harness import archive_libs
 
 
 def digest(path):
@@ -64,6 +65,7 @@ def main():
             cmd += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer']
         if sys.platform.startswith('linux'):
             cmd += ['-ldl', '-lm']
+        cmd+=archive_libs()
         result = subprocess.run(cmd, capture_output=True, text=True)
         report = dict(pin=PIN, patches=patches, compiler=subprocess.check_output(['c++', '--version'], text=True).splitlines()[0], command=cmd, compile_returncode=result.returncode, compile_stdout=result.stdout, compile_stderr=result.stderr, scope='exact constructor/destructor/set_events/translation bodies; Native registry facade; actual libc pipe/poll; not full reactor or callback qualification')
         if result.returncode == 0:
