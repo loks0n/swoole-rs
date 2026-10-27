@@ -113,7 +113,7 @@ def main():
             files.mkdir()
             result = run([str(consumer), str(files)])
             values = json.loads(result.stdout)
-            if values != dict(public_checks=30, backtrace_effects=2, stream_replacement=True, concurrent_records=1024, reopen_cycles=128, path_values=42, long_path_reopen=True):
+            if values != dict(public_checks=30, backtrace_effects=2, stream_replacement=True, concurrent_records=1024, reopen_cycles=128, path_values=42, rotation_io=21, long_path_reopen=True):
                 raise ValueError('Missing public/effect observations')
             report['identities'][engine] = dict(prerequisite_sdk=sdk_receipt, observations=values)
         report['passed'] = True

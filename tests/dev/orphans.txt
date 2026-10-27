@@ -128,17 +128,6 @@ tests/modules/reactor/stream_gate.py
 tests/modules/reactor/test_staging.py
 tests/modules/timer/oom_observer.py
 tests/modules/tls/php-verification-cases.json
-tests/modules/utilities/asan_fault.cc
-tests/modules/utilities/ffi_smoke.c
-tests/modules/utilities/frontdoor_c.c
-tests/modules/utilities/frontdoor_integer.cc
-tests/modules/utilities/inline_span_c.c
-tests/modules/utilities/jenkins_width.py
-tests/modules/utilities/logger_output.c
-tests/modules/utilities/logger_output.rs
-tests/modules/utilities/operand_profile.cc
-tests/modules/utilities/operand_profile.php
-tests/modules/utilities/production_abi_c.c
 tests/modules/websocket/compression_limits.php
 tests/modules/websocket/compression_limits.py
 tests/modules/websocket/rust_asan_negative.cc
