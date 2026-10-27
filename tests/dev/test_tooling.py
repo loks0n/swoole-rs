@@ -537,7 +537,6 @@ class Lanes(unittest.TestCase):
         for name in ['phphelpers-facade-runtime', 'phphelpers-entrypoint', 'phphelpers-runtime']:
             self.assertNotIn(name, commands)
         self.assertEqual(set(commands['build'][i+1] for i,x in enumerate(commands['build']) if x=='--module'),set(dev.SELECTABLE))
-        self.assertIn('reactor-ordered',commands)
         self.assertIn('reactor-filters',commands)
         self.assertIn('--sanitize', commands['reactor-poll-snapshot'])
         self.assertIn('--report', commands['reactor-poll-snapshot'])

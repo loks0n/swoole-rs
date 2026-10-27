@@ -1,5 +1,5 @@
 diff --git a/src/reactor/base.cc b/src/reactor/base.cc
-index 505aaf7ce..40645c7bd 100644
+index 505aaf7..fe20d4b 100644
 --- a/src/reactor/base.cc
 +++ b/src/reactor/base.cc
 @@ -22,2 +22,3 @@
@@ -289,36 +289,7 @@ index 505aaf7ce..40645c7bd 100644
 +        }
 +    }
  }
-@@ -157,10 +304,7 @@ Reactor::Reactor(int max_event, Type _type) {
- void Reactor::set_handler(const int fd_type, const int event, const ReactorHandler handler) {
--    if (isset_read_event(event)) {
--        read_handler[fd_type] = handler;
--    } else if (isset_write_event(event)) {
--        write_handler[fd_type] = handler;
--    } else if (isset_error_event(event)) {
--        error_handler[fd_type] = handler;
--    } else {
--        assert(0);
-+    switch (swr_v1_reactor_handler_select(0, event, 0)) {
-+    case 1: read_handler[fd_type] = handler; break;
-+    case 2: write_handler[fd_type] = handler; break;
-+    case 3: error_handler[fd_type] = handler; break;
-+    default: assert(0);
-     }
-@@ -169,11 +313,3 @@ void Reactor::set_handler(const int fd_type, const int event, const ReactorHandl
- bool Reactor::isset_handler(const int fd_type, const int event) const {
--    if (isset_read_event(event)) {
--        return read_handler[fd_type] != nullptr;
--    } else if (isset_write_event(event)) {
--        return write_handler[fd_type] != nullptr;
--    } else if (isset_error_event(event)) {
--        return error_handler[fd_type] != nullptr;
--    } else {
--        return false;
--    }
-+    return swr_reactor_resolve_handler(this, fd_type, event, 1) != nullptr;
- }
-@@ -181,9 +317,4 @@ bool Reactor::isset_handler(const int fd_type, const int event) const {
+@@ -181,9 +328,4 @@ bool Reactor::isset_handler(const int fd_type, const int event) const {
  bool Reactor::if_exit() {
 -    size_t _event_num = get_event_num();
 -    for (auto &kv : exit_conditions) {
@@ -330,136 +301,7 @@ index 505aaf7ce..40645c7bd 100644
 +    size_t event_num = get_event_num();
 +    return callbacks_.if_exit(this, event_num);
  }
-@@ -202,55 +333,22 @@ ssize_t Reactor::write_func(const Reactor *reactor,
-     Buffer *buffer = socket->out_buffer;
--
--    if (socket->buffer_size == 0) {
--        socket->set_memory_buffer_size(Socket::default_buffer_size);
--    }
--
--    if (socket->nonblock == 0) {
--        socket->set_fd_option(1, -1);
--    }
--
--    if ((uint32_t) _len > socket->buffer_size) {
--        swoole_error_log(SW_LOG_WARNING,
--                         SW_ERROR_PACKAGE_LENGTH_TOO_LARGE,
--                         "data packet is too large, cannot exceed the socket buffer size");
--        return SW_ERR;
--    }
--
--    if (Buffer::empty(buffer)) {
--        ssize_t retval;
--        if (socket->ssl_send_) {
--            goto _alloc_buffer;
--        }
--    _do_send:
--        retval = send_fn();
--
--        if (retval > 0) {
--            if ((ssize_t) _len == retval) {
--                return retval;
--            } else {
--                goto _alloc_buffer;
--            }
--        } else if (socket->catch_write_error(errno) == SW_WAIT) {
--        _alloc_buffer:
--            if (!socket->out_buffer) {
--                buffer = new Buffer(socket->chunk_size);
--                socket->out_buffer = buffer;
--            }
--            if (!socket->isset_writable_event()) {
--                reactor->add_write_event(socket);
--            }
--            /**
--             * Part of the data has been successfully written to the kernel's socket buffer,
--             * and at this point, writing to the memory queue is permitted under any circumstances.
--             * Ensure that the async write operation either succeeds completely or fails entirely.
--             */
--            goto _append_buffer;
--        } else if (errno == EINTR) {
--            goto _do_send;
--        } else {
--            swoole_set_last_error(errno);
-+    swr_v1_reactor_write_workflow_state state{};
-+    swr_v1_reactor_write_facts facts{};
-+    for (;;) {
-+        switch (swr_v1_reactor_write_workflow(&state, _len, &facts)) {
-+        case 0: return _len;
-+        case 1: facts.sent = send_fn(); break;
-+        case 2: facts.wait = socket->catch_write_error(errno) == SW_WAIT; break;
-+        case 3:
-+            buffer = new Buffer(socket->chunk_size);
-+            socket->out_buffer = buffer;
-+            break;
-+        case 4: reactor->add_write_event(socket); break;
-+        case 5: append_fn(buffer); return _len;
-+        case 6: return facts.sent;
-+        case 7:
-+            swoole_error_log(SW_LOG_WARNING,
-+                             SW_ERROR_PACKAGE_LENGTH_TOO_LARGE,
-+                             "data packet is too large, cannot exceed the socket buffer size");
-             return SW_ERR;
--        }
--    } else {
--        if (buffer->length() + _len > socket->buffer_size) {
-+        case 8:
-             swoole_error_log(SW_LOG_WARNING,
-@@ -258,11 +356,19 @@ ssize_t Reactor::write_func(const Reactor *reactor,
-                              "socket#%d output buffer overflow: (%u/%u)",
--                             socket->get_fd(),
--                             buffer->length(),
--                             socket->buffer_size);
-+                             socket->get_fd(), buffer->length(), socket->buffer_size);
-             return SW_ERR;
-+        case 9: swoole_set_last_error(errno); return SW_ERR;
-+        case 10: facts.capacity = socket->buffer_size; break;
-+        case 11: socket->set_memory_buffer_size(Socket::default_buffer_size); break;
-+        case 12: facts.nonblock = socket->nonblock; break;
-+        case 13: socket->set_fd_option(1, -1); break;
-+        case 14: facts.capacity = socket->buffer_size; break;
-+        case 15: facts.flags |= static_cast<uint32_t>(Buffer::empty(buffer)); break;
-+        case 16: facts.flags |= static_cast<uint32_t>(socket->ssl_send_) << 1; break;
-+        case 17: facts.buffered = buffer->length(); break;
-+        case 18: facts.flags |= static_cast<uint32_t>(socket->out_buffer != nullptr) << 2; break;
-+        case 19: facts.flags |= static_cast<uint32_t>(socket->isset_writable_event()) << 3; break;
-+        case 20: facts.interrupted = errno == EINTR; break;
-+        default: return SW_ERR;
-         }
--    _append_buffer:
--        append_fn(buffer);
-     }
--    return _len;
- }
-@@ -276,4 +382,4 @@ ssize_t Reactor::_write(Reactor *reactor, Socket *socket, const void *buf, size_
-     auto append_fn = [&send_bytes, buf, n](Buffer *buffer) {
--        ssize_t offset = send_bytes > 0 ? send_bytes : 0;
--        buffer->append(static_cast<const char *>(buf) + offset, n - offset);
-+        auto args = swr_v1_reactor_write_append(0, n, send_bytes);
-+        buffer->append(static_cast<const char *>(buf) + args.offset, args.length);
-     };
-@@ -283,3 +389,4 @@ ssize_t Reactor::_write(Reactor *reactor, Socket *socket, const void *buf, size_
- ssize_t Reactor::_writev(Reactor *reactor, Socket *socket, const iovec *iov, size_t iovcnt) {
--    if (socket->ssl) {
-+    auto args = swr_v1_reactor_write_prepare(socket->ssl ? 1 : 0, iov, iovcnt);
-+    if (args.status != 0) {
-         swoole_error_log(SW_LOG_WARNING, SW_ERROR_OPERATION_NOT_SUPPORT, "does not support SSL");
-@@ -289,6 +396,3 @@ ssize_t Reactor::_writev(Reactor *reactor, Socket *socket, const iovec *iov, siz
-     ssize_t send_bytes = 0;
--    size_t n = 0;
--    SW_LOOP_N(iovcnt) {
--        n += iov[i].iov_len;
--    }
-+    size_t n = args.length;
-     auto send_fn = [&send_bytes, socket, iov, iovcnt]() -> ssize_t {
-@@ -298,4 +402,4 @@ ssize_t Reactor::_writev(Reactor *reactor, Socket *socket, const iovec *iov, siz
-     auto append_fn = [&send_bytes, iov, iovcnt](Buffer *buffer) {
--        ssize_t offset = send_bytes > 0 ? send_bytes : 0;
--        buffer->append(iov, iovcnt, offset);
-+        auto args = swr_v1_reactor_write_append(1, 0, send_bytes);
-+        buffer->append(iov, iovcnt, static_cast<ssize_t>(args.offset));
-     };
-@@ -305,37 +409,27 @@ ssize_t Reactor::_writev(Reactor *reactor, Socket *socket, const iovec *iov, siz
+@@ -305,37 +447,27 @@ ssize_t Reactor::_writev(Reactor *reactor, Socket *socket, const iovec *iov, siz
  int Reactor::_writable_callback(Reactor *reactor, Event *ev) {
 -    int ret;
 -
@@ -518,44 +360,22 @@ index 505aaf7ce..40645c7bd 100644
 -
 -    return SW_OK;
  }
-@@ -346,10 +440,13 @@ void Reactor::drain_write_buffer(Socket *socket) {
-     event.fd = socket->fd;
--
--    while (!Buffer::empty(socket->out_buffer)) {
--        if (socket->wait_event(static_cast<int>(sec2msec(Socket::default_write_timeout)), SW_EVENT_WRITE) == SW_ERR) {
--            break;
--        }
--        _writable_callback(this, &event);
--        if (socket->close_wait || socket->removed) {
--            break;
-+    swr_v1_reactor_flush_state state{};
-+    int observed = SW_OK;
-+    for (;;) {
-+        switch (swr_v1_reactor_drain_workflow(&state, observed)) {
-+        case 0: return;
-+        case 1: observed = socket->wait_event(static_cast<int>(sec2msec(Socket::default_write_timeout)), SW_EVENT_WRITE); break;
-+        case 2: _writable_callback(this, &event); break;
-+        case 10: observed = Buffer::empty(socket->out_buffer); break;
-+        case 12: observed = socket->close_wait; break;
-+        case 15: observed = socket->removed; break;
-+        default: return;
-         }
-@@ -363,3 +460,3 @@ void Reactor::add_destroy_callback(const Callback &cb, void *data) {
+@@ -363,3 +495,3 @@ void Reactor::add_destroy_callback(const Callback &cb, void *data) {
  void Reactor::set_end_callback(const EndCallback _id, const std::function<void(Reactor *)> &fn) {
 -    end_callbacks[_id] = fn;
 +    callbacks_.set_end(_id, fn);
  }
-@@ -367,3 +464,3 @@ void Reactor::set_end_callback(const EndCallback _id, const std::function<void(R
+@@ -367,3 +499,3 @@ void Reactor::set_end_callback(const EndCallback _id, const std::function<void(R
  void Reactor::erase_end_callback(const EndCallback _id) {
 -    end_callbacks.erase(_id);
 +    callbacks_.erase_end(_id);
  }
-@@ -375,3 +472,3 @@ void Reactor::erase_end_callback(const EndCallback _id) {
+@@ -375,3 +507,3 @@ void Reactor::erase_end_callback(const EndCallback _id) {
  void Reactor::set_exit_condition(const ExitCondition _id, const std::function<bool(Reactor *, size_t &)> &fn) {
 -    exit_conditions[_id] = fn;
 +    callbacks_.set_exit(_id, fn);
  }
-@@ -379,6 +476,3 @@ void Reactor::set_exit_condition(const ExitCondition _id, const std::function<bo
+@@ -379,6 +511,3 @@ void Reactor::set_exit_condition(const ExitCondition _id, const std::function<bo
  void Reactor::defer(const Callback &cb, void *data) {
 -    if (defer_tasks == nullptr) {
 -        defer_tasks = new CallbackManager;
@@ -563,17 +383,10 @@ index 505aaf7ce..40645c7bd 100644
 -    defer_tasks->append(cb, data);
 +    swr_reactor_enqueue_defer(this, cb, data);
  }
-@@ -387,5 +481,3 @@ void Reactor::execute_end_callbacks(bool _timed_out) {
+@@ -387,5 +516,3 @@ void Reactor::execute_end_callbacks(bool _timed_out) {
      timed_out = _timed_out;
 -    for (auto &kv : end_callbacks) {
 -        kv.second(this);
 -    }
 +    callbacks_.execute_end(this);
- }
-@@ -393,5 +485,3 @@ void Reactor::execute_end_callbacks(bool _timed_out) {
- void Reactor::execute_begin_callback() const {
--    if (future_task.callback) {
--        future_task.callback(future_task.data);
--    }
-+    swr_reactor_run_task(future_task);
  }

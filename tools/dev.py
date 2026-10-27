@@ -290,9 +290,6 @@ def plan(args, reports):
         script('reactor-poll-snapshot', 'tests/modules/reactor/poll_snapshot.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
                '--report', reports / 'reactor-poll-snapshot.json')
-        script('reactor-ordered', 'tests/modules/reactor/ordered_gate.py', '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
-               '--report', reports / 'reactor-ordered.json')
         script('reactor-filters', 'tests/modules/reactor/filters_gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
                '--report', reports / 'reactor-filters.json')

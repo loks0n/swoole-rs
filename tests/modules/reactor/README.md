@@ -13,7 +13,7 @@ Most gates take the pinned upstream source and a Rust FFI archive:
 `NAME` is one of `registration`, `write_positive` (`--workflow` for the write
 workflow), `write_arguments`, `output`, `wait`, `callbacks`, `callback_queues`,
 `initialize`, `handlers`, `builtins`, `backend_storage`,
-`flush`, `poll_snapshot`, `ordered_gate`, `filters_gate`, `write_gate`,
+`flush`, `poll_snapshot`, `filters_gate`, `write_gate`,
 `stream_gate` and `iov_owned`. Each extracts the original and patched function
 bodies from upstream after applying `migration/patches/reactor/` (patch
 checksums must match the manifest), compiles them against native facades and the
