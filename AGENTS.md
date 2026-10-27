@@ -88,8 +88,9 @@ and impact (the reproducer stays local), then carry on; a person handles
 disclosure. Public code, comments and test exclusions don't mark where upstream
 misbehaves either.
 
-Executors never ask the person running them: no question tool, no prompt
-waiting for an answer. Routine next steps (merge on green, close, file
+Executors never ask the person running them: no question tool, no question or
+answer buttons when wrapping up a turn, and no turn that ends waiting for an
+answer; end each turn with the next wakeup scheduled. Routine next steps (merge on green, close, file
 follow-ups) need no one. For an open question, resolve it yourself first:
 reread the issue, its goal and earlier decisions, and gather data (reproduce,
 measure both engines, read upstream). Only when that can't settle it, add
