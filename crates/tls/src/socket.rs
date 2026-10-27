@@ -4,10 +4,11 @@
 //! the socket's address.
 use openssl_sys::{
     ERR_clear_error, SSL, SSL_ERROR_SSL, SSL_ERROR_SYSCALL, SSL_ERROR_WANT_READ,
-    SSL_ERROR_WANT_WRITE, SSL_ERROR_ZERO_RETURN, SSL_accept, SSL_connect, SSL_get_error, SSL_read,
-    SSL_write,
+    SSL_ERROR_WANT_WRITE, SSL_ERROR_ZERO_RETURN, SSL_accept, SSL_connect, SSL_get_error,
+    SSL_get_verify_result, SSL_read, SSL_write, X509, X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT,
+    X509_V_OK, X509_check_host, X509_free,
 };
-use std::os::raw::{c_int, c_void};
+use std::os::raw::{c_char, c_int, c_long, c_void};
 
 /// `SW_ERROR_SSL_BAD_CLIENT` and `SW_ERROR_SSL_RESET`.
 const BAD_CLIENT: c_int = 1015;
@@ -240,6 +241,46 @@ pub unsafe extern "C" fn swr_v1_socket_ssl_connect(ssl: *mut SSL) -> SslHandshak
     result
 }
 
+/// `Socket::ssl_check_host`: whether the peer certificate `cert` (consumed; null when
+/// the peer sent none) matches the `length` bytes at `name` under `X509_check_host`.
+/// Returns 0 without a certificate, 1 on a match and 2 on none (native code warns).
+///
+/// # Safety
+/// `cert` is null or an owned X509 reference, and `name` denotes `length` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_socket_ssl_check_host(
+    cert: *mut X509,
+    name: *const c_char,
+    length: usize,
+) -> c_int {
+    if cert.is_null() {
+        return 0;
+    }
+    // SAFETY: the caller's certificate and `length` bytes of host name.
+    let matched = unsafe { X509_check_host(cert, name, length, 0, std::ptr::null_mut()) } == 1;
+    // SAFETY: drops the reference the caller handed over.
+    unsafe { X509_free(cert) };
+    if matched { 1 } else { 2 }
+}
+
+/// `Socket::ssl_verify`: the peer's verify result if it rejects the peer, else
+/// `X509_V_OK`. A self-signed leaf passes when `allow_self_signed`.
+///
+/// # Safety
+/// `ssl` is a live SSL owned by the caller.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_socket_ssl_verify(
+    ssl: *const SSL,
+    allow_self_signed: bool,
+) -> c_long {
+    // SAFETY: the caller's live SSL.
+    let result = unsafe { SSL_get_verify_result(ssl) };
+    if allow_self_signed && result == c_long::from(X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT) {
+        return c_long::from(X509_V_OK);
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,6 +363,65 @@ mod tests {
                 "no client hello yet"
             );
             SSL_free(server);
+        }
+    }
+
+    unsafe extern "C" {
+        /// Not bound by openssl-sys; sets what a handshake would have verified.
+        fn SSL_set_verify_result(ssl: *mut SSL, result: c_long);
+    }
+
+    #[test]
+    fn check_host_and_verify() {
+        unsafe {
+            let check = |cert, name: &str| {
+                swr_v1_socket_ssl_check_host(cert, name.as_ptr().cast(), name.len())
+            };
+            assert_eq!(
+                check(std::ptr::null_mut(), "example.com"),
+                0,
+                "no certificate"
+            );
+            let named = |common: &str| {
+                let cert = X509_new();
+                let name = X509_get_subject_name(cert);
+                let common = std::ffi::CString::new(common).unwrap();
+                X509_NAME_add_entry_by_txt(
+                    name,
+                    c"CN".as_ptr(),
+                    MBSTRING_ASC,
+                    common.as_ptr().cast(),
+                    -1,
+                    -1,
+                    0,
+                );
+                cert
+            };
+            assert_eq!(check(named("example.com"), "EXAMPLE.com"), 1);
+            assert_eq!(
+                check(named("*.example.com"), "a.example.com"),
+                1,
+                "wildcard"
+            );
+            assert_eq!(check(named("example.com"), "example.org"), 2);
+
+            let (ssl, _) = client();
+            assert_eq!(
+                swr_v1_socket_ssl_verify(ssl, false),
+                c_long::from(X509_V_OK)
+            );
+            SSL_set_verify_result(ssl, c_long::from(X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT));
+            assert_eq!(swr_v1_socket_ssl_verify(ssl, true), c_long::from(X509_V_OK));
+            assert_eq!(
+                swr_v1_socket_ssl_verify(ssl, false),
+                c_long::from(X509_V_ERR_DEPTH_ZERO_SELF_SIGNED_CERT)
+            );
+            SSL_set_verify_result(ssl, c_long::from(X509_V_ERR_CERT_HAS_EXPIRED));
+            assert_eq!(
+                swr_v1_socket_ssl_verify(ssl, true),
+                c_long::from(X509_V_ERR_CERT_HAS_EXPIRED)
+            );
+            SSL_free(ssl);
         }
     }
 

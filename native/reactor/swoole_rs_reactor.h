@@ -186,6 +186,11 @@ typedef struct {
 } swr_v1_socket_ssl_handshake_result;
 swr_v1_socket_ssl_handshake_result swr_v1_socket_ssl_accept(struct ssl_st *ssl, bool dtls);
 swr_v1_socket_ssl_handshake_result swr_v1_socket_ssl_connect(struct ssl_st *ssl);
+/* Socket::ssl_check_host: X509_check_host on the peer certificate (consumed; may be
+ * null): 0 none, 1 match, 2 no match. Socket::ssl_verify: the verify error that
+ * rejects the peer, or X509_V_OK (a self-signed leaf passes when allowed). */
+int swr_v1_socket_ssl_check_host(struct x509_st *cert, const char *name, size_t length);
+long swr_v1_socket_ssl_verify(const struct ssl_st *ssl, bool allow_self_signed);
 /* network::Socket's per-request reads and writes: recv/send/peek with EINTR and
  * dont_restart, driving `tls` (ssl_recv/ssl_send/SSL_peek on `socket`) when set;
  * catch_error's classification (swReturnCode). */
@@ -193,6 +198,17 @@ typedef ssize_t (*swr_v1_socket_tls_io)(void *socket, void *buffer, size_t lengt
 ssize_t swr_v1_socket_recv(int fd, void *buffer, size_t length, int flags, bool nonblock, bool dont_restart, swr_v1_socket_tls_io tls, void *socket);
 ssize_t swr_v1_socket_send(int fd, const void *buffer, size_t length, int flags, bool dont_restart, swr_v1_socket_tls_io tls, void *socket);
 ssize_t swr_v1_socket_peek(int fd, void *buffer, size_t length, int flags, swr_v1_socket_tls_io tls, void *socket);
+/* Socket::readv/writev: readv(2)/writev(2) over state's remaining iovecs, or tls one
+ * iovec at a time until one comes up short; advances state like
+ * IOVector::update_iterator and retries EINTR. Native code copies the IOVector's
+ * cursor in and back. */
+typedef struct {
+    struct iovec *iterator;
+    int remain_count;
+    int index;
+    size_t offset_bytes;
+} swr_v1_socket_iov_state;
+ssize_t swr_v1_socket_iov(int fd, bool write, swr_v1_socket_iov_state *state, swr_v1_socket_tls_io tls, void *socket);
 int swr_v1_socket_catch_error(int error, bool *kernel_nobufs);
 /* network::Socket's swSocketType <-> (domain, type), and the type a host names
  * with how many leading bytes convert_to_type erases. */

@@ -296,24 +296,6 @@ pub extern "C" fn swr_v1_hook_retry_interrupt(
     }
 }
 
-/// Select a native coroutine field; read binding wins when both are requested.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_bound(
-    event: u32,
-    read: u32,
-    write: u32,
-    read_bound: bool,
-    write_bound: bool,
-) -> u32 {
-    if event & read != 0 && read_bound {
-        1
-    } else if event & write != 0 && write_bound {
-        2
-    } else {
-        0
-    }
-}
-
 /// Closed sockets take precedence without requiring a native socket dereference.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_socket_status(closed: bool, close_wait: bool) -> u32 {
@@ -335,26 +317,6 @@ pub extern "C" fn swr_v1_hook_check_result(result: i64, has_error: bool) -> u32 
         2
     } else {
         0
-    }
-}
-
-/// Native static diagnostic string: reading, writing, or both.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_event_name(
-    event: u32,
-    read: u32,
-    write: u32,
-    read_bound: bool,
-    write_bound: bool,
-) -> u32 {
-    if event == read {
-        0
-    } else if event == write {
-        1
-    } else if read_bound && write_bound {
-        2
-    } else {
-        u32::from(!read_bound)
     }
 }
 
