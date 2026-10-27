@@ -11,6 +11,7 @@
 
 pub mod address;
 pub mod packet;
+pub mod shutdown;
 pub mod sleep;
 pub mod vector;
 
@@ -464,41 +465,6 @@ pub extern "C" fn swr_v1_hook_sleep_timeout(seconds: f64, minimum: f64) -> f64 {
     if seconds < minimum { minimum } else { seconds }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_shutdown_admit(
-    connected: bool,
-    how: i32,
-    read: bool,
-    write: bool,
-    shut_read: i32,
-    shut_write: i32,
-) -> bool {
-    connected && !(how == shut_read && read) && !(how == shut_write && write)
-}
-
-/// Bit1 publishes read shutdown, bit2 write; zero retains native syscall failure.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_shutdown_mask(
-    success: bool,
-    disconnected: bool,
-    how: i32,
-    shut_read: i32,
-    shut_write: i32,
-) -> u32 {
-    if !success && !disconnected {
-        0
-    } else if disconnected {
-        3
-    } else if how == shut_read {
-        1
-    } else if how == shut_write {
-        2
-    } else {
-        3
-    }
-}
-
-/// No binding precedes event validation, including combined/unknown event bits.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_cancel_action(bound: bool, event: u32, read: u32, write: u32) -> u32 {
     if !bound {

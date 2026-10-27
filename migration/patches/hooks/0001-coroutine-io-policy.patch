@@ -1091,7 +1091,7 @@ index 63ca2f2..f0514c6 100644
 +            break;
          }
 diff --git a/src/coroutine/socket.cc b/src/coroutine/socket.cc
-index 5a16f4c..c8dbeff 100644
+index 5a16f4c..b658c6a 100644
 --- a/src/coroutine/socket.cc
 +++ b/src/coroutine/socket.cc
 @@ -20,2 +20,7 @@
@@ -1667,14 +1667,18 @@ index 5a16f4c..c8dbeff 100644
 +    ssize_t recv_bytes = swr_v1_hook_recv_packet(&ops);
 +    context.store();
      return recv_bytes;
-@@ -1518,3 +1445,4 @@ bool Socket::shutdown(int _how) {
-     int error = 0;
+@@ -1517,33 +1444,16 @@ bool Socket::shutdown(int _how) {
+     set_err(0);
+-    int error = 0;
 -    if (!is_connected() || (_how == SHUT_RD && shutdown_read) || (_how == SHUT_WR && shutdown_write)) {
-+    bool live = is_connected();
-+    if (!swr_v1_hook_shutdown_admit(live, _how, live && shutdown_read, live && shutdown_write, SHUT_RD, SHUT_WR)) {
-         error = ENOTCONN;
-@@ -1527,17 +1455,9 @@ bool Socket::shutdown(int _how) {
-         }
+-        error = ENOTCONN;
+-    } else {
+-        if (socket->ssl) {
+-            socket->ssl_shutdown();
+-        }
+-        if (::shutdown(sock_fd, _how) < 0) {
+-            error = errno;
+-        }
 -        if (error == 0 || error == ENOTCONN) {
 -            if (error == ENOTCONN) {
 -                // connection reset by server side
@@ -1682,21 +1686,36 @@ index 5a16f4c..c8dbeff 100644
 -            }
 -            switch (_how) {
 -            case SHUT_RD:
-+        auto mask = swr_v1_hook_shutdown_mask(error == 0, error == ENOTCONN, _how, SHUT_RD, SHUT_WR);
-+        if (mask != 0) {
-+            if (mask & 1) {
-                 shutdown_read = true;
+-                shutdown_read = true;
 -                break;
 -            case SHUT_WR:
-+            }
-+            if (mask & 2) {
-                 shutdown_write = true;
+-                shutdown_write = true;
 -                break;
 -            default:
 -                shutdown_read = shutdown_write = true;
 -                break;
-             }
-@@ -1558,6 +1478,7 @@ void Socket::ssl_close() const {
+-            }
+-            if (shutdown_read && shutdown_write) {
+-                connected = false;
+-            }
+-            return true;
+-        }
++    swr_v1_hook_shutdown_flags flags{connected, shutdown_read, shutdown_write};
++    int error = swr_v1_hook_shutdown(
++        ::shutdown,
++        sock_fd,
++        _how,
++        is_connected(),
++        &flags,
++        socket->ssl ? +[](void *s) { static_cast<decltype(socket)>(s)->ssl_shutdown(); } : nullptr,
++        socket);
++    connected = flags.connected;
++    shutdown_read = flags.read;
++    shutdown_write = flags.write;
++    if (error == 0) {
++        return true;
+     }
+@@ -1558,6 +1468,7 @@ void Socket::ssl_close() const {
  bool Socket::cancel(const EventType event) {
 -    if (!has_bound(event)) {
 +    auto action = swr_v1_hook_cancel_action(has_bound(event), event, SW_EVENT_READ, SW_EVENT_WRITE);
@@ -1706,19 +1725,19 @@ index 5a16f4c..c8dbeff 100644
 -    if (event == SW_EVENT_READ) {
 +    if (action == 1) {
          set_err(ECANCELED);
-@@ -1565,3 +1486,3 @@ bool Socket::cancel(const EventType event) {
+@@ -1565,3 +1476,3 @@ bool Socket::cancel(const EventType event) {
          return true;
 -    } else if (event == SW_EVENT_WRITE) {
 +    } else if (action == 2) {
          set_err(ECANCELED);
-@@ -1583,3 +1504,5 @@ bool Socket::cancel(const EventType event) {
+@@ -1583,3 +1494,5 @@ bool Socket::cancel(const EventType event) {
  bool Socket::close() {
 -    if (is_closed()) {
 +    bool closed = is_closed();
 +    auto action = swr_v1_hook_close_action(0, closed, !closed && connected, false);
 +    if (action < 0) {
          set_err(EBADF);
-@@ -1587,6 +1510,6 @@ bool Socket::close() {
+@@ -1587,6 +1500,6 @@ bool Socket::close() {
      }
 -    if (connected) {
 +    if (action == 1) {
@@ -1727,7 +1746,7 @@ index 5a16f4c..c8dbeff 100644
 -    if (sw_unlikely(has_bound())) {
 +    if (sw_unlikely(swr_v1_hook_close_action(1, false, false, has_bound()) == 2)) {
          socket->close_wait = 1;
-@@ -1636,8 +1559,11 @@ Socket::~Socket() {
+@@ -1636,8 +1549,11 @@ Socket::~Socket() {
  bool Socket::TimerController::start() {
 -    if (timeout != 0 && !*timer_pp) {
 +    auto actions = swr_v1_hook_timer(0, enabled, timeout != 0 && *timer_pp != nullptr, false, timeout);
@@ -1744,7 +1763,7 @@ index 5a16f4c..c8dbeff 100644
 +    }
 +    if (actions & SWR_HOOK_TIMER_SENTINEL) {
          *timer_pp = reinterpret_cast<TimerNode *>(-1);
-@@ -1648,6 +1574,9 @@ bool Socket::TimerController::start() {
+@@ -1648,6 +1564,9 @@ bool Socket::TimerController::start() {
  Socket::TimerController::~TimerController() {
 -    if (enabled && *timer_pp) {
 -        if (*timer_pp != reinterpret_cast<TimerNode *>(-1)) {
@@ -1758,7 +1777,7 @@ index 5a16f4c..c8dbeff 100644
 +    }
 +    if (actions & SWR_HOOK_TIMER_CLEAR) {
          *timer_pp = nullptr;
-@@ -1686,13 +1615,17 @@ bool Socket::TimeoutController::has_timedout(TimeoutType _type) {
+@@ -1686,13 +1605,17 @@ bool Socket::TimeoutController::has_timedout(TimeoutType _type) {
      SW_ASSERT_1BYTE(_type);
 -    if (timeout > 0) {
 -        if (sw_unlikely(startup_time == 0)) {
