@@ -13,7 +13,7 @@ use swoole_rs_http::{
 use swoole_rs_oracle::{
     base64 as upstream, clients, framing as upstream_framing, http as upstream_http,
     http_frame::{self, CANDIDATE, Engine, UPSTREAM},
-    protocols, websocket as upstream_ws,
+    http_range, protocols, websocket as upstream_ws,
 };
 use swoole_rs_protocols as _;
 use swoole_rs_websocket::{DecodedFrame, swr_v1_ws_decode, swr_v1_ws_frame_length, swr_v1_ws_mask};
@@ -612,4 +612,134 @@ pub fn clients_domain_decode(bytes: &[u8]) {
     // SAFETY: Rust decoded the same bytes in bounds, so upstream's identical walk does too.
     unsafe { clients::domain_decode(theirs.as_mut_ptr().cast()) };
     assert_eq!(theirs, ours, "domain {bytes:?}");
+}
+
+/// Any bytes up to the first blank line as a request head: `parse_header_info` on both
+/// engines gives the same lengths, flags, errno and multipart boundary.
+pub fn http_header_info(bytes: &[u8]) {
+    let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") else {
+        return;
+    };
+    let line = bytes.windows(2).position(|w| w == b"\r\n").unwrap_or(0);
+    let header_length = (end + 4) as u32;
+    let info = |engine: &Engine| {
+        let (mut buffer, mut info) = (terminated(bytes), http_frame::HeaderInfo::default());
+        // SAFETY: the buffer holds bytes.len() bytes and a NUL; the head ends in a blank
+        // line before header_length; info is a local.
+        unsafe {
+            (engine.header_info)(
+                buffer.as_mut_ptr(),
+                bytes.len(),
+                line as u32,
+                header_length,
+                &mut info,
+            )
+        };
+        info
+    };
+    let got = info(&CANDIDATE);
+    // Upstream is undefined here (private advisory); the candidate rejects the request.
+    if multipart_nul(bytes, line + 2, end) {
+        assert_eq!(got.flags & 32, 32, "excepted for {bytes:?}");
+        return;
+    }
+    assert_eq!(got, info(&UPSTREAM), "header info for {bytes:?}");
+}
+
+/// Whether a multipart/form-data Content-Type line in the head, as parse_header_info
+/// finds it, meets a NUL before its CR.
+fn multipart_nul(bytes: &[u8], start: usize, end: usize) -> bool {
+    let starts = |at: usize, prefix: &[u8]| {
+        bytes.get(at..end).is_some_and(|rest| {
+            rest.len() >= prefix.len() && rest[..prefix.len()].eq_ignore_ascii_case(prefix)
+        })
+    };
+    (start.max(2)..end).any(|at| {
+        if &bytes[at - 2..at] != b"\r\n" || !starts(at, b"Content-Type:") {
+            return false;
+        }
+        let mut value = at + 13;
+        while bytes.get(value) == Some(&b' ') {
+            value += 1;
+        }
+        starts(value, b"multipart/form-data")
+            && bytes[value..]
+                .iter()
+                .find(|&&byte| matches!(byte, b'\r' | 0))
+                != Some(&b'\r')
+    })
+}
+
+const RANGE_BOUNDARY: &[u8] = b"SwooleRangeBoundary0123\0";
+
+fn range_on(
+    engine: http_range::ParseRange,
+    range: &[c_char],
+    filesize: u64,
+    mime: &[c_char],
+    flags: u8,
+    capacity: usize,
+) -> (http_range::Outcome, Vec<u8>) {
+    let (mut outcome, mut tasks) = (
+        http_range::Outcome::default(),
+        vec![0; capacity * http_range::TASK_SIZE],
+    );
+    // SAFETY: range, mime and the boundary are NUL-terminated; tasks has room for
+    // capacity tasks; outcome is a local.
+    unsafe {
+        engine(
+            range.as_ptr(),
+            filesize,
+            mime.as_ptr(),
+            RANGE_BOUNDARY.as_ptr().cast(),
+            i32::from(flags & 1),
+            i32::from(flags & 2 != 0),
+            &mut outcome,
+            tasks.as_mut_ptr(),
+            capacity,
+        )
+    };
+    tasks.truncate(outcome.tasks.min(capacity) * http_range::TASK_SIZE);
+    (outcome, tasks)
+}
+
+/// A flags byte (If-Range sent, file modified), a MIME type length, a file size and a
+/// Range header: `StaticHandler::parse_range` on both engines gives the same status,
+/// content length, tasks, part headers and closing boundary.
+pub fn http_range(bytes: &[u8]) {
+    let Some((&[flags, mime_length, size @ ..], range)) = bytes.split_first_chunk::<10>() else {
+        return;
+    };
+    let filesize = u64::from_le_bytes(size);
+    let mime: Vec<c_char> = b"application/octet-stream"
+        .iter()
+        .cycle()
+        .take(usize::from(mime_length))
+        .chain(&[0])
+        .map(|&byte| byte as c_char)
+        .collect();
+    let range: Vec<c_char> = range
+        .iter()
+        .take_while(|&&byte| byte != 0)
+        .chain(&[0])
+        .map(|&byte| byte as c_char)
+        .collect();
+    let capacity = range.len() + 2;
+    let want = range_on(
+        http_range::UPSTREAM,
+        &range,
+        filesize,
+        &mime,
+        flags,
+        capacity,
+    );
+    let got = range_on(
+        http_range::CANDIDATE,
+        &range,
+        filesize,
+        &mime,
+        flags,
+        capacity,
+    );
+    assert_eq!(got, want, "range for {bytes:?}");
 }

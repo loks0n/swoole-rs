@@ -3,12 +3,14 @@
 // applied (candidate, which calls the Rust exports) into SWR_FRAME_INC unchanged.
 // The facade gives them upstream's Request fields and String's str/length/offset.
 #include <cctype>
+#include <cerrno>
 #include <cstdint>
 #include <cstring>
 #include <cstdlib>
 #include <string>
 #include <strings.h>
 #include <sys/types.h>
+#include <vector>
 #include "swoole_rs_http.h"
 
 #define SWR_CAT2(a, b) a##_##b
@@ -33,17 +35,41 @@ struct String {
     size_t length;
     off_t offset;
 };
+// The facade owns every FormData the body allocates and frees them after each call.
+struct FormData {
+    const char *multipart_boundary_buf;
+    uint32_t multipart_boundary_len;
+    static std::vector<FormData *> &owned() {
+        static std::vector<FormData *> all;
+        return all;
+    }
+    static void *operator new(size_t size) {
+        void *memory = ::operator new(size);
+        owned().push_back(static_cast<FormData *>(memory));
+        return memory;
+    }
+    static void release() {
+        for (FormData *data : owned()) ::operator delete(data);
+        owned().clear();
+    }
+};
 struct Request {
     uint8_t method;
     uint8_t version;
     uchar excepted : 1;
     uchar known_length : 1;
+    uchar keep_alive : 1;
+    uchar chunked : 1;
+    uchar nobody_chunked : 1;
+    uchar header_parsed : 1;
     uint32_t url_offset_;
     uint32_t url_length_;
     uint32_t request_line_length_;
     uint32_t header_length_;
     uint64_t content_length_;
     String *buffer_;
+    FormData *form_data_;
+    void parse_header_info();
     int get_protocol();
     int get_header_length();
     int get_chunked_body_length();
@@ -87,6 +113,34 @@ int SWR_CAT(swr_oracle_http_frame, SWR_FRAME_ENGINE)(uint32_t operation, char *d
               request.excepted, request.known_length, request.url_offset_, request.url_length_,
               request.request_line_length_, request.header_length_};
     return result;
+}
+
+// See swoole_rs_oracle::http_frame::HeaderInfo.
+struct swr_oracle_http_header_info {
+    uint64_t content_length;
+    uint32_t flags, error;
+    int64_t boundary_offset, boundary_length;
+};
+
+// parse_header_info over length bytes and a NUL, with this request line and header
+// length, from errno 0. flags: known_length 1, keep_alive 2, chunked 4, nobody_chunked
+// 8, header_parsed 16, excepted 32. The boundary offset is -1 without multipart.
+void SWR_CAT(swr_oracle_http_header_info, SWR_FRAME_ENGINE)(char *data, size_t length, uint32_t line_length,
+                                                           uint32_t header_length, swr_oracle_http_header_info *out) {
+    String buffer{data, length, 0};
+    Request request{};
+    request.request_line_length_ = line_length;
+    request.header_length_ = header_length;
+    request.buffer_ = &buffer;
+    errno = 0;
+    request.parse_header_info();
+    out->error = errno;
+    out->content_length = request.content_length_;
+    out->flags = request.known_length | request.keep_alive << 1 | request.chunked << 2 |
+                 request.nobody_chunked << 3 | request.header_parsed << 4 | request.excepted << 5;
+    out->boundary_offset = request.form_data_ ? request.form_data_->multipart_boundary_buf - data : -1;
+    out->boundary_length = request.form_data_ ? request.form_data_->multipart_boundary_len : 0;
+    SWR_FRAME_ENGINE::FormData::release();
 }
 
 bool SWR_CAT(swr_oracle_http_expect, SWR_FRAME_ENGINE)(char *data, size_t length) {

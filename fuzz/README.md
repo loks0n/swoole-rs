@@ -38,6 +38,15 @@ after `migration/patches/http/0001-http-helpers.patch` (which call Rust), over a
 where upstream's behaviour is undefined (private advisory) are excluded from comparison; the candidate is still checked. Seeds include the requests
 `http.client` sends for the corpus applications.
 
+`http_header_info` runs `Request::parse_header_info` on both engines over any
+request head (up to its blank line): content length, keep-alive, chunked and
+nobody-chunked flags, errno and the multipart boundary must match. `http_range`
+runs `StaticHandler::parse_range` from the pinned static_handler.cc and from it
+with `migration/patches/http/0002-static-ranges.patch`, over a file size, MIME type
+length, If-Range verdict and any Range header: status, content length, every task
+and its part header, and the closing boundary must match. Where upstream's
+behaviour is undefined (private advisory), the candidate must reject the request.
+
 For MQTT and RESP, `mqtt_length` compares `mqtt::get_package_length` over any
 received bytes and `resp_parse` compares `redis::parse` (every string and, on
 glibc, `ERANGE`), each against the same body after

@@ -144,6 +144,23 @@ pub mod http_frame {
         ) -> usize,
         /// `get_method_string`.
         pub method: unsafe extern "C" fn(i32) -> *const c_char,
+        /// `Request::parse_header_info` over `length` bytes followed by a NUL, with this
+        /// request line length and header length, from errno 0.
+        pub header_info: unsafe extern "C" fn(*mut c_char, usize, u32, u32, *mut HeaderInfo),
+    }
+
+    /// The request after `parse_header_info`. Flags: `known_length` 1, `keep_alive`
+    /// 2, `chunked` 4, `nobody_chunked` 8, `header_parsed` 16, `excepted` 32. Without
+    /// a multipart Content-Type, `boundary_offset` is -1.
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub struct HeaderInfo {
+        pub content_length: u64,
+        pub flags: u32,
+        /// errno afterwards.
+        pub error: u32,
+        pub boundary_offset: i64,
+        pub boundary_length: i64,
     }
 
     unsafe extern "C" {
@@ -164,6 +181,13 @@ pub mod http_frame {
             output: *mut c_char,
         ) -> usize;
         fn swr_oracle_http_method_upstream(method: i32) -> *const c_char;
+        fn swr_oracle_http_header_info_upstream(
+            data: *mut c_char,
+            length: usize,
+            line_length: u32,
+            header_length: u32,
+            out: *mut HeaderInfo,
+        );
         fn swr_oracle_http_frame_candidate(
             operation: u32,
             data: *mut c_char,
@@ -181,6 +205,13 @@ pub mod http_frame {
             output: *mut c_char,
         ) -> usize;
         fn swr_oracle_http_method_candidate(method: i32) -> *const c_char;
+        fn swr_oracle_http_header_info_candidate(
+            data: *mut c_char,
+            length: usize,
+            line_length: u32,
+            header_length: u32,
+            out: *mut HeaderInfo,
+        );
     }
 
     pub const UPSTREAM: Engine = Engine {
@@ -188,13 +219,95 @@ pub mod http_frame {
         expect: swr_oracle_http_expect_upstream,
         header: swr_oracle_http_header_upstream,
         method: swr_oracle_http_method_upstream,
+        header_info: swr_oracle_http_header_info_upstream,
     };
     pub const CANDIDATE: Engine = Engine {
         frame: swr_oracle_http_frame_candidate,
         expect: swr_oracle_http_expect_candidate,
         header: swr_oracle_http_header_candidate,
         method: swr_oracle_http_method_candidate,
+        header_info: swr_oracle_http_header_info_candidate,
     };
+}
+
+pub mod http_range {
+    use std::ffi::c_char;
+
+    /// Bytes per task in `parse_range`'s task output: offset and length (u64 each),
+    /// then the part header, NUL-padded to `SW_HTTP_SERVER_PART_HEADER`.
+    pub const TASK_SIZE: usize = 16 + 256;
+
+    /// The handler after `parse_range`.
+    #[repr(C)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct Outcome {
+        pub content_length: usize,
+        pub status_code: i32,
+        /// 1 if the body threw.
+        pub thrown: i32,
+        pub tasks: usize,
+        pub end_part_length: usize,
+        /// The first 128 bytes of `end_part`.
+        pub end_part: [u8; 128],
+    }
+
+    impl Default for Outcome {
+        fn default() -> Self {
+            Self {
+                content_length: 0,
+                status_code: 0,
+                thrown: 0,
+                tasks: 0,
+                end_part_length: 0,
+                end_part: [0; 128],
+            }
+        }
+    }
+
+    /// `StaticHandler::parse_range(range, if_range ? "" : nullptr)` compiled from one
+    /// engine's static_handler.cc (`upstream` pinned, `candidate` with the http
+    /// static-ranges patch, which calls the Rust exports), on a file of `filesize`
+    /// bytes with this MIME type and boundary, `is_modified_range` answering
+    /// `modified`. Up to `capacity` tasks go to `tasks` ([`TASK_SIZE`] bytes each).
+    pub type ParseRange = unsafe extern "C" fn(
+        range: *const c_char,
+        filesize: u64,
+        mime: *const c_char,
+        boundary: *const c_char,
+        if_range: i32,
+        modified: i32,
+        out: *mut Outcome,
+        tasks: *mut u8,
+        capacity: usize,
+    );
+
+    unsafe extern "C" {
+        fn swr_oracle_http_range_upstream(
+            range: *const c_char,
+            filesize: u64,
+            mime: *const c_char,
+            boundary: *const c_char,
+            if_range: i32,
+            modified: i32,
+            out: *mut Outcome,
+            tasks: *mut u8,
+            capacity: usize,
+        );
+        fn swr_oracle_http_range_candidate(
+            range: *const c_char,
+            filesize: u64,
+            mime: *const c_char,
+            boundary: *const c_char,
+            if_range: i32,
+            modified: i32,
+            out: *mut Outcome,
+            tasks: *mut u8,
+            capacity: usize,
+        );
+    }
+
+    pub const UPSTREAM: ParseRange = swr_oracle_http_range_upstream;
+    pub const CANDIDATE: ParseRange = swr_oracle_http_range_candidate;
 }
 
 pub mod protocols {
