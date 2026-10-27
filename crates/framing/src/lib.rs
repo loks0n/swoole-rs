@@ -97,7 +97,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
             (0, 0) => {
                 if i.flags & DYNAMIC != 0 && s.head == 0 {
                     return done(-1);
-                };
+                }
                 s.recv = 0;
                 if i.flags & SKIP != 0 {
                     return emit(s, 2, 18, 0);
@@ -107,7 +107,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
             (0, 1) => {
                 if i.flags & REMOVED != 0 {
                     return done(0);
-                };
+                }
                 s.recv = if i.offset > 0 {
                     #[expect(
                         clippy::cast_possible_truncation,
@@ -120,7 +120,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                 };
                 if s.recv as usize > i.cap - i.len {
                     return done(-1);
-                };
+                }
                 return emit(s, 3, 1, u64::from(s.recv));
             }
             (0, 2) => return emit(s, 6, 4, 0),
@@ -130,7 +130,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                 }
                 if i.result == 0 {
                     return done(-1);
-                };
+                }
                 return emit(s, 5, 3, i.result.unsigned_abs());
             }
             (0, 4) | (1, 2) => {

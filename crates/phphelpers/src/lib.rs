@@ -1439,7 +1439,7 @@ mod tests {
                     1
                 );
                 let source: Vec<_> = (0..count).collect();
-                let mut actual = source[1..1 + plan.head as usize].to_vec();
+                let mut actual = source[1..=(plan.head as usize)].to_vec();
                 actual.push(source[0]);
                 actual.extend_from_slice(&source[plan.tail_begin as usize..]);
                 let mut expected = source;

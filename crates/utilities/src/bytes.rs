@@ -106,7 +106,7 @@ pub unsafe extern "C" fn swr_v1_utils_find(
     let found = match mode {
         0 => memchr::memmem::find(data, needle),
         // SAFETY: `p <= length - count`, so both ranges hold `count` readable bytes.
-        1 => memchr::memchr_iter(needle[0], &data[..length - count + 1]).find(|p| unsafe {
+        1 => memchr::memchr_iter(needle[0], &data[..=(length - count)]).find(|p| unsafe {
             strncasecmp(data[*p..].as_ptr().cast(), needle.as_ptr().cast(), count) == 0
         }),
         2 => memchr::memmem::rfind(&data[1..], needle).map(|p| p + 1),

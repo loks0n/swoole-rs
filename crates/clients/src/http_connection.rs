@@ -55,7 +55,7 @@ pub extern "C" fn swr_v1_clients_http_connection_next(
         (2, 2) if facts == 0 => (21, 0), // saved socket error + false
         (2, 2) => (0, 3),
         (2, 3) if facts != 0 => (22, 4),
-        (2, 3) | (2, 4) => (1, 0),
+        (2, 3 | 4) => (1, 0),
         _ => (2, 0),
     };
     HttpConnectionPlan {
