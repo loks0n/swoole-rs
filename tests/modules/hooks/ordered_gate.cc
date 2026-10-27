@@ -48,8 +48,6 @@ static std::function<void()> warning_hook;
 static void php_swoole_fatal_error(int,const char *) { record("curl-conflict-warning");if(warning_hook)warning_hook(); }
 static void swoole_sys_error(const char *) { record("submit:error"); }
 
-static int poll_result=0;static int16_t poll_revents=0;
-static int test_poll(pollfd *fd,nfds_t count,int timeout){assert(count==1);record("poll:"+std::to_string(fd->fd)+":"+std::to_string(fd->events)+":"+std::to_string(timeout));fd->revents=poll_revents;errno=EIO;return poll_result;}
 static std::function<ssize_t(const char *,size_t)> syscall_io;
 static ssize_t test_recvmsg(int fd,msghdr *,int flags){record("recvmsg-args:"+std::to_string(fd)+":"+std::to_string(flags));return syscall_io("recvmsg",8);}
 static ssize_t test_sendmsg(int fd,const msghdr *,int flags){record("sendmsg-args:"+std::to_string(fd)+":"+std::to_string(flags));return syscall_io("sendmsg",8);}
@@ -97,7 +95,7 @@ struct Iouring {int ring=0,used=0;int get_sq_used(){record("sq:used");return use
 struct PHPCoroutine {enum :uint32_t {HOOK_TCP=1<<1,HOOK_UDP=1<<2,HOOK_UNIX=1<<3,HOOK_UDG=1<<4,HOOK_SSL=1<<5,HOOK_TLS=1<<6,HOOK_FILE=1<<8,HOOK_STDIO=1<<15,HOOK_PDO_PGSQL=1<<16,HOOK_PDO_ODBC=1<<17,HOOK_PDO_ORACLE=1<<18,HOOK_PDO_SQLITE=1<<19,HOOK_PDO_FIREBIRD=1<<20,HOOK_STREAM_FUNCTION=1<<7,HOOK_SLEEP=1<<9,HOOK_PROC=1<<10,HOOK_SOCKETS=1<<14,HOOK_NATIVE_CURL=1<<12,HOOK_CURL=1<<11,HOOK_NET_FUNCTION=1<<21,HOOK_MONGODB=1<<22};}; \
 struct PollSocket {uint32_t events=0,revents=0;};struct CoroPollTask {std::map<int,PollSocket> *fds;bool wait=true,success=false;void *timer=nullptr;}; \
 static void socket_poll_completed(void *){record("poll:completed");}static void swoole_timer_del(void *){record("poll:timer-del");} \
-struct Reactor {std::vector<std::function<void(void*)>> callbacks;void defer(void(*)(void*),void*){record("poll:defer");}void defer(const std::function<void(void*)> &fn){record("event:defer");callbacks.push_back(fn);}};static int configured_wait_error=0;static uint32_t configured_wait_revents=0;struct EventWaiter {Coroutine *co;uint32_t revents;int error_;EventWaiter(Coroutine *p,uint32_t bits):co(p),revents(bits),error_(0){}EventWaiter(int fd,int events,double timeout):co(nullptr),revents(configured_wait_revents),error_(configured_wait_error){record("event-waiter:"+std::to_string(fd)+":"+std::to_string(events)+":"+std::to_string(timeout));}};static int16_t translate_events_to_poll(int);static int translate_events_from_poll(int16_t); \
+struct Reactor {std::vector<std::function<void(void*)>> callbacks;void defer(void(*)(void*),void*){record("poll:defer");}void defer(const std::function<void(void*)> &fn){record("event:defer");callbacks.push_back(fn);}};struct EventWaiter {Coroutine *co;uint32_t revents;int error_;EventWaiter(Coroutine *p,uint32_t bits):co(p),revents(bits),error_(0){}};static int16_t translate_events_to_poll(int);static int translate_events_from_poll(int16_t); \
 static bool alias_exists=false,class_found=true;static int alias_result=SUCCESS; \
 static bool class_exists(const char *name){record(std::string("class-exists:")+name);return alias_exists;} \
 namespace zend {struct String {const char *value;String(const char *v):value(v){record(std::string("class-string:")+v);}const char *get(){return value;}};} \
@@ -113,7 +111,6 @@ static void swoole_pgsql_set_blocking(bool b){record("pgsql:"+std::to_string(b))
 }
 FIXTURE(original)
 FIXTURE(selected)
-#define poll test_poll
 namespace original {
 #include "original.inc"
 }
@@ -138,7 +135,6 @@ static std::vector<std::string> run_##NS(int scenario){using namespace NS;trace.
  if(scenario>=1003 && scenario<1023){int k=scenario-1003;int calls=0;bool rv=wait_for([&](){record("callback:"+std::to_string(calls));if(k>=10 && calls==k-10)System::canceled=true;return ++calls>k%10+14;});record("wait-result:"+std::to_string(rv));} \
  if(scenario>=1023 && scenario<1059){int k=scenario-1023;uint32_t masks[]={0,SW_EVENT_READ,SW_EVENT_WRITE,SW_EVENT_ERROR,SW_EVENT_READ|SW_EVENT_WRITE,SW_EVENT_READ|SW_EVENT_ERROR};EventWaiter waiter{&co,masks[k%6]};Reactor reactor;event_waiter_callback(&reactor,&waiter,masks[(k/6)%6]);record("events:"+std::to_string(waiter.revents));event_waiter_callback(&reactor,&waiter,SW_EVENT_WRITE);record("events2:"+std::to_string(waiter.revents));for(auto &fn:reactor.callbacks)fn(nullptr);} \
  if(scenario>=1059 && scenario<1061){int calls=0;try{wait_for([&]()->bool{record("callback:"+std::to_string(calls));if(calls++==scenario-1059+2)throw std::runtime_error("nativecallback");return false;});}catch(const std::runtime_error &){record("callback:exception");}} \
- if(scenario>=1061 && scenario<1169){int k=scenario-1061;uint32_t masks[]={0,SW_EVENT_READ,SW_EVENT_WRITE,SW_EVENT_READ|SW_EVENT_WRITE,SW_EVENT_ERROR,SW_EVENT_READ|SW_EVENT_ERROR};double timeouts[]={-1,0,1};int mode=(k/18)%6;int16_t bits[]={0,0,POLLIN,POLLOUT,POLLERR,POLLNVAL};poll_result=mode==0?-1:mode==1?0:1;poll_revents=bits[mode];configured_wait_error=mode==0?EIO:0;configured_wait_revents=masks[mode];errno=123;record("wait-event:"+std::to_string(System::wait_event(77,masks[k%6],timeouts[(k/6)%3])));record("last:"+std::to_string(last_error));record("errno:"+std::to_string(errno));} \
  if(scenario==1169){auto *waiter=new EventWaiter(&co,0);co.on_resume=[waiter](){delete waiter;record("event:owner-deleted");};Reactor reactor;event_waiter_callback(&reactor,waiter,SW_EVENT_READ);for(auto &fn:reactor.callbacks)fn(nullptr);} \
  if(scenario>=1170 && scenario<1434){int k=scenario-1170;int method=k%6;int mode=(k/6)%11;int failure=k/66;std::vector<std::vector<ssize_t>> results={{0},{8},{-EINVAL},{-EINTR},{-EAGAIN,8},{-EAGAIN,-EAGAIN,3},{-EAGAIN,0},{-EAGAIN,-ECONNRESET},{-EAGAIN,-EINTR},{-EAGAIN,-EAGAIN,0},{-EAGAIN,-EAGAIN,-EINVAL}};io_results=results[mode];if(failure==1)available=false;if(failure==2)timer_ok=false;if(failure==3)wake_ok=false;Socket sock;char buf[16]={};network::IOVector vec;ssize_t result=method==0?sock.recv(buf,8):method==1?sock.send(buf,8):method==2?sock.read(buf,8):method==3?sock.write(buf,8):method==4?sock.readv(&vec):sock.writev(&vec);record("result:"+std::to_string(result));record("errno:"+std::to_string(errno));} \
  if(scenario>=1434 && scenario<1440){int method=scenario-1434;io_results={-EAGAIN,8};throw_io=true;Socket sock;char buf[16]={};network::IOVector vec;try{ssize_t result=method==0?sock.recv(buf,8):method==1?sock.send(buf,8):method==2?sock.read(buf,8):method==3?sock.write(buf,8):method==4?sock.readv(&vec):sock.writev(&vec);record("unexpected:"+std::to_string(result));}catch(const std::runtime_error &){record("io:exception");}} \
