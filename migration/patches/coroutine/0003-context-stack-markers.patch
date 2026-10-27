@@ -1,5 +1,5 @@
 diff --git a/src/coroutine/context.cc b/src/coroutine/context.cc
-index 182cdf1e2..6b1e92d3e 100644
+index 182cdf1..1047bf0 100644
 --- a/src/coroutine/context.cc
 +++ b/src/coroutine/context.cc
 @@ -17,2 +17,5 @@
@@ -101,23 +101,68 @@ index 182cdf1e2..6b1e92d3e 100644
  
  #ifdef SW_CONTEXT_DETECT_STACK_USAGE
 +#ifdef SWOOLE_RS_COROUTINE
- ssize_t Context::get_stack_usage() {
++ssize_t Context::get_stack_usage() {
 +    return swr_v1_context_stack_step(&stack_, &stack_size_, SWR_CTX_STACK_USAGE, nullptr, 0).size;
 +}
 +#else
-+ssize_t Context::get_stack_usage() {
+ ssize_t Context::get_stack_usage() {
 +#ifdef SWOOLE_RS_COROUTINE
 +    return swr_v1_context_stack_usage(reinterpret_cast<const uint8_t *>(stack_), stack_size_);
 +#else
      size_t offset = START_OFFSET;
-@@ -118,4 +204,6 @@ ssize_t Context::get_stack_usage() {
+@@ -118,8 +204,14 @@ ssize_t Context::get_stack_usage() {
      return retval;
 +#endif
  }
  #endif
 +#endif
  
-@@ -149,3 +237,7 @@ void Context::context_func(coroutine_transfer_t arg) {
+ bool Context::swap_in() {
++#ifdef SWR_ASAN_FIBERS
++    void *fake_stack = nullptr;
++    __sanitizer_start_switch_fiber(&fake_stack, get_stack(), get_stack_size());
++#endif
+ #ifdef USE_UCONTEXT
+-    return 0 == swapcontext(&swap_ctx_, &ctx_);
++    bool swapped = 0 == swapcontext(&swap_ctx_, &ctx_);
+ #else
+@@ -127,4 +219,8 @@ bool Context::swap_in() {
+     ctx_ = transfer_data.fctx;
+-    return true;
++    bool swapped = true;
++#endif
++#ifdef SWR_ASAN_FIBERS
++    __sanitizer_finish_switch_fiber(fake_stack, nullptr, nullptr);
+ #endif
++    return swapped;
+ }
+@@ -132,4 +228,9 @@ bool Context::swap_in() {
+ bool Context::swap_out() {
++#ifdef SWR_ASAN_FIBERS
++    // A finished context never resumes, so ASan may free its fake stack now.
++    void *fake_stack = nullptr;
++    __sanitizer_start_switch_fiber(is_end() ? nullptr : &fake_stack, asan_caller_bottom_, asan_caller_size_);
++#endif
+ #ifdef USE_UCONTEXT
+-    return 0 == swapcontext(&ctx_, &swap_ctx_);
++    bool swapped = 0 == swapcontext(&ctx_, &swap_ctx_);
+ #else
+@@ -137,4 +238,8 @@ bool Context::swap_out() {
+     swap_ctx_ = transfer_data.fctx;
+-    return true;
++    bool swapped = true;
++#endif
++#ifdef SWR_ASAN_FIBERS
++    __sanitizer_finish_switch_fiber(fake_stack, &asan_caller_bottom_, &asan_caller_size_);
+ #endif
++    return swapped;
+ }
+@@ -147,5 +252,12 @@ void Context::context_func(coroutine_transfer_t arg) {
+     _this->swap_ctx_ = arg.fctx;
++#endif
++#ifdef SWR_ASAN_FIBERS
++    __sanitizer_finish_switch_fiber(nullptr, &_this->asan_caller_bottom_, &_this->asan_caller_size_);
+ #endif
      _this->fn_(_this->private_data_);
 +#ifdef SWOOLE_RS_COROUTINE
 +    swr_v1_context_finish(&_this->end_);

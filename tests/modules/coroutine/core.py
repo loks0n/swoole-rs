@@ -24,6 +24,11 @@ from tools.build_upstream import COMMIT as PIN
 ASSERTIONS = ['core-tests/src/coroutine/base.cpp', 'core-tests/src/coroutine/channel.cpp']
 LIFETIME = 'core-tests/src/coroutine/rust_policy_lifetime.cpp'
 SELECTED = ['core-tests/src/main.cpp', *ASSERTIONS, LIFETIME]
+# Run without LeakSanitizer (#415), by name only; their assertions are unchanged and any
+# other failure still fails the phase. Every other case keeps leak checking.
+SUSPENDED = 'the original leaves a coroutine suspended forever; its stack holds the only reference'
+NO_LEAK_CHECK = {'coroutine_base.bailout': SUSPENDED, 'coroutine_channel.push_yield': SUSPENDED,
+                 'coroutine_channel.close': SUSPENDED}
 
 
 def sha(path):
@@ -201,8 +206,11 @@ def main():
                         xml = logs / (case['name'] + '.xml')
                         xml.unlink(missing_ok=True)
                         command = [str(binary), '--gtest_filter=' + case['name'], '--gtest_output=xml:' + str(xml)]
+                        env = {**os.environ, 'VERBOSE': '0'}
+                        if case['name'] in NO_LEAK_CHECK:
+                            env['ASAN_OPTIONS'] = ':'.join(filter(None, [env.get('ASAN_OPTIONS'), 'detect_leaks=0']))
                         try:
-                            result = run_isolated(command, timeout=args.timeout, cwd=tree, env={**os.environ, 'VERBOSE': '0'})
+                            result = run_isolated(command, timeout=args.timeout, cwd=tree, env=env)
                         except subprocess.TimeoutExpired as error:
                             result = subprocess.CompletedProcess(command, 124, '', 'Timed out: ' + str(error))
                         log = logs / (case['name'] + '.log')
@@ -214,9 +222,13 @@ def main():
                             row = rows[0]
                             status = 'failed' if row.find('failure') is not None or row.find('error') is not None else 'skipped' if row.find('skipped') is not None or row.attrib.get('status') != 'run' else 'passed'
                         warnings = [line for line in (result.stdout + result.stderr).splitlines() if 'WARNING: ASan' in line or 'WARNING: AddressSanitizer' in line]
-                        if status == 'passed' and warnings:
+                        # Only the hybrid's context switches are annotated for ASan; the unmodified
+                        # reference's warnings are upstream's behaviour, recorded but not judged (#415).
+                        if status == 'passed' and warnings and engine == 'rust':
                             status = 'warned'
-                        report['results'].append({'engine': engine, **case, 'status': status, 'sanitizer_warnings': warnings})
+                        report['results'].append({'engine': engine, **case, 'status': status, 'sanitizer_warnings': warnings,
+                                                  'leak_check': case['name'] not in NO_LEAK_CHECK,
+                                                  **({'no_leak_check_reason': NO_LEAK_CHECK[case['name']]} if case['name'] in NO_LEAK_CHECK else {})})
                         metadata['runs'].append({'name': case['name'], 'command': command, 'returncode': result.returncode, 'log': str(log), 'xml': str(xml)})
                         write_report(args.output, report)
                 report['execution_status'] = 'complete'
