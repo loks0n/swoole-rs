@@ -68,7 +68,7 @@ fn hash(bytes: &[u8], length: usize, algorithm: u32, signed: bool) -> u64 {
             h.wrapping_mul(33).wrapping_add(promoted(*b, signed))
         }),
         1 => {
-            let (mut a, mut b, mut c) = (0x9e3779b9u32, 0x9e3779b9u32, 0xfeedbeefu64);
+            let (mut a, mut b, mut c) = (0x9e37_79b9_u32, 0x9e37_79b9_u32, 0xfeed_beef_u64);
             let mut rest = bytes;
             while rest.len() >= 12 {
                 a = a.wrapping_add(word(&rest[..4], signed));
@@ -100,20 +100,20 @@ fn hash(bytes: &[u8], length: usize, algorithm: u32, signed: bool) -> u64 {
                         (promoted(*byte, signed) as u32).wrapping_shl((8 * i) as u32) as i32;
                     k |= i64::from(shifted) as u64;
                 }
-                k = k.wrapping_mul(0x5bd1e995);
+                k = k.wrapping_mul(0x5bd1_e995);
                 k ^= k >> 24;
-                k = k.wrapping_mul(0x5bd1e995);
-                h = h.wrapping_mul(0x5bd1e995) ^ k;
+                k = k.wrapping_mul(0x5bd1_e995);
+                h = h.wrapping_mul(0x5bd1_e995) ^ k;
             }
             for (i, byte) in tail.iter().enumerate() {
                 h ^= i64::from((promoted(*byte, signed) as u32).wrapping_shl((8 * i) as u32) as i32)
                     as u64;
             }
             if !tail.is_empty() {
-                h = h.wrapping_mul(0x5bd1e995);
+                h = h.wrapping_mul(0x5bd1_e995);
             }
             h ^= h >> 13;
-            h = h.wrapping_mul(0x5bd1e995);
+            h = h.wrapping_mul(0x5bd1_e995);
             h ^ (h >> 15)
         }
         _ => 0,
@@ -774,7 +774,7 @@ mod tests {
         assert_eq!(hash(&[], 0, 0, true), 5381);
         assert_eq!(hash(&[], 0, 2, true), 0);
         assert_ne!(hash(&[255], 1, 0, true), hash(&[255], 1, 0, false));
-        assert_eq!(hash(b"hello", 5, 0, true), 210714636441);
+        assert_eq!(hash(b"hello", 5, 0, true), 210_714_636_441);
     }
     #[test]
     fn spinlock_serializes_contenders() {

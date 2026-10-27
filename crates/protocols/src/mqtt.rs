@@ -31,7 +31,17 @@ mod tests {
     use super::*;
     #[test]
     fn boundaries_prefixes_and_nonminimal_lengths() {
-        for payload in [0u32, 1, 127, 128, 16383, 16384, 2097151, 2097152, 268435455] {
+        for payload in [
+            0u32,
+            1,
+            127,
+            128,
+            16383,
+            16384,
+            2_097_151,
+            2_097_152,
+            268_435_455,
+        ] {
             let mut packet = vec![0x30];
             let mut value = payload;
             loop {

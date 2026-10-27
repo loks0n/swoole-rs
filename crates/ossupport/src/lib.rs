@@ -256,11 +256,11 @@ mod tests {
     #[test]
     fn file_size_action_preserves_native_stat_and_mode_outcomes() {
         for (succeeded, mode, mask, regular, expected) in [
-            (false, 0, 0o170000, 0o100000, 1),
-            (false, 0o040755, 0o170000, 0o100000, 1),
-            (true, 0o100644, 0o170000, 0o100000, 0),
-            (true, 0o040755, 0o170000, 0o100000, 2),
-            (true, 0o020600, 0o170000, 0o100000, 2),
+            (false, 0, 0o170_000, 0o100_000, 1),
+            (false, 0o040_755, 0o170_000, 0o100_000, 1),
+            (true, 0o100_644, 0o170_000, 0o100_000, 0),
+            (true, 0o040_755, 0o170_000, 0o100_000, 2),
+            (true, 0o020_600, 0o170_000, 0o100_000, 2),
         ] {
             assert_eq!(
                 swr_v1_os_file_size_action(succeeded, mode, mask, regular),

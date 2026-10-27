@@ -724,7 +724,7 @@ mod tests {
             );
         }
         let s = Http2Settings {
-            header_table_size: 0x01020304,
+            header_table_size: 0x0102_0304,
             enable_push: 1,
             max_concurrent_streams: u32::MAX,
             init_window_size: 65535,
@@ -762,17 +762,17 @@ mod tests {
     #[test]
     fn framing_and_short_prefix() {
         assert_eq!(unsafe { sw_rs_http2_frame_length(ptr::null(), 8) }, 0);
-        let bytes = header(255, 0xffffff, 0x80, 0xffffffff);
+        let bytes = header(255, 0x00ff_ffff, 0x80, 0xffff_ffff);
         let mut f = Http2FrameFacts::default();
         assert_eq!(
             unsafe { sw_rs_http2_decode_frame(bytes.as_ptr(), 9, 0, 0, &raw mut f) },
             1
         );
-        assert_eq!(f.stream_id, 0x7fffffff);
+        assert_eq!(f.stream_id, 0x7fff_ffff);
         assert_eq!(f.publish_last_id, 1);
         assert_eq!(
             unsafe { sw_rs_http2_frame_length(bytes.as_ptr(), 9) },
-            0xffffff + 9
+            0x00ff_ffff + 9
         );
     }
     #[test]
