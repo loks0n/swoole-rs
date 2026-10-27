@@ -861,7 +861,7 @@ index 0f7b169..36caf7b 100644
 -    }
      RETURN_TRUE;
 diff --git a/include/swoole_coroutine_socket.h b/include/swoole_coroutine_socket.h
-index cffe31a..98f4970 100644
+index cffe31a..097225e 100644
 --- a/include/swoole_coroutine_socket.h
 +++ b/include/swoole_coroutine_socket.h
 @@ -20,2 +20,7 @@
@@ -925,9 +925,10 @@ index cffe31a..98f4970 100644
 +        if (sw_unlikely(status != 0)) {
 +            set_err(status == 1 ? EBADF : SW_ERROR_CO_SOCKET_CLOSE_WAIT);
              return false;
-@@ -530,2 +524,4 @@ class Socket {
+@@ -530,2 +524,5 @@ class Socket {
  
 +    ssize_t vector_all(network::IOVector *io_vector, TimerController *timer, bool write);
++    swr_v1_hook_socket_ops lifecycle_ops();
 +
    public:
 diff --git a/src/coroutine/file.cc b/src/coroutine/file.cc
@@ -1122,7 +1123,7 @@ index 63ca2f2..f0514c6 100644
 +            break;
          }
 diff --git a/src/coroutine/socket.cc b/src/coroutine/socket.cc
-index 5a16f4c..fc68b6b 100644
+index 5a16f4c..8ef587e 100644
 --- a/src/coroutine/socket.cc
 +++ b/src/coroutine/socket.cc
 @@ -20,2 +20,7 @@
@@ -1746,7 +1747,86 @@ index 5a16f4c..fc68b6b 100644
 +    if (error == 0) {
 +        return true;
      }
-@@ -1636,8 +1546,11 @@ Socket::~Socket() {
+@@ -1557,18 +1467,36 @@ void Socket::ssl_close() const {
+ 
++// Rust decides the cancel and close; these are the socket's effects.
++swr_v1_hook_socket_ops Socket::lifecycle_ops() {
++    return {
++        this,
++        SW_EVENT_READ,
++        SW_EVENT_WRITE,
++        SW_ERROR_CO_SOCKET_CLOSE_WAIT,
++        [](void *s) -> bool { return static_cast<Socket *>(s)->is_closed(); },
++        [](void *s) -> bool { return static_cast<Socket *>(s)->connected; },
++        [](void *s) { static_cast<Socket *>(s)->shutdown(); },
++        [](void *s, uint32_t event) -> bool {
++            return static_cast<Socket *>(s)->has_bound(static_cast<EventType>(event));
++        },
++        [](void *s, int32_t error) { static_cast<Socket *>(s)->set_err(error); },
++        [](void *s, uint32_t event) {
++            auto *sock = static_cast<Socket *>(s);
++            (event == SW_EVENT_READ ? sock->read_co : sock->write_co)->resume();
++        },
++        [](void *s) { static_cast<Socket *>(s)->socket->close_wait = 1; },
++        [](void *s) {
++            auto *sock = static_cast<Socket *>(s);
++            sock->sock_fd = SW_BAD_SOCKET;
++            if (sock->dtor_ != nullptr) {
++                auto dtor = sock->dtor_;
++                sock->dtor_ = nullptr;
++                dtor(sock);
++            }
++        },
++    };
++}
++
+ bool Socket::cancel(const EventType event) {
+-    if (!has_bound(event)) {
+-        return false;
+-    }
+-    if (event == SW_EVENT_READ) {
+-        set_err(ECANCELED);
+-        read_co->resume();
+-        return true;
+-    } else if (event == SW_EVENT_WRITE) {
+-        set_err(ECANCELED);
+-        write_co->resume();
+-        return true;
+-    } else {
+-        set_err(EINVAL);
+-        return false;
+-    }
++    const swr_v1_hook_socket_ops ops = lifecycle_ops();
++    return swr_v1_hook_cancel(&ops, event);
+ }
+@@ -1583,24 +1511,4 @@ bool Socket::cancel(const EventType event) {
+ bool Socket::close() {
+-    if (is_closed()) {
+-        set_err(EBADF);
+-        return false;
+-    }
+-    if (connected) {
+-        shutdown();
+-    }
+-    if (sw_unlikely(has_bound())) {
+-        socket->close_wait = 1;
+-        cancel(SW_EVENT_WRITE);
+-        cancel(SW_EVENT_READ);
+-        set_err(SW_ERROR_CO_SOCKET_CLOSE_WAIT);
+-        return false;
+-    } else {
+-        sock_fd = SW_BAD_SOCKET;
+-        if (dtor_ != nullptr) {
+-            auto dtor = dtor_;
+-            dtor_ = nullptr;
+-            dtor(this);
+-        }
+-        return true;
+-    }
++    const swr_v1_hook_socket_ops ops = lifecycle_ops();
++    return swr_v1_hook_close(&ops);
+ }
+@@ -1636,8 +1544,11 @@ Socket::~Socket() {
  bool Socket::TimerController::start() {
 -    if (timeout != 0 && !*timer_pp) {
 +    auto actions = swr_v1_hook_timer(0, enabled, timeout != 0 && *timer_pp != nullptr, false, timeout);
@@ -1763,7 +1843,7 @@ index 5a16f4c..fc68b6b 100644
 +    }
 +    if (actions & SWR_HOOK_TIMER_SENTINEL) {
          *timer_pp = reinterpret_cast<TimerNode *>(-1);
-@@ -1648,6 +1561,9 @@ bool Socket::TimerController::start() {
+@@ -1648,6 +1559,9 @@ bool Socket::TimerController::start() {
  Socket::TimerController::~TimerController() {
 -    if (enabled && *timer_pp) {
 -        if (*timer_pp != reinterpret_cast<TimerNode *>(-1)) {
@@ -1777,7 +1857,7 @@ index 5a16f4c..fc68b6b 100644
 +    }
 +    if (actions & SWR_HOOK_TIMER_CLEAR) {
          *timer_pp = nullptr;
-@@ -1686,13 +1602,17 @@ bool Socket::TimeoutController::has_timedout(TimeoutType _type) {
+@@ -1686,13 +1600,17 @@ bool Socket::TimeoutController::has_timedout(TimeoutType _type) {
      SW_ASSERT_1BYTE(_type);
 -    if (timeout > 0) {
 -        if (sw_unlikely(startup_time == 0)) {
