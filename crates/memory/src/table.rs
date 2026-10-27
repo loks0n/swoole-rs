@@ -171,7 +171,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_layout(
     };
     let Some(total) = pool_offset
         .checked_add(pool_size)
-        .filter(|&n| n <= isize::MAX as usize)
+        .filter(|&n| isize::try_from(n).is_ok())
     else {
         return -1;
     };
@@ -753,7 +753,7 @@ impl IteratorFields {
             && self.collision.is_aligned()
             && !self.current.is_null()
             && self.row_size >= mem::size_of::<Row>()
-            && self.row_size <= isize::MAX as usize
+            && isize::try_from(self.row_size).is_ok()
     }
 }
 #[unsafe(no_mangle)]

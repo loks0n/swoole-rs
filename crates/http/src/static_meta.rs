@@ -54,7 +54,7 @@ pub unsafe extern "C" fn swr_v1_http_static_content_type(
     let Some(length) = prefix
         .len()
         .checked_add(boundary.len())
-        .filter(|&n| n <= isize::MAX as usize)
+        .filter(|&n| isize::try_from(n).is_ok())
     else {
         return OVERFLOW;
     };

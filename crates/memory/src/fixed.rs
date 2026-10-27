@@ -207,7 +207,7 @@ impl Layout {
             }
             _ => return None,
         };
-        (total <= isize::MAX as usize).then_some(Self {
+        isize::try_from(total).is_ok().then_some(Self {
             total,
             usable,
             slices,

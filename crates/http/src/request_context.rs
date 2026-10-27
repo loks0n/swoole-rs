@@ -172,7 +172,7 @@ impl HttpRequestContext {
         let Some(length) = input
             .len()
             .checked_add(suffix.len())
-            .filter(|&n| n <= isize::MAX as usize)
+            .filter(|&n| isize::try_from(n).is_ok())
         else {
             return OVERFLOW;
         };

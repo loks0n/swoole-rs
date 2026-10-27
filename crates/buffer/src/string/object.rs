@@ -257,7 +257,7 @@ unsafe fn write(
         s.state().validate()?;
         let end = at(&s)?
             .checked_add(input()?.1)
-            .filter(|&end| end <= isize::MAX as usize)
+            .filter(|&end| isize::try_from(end).is_ok())
             .ok_or(OVERFLOW)?;
         let requested = if edit.operation == TERMINATE {
             if s.length != s.capacity {

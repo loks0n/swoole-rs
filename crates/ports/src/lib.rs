@@ -862,7 +862,7 @@ pub unsafe extern "C" fn swr_v1_ports_event(
 /// Only the caller's initialized bytes are borrowed; returned property bytes are static.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_ports_callback_property(data: *const u8, len: usize) -> PortsSpan {
-    if !data.is_null() && len <= isize::MAX as usize {
+    if !data.is_null() && isize::try_from(len).is_ok() {
         // SAFETY: `data` is non-null and the caller lends `len <= isize::MAX` initialized bytes.
         let name = unsafe { slice::from_raw_parts(data, len) };
         if let Some(&(_, property)) = EVENTS

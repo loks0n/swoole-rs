@@ -103,7 +103,7 @@ pub unsafe extern "C" fn swr_v1_http_range_format(
         (boundary, &[][..])
     };
     let Some(required) =
-        rendered_length(input, boundary, mime).filter(|&length| length <= isize::MAX as usize)
+        rendered_length(input, boundary, mime).filter(|&length| isize::try_from(length).is_ok())
     else {
         return OVERFLOW;
     };

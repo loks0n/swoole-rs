@@ -532,7 +532,7 @@ pub unsafe extern "C" fn swr_v1_string_append_in_place(
     }
     let Some(end) = used
         .checked_add(count)
-        .filter(|&end| end <= isize::MAX as usize)
+        .filter(|&end| isize::try_from(end).is_ok())
     else {
         return OVERFLOW;
     };

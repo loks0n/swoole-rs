@@ -48,7 +48,7 @@ pub unsafe extern "C" fn swr_v1_string_random_step(
             }
             let length = length
                 .checked_add(read)
-                .filter(|&n| n <= isize::MAX as usize)
+                .filter(|&n| isize::try_from(n).is_ok())
                 .ok_or(OVERFLOW)?;
             if length > capacity {
                 return Err(INVALID);
@@ -81,7 +81,7 @@ pub unsafe extern "C" fn swr_v1_string_random_step(
         let length = if phase == 1 && encoded == 0 {
             let length = length
                 .checked_add(read)
-                .filter(|&n| n <= isize::MAX as usize)
+                .filter(|&n| isize::try_from(n).is_ok())
                 .ok_or(OVERFLOW)?;
             if length > capacity {
                 return Err(INVALID);

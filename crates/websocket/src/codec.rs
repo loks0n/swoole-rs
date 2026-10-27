@@ -121,7 +121,7 @@ pub extern "C" fn swr_v1_ws_encoded_size(length: usize, flags: u8) -> usize {
     header
         .checked_add(if flags & MASK != 0 { 4 } else { 0 })
         .and_then(|size| size.checked_add(payload))
-        .filter(|size| *size <= isize::MAX as usize)
+        .filter(|size| isize::try_from(*size).is_ok())
         .unwrap_or(0)
 }
 

@@ -57,7 +57,7 @@ pub(crate) fn literal_suffix<'a>(
     };
     let required = replacement_length
         .checked_add(suffix.len())
-        .filter(|&length| length <= isize::MAX as usize)
+        .filter(|&length| isize::try_from(length).is_ok())
         .ok_or(OVERFLOW)?;
     Ok(Some((suffix, required)))
 }

@@ -92,7 +92,7 @@ pub unsafe extern "C" fn swr_v1_ws_write_header(
 ) -> usize {
     let size = if payload_length < 126 {
         2
-    } else if payload_length <= u64::from(u16::MAX) {
+    } else if u16::try_from(payload_length).is_ok() {
         4
     } else {
         10

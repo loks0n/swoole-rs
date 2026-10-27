@@ -51,7 +51,7 @@ fn admission(length: usize, native_max: usize) -> Result<usize, u32> {
     }
     length
         .checked_add(1)
-        .filter(|count| *count <= isize::MAX as usize)
+        .filter(|count| isize::try_from(*count).is_ok())
         .ok_or(CAPACITY)
 }
 
