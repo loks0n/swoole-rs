@@ -254,6 +254,59 @@ pub unsafe extern "C" fn swr_v1_socket_bind(
     unsafe { libc::bind(fd, address, length) == 0 }
 }
 
+/// `check_sendfile_parameters`: fstat(2) the open `file_fd` and resolve the range
+/// `[begin, *end)` to send, where a zero `length` means to the end of the file.
+/// Returns 0 with `*end` set, 1 when fstat failed (errno set), 2 for an empty
+/// file and 3 for a range outside it.
+///
+/// # Safety
+/// `end` points to a writable `off_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_socket_sendfile_range(
+    file_fd: c_int,
+    begin: libc::off_t,
+    length: libc::size_t,
+    end: *mut libc::off_t,
+) -> c_int {
+    // SAFETY: an all-zero stat is a valid out-parameter for fstat.
+    let mut status: libc::stat = unsafe { std::mem::zeroed() };
+    // SAFETY: `status` is one local stat.
+    if unsafe { libc::fstat(file_fd, &raw mut status) } != 0 {
+        return 1;
+    }
+    if status.st_size == 0 {
+        return 2;
+    }
+    #[expect(
+        clippy::cast_possible_wrap,
+        reason = "upstream's static_cast<off_t>(length) wraps the same way"
+    )]
+    let stop = if length == 0 {
+        status.st_size
+    } else {
+        begin.wrapping_add(length as libc::off_t)
+    };
+    // SAFETY: the caller lends `end` for this call.
+    unsafe { end.write(stop) };
+    if begin < 0 || stop > status.st_size {
+        3
+    } else {
+        0
+    }
+}
+
+/// `get_sendfile_chunk_size`: what is left of `[begin, end)`, at most
+/// `SW_SENDFILE_CHUNK_SIZE`.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_socket_sendfile_chunk(
+    begin: libc::off_t,
+    end: libc::off_t,
+) -> libc::size_t {
+    const CHUNK: libc::size_t = 65536;
+    // A range past its end converts to a huge size_t upstream, so a full chunk.
+    libc::size_t::try_from(end.wrapping_sub(begin)).map_or(CHUNK, |left| left.min(CHUNK))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -376,5 +429,40 @@ mod tests {
         close(&[accepted, client, listener]);
         // -1, not the closed fd: a parallel test may reuse that number.
         assert_eq!(swr_v1_socket_pending_error(-1).status, 2, "invalid fd");
+    }
+
+    #[test]
+    fn sendfile_range_and_chunk() {
+        let path = std::env::temp_dir().join(format!("swr-sendfile-{}", std::process::id()));
+        std::fs::write(&path, [7_u8; 10]).unwrap();
+        let file = std::fs::File::open(&path).unwrap();
+        let empty = std::fs::File::create(path.with_extension("empty")).unwrap();
+        let range = |fd, begin, length| {
+            let mut end = -1;
+            // SAFETY: `end` is a local off_t.
+            (
+                unsafe { swr_v1_socket_sendfile_range(fd, begin, length, &raw mut end) },
+                end,
+            )
+        };
+        use std::os::fd::AsRawFd;
+        let fd = file.as_raw_fd();
+        assert_eq!(range(fd, 0, 0), (0, 10), "whole file");
+        assert_eq!(range(fd, 4, 6), (0, 10), "tail");
+        assert_eq!(range(fd, 4, 7), (3, 11), "past the end");
+        assert_eq!(range(fd, -1, 1), (3, 0), "negative offset");
+        assert_eq!(range(empty.as_raw_fd(), 0, 0), (2, -1), "empty");
+        assert_eq!(range(-1, 0, 0), (1, -1), "fstat failed");
+        drop((file, empty));
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_file(path.with_extension("empty")).unwrap();
+
+        assert_eq!(swr_v1_socket_sendfile_chunk(0, 10), 10);
+        assert_eq!(swr_v1_socket_sendfile_chunk(0, 1 << 20), 65536);
+        assert_eq!(
+            swr_v1_socket_sendfile_chunk(5, 4),
+            65536,
+            "end before begin"
+        );
     }
 }
