@@ -17,3 +17,7 @@ runs:
         key: apt-${{ runner.os }}-${{ steps.week.outputs.week }}-${{ hashFiles('.devcontainer/install.sh') }}-${{ inputs.packages }}
     - shell: bash
       run: APT_CACHE="$PWD/.apt-cache" .devcontainer/install.sh ${{ inputs.packages }}
+    # Jobs of one run can land on different runner images while GitHub rolls one out,
+    # and an extension built on one image may not load in the other's PHP (#522).
+    - shell: bash
+      run: echo "runner image $ImageVersion; php $(php -r 'echo PHP_VERSION;'); php-config $(php-config --version); $(dpkg-query -W -f='${Package} ${Version}\n' 'php8.3-cli' 'php8.3-dev' 2>/dev/null | tr '\n' ';')"
