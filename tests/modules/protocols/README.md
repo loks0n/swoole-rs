@@ -81,18 +81,17 @@ done
 - `handlers.py`: handler lookups, property replacement/collision and diagnostic
   order over all leading/trailing byte values; invalid registrations must hit
   the original fatal exit 255.
-- `bailout.py`: callback throws/exits and request-side 3MiB parameter-allocation
-  exhaustion, compared across engines.
+- `bailout.py`: callback throws and exits, compared across engines.
 - `reply.py`: wire bytes, warnings, exceptions and callback order for replies,
   plus `reply_oom.php`, which must hit fatal allocation exit 255 during native
   reply-buffer growth.
 - `lifecycle.py`: MQTT/RESP in base/process modes, eight concurrent 2MiB requests,
   exact response hashes, graceful master exit 0, no worker-error callbacks.
 
-Known failure: on Linux all four `bailout.py` OOM scenarios fail in both original
-and candidate. PHP logs allocator exhaustion, then the server stays alive and
-unresponsive (base process waits in `epoll_pwait`) instead of exiting 255 or
-restarting the worker. No Rust frame is active during that allocation.
+`bailout.py` has no request-side out-of-memory scenario (#506). After PHP logs
+allocator exhaustion in a worker, upstream stays alive and unresponsive (base
+process waits in `epoll_pwait`) instead of exiting 255 or restarting the worker,
+so the outcome isn't decided by the engine.
 
 ## Original PHPTs
 
