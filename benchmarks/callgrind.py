@@ -89,8 +89,11 @@ def main():
     parser.add_argument('--warmup', type=int, default=100)
     parser.add_argument('--php', default='php')
     parser.add_argument('--php-extension', action='append', default=[])
-    parser.add_argument('--output', type=Path)
-    parser.add_argument('--profiles', type=Path, help='Keep the callgrind profiles in DIR/<engine>/')
+    # Large output stays in this worktree's target/, where dev.py prune finds it (#395, #396).
+    run = ROOT / 'target' / 'callgrind' / time.strftime('%Y%m%dT%H%M%S')
+    parser.add_argument('--output', type=Path, default=run / 'callgrind.json')
+    parser.add_argument('--profiles', type=Path, nargs='?', const=run / 'profiles',
+                        help='Keep the callgrind profiles in DIR/<workload>/<engine>/ (default under target/callgrind/)')
     parser.add_argument('--max-ratio', type=float, help='Fail if first/second exceeds this for any workload')
     args = parser.parse_args()
     engines = parse_engines(args.engine, args.php, args.php_extension)
@@ -108,9 +111,10 @@ def main():
             over = args.max_ratio and a / b > args.max_ratio
             failed |= bool(over)
             print(f'ratio {first}/{second} {workload}: {a / b:.4f}' + (f' exceeds {args.max_ratio}' if over else ''))
-    if args.output:
-        args.output.write_text(json.dumps({'requests': args.requests, 'max_ratio': args.max_ratio,
-                                           'instructions_per_request': results}, indent=2) + '\n')
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(json.dumps({'requests': args.requests, 'max_ratio': args.max_ratio,
+                                       'instructions_per_request': results}, indent=2) + '\n')
+    print('results: ' + str(args.output))
     return 1 if failed else 0
 
 

@@ -22,6 +22,9 @@ unsafe block states its invariant in a `// SAFETY:` comment and does one operati
 test code is exempt.
 
 Benchmarks use optimized builds and run without concurrent build or test load.
+Build, profile and benchmark output goes under the worktree's `target/` (a second
+checkout is `git worktree add target/worktrees/<sha>`), never in a session scratch
+directory; `dev.py prune` clears what a day leaves untouched.
 See corpus/README.md, corpus/upstream/README.md and benchmarks/README.md.
 
 # Agents
