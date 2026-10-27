@@ -3,19 +3,21 @@
 //! are still bound, and releasing the descriptor. Native code keeps the
 //! coroutines, the destructor callback and the socket's fields, and passes them
 //! in `SocketOps`.
+use crate::shutdown::SocketState;
 use core::ffi::c_void;
 
 /// The socket's effects and the event values it uses. Every callback gets `context`.
 #[repr(C)]
 pub struct SocketOps {
     pub context: *mut c_void,
+    /// The socket's Rust-owned connection state.
+    pub state: *mut SocketState,
     /// `SW_EVENT_READ` and `SW_EVENT_WRITE`.
     pub read: u32,
     pub write: u32,
     /// `SW_ERROR_CO_SOCKET_CLOSE_WAIT`.
     pub close_wait_error: i32,
     pub closed: unsafe extern "C" fn(*mut c_void) -> bool,
-    pub connected: unsafe extern "C" fn(*mut c_void) -> bool,
     /// `Socket::shutdown()` of both directions.
     pub shutdown: unsafe extern "C" fn(*mut c_void),
     /// `has_bound(event)`.
@@ -82,8 +84,8 @@ pub unsafe extern "C" fn swr_v1_hook_close(ops: *const SocketOps) -> bool {
         ops.set_err(libc::EBADF);
         return false;
     }
-    // SAFETY: a read of the live socket.
-    if unsafe { (ops.connected)(ops.context) } {
+    // SAFETY: the socket's live state handle, read before any effect.
+    if unsafe { (*ops.state).flags.connected } {
         // SAFETY: a native effect on the live socket.
         unsafe { (ops.shutdown)(ops.context) };
     }
@@ -107,13 +109,30 @@ mod tests {
     const READ: u32 = 512;
     const WRITE: u32 = 1024;
 
-    #[derive(Default)]
     struct Fake {
+        state: *mut SocketState,
         closed: bool,
-        connected: bool,
         read_bound: bool,
         write_bound: bool,
         events: Vec<String>,
+    }
+
+    impl Default for Fake {
+        fn default() -> Self {
+            Self {
+                state: crate::shutdown::swr_v1_hook_socket_state_new(),
+                closed: false,
+                read_bound: false,
+                write_bound: false,
+                events: Vec::new(),
+            }
+        }
+    }
+
+    impl Drop for Fake {
+        fn drop(&mut self) {
+            unsafe { crate::shutdown::swr_v1_hook_socket_state_free(self.state) };
+        }
     }
 
     unsafe fn fake<'a>(context: *mut c_void) -> &'a mut Fake {
@@ -123,12 +142,9 @@ mod tests {
     unsafe extern "C" fn closed(c: *mut c_void) -> bool {
         unsafe { fake(c) }.closed
     }
-    unsafe extern "C" fn connected(c: *mut c_void) -> bool {
-        unsafe { fake(c) }.connected
-    }
     unsafe extern "C" fn shutdown(c: *mut c_void) {
         let this = unsafe { fake(c) };
-        this.connected = false;
+        unsafe { (*this.state).flags.connected = false };
         this.events.push("shutdown".into());
     }
     unsafe extern "C" fn bound(c: *mut c_void, event: u32) -> bool {
@@ -160,11 +176,11 @@ mod tests {
     fn ops(fake: &mut Fake) -> SocketOps {
         SocketOps {
             context: (&raw mut *fake).cast(),
+            state: fake.state,
             read: READ,
             write: WRITE,
             close_wait_error: 1777,
             closed,
-            connected,
             shutdown,
             bound,
             set_err,
@@ -176,10 +192,8 @@ mod tests {
 
     #[test]
     fn cancel_wakes_only_the_bound_direction() {
-        let mut fake = Fake {
-            read_bound: true,
-            ..Fake::default()
-        };
+        let mut fake = Fake::default();
+        fake.read_bound = true;
         let table = ops(&mut fake);
         assert!(!unsafe { swr_v1_hook_cancel(&raw const table, WRITE) });
         assert!(unsafe { swr_v1_hook_cancel(&raw const table, READ) });
@@ -194,10 +208,8 @@ mod tests {
 
     #[test]
     fn close_shuts_down_then_releases() {
-        let mut fake = Fake {
-            connected: true,
-            ..Fake::default()
-        };
+        let mut fake = Fake::default();
+        unsafe { crate::shutdown::swr_v1_hook_socket_connect(fake.state) };
         let table = ops(&mut fake);
         assert!(unsafe { swr_v1_hook_close(&raw const table) });
         assert!(!unsafe { swr_v1_hook_close(&raw const table) });
@@ -213,11 +225,9 @@ mod tests {
 
     #[test]
     fn close_waits_while_coroutines_are_bound() {
-        let mut fake = Fake {
-            read_bound: true,
-            write_bound: true,
-            ..Fake::default()
-        };
+        let mut fake = Fake::default();
+        fake.read_bound = true;
+        fake.write_bound = true;
         let table = ops(&mut fake);
         assert!(!unsafe { swr_v1_hook_close(&raw const table) });
         let canceled = format!("error:{}", libc::ECANCELED);
