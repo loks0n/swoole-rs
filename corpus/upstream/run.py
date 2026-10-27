@@ -57,11 +57,15 @@ def timed_phase(report, phase):
 FIXED_PORTS = {'tests/swoole_timer/bug_4794_8.phpt': 9601}
 
 
-# Originals whose verdict is decided by a race in the test itself, on upstream too.
-# They are recorded unsupported, never run or counted as passed.
+# Originals whose verdict is decided by something outside the engine, on upstream too: a
+# race in the test itself, or the runner's network. They are recorded unsupported, never
+# run or counted as passed.
 RACY = {'tests/swoole_websocket_server/send_close_frame.phpt':
         'the parent kills the server as soon as its pushes return, usually before the server '
-        'handles the second frame (#111)'}
+        'handles the second frame (#111)',
+        'tests/swoole_coroutine/dnslookup_ipv6.phpt':
+        "the verdict depends on the runner's resolver reply, and both engines fail on some "
+        'replies (private advisory, #428)'}
 
 
 def require_free_port(port):
