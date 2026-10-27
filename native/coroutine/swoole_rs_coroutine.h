@@ -139,6 +139,31 @@ swr_v1_channel_owned_action swr_v1_channel_owned_step(swr_v1_channel_owned_curso
     swr_v1_channel_state *, swr_v1_channel_tokens *data,
     swr_v1_channel_tokens *producers, swr_v1_channel_tokens *consumers,
     uint32_t operation, uint32_t external_facts, void *input);
+/* Whole pop/push/close, driving the step machine to completion and performing
+ * each Native effect through `effects`: `query` returns fresh CANCELED/TIMEDOUT
+ * bits, `suspend` enqueues the current coroutine and yields (returning
+ * SWR_CH_ALLOCATION_REFUSED instead of raising), `arm_timer`/`delete_timer` drive
+ * the timeout, and `resume` wakes a token. `status` 0 succeeded (`data` is the
+ * popped token for a pop), negative is a SWR_CH_ERROR_*, and -5 means Native must
+ * raise bad_alloc after return. close uses only `resume`. */
+typedef struct {
+    void *ctx;
+    uint32_t (*query)(void *);
+    void (*arm_timer)(void *);
+    void (*delete_timer)(void *);
+    int32_t (*suspend)(void *);
+    void (*resume)(void *, void *);
+} swr_v1_channel_effects;
+typedef struct { int32_t status; void *data; } swr_v1_channel_outcome;
+swr_v1_channel_outcome swr_v1_channel_pop(swr_v1_channel_state *, swr_v1_channel_tokens *data,
+    swr_v1_channel_tokens *producers, swr_v1_channel_tokens *consumers,
+    bool positive_timeout, const swr_v1_channel_effects *);
+swr_v1_channel_outcome swr_v1_channel_push(swr_v1_channel_state *, swr_v1_channel_tokens *data,
+    swr_v1_channel_tokens *producers, swr_v1_channel_tokens *consumers,
+    bool positive_timeout, void *input, const swr_v1_channel_effects *);
+swr_v1_channel_outcome swr_v1_channel_close(swr_v1_channel_state *, swr_v1_channel_tokens *data,
+    swr_v1_channel_tokens *producers, swr_v1_channel_tokens *consumers,
+    const swr_v1_channel_effects *);
 /* Sole scheduler metadata in original Native constant-seeded TLS scope. */
 typedef struct {
     size_t stack_size;
