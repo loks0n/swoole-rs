@@ -9,6 +9,7 @@
     )
 )]
 
+pub mod address;
 pub mod sleep;
 
 /// The original per-hook guard. Some DNS hooks intentionally do not use it.

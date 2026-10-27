@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_runtime.cc b/ext-src/swoole_runtime.cc
-index 0f7b169..c9b70fa 100644
+index 0f7b169..36caf7b 100644
 --- a/ext-src/swoole_runtime.cc
 +++ b/ext-src/swoole_runtime.cc
 @@ -17,2 +17,7 @@
@@ -10,7 +10,47 @@ index 0f7b169..c9b70fa 100644
 +#include "swoole_rs_hooks.h"
 +
  #include "php_swoole_api.h"
-@@ -1389,80 +1394,62 @@ static void hook_stream_factory(uint32_t *flags_ptr) {
+@@ -442,28 +447,7 @@ void php_swoole_runtime_mshutdown() {
+ static inline char *parse_ip_address_ex(const char *str, size_t str_len, int *portno, int get_err, zend_string **err) {
+-    char *colon;
+-    char *host = nullptr;
+-
+-    if (*(str) == '[' && str_len > 1) {
+-        /* IPV6 notation to specify raw address with port (i.e. [fe80::1]:80) */
+-        char *p = (char *) memchr(str + 1, ']', str_len - 2);
+-        if (!p || *(p + 1) != ':') {
+-            if (get_err) {
+-                *err = strpprintf(0, "Failed to parse IPv6 address \"%s\"", str);
+-            }
+-            return nullptr;
+-        }
+-        *portno = sw_atoi(p + 2);
+-        return estrndup(str + 1, p - str - 1);
+-    }
+-    if (str_len) {
+-        colon = (char *) memchr(str, ':', str_len - 1);
+-    } else {
+-        colon = nullptr;
+-    }
+-    if (colon) {
+-        *portno = sw_atoi(colon + 1);
+-        host = estrndup(str, colon - str);
+-    } else {
++    const auto plan = swr_v1_hooks_parse_address(reinterpret_cast<const uint8_t *>(str), str_len);
++    if (plan.status != 0) {
+         if (get_err) {
+-            *err = strpprintf(0, "Failed to parse address \"%s\"", str);
++            *err = plan.status == 1 ? strpprintf(0, "Failed to parse IPv6 address \"%s\"", str)
++                                    : strpprintf(0, "Failed to parse address \"%s\"", str);
+         }
+@@ -471,4 +455,4 @@ static inline char *parse_ip_address_ex(const char *str, size_t str_len, int *po
+     }
+-
+-    return host;
++    *portno = plan.port;
++    return estrndup(str + plan.host_offset, plan.host_length);
+ }
+@@ -1389,80 +1373,62 @@ static void hook_stream_factory(uint32_t *flags_ptr) {
  
 -    if (flags & PHPCoroutine::HOOK_TCP) {
 -        if (!(runtime_hook_flags & PHPCoroutine::HOOK_TCP)) {
@@ -148,7 +188,7 @@ index 0f7b169..c9b70fa 100644
 +        } else {
 +            php_stream_xport_unregister("tls");
          }
-@@ -1474,20 +1461,14 @@ static void hook_stream_ops(uint32_t flags) {
+@@ -1474,20 +1440,14 @@ static void hook_stream_ops(uint32_t flags) {
      // file
 -    if (flags & PHPCoroutine::HOOK_FILE) {
 -        if (!(runtime_hook_flags & PHPCoroutine::HOOK_FILE)) {
@@ -179,7 +219,7 @@ index 0f7b169..c9b70fa 100644
 +    } else if (transition_stdio < 0) {
 +        memcpy(&php_stream_stdio_ops, &ori_php_stream_stdio_ops, sizeof(php_stream_stdio_ops));
      }
-@@ -1497,10 +1478,7 @@ static void hook_pdo_driver(uint32_t flags) {
+@@ -1497,10 +1457,7 @@ static void hook_pdo_driver(uint32_t flags) {
  #ifdef SW_USE_PGSQL
 -    if (flags & PHPCoroutine::HOOK_PDO_PGSQL) {
 -        if (!(runtime_hook_flags & PHPCoroutine::HOOK_PDO_PGSQL)) {
@@ -195,7 +235,7 @@ index 0f7b169..c9b70fa 100644
 +    } else if (transition_pdo_pgsql < 0) {
 +        swoole_pgsql_set_blocking(true);
      }
-@@ -1508,10 +1486,7 @@ static void hook_pdo_driver(uint32_t flags) {
+@@ -1508,10 +1465,7 @@ static void hook_pdo_driver(uint32_t flags) {
  #ifdef SW_USE_ODBC
 -    if (flags & PHPCoroutine::HOOK_PDO_ODBC) {
 -        if (!(runtime_hook_flags & PHPCoroutine::HOOK_PDO_ODBC)) {
@@ -211,7 +251,7 @@ index 0f7b169..c9b70fa 100644
 +    } else if (transition_pdo_odbc < 0) {
 +        swoole_odbc_set_blocking(true);
      }
-@@ -1519,10 +1494,7 @@ static void hook_pdo_driver(uint32_t flags) {
+@@ -1519,10 +1473,7 @@ static void hook_pdo_driver(uint32_t flags) {
  #ifdef SW_USE_ORACLE
 -    if (flags & PHPCoroutine::HOOK_PDO_ORACLE) {
 -        if (!(runtime_hook_flags & PHPCoroutine::HOOK_PDO_ORACLE)) {
@@ -227,7 +267,7 @@ index 0f7b169..c9b70fa 100644
 +    } else if (transition_pdo_oracle < 0) {
 +        swoole_oracle_set_blocking(1);
      }
-@@ -1530,10 +1502,7 @@ static void hook_pdo_driver(uint32_t flags) {
+@@ -1530,10 +1481,7 @@ static void hook_pdo_driver(uint32_t flags) {
  #ifdef SW_USE_SQLITE
 -    if (flags & PHPCoroutine::HOOK_PDO_SQLITE) {
 -        if (!(runtime_hook_flags & PHPCoroutine::HOOK_PDO_SQLITE)) {
@@ -243,7 +283,7 @@ index 0f7b169..c9b70fa 100644
 +    } else if (transition_pdo_sqlite < 0) {
 +        swoole_sqlite_set_blocking(true);
      }
-@@ -1541,10 +1510,7 @@ static void hook_pdo_driver(uint32_t flags) {
+@@ -1541,10 +1489,7 @@ static void hook_pdo_driver(uint32_t flags) {
  #ifdef SW_USE_FIREBIRD
 -    if (flags & PHPCoroutine::HOOK_PDO_FIREBIRD) {
 -        if (!(runtime_hook_flags & PHPCoroutine::HOOK_PDO_FIREBIRD)) {
@@ -259,7 +299,7 @@ index 0f7b169..c9b70fa 100644
 +    } else if (transition_pdo_firebird < 0) {
 +        swoole_firebird_set_blocking(true);
      }
-@@ -1555,108 +1521,96 @@ static void hook_all_func(uint32_t flags) {
+@@ -1555,108 +1500,96 @@ static void hook_all_func(uint32_t flags) {
      // stream func
 -    if (flags & PHPCoroutine::HOOK_STREAM_FUNCTION) {
 -        if (!(runtime_hook_flags & PHPCoroutine::HOOK_STREAM_FUNCTION)) {
@@ -456,7 +496,7 @@ index 0f7b169..c9b70fa 100644
 +
 +        detach_parent_class("Swoole\\Coroutine\\Socket");
      }
-@@ -1665,60 +1619,58 @@ static void hook_all_func(uint32_t flags) {
+@@ -1665,60 +1598,58 @@ static void hook_all_func(uint32_t flags) {
      // curl native
 -    if (flags & PHPCoroutine::HOOK_NATIVE_CURL) {
 -        if (flags & PHPCoroutine::HOOK_CURL) {
@@ -573,7 +613,7 @@ index 0f7b169..c9b70fa 100644
 +        SW_UNHOOK_FUNC(curl_multi_remove_handle);
 +        SW_UNHOOK_FUNC(curl_multi_close);
      }
-@@ -1726,58 +1678,52 @@ static void hook_all_func(uint32_t flags) {
+@@ -1726,58 +1657,52 @@ static void hook_all_func(uint32_t flags) {
      // curl
 -    if (flags & PHPCoroutine::HOOK_CURL) {
 -        if (!(runtime_hook_flags & PHPCoroutine::HOOK_CURL)) {
@@ -680,7 +720,7 @@ index 0f7b169..c9b70fa 100644
 +        SW_UNHOOK_FUNC(dns_get_record);
 +        SW_UNHOOK_FUNC(gethostbyaddr);
      }
-@@ -1786,5 +1732,5 @@ static void hook_all_func(uint32_t flags) {
+@@ -1786,5 +1711,5 @@ static void hook_all_func(uint32_t flags) {
  static void hook_mongodb(uint32_t flags) {
 -    if (flags & PHPCoroutine::HOOK_MONGODB) {
 +    if (swr_v1_hook_transition(flags, runtime_hook_flags, PHPCoroutine::HOOK_MONGODB) > 0) {
@@ -688,7 +728,7 @@ index 0f7b169..c9b70fa 100644
 -        if (!(runtime_hook_flags & PHPCoroutine::HOOK_MONGODB) && !class_exists(alias_name)) {
 +        if (!class_exists(alias_name)) {
              zend::String class_name(R"(Swoole\MongoDB\Client)");
-@@ -1810,10 +1756,7 @@ bool PHPCoroutine::enable_hook(uint32_t flags) {
+@@ -1810,10 +1735,7 @@ bool PHPCoroutine::enable_hook(uint32_t flags) {
  
 -    if (!extension_loaded("sockets")) {
 -        sw_unset_bit(flags, HOOK_SOCKETS);
@@ -702,7 +742,7 @@ index 0f7b169..c9b70fa 100644
      }
 +    flags = swr_v1_hook_filter(flags, unavailable);
  
-@@ -1873,2 +1816,19 @@ static PHP_METHOD(swoole_runtime, setHookFlags) {
+@@ -1873,2 +1795,19 @@ static PHP_METHOD(swoole_runtime, setHookFlags) {
  
 +// The sleep family's checks, duration and sleep are Rust's (crates/hooks/src/sleep.rs).
 +static int32_t hooks_coroutine_sleep(double seconds) {
@@ -722,7 +762,7 @@ index 0f7b169..c9b70fa 100644
 +}
 +
  static PHP_FUNCTION(swoole_sleep) {
-@@ -1880,12 +1840,7 @@ static PHP_FUNCTION(swoole_sleep) {
+@@ -1880,12 +1819,7 @@ static PHP_FUNCTION(swoole_sleep) {
  
 -    if (num < 0) {
 -        zend_argument_value_error(1, "must be greater than or equal to 0");
@@ -738,7 +778,7 @@ index 0f7b169..c9b70fa 100644
 -    }
 +    RETURN_LONG(outcome.value);
  }
-@@ -1899,13 +1854,5 @@ static PHP_FUNCTION(swoole_usleep) {
+@@ -1899,13 +1833,5 @@ static PHP_FUNCTION(swoole_usleep) {
  
 -    if (num < 0) {
 -        zend_argument_value_error(1, "must be greater than or equal to 0");
@@ -753,18 +793,18 @@ index 0f7b169..c9b70fa 100644
 -        usleep((unsigned int) num);
 -    }
  }
-@@ -1920,28 +1867,12 @@ static PHP_FUNCTION(swoole_time_nanosleep) {
+@@ -1920,28 +1846,12 @@ static PHP_FUNCTION(swoole_time_nanosleep) {
  
 -    if (tv_sec < 0) {
 -        zend_argument_value_error(1, "must be greater than or equal to 0");
--        RETURN_THROWS();
--    }
--    if (tv_nsec < 0) {
--        zend_argument_value_error(2, "must be greater than or equal to 0");
 +    const auto outcome = swr_v1_hooks_nanosleep(tv_sec, tv_nsec, hooks_sleeper());
 +    if (hooks_sleep_argument(outcome)) {
          RETURN_THROWS();
      }
+-    if (tv_nsec < 0) {
+-        zend_argument_value_error(2, "must be greater than or equal to 0");
+-        RETURN_THROWS();
+-    }
 -
 -    double _time = (double) tv_sec + (double) tv_nsec / 1000000000.00;
 -    if (Coroutine::get_current()) {
@@ -790,13 +830,13 @@ index 0f7b169..c9b70fa 100644
 +    } else if (outcome.status == 3) {
 +        php_swoole_error(E_WARNING, "nanoseconds was not in the range 0 to 999 999 999 or seconds was negative");
      }
-@@ -1959,3 +1890,4 @@ static PHP_FUNCTION(swoole_time_sleep_until) {
+@@ -1959,3 +1869,4 @@ static PHP_FUNCTION(swoole_time_sleep_until) {
  
 -    if (UNEXPECTED(!(target_secs >= 0 && target_secs <= top_target_sec))) {
 +    const auto outcome = swr_v1_hooks_sleep_until(target_secs, top_target_sec, hooks_sleeper());
 +    if (outcome.status == 1) {
          zend_argument_value_error(1, "must be between 0 and %" PRIu64, (uint64_t) top_target_sec);
-@@ -1963,11 +1895,3 @@ static PHP_FUNCTION(swoole_time_sleep_until) {
+@@ -1963,11 +1874,3 @@ static PHP_FUNCTION(swoole_time_sleep_until) {
      }
 -
 -    using namespace std::chrono;
@@ -809,7 +849,7 @@ index 0f7b169..c9b70fa 100644
 -    if (target_time <= now) {
 +    if (outcome.status == 3) {
          php_error_docref(NULL, E_WARNING, "Argument #1 ($timestamp) must be greater than or equal to the current time");
-@@ -1975,10 +1899,2 @@ static PHP_FUNCTION(swoole_time_sleep_until) {
+@@ -1975,10 +1878,2 @@ static PHP_FUNCTION(swoole_time_sleep_until) {
      }
 -
 -    const auto sleep_duration = target_time - now;
