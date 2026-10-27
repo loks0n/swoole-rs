@@ -1,5 +1,5 @@
 diff --git a/src/network/socket.cc b/src/network/socket.cc
-index ed39457..9ca1650 100644
+index ed39457..6768ee8 100644
 --- a/src/network/socket.cc
 +++ b/src/network/socket.cc
 @@ -21,2 +21,7 @@
@@ -560,16 +560,12 @@ index ed39457..9ca1650 100644
  }
 +#endif
  
-@@ -853,17 +737,29 @@ ssize_t Socket::sendfile(const File &fp, off_t *offset, size_t length) {
+@@ -853,43 +737,50 @@ ssize_t Socket::sendfile(const File &fp, off_t *offset, size_t length) {
  int Socket::sendfile_async(const char *filename, off_t offset, size_t length) {
 -    std::unique_ptr<SendfileRequest> task(new SendfileRequest(filename, offset));
 -
 -    if (!check_sendfile_parameters(&task->file, offset, length, &task->end)) {
 -        return SW_ERR;
--    }
--
--    if (out_buffer == nullptr) {
--        out_buffer = new Buffer(SW_SEND_BUFFER_SIZE);
 +    std::unique_ptr<SendfileRequest> task;
 +#if !defined(SWOOLE_RS_BUFFER_TYPED) || !SWOOLE_RS_BUFFER_TYPED
 +    BufferChunk *chunk = nullptr;
@@ -597,10 +593,117 @@ index ed39457..9ca1650 100644
 +        default: std::abort();
 +        }
      }
--
++}
+ 
+-    if (out_buffer == nullptr) {
+-        out_buffer = new Buffer(SW_SEND_BUFFER_SIZE);
+-    }
++static_assert(SW_ERROR_SSL_BAD_CLIENT == 1015 && SW_ERROR_SSL_RESET == 1017, "swr_v1_socket_catch_error's TLS codes");
+ 
 -    BufferChunk *chunk = out_buffer->alloc(BufferChunk::TYPE_SENDFILE, 0);
 -    chunk->value.ptr = task.release();
 -    chunk->destroy = Socket_sendfile_destructor;
--
++// recv/send/peek loops are Rust's (crates/reactor/src/socket_rw.rs); a TLS socket
++// passes its OpenSSL call. The counters, timers and trace stay here.
++static ssize_t socket_tls_recv(void *socket, void *buffer, size_t length) {
++    return static_cast<Socket *>(socket)->ssl_recv(buffer, length);
++}
+ 
 -    return SW_OK;
++static ssize_t socket_tls_send(void *socket, void *buffer, size_t length) {
++    return static_cast<Socket *>(socket)->ssl_send(buffer, length);
+ }
+ 
+-ssize_t Socket::recv(void *_buf, size_t _n, int _flags) {
+-    ssize_t total_bytes = 0;
++static ssize_t socket_tls_peek(void *socket, void *buffer, size_t length) {
++    return SSL_peek(static_cast<Socket *>(socket)->ssl, buffer, length);
++}
+ 
+-    do {
+-        if (ssl) {
+-            ssize_t retval = 0;
+-            while (static_cast<size_t>(total_bytes) < _n) {
+-                retval = ssl_recv(static_cast<char *>(_buf) + total_bytes, _n - total_bytes);
+-                if (retval <= 0) {
+-                    if (total_bytes == 0) {
+-                        total_bytes = retval;
+-                    }
+-                    break;
+-                } else {
+-                    total_bytes += retval;
+-                    if (!(nonblock || (_flags & MSG_WAITALL))) {
+-                        break;
+-                    }
+-                }
+-            }
+-        } else {
+-            total_bytes = ::recv(fd, _buf, _n, _flags);
+-        }
+-    } while (total_bytes < 0 && (errno == EINTR && !dont_restart));
++ssize_t Socket::recv(void *_buf, size_t _n, int _flags) {
++    ssize_t total_bytes =
++        swr_v1_socket_recv(fd, _buf, _n, _flags, nonblock, dont_restart, ssl ? socket_tls_recv : nullptr, this);
+ 
+@@ -913,11 +804,3 @@ ssize_t Socket::recv(void *_buf, size_t _n, int _flags) {
+ ssize_t Socket::send(const void *_buf, size_t _n, int _flags) {
+-    ssize_t retval;
+-
+-    do {
+-        if (ssl) {
+-            retval = ssl_send(_buf, _n);
+-        } else {
+-            retval = ::send(fd, _buf, _n, _flags);
+-        }
+-    } while (retval < 0 && (errno == EINTR && !dont_restart));
++    ssize_t retval = swr_v1_socket_send(fd, _buf, _n, _flags, dont_restart, ssl ? socket_tls_send : nullptr, this);
+ 
+@@ -1006,11 +889,3 @@ ssize_t Socket::writev(IOVector *io_vector) {
+ ssize_t Socket::peek(void *_buf, size_t _n, int _flags) const {
+-    ssize_t retval;
+-    _flags |= MSG_PEEK;
+-    do {
+-        if (ssl) {
+-            retval = SSL_peek(ssl, _buf, _n);
+-        } else {
+-            retval = ::recv(fd, _buf, _n, _flags);
+-        }
+-    } while (retval < 0 && errno == EINTR);
++    ssize_t retval = swr_v1_socket_peek(fd, _buf, _n, _flags, ssl ? socket_tls_peek : nullptr, const_cast<Socket *>(this));
+ 
+@@ -1022,34 +897,3 @@ ssize_t Socket::peek(void *_buf, size_t _n, int _flags) const {
+ int Socket::catch_error(const int err) {
+-    switch (err) {
+-    case EFAULT:
+-        abort();
+-        return SW_ERROR;
+-    case EBADF:
+-    case ENOENT:
+-        return SW_INVALID;
+-    case ECONNRESET:
+-    case ECONNABORTED:
+-    case EPIPE:
+-    case ENOTCONN:
+-    case ETIMEDOUT:
+-    case ECONNREFUSED:
+-    case ENETDOWN:
+-    case ENETUNREACH:
+-    case EHOSTDOWN:
+-    case EHOSTUNREACH:
+-    case SW_ERROR_SSL_BAD_CLIENT:
+-    case SW_ERROR_SSL_RESET:
+-        return SW_CLOSE;
+-    case EAGAIN:
+-#if EAGAIN != EWOULDBLOCK
+-    case EWOULDBLOCK:
+-#endif
+-    case 0:
+-        return SW_WAIT;
+-    case ENOBUFS:
+-        kernel_nobufs = true;
+-        return SW_WAIT;
+-    default:
+-        return SW_ERROR;
+-    }
++    return swr_v1_socket_catch_error(err, &kernel_nobufs);
  }
