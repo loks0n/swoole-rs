@@ -150,6 +150,14 @@ ssize_t swr_v1_socket_recvfrom(int fd, void *buffer, size_t length, int flags, s
 int swr_v1_socket_accept(int fd, struct sockaddr *address, socklen_t *address_length, bool nonblock, bool *listener_cloexec);
 swr_v1_socket_io_result swr_v1_socket_connect(int fd, const struct sockaddr *address, socklen_t length);
 swr_v1_socket_io_result swr_v1_socket_pending_error(int fd);
+/* network::Socket's per-request reads and writes: recv/send/peek with EINTR and
+ * dont_restart, driving `tls` (ssl_recv/ssl_send/SSL_peek on `socket`) when set;
+ * catch_error's classification (swReturnCode). */
+typedef ssize_t (*swr_v1_socket_tls_io)(void *socket, void *buffer, size_t length);
+ssize_t swr_v1_socket_recv(int fd, void *buffer, size_t length, int flags, bool nonblock, bool dont_restart, swr_v1_socket_tls_io tls, void *socket);
+ssize_t swr_v1_socket_send(int fd, const void *buffer, size_t length, int flags, bool dont_restart, swr_v1_socket_tls_io tls, void *socket);
+ssize_t swr_v1_socket_peek(int fd, void *buffer, size_t length, int flags, swr_v1_socket_tls_io tls, void *socket);
+int swr_v1_socket_catch_error(int error, bool *kernel_nobufs);
 #ifdef __cplusplus
 }
 static_assert(sizeof(swr_v1_reactor_builtin_reply) == 8, "reactor builtin reply ABI");
