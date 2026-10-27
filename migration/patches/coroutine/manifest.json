@@ -18,7 +18,7 @@
     },
     {
       "path": "0003-context-stack-markers.patch",
-      "sha256": "ba4fc64d421d9aba52ca2d370fa6aaa7727fe88bd66fb842aff47c42aa58f64e",
+      "sha256": "fcee7fd5fc8c863f36120acff04d25e80885cd9241abe9f8afef97c6ceb33344",
       "upstream_paths": [
         "src/coroutine/context.cc"
       ]
@@ -32,7 +32,7 @@
     },
     {
       "path": "0005-context-bookkeeping.patch",
-      "sha256": "64a676280216e513300a2f330b8e6e05abad86e701cbd51ba67e57916716fa33",
+      "sha256": "debae750339c02a08116fa1de5bcb4b904b5098f6390677c367fa7b07a7de2e3",
       "upstream_paths": [
         "include/swoole_coroutine_context.h",
         "src/coroutine/thread_context.cc"
