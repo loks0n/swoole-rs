@@ -101,45 +101,42 @@ int32_t swr_v1_reactor_callbacks_ensure(swr_v1_reactor_callbacks **, uint32_t, i
 int32_t swr_v1_reactor_callbacks_copy_next(const swr_v1_reactor_callbacks *, swr_v1_reactor_callback_copy *, uintptr_t *);
 int32_t swr_v1_reactor_callbacks_clear_next(swr_v1_reactor_callbacks **, uintptr_t *);
 size_t swr_v1_reactor_callbacks_copy_layout(uint32_t);
-typedef struct { size_t next, current; } swr_v1_reactor_batch_cursor;
-typedef struct { uintptr_t token; int32_t fd; uint32_t mask; int32_t filter; uint32_t kind; } swr_v1_reactor_batch_record;
-int32_t swr_v1_reactor_poll_record(const struct pollfd *, size_t, swr_v1_reactor_batch_cursor *, uint32_t, swr_v1_reactor_batch_record *);
-typedef struct { size_t size, alignment, fields[6]; } swr_v1_reactor_backend_layout;
-#if defined(__linux__) && !defined(__ANDROID__)
-int32_t swr_v1_reactor_epoll_record(const struct epoll_event *, size_t, swr_v1_reactor_batch_cursor *, uint32_t, swr_v1_reactor_batch_record *);
-typedef struct swr_v1_reactor_epoll_events swr_v1_reactor_epoll_events;
-swr_v1_reactor_epoll_events *swr_v1_reactor_epoll_new(size_t);
-void swr_v1_reactor_epoll_free(swr_v1_reactor_epoll_events *);
-struct epoll_event *swr_v1_reactor_epoll_data(swr_v1_reactor_epoll_events *);
-swr_v1_reactor_backend_layout swr_v1_reactor_epoll_layout(void);
-/* The whole ReactorEpoll::wait loop (#336), as swr_v1_reactor_epoll_run. Rust runs the loop and its readiness order; these
-   are the native effects, each passed `reactor` (and, for prepare/delete, the event's socket). */
+/* Each backend's whole wait() loop in one call (#336, #391). Rust runs the loop and its readiness
+   order; these are the native effects, each passed `context` (prepare/remove also the socket). */
+enum { SWR_REACTOR_POLL, SWR_REACTOR_EPOLL, SWR_REACTOR_KQUEUE };
 typedef struct {
-    void *reactor;
-    struct epoll_event *events;
-    int epfd;
+    void *context;
+    uint32_t backend;
+    const void *events;     /* pollfd, epoll_event or kevent entries */
+    void *const *sockets;   /* poll: the socket of each pollfd entry */
     const bool *running, *once;
-    const uint32_t *max_events;
-    int (*kernel_wait)(int, struct epoll_event *, int, int);
+    int (*wait)(void *, int *entries); /* the kernel wait; poll stores its entry count */
     void (*before_wait)(void *);
     void (*begin)(void *);
-    int (*timeout)(void *);
     int (*catch_error)(void *);
     void (*end)(void *, int timed_out);
-    int (*interrupted)(void *); /* nullable: io_uring builds only */
-    void (*interrupt)(void *);  /* nullable: io_uring builds only */
+    int (*interrupted)(void *); /* nullable: epoll io_uring builds only */
+    void (*interrupt)(void *);  /* nullable */
     void (*wait_failed)(void *);
-    void (*prepare)(void *, void *socket, int hup);
+    void (*prepare)(void *, void *socket, int fd, int hup); /* fd -1: the socket's own */
     int (*removed)(void *socket);
     int (*oneshot)(void *socket);
     int (*handle)(void *, uint32_t kind); /* 0 read, 1 write, 2 error */
     void (*handler_failed)(void *, uint32_t kind);
     void (*remove)(void *, void *socket);
-} swr_v1_reactor_epoll_ops;
-int32_t swr_v1_reactor_epoll_run(const swr_v1_reactor_epoll_ops *);
+    void (*signal)(void *signal);      /* nullable: kqueue only */
+    void (*unknown)(void *, int filter); /* nullable: kqueue only */
+} swr_v1_reactor_wait_ops;
+int32_t swr_v1_reactor_run(const swr_v1_reactor_wait_ops *);
+typedef struct { size_t size, alignment, fields[6]; } swr_v1_reactor_backend_layout;
+#if defined(__linux__) && !defined(__ANDROID__)
+typedef struct swr_v1_reactor_epoll_events swr_v1_reactor_epoll_events;
+swr_v1_reactor_epoll_events *swr_v1_reactor_epoll_new(size_t);
+void swr_v1_reactor_epoll_free(swr_v1_reactor_epoll_events *);
+struct epoll_event *swr_v1_reactor_epoll_data(swr_v1_reactor_epoll_events *);
+swr_v1_reactor_backend_layout swr_v1_reactor_epoll_layout(void);
 #endif
 #if (defined(__APPLE__) && TARGET_OS_OSX) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
-int32_t swr_v1_reactor_kqueue_record(const struct kevent *, size_t, swr_v1_reactor_batch_cursor *, uint32_t, swr_v1_reactor_batch_record *);
 typedef struct swr_v1_reactor_kqueue_events swr_v1_reactor_kqueue_events;
 swr_v1_reactor_kqueue_events *swr_v1_reactor_kqueue_new(size_t);
 void swr_v1_reactor_kqueue_free(swr_v1_reactor_kqueue_events *);
@@ -158,16 +155,10 @@ struct pollfd *swr_v1_reactor_poll_data(swr_v1_reactor_poll_snapshot *);
 int16_t swr_v1_reactor_poll_to(int32_t);
 int32_t swr_v1_reactor_poll_from(int16_t);
 typedef struct { uint32_t phase; } swr_v1_reactor_ready_state;
-typedef struct { swr_v1_reactor_ready_state ready; uint32_t phase, mask, once, callback; } swr_v1_reactor_ready_workflow_state;
-int32_t swr_v1_reactor_ready_workflow(swr_v1_reactor_ready_workflow_state *, uint32_t, int32_t);
 typedef struct { uint32_t phase; } swr_v1_reactor_flush_state;
-typedef struct { uint32_t phase; } swr_v1_reactor_wait_state;
 typedef struct { int64_t seconds, nanoseconds; uint32_t finite; } swr_v1_reactor_kqueue_timeout_result;
-int32_t swr_v1_reactor_wait_step(swr_v1_reactor_wait_state *, uint32_t, uint32_t, int32_t, uint32_t);
 // Independent zero state; requests10running/11EINTR/12uring-handler/13once.
-int32_t swr_v1_reactor_wait_workflow(swr_v1_reactor_wait_state *, uint32_t, int32_t);
 swr_v1_reactor_kqueue_timeout_result swr_v1_reactor_kqueue_timeout(int32_t, uint32_t);
-int32_t swr_v1_reactor_ready_step(swr_v1_reactor_ready_state *, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
 typedef struct { uint32_t phase, filter; } swr_v1_reactor_registration_state;
 int32_t swr_v1_reactor_poll_registration(uint32_t, uint32_t, uint32_t, size_t, int32_t);
 int32_t swr_v1_reactor_epoll_registration(swr_v1_reactor_registration_state *, uint32_t, uint32_t, int32_t, int32_t);
