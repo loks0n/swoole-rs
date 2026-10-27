@@ -819,7 +819,7 @@ index 40673b5..f2439bc 100644
 +    if (swr_v1_clients_coro_next(10, 0, _socket->close(), 0, 0).action == SWR_CLIENTS_CC_ERROR_FALSE) {
          php_swoole_socket_set_error_properties(ZEND_THIS, _socket);
 diff --git a/ext-src/swoole_http_client_coro.cc b/ext-src/swoole_http_client_coro.cc
-index e7f60d2..06980c3 100644
+index e7f60d2..892bbfa 100644
 --- a/ext-src/swoole_http_client_coro.cc
 +++ b/ext-src/swoole_http_client_coro.cc
 @@ -20,2 +20,6 @@
@@ -845,12 +845,27 @@ index e7f60d2..06980c3 100644
 +}
 +
  namespace swoole {
-@@ -177,3 +194,3 @@ class Client {
+@@ -152,11 +169,5 @@ class Client {
+   private:
+-#ifdef SW_HAVE_ZLIB
+-    bool gzip_stream_active = false;
+-    z_stream gzip_stream = {};
+-#endif
+-#ifdef SW_HAVE_BROTLI
+-    BrotliDecoderState *brotli_decoder_state = nullptr;
+-#endif
+-#ifdef SW_HAVE_ZSTD
+-    ZSTD_DStream *zstd_stream = nullptr;
++#ifdef SW_HAVE_COMPRESSION
++    // Rust owns the gzip/deflate inflate stream (crates/clients/http_inflate.rs).
++    void *zlib_decompressor = nullptr;
+ #endif
+@@ -177,3 +188,3 @@ class Client {
          char content_length_str[64];
 -        size_t n = sw_snprintf(SW_STRS(content_length_str), "Content-Length: %zu\r\n\r\n", length);
 +        size_t n = clients_format_request(0, {}, {}, {}, {}, length, SW_STRS(content_length_str));
          buf->append(content_length_str, n);
-@@ -317,10 +334,6 @@ static bool websocket_verify_server_handshake(zval *zobject) {
+@@ -317,10 +328,6 @@ static bool websocket_verify_server_handshake(zval *zobject) {
  
 -    char sec_buf[128];
 -    size_t sec_len = sw_snprintf(sec_buf, sizeof(sec_buf), "%s%s", Z_STRVAL_P(zkey), SW_WEBSOCKET_GUID);
@@ -865,7 +880,7 @@ index e7f60d2..06980c3 100644
 +                                          reinterpret_cast<const uint8_t *>(Z_STRVAL_P(zaccept)),
 +                                          Z_STRLEN_P(zaccept)) != 0;
  }
-@@ -406,20 +419,6 @@ static const zend_function_entry swoole_http_client_coro_methods[] =
+@@ -406,20 +413,6 @@ static const zend_function_entry swoole_http_client_coro_methods[] =
  void php_swoole_http_parse_set_cookies(const char *at, size_t length, zval *zcookies, zval *zset_cookie_headers) {
 -    const char *eof = at + length;
 -    size_t key_len = 0, value_len = 0;
@@ -889,7 +904,166 @@ index e7f60d2..06980c3 100644
 -    }
 -    value_len = eof - p;
      if (value_len != 0) {
-@@ -853,52 +852,64 @@ void Client::add_header(const char *key, size_t key_len, const char *str, size_t
+@@ -637,146 +630,20 @@ bool Client::decompress_response(const char *in, size_t in_len) {
+ 
+-    size_t reserved_body_length = body->length;
+-
+-    switch (compress_method) {
+-#ifdef SW_HAVE_ZLIB
+-    case HTTP_COMPRESS_GZIP:
+-    case HTTP_COMPRESS_DEFLATE: {
+-        int status;
+-        int encoding = compress_method == HTTP_COMPRESS_GZIP ? SW_ZLIB_ENCODING_GZIP : SW_ZLIB_ENCODING_DEFLATE;
+-        bool first_decompress = !gzip_stream_active;
+-
+-        if (!gzip_stream_active) {
+-        _retry:
+-            memset(&gzip_stream, 0, sizeof(gzip_stream));
+-            gzip_stream.zalloc = php_zlib_alloc;
+-            gzip_stream.zfree = php_zlib_free;
+-            // gzip_stream.total_out = 0;
+-            status = inflateInit2(&gzip_stream, encoding);
+-            if (status != Z_OK) {
+-                swoole_warning("inflateInit2() failed by %s", zError(status));
+-                return false;
+-            }
+-            gzip_stream_active = true;
+-        }
+-
+-        gzip_stream.next_in = (Bytef *) in;
+-        gzip_stream.avail_in = in_len;
+-        gzip_stream.total_in = 0;
+-
+-        while (true) {
+-            const size_t total_out = gzip_stream.total_out;
+-            gzip_stream.avail_out = body->size - body->length;
+-            gzip_stream.next_out = (Bytef *) (body->str + body->length);
+-            SW_ASSERT(body->length <= body->size);
+-            status = inflate(&gzip_stream, Z_SYNC_FLUSH);
+-            if (status >= 0) {
+-                body->length += (gzip_stream.total_out - total_out);
+-                if (body->length + (SW_BUFFER_SIZE_STD / 2) >= body->size) {
+-                    body->extend();
+-                }
+-            }
+-            if (status == Z_STREAM_END || (status == Z_OK && gzip_stream.avail_in == 0)) {
+-                return true;
+-            }
+-            if (status != Z_OK) {
+-                break;
+-            }
++    if (!zlib_decompressor) {
++        if (compress_method != HTTP_COMPRESS_GZIP && compress_method != HTTP_COMPRESS_DEFLATE) {
++            swoole_warning("HttpClient::decompress_response unknown compress method [%d]", compress_method);
++            return false;
+         }
+-
+-        if (status == Z_DATA_ERROR && first_decompress) {
+-            first_decompress = false;
+-            inflateEnd(&gzip_stream);
+-            encoding = SW_ZLIB_ENCODING_RAW;
+-            body->length = reserved_body_length;
+-            goto _retry;
++        zlib_decompressor = swr_v1_clients_http_inflate_new(compress_method == HTTP_COMPRESS_GZIP);
++        if (!zlib_decompressor) {
++            return false;
+         }
+-
+-        swoole_warning("HttpClient::decompress_response failed by %s", zError(status));
+-        body->length = reserved_body_length;
+-        return false;
+     }
+-#endif
+-#ifdef SW_HAVE_BROTLI
+-    case HTTP_COMPRESS_BR: {
+-        if (!brotli_decoder_state) {
+-            brotli_decoder_state = BrotliDecoderCreateInstance(php_brotli_alloc, php_brotli_free, nullptr);
+-            if (!brotli_decoder_state) {
+-                swoole_warning("BrotliDecoderCreateInstance() failed");
+-                return false;
+-            }
+-        }
+-
+-        const char *next_in = in;
+-        size_t available_in = in_len;
+-        while (true) {
+-            size_t available_out = body->size - body->length, reserved_available_out = available_out;
+-            char *next_out = body->str + body->length;
+-            size_t total_out;
+-            SW_ASSERT(body->length <= body->size);
+-            BrotliDecoderResult result = BrotliDecoderDecompressStream(brotli_decoder_state,
+-                                                                       &available_in,
+-                                                                       (const uint8_t **) &next_in,
+-                                                                       &available_out,
+-                                                                       (uint8_t **) &next_out,
+-                                                                       &total_out);
+-            body->length += reserved_available_out - available_out;
+-            if (result == BROTLI_DECODER_RESULT_SUCCESS || result == BROTLI_DECODER_RESULT_NEEDS_MORE_INPUT) {
+-                return true;
+-            } else if (result == BROTLI_DECODER_RESULT_NEEDS_MORE_OUTPUT) {
+-                body->extend();
+-            } else {
+-                swoole_warning("BrotliDecoderDecompressStream() failed, %s",
+-                               BrotliDecoderErrorString(BrotliDecoderGetErrorCode(brotli_decoder_state)));
+-                break;
+-            }
+-        }
+ 
+-        body->length = reserved_body_length;
++    swr_v1_clients_http_inflate_view view;
++    if (!swr_v1_clients_http_inflate_chunk(zlib_decompressor, (const uint8_t *) in, in_len, &view)) {
++        swoole_warning("HttpClient::decompress_response failed");
+         return false;
+     }
+-#endif
+-#ifdef SW_HAVE_ZSTD
+-    case HTTP_COMPRESS_ZSTD: {
+-        size_t zstd_result = 0;
+-        if (zstd_stream == nullptr) {
+-            zstd_stream = ZSTD_createDStream();
+-            if (!zstd_stream) {
+-                swoole_warning("ZSTD_createDStream() failed, can not create ZSTD stream");
+-                return false;
+-            }
+-
+-            zstd_result = ZSTD_initDStream(zstd_stream);
+-            if (ZSTD_isError(zstd_result)) {
+-                swoole_warning("ZSTD_initDStream() failed, Error: [%s]", ZSTD_getErrorName(zstd_result));
+-                return false;
+-            }
+-        }
+-
+-        size_t recommended_size = ZSTD_DStreamOutSize();
+-        ZSTD_inBuffer in_buffer = {in, in_len, 0};
+-        ZSTD_outBuffer out_buffer = {body->str + body->length, body->size - body->length, 0};
+-        while (in_buffer.pos < in_buffer.size) {
+-            if (sw_unlikely(out_buffer.pos == out_buffer.size)) {
+-                body->extend(recommended_size + body->size);
+-                body->length += out_buffer.pos;
+-                out_buffer = {body->str + body->length, body->size - body->length, 0};
+-            }
+-
+-            zstd_result = ZSTD_decompressStream(zstd_stream, &out_buffer, &in_buffer);
+-            if (ZSTD_isError(zstd_result)) {
+-                swoole_warning("ZSTD_decompressStream() failed, Error: [%s]", ZSTD_getErrorName(zstd_result));
+-                return false;
+-            }
+-        }
+-
+-        body->length += out_buffer.pos;
+-        return true;
+-    }
+-#endif
+-    default:
+-        break;
+-    }
+-
+-    swoole_warning("HttpClient::decompress_response unknown compress method [%d]", compress_method);
+-    return false;
++    body->append((const char *) view.data, view.length);
++    return true;
+ }
+@@ -853,52 +720,64 @@ void Client::add_header(const char *key, size_t key_len, const char *str, size_t
  bool Client::connect() {
 -    if (socket) {
 -        return true;
@@ -999,7 +1173,7 @@ index e7f60d2..06980c3 100644
 -    zend_update_property_bool(swoole_http_client_coro_ce, SW_Z8_OBJ_P(zobject), ZEND_STRL("connected"), 1);
 -    return true;
  }
-@@ -914,5 +925,16 @@ void Client::set_error(int error, const char *msg, int status) const {
+@@ -914,5 +793,16 @@ void Client::set_error(int error, const char *msg, int status) const {
  bool Client::keep_liveness() {
 -    if (!socket || !socket->check_liveness()) {
 -        if (socket) {
@@ -1019,7 +1193,7 @@ index e7f60d2..06980c3 100644
 +        case SWR_CLIENTS_HC_LIVENESS: effect_result = socket->check_liveness(); break;
 +        case SWR_CLIENTS_HC_CLOSE_DEAD:
              socket->check_bound_co(SW_EVENT_RDWR);
-@@ -920,11 +942,9 @@ bool Client::keep_liveness() {
+@@ -920,11 +810,9 @@ bool Client::keep_liveness() {
              close(false);
 +            break;
 +        case SWR_CLIENTS_HC_RETRY_CONNECT: effect_result = connect(); break;
@@ -1036,7 +1210,7 @@ index e7f60d2..06980c3 100644
      }
 -    return true;
  }
-@@ -1022,7 +1042,4 @@ bool Client::send_request() {
+@@ -1022,7 +910,4 @@ bool Client::send_request() {
          char *proxy_uri = (char *) emalloc(proxy_uri_len);
 -        if (nullptr == memchr(_host, ':', _host_len)) {
 -            proxy_uri_len = sw_snprintf(proxy_uri, proxy_uri_len, "%s%s:%u%s", pre, _host, port, path.c_str());
@@ -1046,7 +1220,7 @@ index e7f60d2..06980c3 100644
 +        proxy_uri_len = clients_format_request(1, clients_format_span(_host, _host_len),
 +            clients_format_span(path.data(), path.length()), {}, {}, port, proxy_uri, proxy_uri_len);
          buffer->append(proxy_uri, proxy_uri_len);
-@@ -1177,7 +1194,4 @@ bool Client::send_request() {
+@@ -1177,7 +1062,4 @@ bool Client::send_request() {
                               sizeof(boundary_str) - sizeof(SW_HTTP_CLIENT_BOUNDARY_PREKEY));
 -        ssize_t n = sw_snprintf(header_buf,
 -                                sizeof(header_buf),
@@ -1056,7 +1230,7 @@ index e7f60d2..06980c3 100644
 +        ssize_t n = clients_format_request(2, clients_format_span(boundary_str, sizeof(boundary_str) - 1),
 +            {}, {}, {}, 0, SW_STRS(header_buf));
          buffer->append(header_buf, n);
-@@ -1244,9 +1258,4 @@ bool Client::send_request() {
+@@ -1244,9 +1126,4 @@ bool Client::send_request() {
                  zend::String str_value(zvalue);
 -                n = sw_snprintf(header_buf,
 -                                sizeof(header_buf),
@@ -1068,7 +1242,7 @@ index e7f60d2..06980c3 100644
 +                n = clients_format_request(3, clients_format_span(boundary_str, sizeof(boundary_str) - 1),
 +                    clients_format_span(key, keylen), {}, {}, 0, SW_STRS(header_buf));
                  buffer->append(header_buf, n);
-@@ -1297,13 +1306,6 @@ bool Client::send_request() {
+@@ -1297,13 +1174,6 @@ bool Client::send_request() {
                   */
 -                n = sw_snprintf(header_buf,
 -                                sizeof(header_buf),
@@ -1086,12 +1260,12 @@ index e7f60d2..06980c3 100644
 +                    clients_format_span(Z_STRVAL_P(zfilename), Z_STRLEN_P(zfilename)),
 +                    clients_format_span(Z_STRVAL_P(ztype), Z_STRLEN_P(ztype)), 0, SW_STRS(header_buf));
                  /**
-@@ -1339,3 +1341,3 @@ bool Client::send_request() {
+@@ -1339,3 +1209,3 @@ bool Client::send_request() {
  
 -        n = sw_snprintf(header_buf, sizeof(header_buf), "--%.*s--\r\n", (int) (sizeof(boundary_str) - 1), boundary_str);
 +        n = clients_format_request(5, clients_format_span(boundary_str, sizeof(boundary_str) - 1), {}, {}, {}, 0, SW_STRS(header_buf));
          if (socket->send_all(header_buf, n) != n) {
-@@ -1408,20 +1410,28 @@ bool Client::exec(const std::string &_path) {
+@@ -1408,20 +1278,28 @@ bool Client::exec(const std::string &_path) {
      }
 -    SW_LOOP_N(max_retries + 1) {
 -        if (send_request() == false) {
@@ -1134,19 +1308,19 @@ index e7f60d2..06980c3 100644
      }
 -    return false;
  }
-@@ -1429,3 +1439,3 @@ bool Client::exec(const std::string &_path) {
+@@ -1429,3 +1307,3 @@ bool Client::exec(const std::string &_path) {
  bool Client::recv_response(double timeout) {
 -    if (!wait_response) {
 +    if (swr_v1_clients_http_response_next(0, wait_response, 0, 0, 0).action == SWR_CLIENTS_HR_FALSE) {
          return false;
-@@ -1437,6 +1447,3 @@ bool Client::recv_response(double timeout) {
+@@ -1437,6 +1315,3 @@ bool Client::recv_response(double timeout) {
      off_t header_crlf_offset = 0;
 -
 -    // re-init http response parser
      swoole_llhttp_parser_init(&parser, HTTP_RESPONSE, (void *) this);
 -
      if (timeout == 0) {
-@@ -1445,103 +1452,80 @@ bool Client::recv_response(double timeout) {
+@@ -1445,103 +1320,80 @@ bool Client::recv_response(double timeout) {
      Socket::TimeoutController tc(socket, timeout, SW_TIMEOUT_READ);
 -    bool success = false;
 +    uint32_t stage = 1;
@@ -1307,18 +1481,41 @@ index e7f60d2..06980c3 100644
 -        socket->protocol.package_length_offset = 0;
 -        socket->protocol.package_body_offset = 0;
 -        socket->protocol.get_package_length = websocket::get_package_length;
-+        stage = plan.stage;
-     }
+-    }
 -    // handler keep alive
 -    if (!websocket && (!keep_alive || connection_close)) {
 -        close();
 -    } else {
 -        reset();
--    }
++        stage = plan.stage;
+     }
 -
 -    return true;
  }
-@@ -1696,19 +1680,30 @@ bool Client::close(const bool should_be_reset) {
+@@ -1649,18 +1501,6 @@ void Client::reset() {
+ #endif
+-#ifdef SW_HAVE_ZLIB
+-    if (gzip_stream_active) {
+-        inflateEnd(&gzip_stream);
+-        gzip_stream_active = false;
+-    }
+-#endif
+-#ifdef SW_HAVE_BROTLI
+-    if (brotli_decoder_state) {
+-        BrotliDecoderDestroyInstance(brotli_decoder_state);
+-        brotli_decoder_state = nullptr;
+-    }
+-#endif
+-#ifdef SW_HAVE_ZSTD
+-    if (zstd_stream) {
+-        ZSTD_freeDStream(zstd_stream);
+-        zstd_stream = nullptr;
++#ifdef SW_HAVE_COMPRESSION
++    if (zlib_decompressor) {
++        swr_v1_clients_http_inflate_free(zlib_decompressor);
++        zlib_decompressor = nullptr;
+     }
+@@ -1696,19 +1536,30 @@ bool Client::close(const bool should_be_reset) {
      SocketImpl *_socket = socket;
 -    if (!_socket) {
 -        return false;
