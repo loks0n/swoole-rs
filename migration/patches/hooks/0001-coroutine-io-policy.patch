@@ -1058,7 +1058,7 @@ index 6a4aacf..58ab349 100644
 +    return outcome.result;
  }
 diff --git a/src/coroutine/hook.cc b/src/coroutine/hook.cc
-index 964a906..72080a8 100644
+index 964a906..64531c7 100644
 --- a/src/coroutine/hook.cc
 +++ b/src/coroutine/hook.cc
 @@ -27,2 +27,7 @@
@@ -1225,6 +1225,256 @@ index 964a906..72080a8 100644
 -    async([&]() { retval = closedir(dirp); });
 -    return retval;
 +    return swr_v1_hook_closedir(dirp, hook_offload());
+ }
+@@ -449,13 +385,8 @@ hostent *swoole_coroutine_gethostbyname(const char *name) {
+ int swoole_coroutine_open(const char *pathname, int flags, mode_t mode) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return open(pathname, flags, mode);
++#ifndef SW_USE_ASYNC
++    if (!is_no_coro()) {
++        return Iouring::open(pathname, flags, mode);
+     }
+-
+-#ifdef SW_USE_ASYNC
+-    int ret = -1;
+-    async([&]() { ret = open(pathname, flags, mode); });
+-    return ret;
+-#else
+-    return Iouring::open(pathname, flags, mode);
+ #endif
++    return swr_v1_hook_open(pathname, flags, mode, hook_offload());
+ }
+@@ -533,13 +464,8 @@ ssize_t swoole_coroutine_write(int sockfd, const void *buf, size_t count) {
+ int swoole_coroutine_fstat(int fd, struct stat *statbuf) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return fstat(fd, statbuf);
++#if !defined(SW_USE_ASYNC) && defined(HAVE_IOURING_STATX)
++    if (!is_no_coro()) {
++        return Iouring::fstat(fd, statbuf);
+     }
+-
+-#if defined(SW_USE_ASYNC) || !defined(HAVE_IOURING_STATX)
+-    int ret = -1;
+-    async([&]() { ret = fstat(fd, statbuf); });
+-    return ret;
+-#else
+-    return Iouring::fstat(fd, statbuf);
+ #endif
++    return swr_v1_hook_fstat(fd, statbuf, hook_offload());
+ }
+@@ -547,13 +473,8 @@ int swoole_coroutine_fstat(int fd, struct stat *statbuf) {
+ int swoole_coroutine_stat(const char *path, struct stat *statbuf) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return stat(path, statbuf);
++#if !defined(SW_USE_ASYNC) && defined(HAVE_IOURING_STATX)
++    if (!is_no_coro()) {
++        return Iouring::stat(path, statbuf);
+     }
+-
+-#if defined(SW_USE_ASYNC) || !defined(HAVE_IOURING_STATX)
+-    int ret = -1;
+-    async([&]() { ret = stat(path, statbuf); });
+-    return ret;
+-#else
+-    return Iouring::stat(path, statbuf);
+ #endif
++    return swr_v1_hook_stat(path, statbuf, hook_offload());
+ }
+@@ -561,13 +482,8 @@ int swoole_coroutine_stat(const char *path, struct stat *statbuf) {
+ int swoole_coroutine_lstat(const char *path, struct stat *statbuf) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return lstat(path, statbuf);
++#if !defined(SW_USE_ASYNC) && defined(HAVE_IOURING_STATX)
++    if (!is_no_coro()) {
++        return Iouring::stat(path, statbuf);
+     }
+-
+-#if defined(SW_USE_ASYNC) || !defined(HAVE_IOURING_STATX)
+-    int ret = -1;
+-    async([&]() { ret = lstat(path, statbuf); });
+-    return ret;
+-#else
+-    return Iouring::stat(path, statbuf);
+ #endif
++    return swr_v1_hook_lstat(path, statbuf, hook_offload());
+ }
+@@ -575,13 +491,8 @@ int swoole_coroutine_lstat(const char *path, struct stat *statbuf) {
+ int swoole_coroutine_unlink(const char *pathname) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return unlink(pathname);
++#ifndef SW_USE_ASYNC
++    if (!is_no_coro()) {
++        return Iouring::unlink(pathname);
+     }
+-
+-#ifdef SW_USE_ASYNC
+-    int ret = -1;
+-    async([&]() { ret = unlink(pathname); });
+-    return ret;
+-#else
+-    return Iouring::unlink(pathname);
+ #endif
++    return swr_v1_hook_unlink(pathname, hook_offload());
+ }
+@@ -589,13 +500,8 @@ int swoole_coroutine_unlink(const char *pathname) {
+ int swoole_coroutine_mkdir(const char *pathname, mode_t mode) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return mkdir(pathname, mode);
++#ifndef SW_USE_ASYNC
++    if (!is_no_coro()) {
++        return Iouring::mkdir(pathname, mode);
+     }
+-
+-#ifdef SW_USE_ASYNC
+-    int ret = -1;
+-    async([&]() { ret = mkdir(pathname, mode); });
+-    return ret;
+-#else
+-    return Iouring::mkdir(pathname, mode);
+ #endif
++    return swr_v1_hook_mkdir(pathname, mode, hook_offload());
+ }
+@@ -603,13 +509,8 @@ int swoole_coroutine_mkdir(const char *pathname, mode_t mode) {
+ int swoole_coroutine_rmdir(const char *pathname) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return rmdir(pathname);
++#ifndef SW_USE_ASYNC
++    if (!is_no_coro()) {
++        return Iouring::rmdir(pathname);
+     }
+-
+-#ifdef SW_USE_ASYNC
+-    int ret = -1;
+-    async([&]() { ret = rmdir(pathname); });
+-    return ret;
+-#else
+-    return Iouring::rmdir(pathname);
+ #endif
++    return swr_v1_hook_rmdir(pathname, hook_offload());
+ }
+@@ -617,13 +518,8 @@ int swoole_coroutine_rmdir(const char *pathname) {
+ int swoole_coroutine_rename(const char *oldpath, const char *newpath) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return rename(oldpath, newpath);
++#ifndef SW_USE_ASYNC
++    if (!is_no_coro()) {
++        return Iouring::rename(oldpath, newpath);
+     }
+-
+-#ifdef SW_USE_ASYNC
+-    int ret = -1;
+-    async([&]() { ret = rename(oldpath, newpath); });
+-    return ret;
+-#else
+-    return Iouring::rename(oldpath, newpath);
+ #endif
++    return swr_v1_hook_rename(oldpath, newpath, hook_offload());
+ }
+@@ -631,13 +527,8 @@ int swoole_coroutine_rename(const char *oldpath, const char *newpath) {
+ int swoole_coroutine_fsync(int fd) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return fsync(fd);
++#ifndef SW_USE_ASYNC
++    if (!is_no_coro()) {
++        return Iouring::fsync(fd);
+     }
+-
+-#ifdef SW_USE_ASYNC
+-    int ret = -1;
+-    async([&]() { ret = fsync(fd); });
+-    return ret;
+-#else
+-    return Iouring::fsync(fd);
+ #endif
++    return swr_v1_hook_fsync(fd, hook_offload());
+ }
+@@ -645,21 +536,8 @@ int swoole_coroutine_fsync(int fd) {
+ int swoole_coroutine_fdatasync(int fd) {
+-    if (sw_unlikely(is_no_coro())) {
+-#ifdef HAVE_FDATASYNC
+-        return fdatasync(fd);
+-#else
+-        return fsync(fd);
+-#endif
++#ifndef SW_USE_ASYNC
++    if (!is_no_coro()) {
++        return Iouring::fdatasync(fd);
+     }
+-
+-#ifdef SW_USE_ASYNC
+-    int ret = -1;
+-#ifdef HAVE_FDATASYNC
+-    async([&]() { ret = fdatasync(fd); });
+-#else
+-    async([&]() { ret = fsync(fd); });
+-#endif
+-    return ret;
+-#else
+-    return Iouring::fdatasync(fd);
+ #endif
++    return swr_v1_hook_fdatasync(fd, hook_offload());
+ }
+@@ -667,13 +545,8 @@ int swoole_coroutine_fdatasync(int fd) {
+ int swoole_coroutine_ftruncate(int fd, off_t length) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return ftruncate(fd, length);
++#if !defined(SW_USE_ASYNC) && defined(HAVE_IOURING_FTRUNCATE)
++    if (!is_no_coro()) {
++        return Iouring::ftruncate(fd, length);
+     }
+-
+-#if defined(SW_USE_ASYNC) || !defined(HAVE_IOURING_FTRUNCATE)
+-    int ret = -1;
+-    async([&]() { ret = ftruncate(fd, length); });
+-    return ret;
+-#else
+-    return Iouring::ftruncate(fd, length);
+ #endif
++    return swr_v1_hook_ftruncate(fd, length, hook_offload());
+ }
+@@ -681,9 +554,3 @@ int swoole_coroutine_ftruncate(int fd, off_t length) {
+ off_t swoole_coroutine_lseek(int fd, off_t offset, int whence) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return lseek(fd, offset, whence);
+-    }
+-
+-    off_t ret = -1;
+-    async([&]() { ret = lseek(fd, offset, whence); });
+-    return ret;
++    return swr_v1_hook_lseek(fd, offset, whence, hook_offload());
+ }
+@@ -691,9 +558,3 @@ off_t swoole_coroutine_lseek(int fd, off_t offset, int whence) {
+ ssize_t swoole_coroutine_readlink(const char *pathname, char *buf, size_t len) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return readlink(pathname, buf, len);
+-    }
+-
+-    ssize_t ret = -1;
+-    async([&]() { ret = readlink(pathname, buf, len); });
+-    return ret;
++    return swr_v1_hook_readlink(pathname, buf, len, hook_offload());
+ }
+@@ -701,9 +562,3 @@ ssize_t swoole_coroutine_readlink(const char *pathname, char *buf, size_t len) {
+ int swoole_coroutine_statvfs(const char *path, struct statvfs *buf) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return statvfs(path, buf);
+-    }
+-
+-    int ret = -1;
+-    async([&]() { ret = statvfs(path, buf); });
+-    return ret;
++    return swr_v1_hook_statvfs(path, buf, hook_offload());
+ }
+@@ -711,9 +566,3 @@ int swoole_coroutine_statvfs(const char *path, struct statvfs *buf) {
+ int swoole_coroutine_access(const char *pathname, int mode) {
+-    if (sw_unlikely(is_no_coro())) {
+-        return access(pathname, mode);
+-    }
+-
+-    int ret = -1;
+-    async([&]() { ret = access(pathname, mode); });
+-    return ret;
++    return swr_v1_hook_access(pathname, mode, hook_offload());
  }
 diff --git a/src/coroutine/iouring.cc b/src/coroutine/iouring.cc
 index 63ca2f2..f0514c6 100644
