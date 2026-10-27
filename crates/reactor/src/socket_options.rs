@@ -305,7 +305,8 @@ mod tests {
             "cloexec untouched"
         );
         close(fd);
-        let closed = swr_v1_socket_fd_option(fd, 1, 1);
+        // -1, not the closed fd: a parallel test may reuse that number.
+        let closed = swr_v1_socket_fd_option(-1, 1, 1);
         assert_eq!(
             closed,
             SocketOptionResult {
@@ -353,7 +354,7 @@ mod tests {
         assert!(swr_v1_socket_tcp_nodelay(fd, 1));
         assert!(swr_v1_socket_listen(fd, 0, 512));
         close(fd);
-        assert!(!swr_v1_socket_listen(fd, 0, 512));
-        assert!(!swr_v1_socket_buffer_size(fd, false, true, 1));
+        assert!(!swr_v1_socket_listen(-1, 0, 512));
+        assert!(!swr_v1_socket_buffer_size(-1, false, true, 1));
     }
 }
