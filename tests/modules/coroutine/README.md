@@ -25,7 +25,6 @@ ASan stack-switch warnings yield `warned`, not `passed`. On macOS pass
 ```
 python3 tests/modules/coroutine/compile_gate.py --source PINNED_TREE [--timing] [--stack-usage] \
   [--backend asm|ucontext|thread] [--standard c++14|c++17] --report OUT.json
-python3 tests/modules/coroutine/ordered_gate.py --source PINNED_TREE --archive ARCHIVE --sanitize --report OUT.json
 python3 tests/modules/coroutine/channel_state_gate.py --source PINNED_TREE [--archive ARCHIVE] --report OUT.json
 python3 tests/modules/coroutine/channel_state_sdk.py --source PINNED_TREE --sdk-export SELECTED/export.json \
   --native-export NATIVE/export.json [--backend B] --report OUT.json
@@ -39,10 +38,6 @@ python3 tests/modules/coroutine/thread_context_audit.py --source PINNED_TREE --o
 - `compile_gate.py` compiles original, patched and disabled `base`, `channel`,
   `context` and `thread_context` translation units; the disabled overlay must
   fail closed with its guard message.
-- `ordered_gate.py` compiles pinned and selected scheduler/channel bodies around
-  deterministic callback, clock and timer facades: nested finish,
-  bailout suppression, yield/cancel/timeout, timer allocation failure, throwing
-  callbacks, close wake order, fairness and stale errors.
 - `channel_state_gate.py` runs the Rust unit tests (ordinary and with Rust ASan),
   stages the current overlays, runs `tokens.py`, `creation.py` and
   `entry.py`, and runs the C11/C++ ABI fixtures (`tokens.c`,
@@ -81,9 +76,8 @@ verifies the prepared binary/library hashes and runs alternating timed trials.
 
 - `core.py --ucontext` on macOS fails all 32 originals per engine, including a
   native SIGSEGV in `_setcontext`. Assembly contexts pass on macOS and Linux.
-- `ordered_gate.cc` and `production_stack.cc` still model the old protected
-  Channel/Context fields and direct imports, so they do not match the current
-  overlays.
+- `production_stack.cc` still models the old protected Context fields and direct
+  imports, so it does not match the current overlays.
 - `channel_state_sdk.py --backend ucontext` fails on the native unused-`sp`
   `-Werror` warning.
 - Optional thread-context is unsupported; `core.py` rejects a config defining

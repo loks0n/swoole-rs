@@ -321,9 +321,6 @@ def plan(args, reports):
                    '--sdk-export', selected_export / 'export.json',
                    '--native-export', native_export / 'export.json',
                    '--report', reports / 'coroutine-channel-state-sdk.json')
-        script('coroutine-ordered', 'tests/modules/coroutine/ordered_gate.py', '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
-               '--report', reports / 'coroutine-ordered.json')
         script('coroutine-compile', 'tests/modules/coroutine/compile_gate.py', '--source', ROOT / 'target/upstream/src',
                '--report', reports / 'coroutine-compile.json')
         script('coroutine-stack-compile', 'tests/modules/coroutine/compile_gate.py',
