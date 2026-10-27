@@ -94,6 +94,12 @@ are still never uninstalled.
   nothing ready is ETIMEDOUT), and otherwise runs native's `EventWaiter` through a
   function pointer, then turns error readiness into the requested read/write bits.
   Native sets the last error and errno it returns.
+- `System::wait_signal` is one Rust call, `hook_wait_signal`: the listener table,
+  the EBUSY/EINVAL checks, registering through native `listen`, the park, the wake-up handler
+  `hook_signal_wake` (clears the slot, records the signal, resumes) and the
+  unregistering after it. Native passes the coroutine operations, signal
+  registration (deferred under `SW_USE_THREAD_CONTEXT`), the reactor exit condition
+  and `signal_async_listener_num`.
 - `TimerController` selects activation/addition/negative-timeout sentinel and
   enabled-only destruction. Disabled destructors and zero-timeout starts do not
   dereference `timer_pp`. Positive allocation failure leaves enabled = true with
