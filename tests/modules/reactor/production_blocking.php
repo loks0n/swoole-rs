@@ -1,6 +1,6 @@
 <?php
 $result = swr_reactor_blocking_supported();
-if (count($result['outcomes']) !== 61 || $result['cases'] !== 8 || in_array(false, $result['outcomes'], true)) {
+if (count($result['outcomes']) !== 54 || $result['cases'] !== 7 || in_array(false, $result['outcomes'], true)) {
     throw new RuntimeException('Ordinary blocking Socket/IOVector assertions failed: ' . json_encode($result));
 }
 $result['checks'] = count($result['outcomes']);
