@@ -49,6 +49,10 @@ pub use flush::*;
 mod socket_options;
 #[cfg(unix)]
 pub use socket_options::*;
+#[cfg(unix)]
+mod socket_io;
+#[cfg(unix)]
+pub use socket_io::*;
 
 const INVALID: i32 = -1;
 /// Encode the stream's four-byte network-order body length. The supplied total

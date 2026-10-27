@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <sys/types.h>
+#include <sys/socket.h>
 #ifdef __APPLE__
 #include <TargetConditionals.h>
 #endif
@@ -138,6 +140,16 @@ swr_v1_socket_option_result swr_v1_socket_uncork(int fd, bool enable_tcp_nodelay
 bool swr_v1_socket_buffer_size(int fd, bool recv, bool send, uint32_t size);
 bool swr_v1_socket_kernel_timeout(int fd, bool send, double timeout);
 bool swr_v1_socket_listen(int fd, int backlog, int default_backlog);
+/* network::Socket's descriptor I/O. status 0 ready; 1 timed out (wait) or
+ * EINPROGRESS (connect); 2 failed with errno `error`. */
+typedef struct { int status, error; } swr_v1_socket_io_result;
+struct sockaddr;
+swr_v1_socket_io_result swr_v1_socket_wait(int fd, int16_t events, int timeout_ms, bool dont_restart, void (*dispatch)(void));
+void swr_v1_socket_clean(int fd);
+ssize_t swr_v1_socket_recvfrom(int fd, void *buffer, size_t length, int flags, struct sockaddr *address, socklen_t *address_length, uint32_t retries);
+int swr_v1_socket_accept(int fd, struct sockaddr *address, socklen_t *address_length, bool nonblock, bool *listener_cloexec);
+swr_v1_socket_io_result swr_v1_socket_connect(int fd, const struct sockaddr *address, socklen_t length);
+swr_v1_socket_io_result swr_v1_socket_pending_error(int fd);
 #ifdef __cplusplus
 }
 static_assert(sizeof(swr_v1_reactor_builtin_reply) == 8, "reactor builtin reply ABI");
