@@ -326,6 +326,7 @@ mod tests {
             );
         }
         close(&[accepted, client, listener]);
-        assert_eq!(swr_v1_socket_pending_error(client).status, 2, "closed fd");
+        // -1, not the closed fd: a parallel test may reuse that number.
+        assert_eq!(swr_v1_socket_pending_error(-1).status, 2, "invalid fd");
     }
 }
