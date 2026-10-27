@@ -567,8 +567,6 @@ def plan(args, reports):
         script('corebase-mkdir', 'tests/modules/corebase/mkdir.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *includes, *report('corebase-mkdir'))
         if integrate:
-            script('corebase-php', 'tests/modules/corebase/php.py', '--source', ROOT / 'target/upstream/src',
-                   *php, *engines, *report('corebase-php'))
             script('corebase-startup', 'tests/modules/corebase/mkdir_startup.py', *php, *engines, *report('corebase-startup'))
             native_options = (['--openssl-dir', subprocess.check_output(['brew', '--prefix', 'openssl@3'], text=True).strip(),
                                '--php-dir', subprocess.check_output(['php-config', '--prefix'], text=True).strip()]

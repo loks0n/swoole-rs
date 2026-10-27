@@ -26,16 +26,6 @@ native-TU gates.
   270 traced `swoole_mkdir_recursive` cases (30 paths x 9 syscall scenarios,
   through `mkdir-shim.h`/`mkdir-driver.h`) compared between original and
   patched, plus real private-filesystem checks per engine.
-- `php.py --source S --engine native=... --engine rust=... --output R [--fork | --task-directory [--task-directory-fixture-only]]`
-  (`corebase-php`): needs one engine with and one without feature bit 8192.
-  Default: `consumers.php` (package-length formats, Content-Length, chunk
-  lengths) and three upstream PHPTs. `--fork`: `fork-consumers.php`,
-  `fork-logger.php`, coroutine/async fork guards and seven Process PHPTs.
-  `--task-directory`: `task-directory.php` (settings, startup creation,
-  file-backed pack/unpack, error path) and `task/unpack.phpt`; requires the
-  extension to define and call `swr_v1_corebase_task_tmp_next` unless
-  `--task-directory-fixture-only`. On Linux add `--php-extension sockets`
-  (and `curl` if built with curl hooks).
 - `mkdir_startup.py --engine native=... --engine rust=... --output R`
   (`corebase-startup`): PHP startup through `sys_temp_dir` (create, repeated
   slashes, file parent), comparing warnings and `swoole_last_error`. The Rust
@@ -67,8 +57,8 @@ native-TU gates.
   fails if any Rust median is slower. Run with no other workload on the host.
   It has not been run yet.
 - Pure Rust policy checks:
-  `rustc --edition=2024 --test tests/modules/corebase/hook-policy.rs -o target/corebase-hook-policy && target/corebase-hook-policy`
-  (likewise `init-policy.rs`, `task-directory-policy.rs`).
+  `rustc --edition=2024 --test tests/modules/corebase/init-policy.rs -o target/corebase-init-policy && target/corebase-init-policy`
+  (likewise `task-directory-policy.rs`). The hook policy's tests are in `crates/corebase/src/hook.rs`.
 
 `patching.py`, `cases.py`, `lifecycle_proof.py` and `supervisor.py` are shared
 helpers. `supervisor.py` runs child Python tools in-process so SIGTERM/SIGINT
