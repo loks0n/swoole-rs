@@ -49,10 +49,11 @@ docs/development.md); a local machine runs the goal agent and at most one review
 so no laptop fills its disk with many agents' builds. Each executor loops:
 
 1. Claim the highest-priority, oldest unblocked `status:ready` issue without
-   `needs:decision` (see
-   Tickets).
+   `needs:decision` (see Tickets). Check again before each new PR: a ticket that
+   takes several PRs doesn't outrank higher-priority work filed since.
 2. Branch from `main`, commit. The pre-commit hook runs quick checks (~5s warm);
-   enable the hooks with `git config core.hooksPath .githooks`.
+   enable the hooks with `git config core.hooksPath .githooks`. Never pass
+   `--no-verify`; fix what the hook reports.
 3. Push and open a PR whose body says `Closes #n`. The PR tier runs unit and
    integration CI (target: under 3 minutes).
 4. Run `gh pr merge --auto --squash <pr>`. GitHub squash-merges it once the
@@ -67,10 +68,10 @@ so no laptop fills its disk with many agents' builds. Each executor loops:
 5. The merge tier runs on `main`: everything above plus every gate, application
    and original PHPT for all modules. Watch it with `python3 tools/ci.py wait
    --commit <merge sha>` (`gh pr view <pr> --json mergeCommit -q
-   .mergeCommit.oid`). If that run was
-   cancelled (exit 3), a later run covers your commit; nothing to do. If it
-   failed, handle its **new failures** as described under *Red main* (CI), and
-   move on.
+   .mergeCommit.oid`) in the background, and claim the next issue meanwhile;
+   finish steps 5 and 6 when it reports. If that run was cancelled (exit 3), a
+   later run covers your commit; nothing to do. If it failed, handle its **new
+   failures** as described under *Red main* (CI).
 6. Validate the change where it lands, comment what was checked on the issue,
    and close it. If it delivers only part of what an issue it blocks needs,
    make the follow-up block that issue too.
@@ -81,9 +82,11 @@ so no laptop fills its disk with many agents' builds. Each executor loops:
 
 **Upstream security bugs stay private.** This repo is public. A memory-safety bug
 or other likely vulnerability in upstream Swoole (or any dependency) never goes in
-an issue, PR, commit message or code comment. Create a draft repository security
-advisory on this repo (visible only to admins) with the reproducer and the upstream
-location, then stop; a person handles disclosure.
+an issue, PR, commit message or code comment here. File it as an issue in the
+private `loks0n/swoole-rs-security` repository with the upstream location, cause
+and impact (the reproducer stays local), then carry on; a person handles
+disclosure. Public code, comments and test exclusions don't mark where upstream
+misbehaves either.
 
 Executors never ask the person running them: no question tool, no prompt
 waiting for an answer. Routine next steps (merge on green, close, file
@@ -91,7 +94,13 @@ follow-ups) need no one. For an open question, resolve it yourself first:
 reread the issue, its goal and earlier decisions, and gather data (reproduce,
 measure both engines, read upstream). Only when that can't settle it, add
 `needs:decision` with the evidence and the options, release the claim, and take
-another issue.
+another issue. Size is never a reason to skip a ticket or stop the loop: split
+it into PRs that each land on their own. The loop ends only when nothing is
+claimable.
+
+Migration moves code into Rust, never back. Restoring upstream C++ in place of
+Rust needs a goal decision on the issue first; to drop a step machine, move the
+whole operation into Rust.
 
 ## Reviewer agents
 
