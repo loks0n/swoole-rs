@@ -25,9 +25,9 @@ runs external clients against real PHP processes.
 ```sh
 # Build the pinned upstream reference without installing it globally:
 python3 tools/build_upstream.py
-python3 tools/build_hybrid.py --module buffer --module websocket
+python3 tools/build_hybrid.py
 python3 corpus/run.py \
-  --engine hybrid=target/hybrid/rust-buffer-websocket/modules/swoole.so \
+  --engine hybrid=target/hybrid/rust/modules/swoole.so \
   --engine upstream=target/upstream/src/modules/swoole.so
 ```
 

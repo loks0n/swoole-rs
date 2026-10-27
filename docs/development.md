@@ -4,20 +4,20 @@
 
 ```sh
 # One crate or one named Rust test; no extension build.
-python3 tools/dev.py edit --module buffer --test rollback
+python3 tools/dev.py edit --test rollback
 
 # Incremental build, ABI/native/PHP gates and the module's PHPT selection.
-python3 tools/dev.py candidate --module websocket
+python3 tools/dev.py candidate
 
 # Reproduce one registered PHPT (candidate only).
-python3 tools/dev.py candidate --module websocket \
+python3 tools/dev.py candidate \
   --case tests/swoole_websocket_server/pack.phpt \
   --hypothesis 'Header changes preserve the PHP frame representation' \
   --expect 'Original pack assertions pass'
 
 # Immutable build, fmt/Clippy, module gates, all applications and all original
 # PHPTs, with upstream as control.
-python3 tools/dev.py integrate --module buffer --module websocket
+python3 tools/dev.py integrate --module timer
 python3 tools/dev.py integrate --all-modules   # every registered module; used by CI
 ```
 
@@ -43,11 +43,11 @@ in the same run; the planner refuses missing prerequisites.
 ## Incremental builds
 
 ```sh
-python3 tools/build_hybrid.py --dev --module buffer --module websocket
+python3 tools/build_hybrid.py --dev --module timer
 ```
 
 Dev builds live under `target/hybrid/dev/` with aliases like
-`target/hybrid/dev-rust-buffer-websocket/` and never replace the immutable
+`target/hybrid/dev-rust-timer/` and never replace the immutable
 aliases. `build-manifest.json` marks them `development`; `last-run.json` records
 phase timings and whether make/relink/configure ran.
 

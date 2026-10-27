@@ -27,8 +27,8 @@ the upstream build toolchain described in the [corpus instructions](corpus/READM
 
 ```sh
 python3 tools/build_upstream.py
-python3 tools/build_hybrid.py --module buffer --module websocket
-php -n -d extension="$PWD/target/hybrid/rust-buffer-websocket/modules/swoole.so" -r 'echo SWOOLE_VERSION, "\n";'
+python3 tools/build_hybrid.py
+php -n -d extension="$PWD/target/hybrid/rust/modules/swoole.so" -r 'echo SWOOLE_VERSION, "\n";'
 ```
 
 Do not load the hybrid alongside another Swoole extension: both register the same classes.
@@ -40,7 +40,7 @@ see [local development](docs/development.md).
 
 ```sh
 git config core.hooksPath .githooks   # pre-commit: fmt, clippy, manifest, tooling tests (~30s)
-python3 tools/dev.py integrate --module buffer --module websocket
+python3 tools/dev.py integrate --module timer
 ```
 
 CI has two tiers. [PR](.github/workflows/pr.yml) runs Rust tests, tooling tests and the

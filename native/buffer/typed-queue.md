@@ -1,7 +1,7 @@
 # Typed Buffer queue (`swr_v1_buffer_typed_*`)
 
 `SWOOLE_RS_BUFFER_TYPED` is on whenever both the Rust Buffer and the Rust reactor are
-built (`--module buffer --module reactor`); there is no separate switch. It reuses the single Rust `VecDeque` and
+built (`--module reactor`; Buffer is graduated); there is no separate switch. It reuses the single Rust `VecDeque` and
 byte ownership, adding a Rust front cursor and generation plus ordered sendfile
 token and CLOSE entries. Exports: `create`, `push`, `front`, `consume` (cursor) and
 `pop` (detach). There is no native descriptor queue or DATA offset mirror.
