@@ -32,9 +32,8 @@ A module graduates when:
    merge-tier runs.
 2. Its original PHPTs pass wherever they pass on upstream, as far as the PHPT
    manifest covers it.
-3. Callgrind instructions per request on the corpus workloads that exercise it
-   are at most 5% above upstream (the merge tier's `callgrind` job). A module
-   those workloads never reach passes with the measurement posted. Module
+3. Its callgrind cost on the corpus workloads that exercise it is measured and
+   posted, and graduating it keeps the merge tier's ratchet (see Speed). Module
    micro-benchmarks and timings are reported but don't gate.
 4. It has no open `p0`/`p1` `kind:bug` issues.
 
@@ -46,6 +45,23 @@ cargo feature. Reference builds (`tools/build_upstream.py`,
 differential tests compare against, not a fallback.
 
 Graduated: base64, buffer, crc32, error, framing, http, protocols.
+
+## Speed
+
+The merge tier's `callgrind` job is a ratchet, not a target:
+[`benchmarks/callgrind_limits.json`](../benchmarks/callgrind_limits.json)
+records the all-modules hybrid/upstream instruction ratio per workload, and the
+job fails if one rises more than 1% (noise) above its record.
+
+- A PR that makes a workload cheaper lowers its record in the same PR.
+- A PR that moves work into Rust may raise a record by up to 3% of its value,
+  stating the before/after numbers in the PR. Migration may be slow before it
+  is fast; the ratchet keeps that visible and bounded.
+- Speed work keeps or grows Rust's share. The default fix moves the whole
+  operation, decision and effect, into Rust (#366). Handing code back to
+  upstream is only for glue in which Rust decided nothing, and the PR says so.
+- Within 5% of upstream is the target for Phase 6, when Rust owns the event
+  loop and the HTTP path end to end.
 
 ## Roadmap
 
@@ -69,6 +85,7 @@ done when nothing remains apart from declared third-party code.
 6. **Invert the host.** Rust owns module startup, class registration and the
    [embedded PHP library](../migration/embedded-runtime-scope.json), with
    minimal Zend shims. The pinned upstream tree stops being a build input.
+   The all-modules hybrid is within 5% of upstream on every callgrind workload.
 
 References: [Rust FFI](https://doc.rust-lang.org/nomicon/ffi.html),
 [upstream CMake build](https://github.com/swoole/swoole-src/blob/v6.2.4/CMakeLists.txt),

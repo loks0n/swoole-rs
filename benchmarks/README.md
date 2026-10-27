@@ -13,14 +13,15 @@ process. Wall-clock load against a deployed stack is `tools/appwrite_bench.py`.
 served. Counts barely vary between runs of the same binaries, so the
 hybrid/upstream ratio is stable on shared runners where timings are not.
 The merge tier's `callgrind` job runs it for `plaintext`, `echo-1k`, `json` and
-`service-health` on the all-modules hybrid and fails above +5% (graduation
-criterion 3). On distributions with dynamic PDO modules, pass `--php-extension pdo
+`service-health` on the all-modules hybrid and fails if a ratio rises more than
+1% above its record in `callgrind_limits.json` (the ratchet; see
+[Speed](../docs/migration.md#speed)). On distributions with dynamic PDO modules, pass `--php-extension pdo
 --php-extension pdo_sqlite` (the servers run under `php -n`). It uses `echo-1k`
 rather than `echo-64k`: how a 64 KiB request is split across reads differs between
 runners, and that changes how much of it the Expect-header scan walks (#338).
 
 ```sh
-python3 benchmarks/callgrind.py --requests 1000 --workload plaintext --workload echo-1k --max-ratio 1.05 \
+python3 benchmarks/callgrind.py --requests 1000 --workload plaintext --workload echo-1k --limits benchmarks/callgrind_limits.json \
   --engine hybrid=target/hybrid/rust-buffer-websocket/modules/swoole.so \
   --engine upstream=target/upstream/src/modules/swoole.so
 ```

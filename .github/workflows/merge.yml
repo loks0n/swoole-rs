@@ -147,7 +147,7 @@ jobs:
       - run: cargo fetch --locked
       - run: python3 tools/build_hybrid.py $(python3 -c 'from tools.build_hybrid import SELECTABLE; print(*(f"--module {m}" for m in SELECTABLE))') | tee hybrid.log
       - run: >
-          python3 benchmarks/callgrind.py --requests 1000 --max-ratio 1.05
+          python3 benchmarks/callgrind.py --requests 1000 --limits benchmarks/callgrind_limits.json
           --workload plaintext --workload echo-1k --workload json --workload service-health
           --php-extension pdo --php-extension pdo_sqlite
           --engine hybrid=$(sed -n 's/^\(Built\|Cached\) rust: //p' hybrid.log)

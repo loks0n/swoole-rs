@@ -6,6 +6,8 @@ ratios are stable on shared CI runners where timings are not. Only requests are
 counted: instrumentation is switched on after startup and warmup, and off before
 shutdown. Every process (master, manager, worker) is followed and summed.
 With two engines and --max-ratio, exits 1 if any workload's first/second ratio exceeds it.
+--limits is the merge tier's ratchet: per-workload ratios recorded in a JSON file, each
+allowed to drift by NOISE (docs/migration.md, Speed).
 """
 import argparse
 import http.client
@@ -23,6 +25,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.harness import ROOT, parse_engines
 
+NOISE = 1.01  # counts for the same binaries drift well under 1% between runs
 PAYLOAD = bytes(range(256)) * 256
 # (corpus application, method, path, body, expected response body)
 WORKLOADS = {
@@ -91,6 +94,13 @@ def instructions(engine, workload, requests, warmup, profiles=None):
         return total / requests
 
 
+def verdict(ratio, recorded=None, max_ratio=None):
+    """(limit, over, stale) for one workload's ratio: stale when it beats `recorded` by
+    more than noise, so the ratchet should be lowered."""
+    limit = recorded * NOISE if recorded else max_ratio
+    return limit, bool(limit and ratio > limit), bool(recorded and ratio < recorded / NOISE)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--engine', action='append', required=True, help='NAME=/path/to/extension')
@@ -105,10 +115,13 @@ def main():
     parser.add_argument('--profiles', type=Path, nargs='?', const=run / 'profiles',
                         help='Keep the callgrind profiles in DIR/<workload>/<engine>/ (default under target/callgrind/)')
     parser.add_argument('--max-ratio', type=float, help='Fail if first/second exceeds this for any workload')
+    parser.add_argument('--limits', type=Path, help='JSON {workload: recorded first/second ratio}; '
+                        'fail if one is exceeded by more than noise (overrides --max-ratio per workload)')
     args = parser.parse_args()
     engines = parse_engines(args.engine, args.php, args.php_extension)
-    if args.max_ratio and len(engines) != 2:
-        parser.error('--max-ratio needs exactly two engines')
+    if (args.max_ratio or args.limits) and len(engines) != 2:
+        parser.error('--max-ratio and --limits need exactly two engines')
+    recorded = json.loads(args.limits.read_text()) if args.limits else {}
     results, failed = {}, False
     for workload in args.workload or ['plaintext']:
         counts = results[workload] = {}
@@ -118,9 +131,10 @@ def main():
             print(f'{engine.name:10} {workload:15} {counts[engine.name]:12.0f} instructions/request', flush=True)
         if len(counts) == 2:
             (first, a), (second, b) = counts.items()
-            over = args.max_ratio and a / b > args.max_ratio
-            failed |= bool(over)
-            print(f'ratio {first}/{second} {workload}: {a / b:.4f}' + (f' exceeds {args.max_ratio}' if over else ''))
+            limit, over, stale = verdict(a / b, recorded.get(workload), args.max_ratio)
+            failed |= over
+            print(f'ratio {first}/{second} {workload}: {a / b:.4f}' + (f' exceeds {limit:.4f}' if over else '')
+                  + (f'; below the recorded {recorded[workload]}, lower it in {args.limits}' if stale else ''))
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps({'requests': args.requests, 'max_ratio': args.max_ratio,
                                        'instructions_per_request': results}, indent=2) + '\n')
