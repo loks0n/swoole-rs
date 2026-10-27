@@ -37,7 +37,11 @@ pub unsafe extern "C" fn swr_v1_phpevents_loop(
     mode: u32,
     observation: i64,
 ) -> u32 {
-    use Action::*;
+    use Action::{
+        Bailout, ClearTimers, CoreWait, Deprecated, Done, False, Fatal, Free, IfExit, InCoroutine,
+        OnceOff, OnceOn, PrepareFlags, Reactor, RestoreFlags, Stop, True, Wait, WarnCoroutine,
+        WarnWait,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase word.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;

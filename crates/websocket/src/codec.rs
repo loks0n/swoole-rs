@@ -265,7 +265,9 @@ pub struct Decision {
 }
 
 fn decide(frame: DecodedFrame, wire: usize, context: Context) -> Decision {
-    use Action::*;
+    use Action::{
+        Append, ClientClose, Control, Dispatch, Finish, Reject, ServerClose, Start, Unknown,
+    };
     use PolicyError as Error;
     let mut result = Decision {
         offset: wire - frame.payload_length,

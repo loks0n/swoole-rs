@@ -25,7 +25,10 @@ pub unsafe extern "C" fn swr_v1_phpevents_stream(
     sockets: u8,
     observation: i64,
 ) -> u32 {
-    use StreamAction::*;
+    use StreamAction::{
+        CastStream, Error, ReadAsync, ReadFd, ReadSocket, ReadSocketFd, ReadStream, Return,
+        SetAsync, WarnResource,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase word.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Error as u32;

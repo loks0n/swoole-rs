@@ -348,7 +348,9 @@ pub unsafe extern "C" fn swr_v1_phphelpers_call_plan(
     result: i64,
     exception: u8,
 ) -> u32 {
-    use CallAction::*;
+    use CallAction::{
+        Coroutine, Direct, False, Fatal, Named, Null, ObserveException, ReleaseName, True, Variable,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return False as u32;
@@ -594,7 +596,10 @@ pub unsafe extern "C" fn swr_v1_phphelpers_parse_definition(
     kind: u32,
     observation: u8,
 ) -> u32 {
-    use DefinitionAction::*;
+    use DefinitionAction::{
+        ClassError, EnvelopeError, False, LookupClass, Lowercase, Normalize, ParseSelf, TooLong,
+        True,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return False as u32;
@@ -657,7 +662,10 @@ pub unsafe extern "C" fn swr_v1_phphelpers_builtin(
     count: i32,
     observation: u8,
 ) -> u32 {
-    use BuiltinAction::*;
+    use BuiltinAction::{
+        CaptureArguments, CaptureSpliceSource, CheckArgument, CheckReplacementArray,
+        CheckReplacementScalar, Done, ObserveReplacement, ObserveTyped, Restore, Splice,
+    };
     // SAFETY: `state` is null or the caller's aligned, exclusively owned state storage.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return Done as u32;
@@ -748,7 +756,12 @@ pub unsafe extern "C" fn swr_v1_phphelpers_mutation(
     operation: u32,
     observation: u32,
 ) -> u32 {
-    use MutationAction::*;
+    use MutationAction::{
+        Addref, Assign, Binary, CannotAdd, ConcatError, CopyMetadata, CopyResult, Done,
+        FetchReadWriteConstant, FetchReadWriteVariable, FetchWriteConstant, FetchWriteVariable,
+        Free, Insert, NullResult, NumericError, ObserveOperation, ObserveReference, ReturnUsed,
+        Route, TypedReference,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
@@ -823,7 +836,10 @@ pub unsafe extern "C" fn swr_v1_phphelpers_validate_value(
     actual: u32,
     observation: u8,
 ) -> u32 {
-    use ValidationAction::*;
+    use ValidationAction::{
+        ArrayTypeError, CompareArray, Done, ObjectError, ObserveArray, ObserveInstance,
+        PlainArrayError, TypeError,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
@@ -1028,7 +1044,12 @@ pub unsafe extern "C" fn swr_v1_phphelpers_typed(
     observation: u8,
     string_key: u8,
 ) -> u32 {
-    use TypedAction::*;
+    use TypedAction::{
+        Addref, Allocate, Check, Compare, CopyInitial, Create, Destroy, Done, False, Free,
+        IndexKey, InsertIndex, InsertString, Iterate, Mismatch, Null, ObserveDefinition,
+        ObserveInitial, ObserveInitialTyped, ObserveNested, ObserveTyped, Parse, ParseElement,
+        Publish, SetFalse, SetTrue, StringKey, True,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
@@ -1108,7 +1129,10 @@ pub unsafe extern "C" fn swr_v1_phphelpers_invoke(
     mode: u32,
     observation: u8,
 ) -> u32 {
-    use InvocationAction::*;
+    use InvocationAction::{
+        Allocate, Arguments, Copy, Done, Invoke, ObserveTemporary, ReleaseArguments, ReleaseThis,
+        Reorder, Resolve, UnknownFunction, UnknownMethod,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Done as u32;
@@ -1169,7 +1193,10 @@ pub unsafe extern "C" fn swr_v1_phphelpers_method_frame(
     operand: u32,
     observation: u32,
 ) -> u32 {
-    use MethodAction::*;
+    use MethodAction::{
+        Allocate, Array, Constant, Continue, Dispatch, Fill, Observe, Publish, Reference, Stream,
+        String, Variable,
+    };
     // SAFETY: `state` is null or the caller's aligned, exclusively owned state storage.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return Dispatch as u32;
@@ -1237,7 +1264,11 @@ pub unsafe extern "C" fn swr_v1_phphelpers_vm(
     key: u32,
     observation: u8,
 ) -> u32 {
-    use VmAction::*;
+    use VmAction::{
+        Advance, Check, Constant, ConstantKey, Continue, Dereference, Dispatch, Free, GetArray,
+        Invoke, ListError, ObserveArray, ObserveList, ObserveTyped, ReferenceError, Temporary,
+        UnusedKey, Value, Variable, VariableKey,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase storage.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Dispatch as u32;

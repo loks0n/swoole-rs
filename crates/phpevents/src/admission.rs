@@ -29,7 +29,11 @@ enum Init {
 /// return. No Server/Reactor/Callable/Zend pointer or borrowed state enters Rust.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phpevents_reactor_init(phase: *mut u32, observation: i64) -> u32 {
-    use Init::*;
+    use Init::{
+        Cli, Create, Error, FreshReactor, HasCondition, Manager, Ok, Reactor, RegisterShutdown,
+        Server, SetCondition, TaskCoroutine, TaskWorker, Trace, UserCondition, WarnCli, WarnCreate,
+        WarnManager, WarnTask,
+    };
     // SAFETY: `phase` is null or the caller's aligned, exclusively owned phase word.
     let Some(phase) = (unsafe { phase.as_mut() }) else {
         return Error as u32;
