@@ -25,7 +25,7 @@ resolve to the selected DSO.
 | `--callbacks` | constructor, set/replace/erase, end/exit, insertion/removal during traversal | 22 assertions |
 | `--builtins` | defer/begin/end and installed deferred/idle/try-exit functions | 31 assertions |
 | `--socket-output` | queued DATA and small positive-size file output | 9 cases / 78 assertions |
-| `--blocking` | blocking Socket, writable wait, Rust-owned IOVector | 8 cases / 61 assertions |
+| `--blocking` | blocking Socket I/O, Rust-owned IOVector | 7 cases / 54 assertions |
 
 Fixtures use private socketpairs and temporary files, consume every byte and
 keep peers live until normal cleanup. They do not probe errors, interruption,
