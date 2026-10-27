@@ -90,9 +90,14 @@ jobs:
   phpt-build:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    outputs:
+      php: ${{ steps.install.outputs.php }}
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/install
+      - id: install
+        uses: ./.github/actions/install
+        with:
+          php: latest
       - id: upstream
         uses: actions/cache@v4
         with:
@@ -263,6 +268,7 @@ jobs:
       - uses: ./.github/actions/install
         with:
           packages: php-gmp php-bcmath php-mysql php-pgsql
+          php: ${{ needs.phpt-build.outputs.php }}
       - run: echo '127.0.0.1 httpbin pgsql mysql redis' | sudo tee -a /etc/hosts
       - uses: actions/cache/restore@v4
         with:
@@ -291,7 +297,7 @@ jobs:
           path: target/phpt/${{ matrix.engine }}-${{ matrix.index }}.json
 
   phpt-gate:
-    needs: phpt
+    needs: [phpt-build, phpt]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -337,6 +343,7 @@ jobs:
         uses: ./.github/actions/install
         with:
           packages: php-gmp php-bcmath php-mysql php-pgsql
+          php: ${{ needs.phpt-build.outputs.php }}
       - if: steps.flagged.outputs.rerun == 'true'
         run: echo '127.0.0.1 httpbin pgsql mysql redis' | sudo tee -a /etc/hosts
       - if: steps.flagged.outputs.rerun == 'true'

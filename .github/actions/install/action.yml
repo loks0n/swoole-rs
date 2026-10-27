@@ -4,6 +4,15 @@ inputs:
   packages:
     description: Extra apt packages this job needs, space separated
     default: ''
+  php:
+    description: >-
+      'latest' upgrades PHP to the newest release; a package version installs exactly
+      that one (what an extension was built against). Empty leaves the image's PHP.
+    default: ''
+outputs:
+  php:
+    description: The installed PHP package version (php8.3-common)
+    value: ${{ steps.php.outputs.version }}
 runs:
   using: composite
   steps:
@@ -18,6 +27,20 @@ runs:
     - shell: bash
       run: APT_CACHE="$PWD/.apt-cache" .devcontainer/install.sh ${{ inputs.packages }}
     # Jobs of one run can land on different runner images while GitHub rolls one out,
-    # and an extension built on one image may not load in the other's PHP (#522).
-    - shell: bash
-      run: echo "runner image $ImageVersion; php $(php -r 'echo PHP_VERSION;'); php-config $(php-config --version); $(dpkg-query -W -f='${Package} ${Version}\n' 'php8.3-cli' 'php8.3-dev' 2>/dev/null | tr '\n' ';')"
+    # each with its own Ubuntu PHP release, and an extension built against one release
+    # may not load in another's php (#522). The build takes the newest release (the only
+    # one the archive keeps) and the jobs that load its extension install that release.
+    - id: php
+      shell: bash
+      env:
+        WANT: ${{ inputs.php }}
+      run: |
+        installed() { dpkg-query -W -f='${db:Status-Abbrev}${Package}\n' 'php8.3*' | sed -n 's/^ii *//p'; }
+        version() { dpkg-query -W -f='${Version}' php8.3-common; }
+        if [ "$WANT" = latest ]; then
+          sudo apt-get update -q && sudo apt-get install -yq --only-upgrade $(installed)
+        elif [ -n "$WANT" ] && [ "$(version)" != "$WANT" ]; then
+          sudo apt-get update -q && sudo apt-get install -yq --allow-downgrades $(installed | sed "s/\$/=$WANT/")
+        fi
+        echo "version=$(version)" >> "$GITHUB_OUTPUT"
+        echo "runner image $ImageVersion; php $(php -r 'echo PHP_VERSION;'); php8.3-common $(version)"
