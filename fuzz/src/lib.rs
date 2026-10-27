@@ -4,13 +4,14 @@
 
 use std::ffi::{CStr, c_char};
 use swoole_rs_base64::{swr_v1_base64_decode, swr_v1_base64_encode};
+use swoole_rs_clients::{swr_v1_clients_cookie, swr_v1_clients_domain_decode};
 use swoole_rs_framing::{swr_v1_framing_default, swr_v1_framing_unpack, swr_v1_framing_width};
 use swoole_rs_http::{
     HttpCookie, swr_v1_http_cookie_next, swr_v1_http_url_capacity, swr_v1_http_url_decode,
     swr_v1_http_url_encode,
 };
 use swoole_rs_oracle::{
-    base64 as upstream, framing as upstream_framing, http as upstream_http,
+    base64 as upstream, clients, framing as upstream_framing, http as upstream_http,
     http_frame::{self, CANDIDATE, Engine, UPSTREAM},
     protocols, websocket as upstream_ws,
 };
@@ -539,4 +540,76 @@ pub fn resp_parse(bytes: &[u8]) {
         resp_parse_on(&protocols::UPSTREAM, bytes),
         "resp parse for {bytes:?}"
     );
+}
+
+/// Longest URL compared: libstdc++'s std::regex recurses once per character.
+const URL_LIMIT: usize = 256;
+
+fn client_url(engine: clients::Url, data: &[u8]) -> (i32, i32, i32, Vec<u8>) {
+    let (mut kind, mut port, mut host, mut host_length) = (0, 0, vec![0; data.len()], 0);
+    // SAFETY: `data` is readable for its length; `host` has room for any substring of it.
+    let status = unsafe {
+        engine(
+            data.as_ptr().cast(),
+            data.len(),
+            &mut kind,
+            &mut port,
+            host.as_mut_ptr().cast(),
+            &mut host_length,
+        )
+    };
+    host.truncate(host_length);
+    (status, kind, port, host)
+}
+
+/// Any bytes as a client URL: `Address::assign(url)` from the pinned address.cc
+/// and with the clients patch assign the same type, host and port, or both reject.
+pub fn clients_url(bytes: &[u8]) {
+    let got = client_url(clients::CANDIDATE_URL, bytes);
+    if bytes.len() > URL_LIMIT {
+        return;
+    }
+    assert_eq!(
+        got,
+        client_url(clients::UPSTREAM_URL, bytes),
+        "url {bytes:?}"
+    );
+}
+
+/// Any bytes as one Set-Cookie header: the same key, value offset and value.
+pub fn clients_cookie(bytes: &[u8]) {
+    let mut want = (0, 0, 0);
+    // SAFETY: both read `bytes`; outputs are locals.
+    let got = unsafe {
+        clients::cookie(
+            bytes.as_ptr().cast(),
+            bytes.len(),
+            &mut want.0,
+            &mut want.1,
+            &mut want.2,
+        );
+        swr_v1_clients_cookie(bytes.as_ptr(), bytes.len())
+    };
+    assert_eq!(
+        (got.key_length, got.value_offset, got.value_length),
+        want,
+        "cookie {bytes:?}"
+    );
+}
+
+/// Any bytes as a received DNS name buffer: where Rust decodes in bounds, upstream
+/// decodes to the same bytes. Elsewhere upstream is undefined (private advisory)
+/// and Rust reports 0, so upstream isn't run.
+pub fn clients_domain_decode(bytes: &[u8]) {
+    let (mut theirs, mut ours) = (bytes.to_vec(), bytes.to_vec());
+    // SAFETY: Rust stays within `ours`.
+    let decoded = unsafe {
+        swr_v1_clients_domain_decode(ours.as_mut_ptr(), ours.len(), u8::from(c_char::MIN != 0))
+    };
+    if decoded == 0 {
+        return;
+    }
+    // SAFETY: Rust decoded the same bytes in bounds, so upstream's identical walk does too.
+    unsafe { clients::domain_decode(theirs.as_mut_ptr().cast()) };
+    assert_eq!(theirs, ours, "domain {bytes:?}");
 }

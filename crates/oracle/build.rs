@@ -224,6 +224,39 @@ fn protocols() {
     .unwrap();
 }
 
+/// Address::assign(url) from the pinned address.cc (upstream) and from it with the
+/// clients overlay patch applied (candidate, calling Rust), plus the pinned
+/// Set-Cookie split and DNS name decode, copied unchanged for shim/clients.cc.
+fn clients() {
+    let patch = "../../migration/patches/clients/0001-rust-address-client-policy.patch";
+    println!("cargo:rerun-if-changed={patch}");
+    let patch = fs::read_to_string(patch).expect("clients patch");
+    let address =
+        fs::read_to_string("upstream/src/network/address.cc").expect("vendored address.cc");
+    let candidate = apply(&address, section(&patch, "src/network/address.cc"));
+    for (name, text) in [("upstream", &address), ("candidate", &candidate)] {
+        let body = definition(text, "bool Address::assign(const std::string &url)");
+        fs::write(out(&format!("clients_url_{name}.inc")), body + "\n").unwrap();
+    }
+    let dns = fs::read_to_string("upstream/src/network/dns.cc").expect("vendored dns.cc");
+    fs::write(
+        out("clients_dns.inc"),
+        definition(&dns, "static void domain_decode(char *str) {") + "\n",
+    )
+    .unwrap();
+    let coro = fs::read_to_string("upstream/ext-src/swoole_http_client_coro.cc")
+        .expect("vendored swoole_http_client_coro.cc");
+    fs::write(
+        out("clients_cookie.inc"),
+        slice(
+            &coro,
+            "    const char *eof = at + length;",
+            "    if (value_len != 0) {",
+        ),
+    )
+    .unwrap();
+}
+
 /// The pinned packet length function and integer unpacking, copied unchanged for
 /// shim/framing.cc to compile.
 fn framing() {
@@ -303,6 +336,15 @@ fn main() {
     framing();
     http_frame();
     protocols();
+    clients();
+    cpp()
+        .define("SWR_URL_ENGINE", "upstream")
+        .define("SWR_URL_UPSTREAM", "1")
+        .define("SWR_URL_INC", "\"clients_url_upstream.inc\"")
+        .include("../../native/clients")
+        .include(env::var("OUT_DIR").unwrap())
+        .file("shim/clients.cc")
+        .compile("swoole_oracle_clients");
     cpp()
         .define("SWR_PROTO_ENGINE", "upstream")
         .define("SWR_PROTO_UPSTREAM", "1")
@@ -375,4 +417,11 @@ fn main() {
         .include(env::var("OUT_DIR").unwrap())
         .file("shim/protocols.cc")
         .compile("swoole_candidate_protocols");
+    cpp()
+        .define("SWR_URL_ENGINE", "candidate")
+        .define("SWR_URL_INC", "\"clients_url_candidate.inc\"")
+        .include("../../native/clients")
+        .include(env::var("OUT_DIR").unwrap())
+        .file("shim/clients.cc")
+        .compile("swoole_candidate_clients");
 }
