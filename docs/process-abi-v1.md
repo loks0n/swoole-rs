@@ -11,7 +11,7 @@ reload and exit policy. Native code executes syscalls, atomic read-modify-writes
 (not split into separate read and write decisions), queue/container mutation,
 allocation, timer/reactor operations, context switches, callbacks, exceptions and
 Zend escapes. Signedness, width, casts, wrapping, errno and last_error match
-upstream.
+upstream. Worker CPU pinning is the exception: Rust makes its affinity syscalls.
 
 There is one native store each for workers, PIDs, reload snapshots, task results,
 connections/sessions, signals, waiters and child status, and one IPC transport.

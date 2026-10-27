@@ -7,7 +7,8 @@ Opt-in feature bit 524288 (`process`). ABI: `docs/process-abi-v1.md` and
 Rust decides worker-exit observation and timeout plans, discard triage,
 task-kind/finish diagnostic/result-flag precedence, ordinary manager reload
 selection and stale-PID/reload-kill result actions. All APIs take copied
-bool/int facts and return POD/scalars. No allocator, pointer, callback, borrow,
+bool/int facts and return POD/scalars (CPU pinning also reads the native
+CPU list). No allocator, callback, borrow,
 registry or native handle enters Rust. Server/Worker/ProcessPool/ReloadTask
 state, counters, maps, PID snapshot and kill queue stay native, as do logging,
 signals, syscalls, timers, reactor, callbacks, fork, atomics and coroutines,
@@ -33,6 +34,10 @@ which run after Rust returns.
   erase-and-continue only for `kill_one`; `kill_all` keeps its map. EPERM/other
   failures warn then stop that attempt. Worker iteration, kill queue, timer
   kill-before-clear and callback order are unchanged.
+- Worker CPU pinning (`Worker_set_cpu_affinity`, Linux) is one Rust operation:
+  read the process's affinity, keep `cpu_affinity_available`, pick the
+  `worker_id % count`-th CPU and pin the thread (thread mode) or process. Native
+  sets errno from the outcome and logs upstream's warnings.
 
 `python3 tests/modules/process/gate.py` builds the crate and runs the C++
 differential under ASan/UBSan; `--archive ARCHIVE` tests an existing archive.
