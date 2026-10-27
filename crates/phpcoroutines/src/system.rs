@@ -203,7 +203,7 @@ mod control_tests {
     #[test]
     fn native_signal_error_short_circuit_and_fresh_final_errno() {
         // Only -1 takes the native error path. -2 and zero are published longs.
-        for value in [-2, 0, 1, i32::MAX as i64] {
+        for value in [-2, 0, 1, i64::from(i32::MAX)] {
             assert_eq!(next(8, &mut state(), value).action, 3);
         }
         for (busy, invalid, actions) in [

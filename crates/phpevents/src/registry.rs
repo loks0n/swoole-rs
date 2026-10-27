@@ -104,7 +104,9 @@ pub unsafe extern "C" fn swr_v1_phpevents_registry_contains(
     fd: i32,
 ) -> u8 {
     // SAFETY: null or this module's live registry, not concurrently changed.
-    unsafe { registry.as_ref() }.is_some_and(|registry| registry.sockets.contains_key(&fd)) as u8
+    u8::from(
+        unsafe { registry.as_ref() }.is_some_and(|registry| registry.sockets.contains_key(&fd)),
+    )
 }
 
 /// Returns copied opaque address,0 when absent. Presence remains separately
@@ -131,8 +133,9 @@ pub unsafe extern "C" fn swr_v1_phpevents_registry_erase(
     fd: i32,
 ) -> u8 {
     // SAFETY: null or this module's live registry, uniquely accessed for this call.
-    unsafe { registry.as_mut() }.is_some_and(|registry| registry.sockets.remove(&fd).is_some())
-        as u8
+    u8::from(
+        unsafe { registry.as_mut() }.is_some_and(|registry| registry.sockets.remove(&fd).is_some()),
+    )
 }
 
 /// Releases metadata storage only; native Socket/Zend objects are untouched.

@@ -214,15 +214,15 @@ mod tests {
     fn pre_drawn_first_byte_skips_only_the_initial_dispatch() {
         let mut buffer = RandomState::default();
         assert_eq!(step(&mut buffer, 1, 4, 3, 0, 0, 0), 7);
-        assert_eq!((buffer.index, buffer.value), (0, b'A' as i32));
+        assert_eq!((buffer.index, buffer.value), (0, i32::from(b'A')));
         assert_eq!(step(&mut buffer, 1, 0, 3, 27, 0, 0), 7);
-        assert_eq!((buffer.index, buffer.value), (1, b'b' as i32));
+        assert_eq!((buffer.index, buffer.value), (1, i32::from(b'b')));
         assert_eq!(step(&mut buffer, 1, 0, 3, 61, 0, 0), 10);
-        assert_eq!((buffer.index, buffer.value), (2, b'9' as i32));
+        assert_eq!((buffer.index, buffer.value), (2, i32::from(b'9')));
 
         let mut append = RandomState::default();
         assert_eq!(step(&mut append, 2, 4, 3, 25, 0, 0), 7);
-        assert_eq!((append.index, append.value), (0, b'Z' as i32));
+        assert_eq!((append.index, append.value), (0, i32::from(b'Z')));
         // A native append failure here must stop before another policy call
         // or native draw, as in the original interleaved loop.
         assert_eq!(append.phase, 2);

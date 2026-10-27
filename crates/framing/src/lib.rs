@@ -121,7 +121,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                 if s.recv as usize > i.cap - i.len {
                     return done(-1);
                 };
-                return emit(s, 3, 1, s.recv as u64);
+                return emit(s, 3, 1, u64::from(s.recv));
             }
             (0, 2) => return emit(s, 6, 4, 0),
             (0, 3) => {
@@ -138,7 +138,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                     return done(-1);
                 }
                 if i.result == 4 {
-                    return emit(s, 901, 14, s.recv as u64);
+                    return emit(s, 901, 14, u64::from(s.recv));
                 }
                 return done(0);
             }
@@ -167,7 +167,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                         done(0)
                     };
                 }
-                if s.packet > i.max as i64 {
+                if s.packet > i64::from(i.max) {
                     return emit(s, 900, 17, s.packet.unsigned_abs());
                 }
                 if usize::try_from(s.packet).map_or(true, |packet| i.cap < packet) {
@@ -289,7 +289,7 @@ pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Sn
                             .wrapping_mul(2)
                             .wrapping_add(p - (i.cap.wrapping_mul(2) % p))
                             as u32;
-                        return emit(s, 10, 5, n.min(i.max) as u64);
+                        return emit(s, 10, 5, u64::from(n.min(i.max)));
                     }
                 }
                 s.phase = 10;
@@ -361,15 +361,15 @@ pub unsafe extern "C" fn swr_v1_framing_unpack(
     raw[..width].copy_from_slice(&v[..width]);
     *out = match format {
         b'c' => i64::from(v[0].cast_signed()),
-        b'C' => v[0] as i64,
-        b's' => i16::from_ne_bytes([raw[0], raw[1]]) as i64,
-        b'S' => u16::from_ne_bytes([raw[0], raw[1]]) as i64,
-        b'n' => u16::from_be_bytes([raw[0], raw[1]]) as i64,
-        b'v' => u16::from_le_bytes([raw[0], raw[1]]) as i64,
-        b'i' | b'l' => i32::from_ne_bytes([raw[0], raw[1], raw[2], raw[3]]) as i64,
-        b'I' | b'L' => u32::from_ne_bytes([raw[0], raw[1], raw[2], raw[3]]) as i64,
-        b'N' => u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]]) as i64,
-        b'V' => u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]) as i64,
+        b'C' => i64::from(v[0]),
+        b's' => i64::from(i16::from_ne_bytes([raw[0], raw[1]])),
+        b'S' => i64::from(u16::from_ne_bytes([raw[0], raw[1]])),
+        b'n' => i64::from(u16::from_be_bytes([raw[0], raw[1]])),
+        b'v' => i64::from(u16::from_le_bytes([raw[0], raw[1]])),
+        b'i' | b'l' => i64::from(i32::from_ne_bytes([raw[0], raw[1], raw[2], raw[3]])),
+        b'I' | b'L' => i64::from(u32::from_ne_bytes([raw[0], raw[1], raw[2], raw[3]])),
+        b'N' => i64::from(u32::from_be_bytes([raw[0], raw[1], raw[2], raw[3]])),
+        b'V' => i64::from(u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]])),
         b'q' | b'Q' => i64::from_ne_bytes(raw),
         b'J' => u64::from_be_bytes(raw).cast_signed(),
         b'P' => u64::from_le_bytes(raw).cast_signed(),
@@ -422,7 +422,7 @@ pub unsafe extern "C" fn swr_v1_framing_default(
     if result != 0 || value < 0 {
         return -1;
     }
-    let Some(total) = value.checked_add(body_offset as i64) else {
+    let Some(total) = value.checked_add(i64::from(body_offset)) else {
         return -1;
     };
     *out = total;
@@ -504,7 +504,7 @@ pub unsafe extern "C" fn swr_v1_framing_mime_suffix(
         let input = if native_signed != 0 && c == 255 {
             -1
         } else {
-            c as i32
+            i32::from(c)
         };
         // SAFETY: `input` is EOF or an unsigned char value, as tolower requires.
         let lower = unsafe { tolower(input) }.to_le_bytes()[0];

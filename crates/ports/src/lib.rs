@@ -143,14 +143,14 @@ pub unsafe extern "C" fn swr_v1_ports_connection_count(
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_ports_number(kind: u32, value: i64) -> i64 {
     match kind {
-        0 => value.clamp(0, u16::MAX as i64),
-        1 => match value.clamp(i32::MIN as i64, i32::MAX as i64) {
-            n if n <= 0 => i32::MAX as i64,
+        0 => value.clamp(0, i64::from(u16::MAX)),
+        1 => match value.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) {
+            n if n <= 0 => i64::from(i32::MAX),
             n => n,
         },
-        2 => value.clamp(0, u32::MAX as i64),
-        3 => value.clamp(i32::MIN as i64, i32::MAX as i64),
-        4 => value.clamp(0, u8::MAX as i64),
+        2 => value.clamp(0, i64::from(u32::MAX)),
+        3 => value.clamp(i64::from(i32::MIN), i64::from(i32::MAX)),
+        4 => value.clamp(0, i64::from(u8::MAX)),
         _ => 0,
     }
 }

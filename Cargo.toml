@@ -19,6 +19,7 @@ cast_ptr_alignment = "deny"
 # Pedantic lints fixed by `cargo clippy --fix` (#156).
 borrow_as_ptr = "deny"
 semicolon_if_nothing_returned = "deny"
+cast_lossless = "deny"
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
 dbg_macro = "deny"

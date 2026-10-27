@@ -163,7 +163,7 @@ pub unsafe extern "C" fn swr_v1_memory_channel_out(
     if length >= 0 && consume != 0 {
         // SAFETY: `channel` is non-null (checked above), aligned and exclusive per the caller contract.
         let c = unsafe { &mut *channel };
-        c.head += length as i64 + 4;
+        c.head += i64::from(length) + 4;
         if c.head >= signed(c.size) {
             c.head = 0;
             c.head_tag = 1 - c.head_tag;

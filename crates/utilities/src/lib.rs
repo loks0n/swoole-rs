@@ -98,7 +98,7 @@ fn hash(bytes: &[u8], length: usize, algorithm: u32, signed: bool) -> u64 {
                 for (i, byte) in part.iter().enumerate().skip(1) {
                     let shifted =
                         (promoted(*byte, signed) as u32).wrapping_shl((8 * i) as u32) as i32;
-                    k |= (shifted as i64) as u64;
+                    k |= i64::from(shifted) as u64;
                 }
                 k = k.wrapping_mul(0x5bd1e995);
                 k ^= k >> 24;
@@ -106,7 +106,7 @@ fn hash(bytes: &[u8], length: usize, algorithm: u32, signed: bool) -> u64 {
                 h = h.wrapping_mul(0x5bd1e995) ^ k;
             }
             for (i, byte) in tail.iter().enumerate() {
-                h ^= (((promoted(*byte, signed) as u32).wrapping_shl((8 * i) as u32) as i32) as i64)
+                h ^= i64::from((promoted(*byte, signed) as u32).wrapping_shl((8 * i) as u32) as i32)
                     as u64;
             }
             if !tail.is_empty() {
