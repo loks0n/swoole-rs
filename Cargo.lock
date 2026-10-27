@@ -344,7 +344,6 @@ name = "swoole-rs-reactor"
 version = "0.1.0"
 dependencies = [
  "libc",
- "openssl-sys",
 ]
 
 [[package]]
@@ -354,6 +353,10 @@ version = "0.1.0"
 [[package]]
 name = "swoole-rs-tls"
 version = "0.1.0"
+dependencies = [
+ "libc",
+ "openssl-sys",
+]
 
 [[package]]
 name = "swoole-rs-utilities"

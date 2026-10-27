@@ -99,7 +99,8 @@ pub use swoole_rs_hooks::*;
 #[cfg(feature = "ossupport")]
 pub use swoole_rs_ossupport::*;
 
-#[cfg(feature = "tls")]
+// Reactor's Socket patch calls the TLS reads and writes in crates/tls.
+#[cfg(any(feature = "tls", feature = "reactor"))]
 pub use swoole_rs_tls::*;
 
 #[cfg(feature = "process")]
