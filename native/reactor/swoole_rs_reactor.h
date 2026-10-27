@@ -158,6 +158,12 @@ ssize_t swr_v1_socket_recv(int fd, void *buffer, size_t length, int flags, bool 
 ssize_t swr_v1_socket_send(int fd, const void *buffer, size_t length, int flags, bool dont_restart, swr_v1_socket_tls_io tls, void *socket);
 ssize_t swr_v1_socket_peek(int fd, void *buffer, size_t length, int flags, swr_v1_socket_tls_io tls, void *socket);
 int swr_v1_socket_catch_error(int error, bool *kernel_nobufs);
+/* network::Socket's swSocketType <-> (domain, type), and the type a host names
+ * with how many leading bytes convert_to_type erases. */
+typedef struct { int socket_type; size_t erase; } swr_v1_socket_host_type_plan;
+int swr_v1_socket_type(int domain, int type);
+bool swr_v1_socket_domain_and_type(int socket_type, int *domain, int *type);
+swr_v1_socket_host_type_plan swr_v1_socket_host_type(const uint8_t *host, size_t length);
 #ifdef __cplusplus
 }
 static_assert(sizeof(swr_v1_reactor_builtin_reply) == 8, "reactor builtin reply ABI");
