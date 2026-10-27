@@ -99,8 +99,11 @@ typedef struct {
     void (*check)(void *, ssize_t);
 } swr_v1_hook_vector_ops;
 ssize_t swr_v1_hook_vector_all(const swr_v1_hook_vector_ops *ops);
-bool swr_v1_hook_shutdown_admit(bool connected, int32_t how, bool read, bool write, int32_t shut_read, int32_t shut_write);
-uint32_t swr_v1_hook_shutdown_mask(bool success, bool disconnected, int32_t how, int32_t shut_read, int32_t shut_write);
+/* Socket::shutdown(how) after set_err(0): 0, or the error to set. live is is_connected();
+   ssl_shutdown (null without TLS) closes the session first, with context; syscall is shutdown(2). */
+typedef struct { bool connected, read, write; } swr_v1_hook_shutdown_flags;
+int32_t swr_v1_hook_shutdown(int (*syscall)(int, int), int32_t fd, int32_t how, bool live, swr_v1_hook_shutdown_flags *flags,
+                             void (*ssl_shutdown)(void *), void *context);
 uint32_t swr_v1_hook_cancel_action(bool bound, uint32_t event, uint32_t read, uint32_t write);
 int32_t swr_v1_hook_close_action(uint32_t stage, bool closed, bool connected, bool bound);
 int32_t swr_v1_hook_connect_action(int32_t result, bool interrupted, bool in_progress);
