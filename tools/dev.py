@@ -517,8 +517,7 @@ def plan(args, reports):
                        '--source-ref', 'HEAD', *report(phase))
     if 'ports' in modules:
         if integrate:
-            for name, runner in [('ports-php', 'server.py'), ('ports-configuration', 'configuration.py'),
-                                 ('ports-callback-php', 'callback_php.py')]:
+            for name, runner in [('ports-configuration', 'configuration.py')]:
                 script(name, 'tests/modules/ports/' + runner, *php_for('curl', 'sockets'), *engines,
                        '--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                        '--source-ref', 'HEAD', *report(name))

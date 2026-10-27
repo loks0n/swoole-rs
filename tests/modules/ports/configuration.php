@@ -100,16 +100,16 @@ if ($case === 'convert_eof' || $case === 'convert_length_type') {
             throw new RuntimeException('port conversion sentinel');
         }
     };
-    try {
-        $port->set(['package_length_type'=>$value]);
-        throw new RuntimeException('conversion exception absent');
-    } catch (RuntimeException $error) {
-        port_require($error->getMessage() === 'port conversion sentinel', 'original conversion exception');
-    }
-    port_require($value->calls === 1, 'one throwing conversion');
-    port_require($port->getCallback('receive') === $replacement, 'pre-exception callback reentry retained');
-    port_require(!array_key_exists('package_length_type', $port->setting), 'failed conversion not merged');
-    port_observe(['case'=>$case, 'conversions'=>1, 'exception'=>true, 'reentry'=>true, 'setting_merged'=>false]);
+    // Upstream reports the conversion's exception as uncaught, then rejects the
+    // failed (empty) length type as fatal; observe the state at shutdown (#317).
+    register_shutdown_function(static function () use ($port, $replacement, $value, $case) {
+        $error = error_get_last();
+        port_observe(['case'=>$case, 'shutdown'=>true, 'error_type'=>$error['type'] ?? null,
+                      'conversions'=>$value->calls, 'reentry'=>$port->getCallback('receive') === $replacement,
+                      'setting_merged'=>array_key_exists('package_length_type', $port->setting)]);
+    });
+    $port->set(['package_length_type'=>$value]);
+    throw new RuntimeException('expected configuration rejection did not occur');
 } else {
     throw new RuntimeException('unknown case');
 }

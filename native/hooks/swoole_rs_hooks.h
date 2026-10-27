@@ -100,6 +100,24 @@ typedef struct {
     void (*check)(void *, ssize_t);
 } swr_v1_hook_vector_ops;
 ssize_t swr_v1_hook_vector_all(const swr_v1_hook_vector_ops *ops);
+/* Socket::cancel/close. release marks the descriptor closed and runs the destructor
+   callback once; the socket may be gone afterwards. resume wakes the coroutine bound
+   to the event (read or write). */
+typedef struct {
+    void *context;
+    uint32_t read, write;
+    int32_t close_wait_error;
+    bool (*closed)(void *);
+    bool (*connected)(void *);
+    void (*shutdown)(void *);
+    bool (*bound)(void *, uint32_t event);
+    void (*set_err)(void *, int32_t);
+    void (*resume)(void *, uint32_t event);
+    void (*close_wait)(void *);
+    void (*release)(void *);
+} swr_v1_hook_socket_ops;
+bool swr_v1_hook_cancel(const swr_v1_hook_socket_ops *ops, uint32_t event);
+bool swr_v1_hook_close(const swr_v1_hook_socket_ops *ops);
 /* Socket::shutdown(how) after set_err(0): 0, or the error to set. live is is_connected();
    ssl_shutdown (null without TLS) closes the session first, with context; syscall is shutdown(2). */
 typedef struct { bool connected, read, write; } swr_v1_hook_shutdown_flags;

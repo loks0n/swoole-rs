@@ -37,7 +37,9 @@ def main():
             subprocess.run(['git','apply',str(patch)],cwd=tree,check=True)
         for variant in ['original','selected']:
             texts=originals if variant=='original' else {path:(tree/path).read_text() for path in paths}
-            bodies=[block(texts[unit],signature)+(';' if signature.startswith('struct ') else '') for signature in signatures]
+            # cancel/close are Rust calls in the selected tree (#443); its lifecycle_ops passes the effects.
+            selected_only=['swr_v1_hook_socket_ops Socket::lifecycle_ops('] if variant=='selected' else []
+            bodies=[block(texts[unit],signature)+(';' if signature.startswith('struct ') else '') for signature in signatures+selected_only]
             (tree/(variant+'-lifecycle.inc')).write_text('\n'.join(bodies))
             (tree/(variant+'-lifecycle-inline.inc')).write_text('\n'.join(block(texts['include/swoole_coroutine_socket.h'],signature) for signature in inline))
         command=['c++','-std=c++14','-O1','-g','-I'+str(tree),'-I'+str(ROOT/'native/hooks'),'-I'+str(ROOT/'tests/modules/hooks'),str(ROOT/'tests/modules/hooks/lifecycle_gate.cc'),str(a.archive.resolve()),'-lpthread','-o',str(tree/'lifecycle')]

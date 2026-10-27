@@ -11,6 +11,7 @@
 
 pub mod address;
 pub mod flock;
+pub mod lifecycle;
 pub mod packet;
 pub mod shutdown;
 pub mod sleep;
