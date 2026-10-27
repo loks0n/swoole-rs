@@ -16,6 +16,7 @@ pub mod packet;
 pub mod shutdown;
 pub mod sleep;
 pub mod stdio;
+pub mod transfer;
 pub mod vector;
 pub mod wait_event;
 pub mod wait_signal;
@@ -238,28 +239,6 @@ pub fn swr_v1_hook_wait_revents(requested: u32, received: u32, read_write: u32, 
     }
 }
 
-/// Native retry cursor: 1 observe IO, 2 classifier, 3 timer, 4 wait.
-/// Each action completes in native code before the next copied result arrives.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RetryPlan {
-    pub phase: u32,
-    pub action: i32,
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_retry(phase: u32, result: i64, success: bool) -> RetryPlan {
-    let (phase, action) = match phase {
-        1 if result < 0 => (2, 2),
-        2 if success => (3, 3),
-        3 if success => (4, 4),
-        4 if success => (1, 1),
-        1..=5 => (5, 0),
-        _ => (5, -1),
-    };
-    RetryPlan { phase, action }
-}
-
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CurlPlan {
@@ -275,24 +254,6 @@ pub extern "C" fn swr_v1_hook_curl_flags(flags: u32, native: u32, php: u32) -> C
     CurlPlan {
         flags: if conflict { flags ^ php } else { flags },
         conflict,
-    }
-}
-
-/// Datagram EINTR retries bypass classification, timers and suspension.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_retry_interrupt(
-    phase: u32,
-    result: i64,
-    success: bool,
-    interrupted: bool,
-) -> RetryPlan {
-    if phase == 1 && result < 0 && interrupted {
-        RetryPlan {
-            phase: 1,
-            action: 1,
-        }
-    } else {
-        swr_v1_hook_retry(phase, result, success)
     }
 }
 
