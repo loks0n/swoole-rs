@@ -65,7 +65,10 @@ RACY = {'tests/swoole_websocket_server/send_close_frame.phpt':
         'handles the second frame (#111)',
         'tests/swoole_coroutine/dnslookup_ipv6.phpt':
         "the verdict depends on the runner's resolver reply, and both engines fail on some "
-        'replies (private advisory, #428)'}
+        'replies (private advisory, #428)',
+        'tests/swoole_server/shutdown_in_master.phpt':
+        'shutdown() from onStart, before the random 1-4 workers are up, sometimes hangs until '
+        'the deadline on both engines (upstream 2/8, hybrid 3/8, #438)'}
 
 
 def require_free_port(port):

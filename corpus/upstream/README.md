@@ -90,7 +90,10 @@ second frame, so the expected `lalalala` is never printed. On Linux upstream
 passed 1 of 20 runs; with a 500 ms wait before the kill, 20 of 20 (#111). It
 stays registered with its assertions intact, and `RACY` in `run.py` records it
 unsupported instead of running it. So does `dnslookup_ipv6.phpt`, whose verdict
-depends on the runner's resolver reply: both engines fail on some replies (#428).
+depends on the runner's resolver reply: both engines fail on some replies (#428),
+and `shutdown_in_master.phpt`, which calls `shutdown()` from `onStart` before its
+random 1–4 workers are up and sometimes hangs until the deadline: upstream 2 of 8
+runs, hybrid 3 of 8 in the dev container (#438).
 
 The expanded audit registers all 33 original WebSocket PHPTs, plus timer `info`,
 `stats`, `clearAll`, `after_fork`, `reinit_1` and `reinit_2`. Original timer assertions
