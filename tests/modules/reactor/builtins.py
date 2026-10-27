@@ -59,7 +59,7 @@ with tempfile.TemporaryDirectory(prefix='swr-builtins-') as tmp:
             cls=cls.replace('CallbackManager *defer_tasks=nullptr;', '\n'+field+'\nint timeout_msec=17;'+block(source_header,source_header.index('int get_timeout_msec('))[0]+'\n')
             report['protected_manager_unchanged']=True
             native_predicate='} else if (reactor_->defer_tasks) {'
-            selected_predicate='milliseconds <= 0 && reactor_->defer_tasks != nullptr'
+            selected_predicate='milliseconds <= 0 && self->reactor_->defer_tasks != nullptr'
             if native_predicate not in original['src/reactor/kqueue.cc'] or selected_predicate not in (t/'src/reactor/kqueue.cc').read_text():raise ValueError('Actual kqueue observation source is not bound')
             report['kqueue_observation_source']={'native':native_predicate,'selected':selected_predicate,'runtime_qualified':False}
             (t/'builtins.inc').write_text(cls+'}\n')

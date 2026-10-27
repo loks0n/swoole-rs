@@ -124,7 +124,7 @@ index 238c0e6..8123f92 100644
 +        return swr_reactor_resolve_handler(this, fd_type, 0, 3);
      }
 diff --git a/src/reactor/epoll.cc b/src/reactor/epoll.cc
-index cc871e3..a1dbd96 100644
+index cc871e3..d9974c1 100644
 --- a/src/reactor/epoll.cc
 +++ b/src/reactor/epoll.cc
 @@ -18,2 +18,5 @@
@@ -301,7 +301,7 @@ index cc871e3..a1dbd96 100644
 +        }
 +    }
  }
-@@ -177,79 +200,73 @@ int ReactorEpoll::set(Socket *socket, int events) {
+@@ -177,79 +200,77 @@ int ReactorEpoll::set(Socket *socket, int events) {
  int ReactorEpoll::wait() {
 -    Event event;
 -    ReactorHandler handler;
@@ -322,36 +322,37 @@ index cc871e3..a1dbd96 100644
 -                                   reactor_->get_timeout_msec());
 -                return SW_ERR;
 -            } else {
-+    // Rust runs upstream's loop (swr_v1_reactor_epoll_run); these are its native effects.
++    // Rust runs upstream's loop (swr_v1_reactor_run); these are its native effects.
++    using Self = decltype(this);
 +    struct Context {
-+        Reactor *reactor;
-+        int epfd;
++        Self self;
 +        Event event;
-+    } context{reactor_, epfd_, {}};
-+    const swr_v1_reactor_epoll_ops ops{
++        int entries;
++    } context{this, {}, 0};
++    const swr_v1_reactor_wait_ops ops{
 +        &context,
++        SWR_REACTOR_EPOLL,
 +        events_,
-+        epfd_,
++        nullptr,
 +        &reactor_->running,
 +        &reactor_->once,
-+        &reactor_->max_event_num,
-+        [](int epfd, epoll_event *events, int max_events, int timeout) {
-+            return epoll_wait(epfd, events, max_events, timeout);
++        [](void *ctx, int *) {
++            auto self = static_cast<Context *>(ctx)->self;
++            return ::epoll_wait(self->epfd_, self->events_, self->reactor_->max_event_num, self->reactor_->get_timeout_msec());
 +        },
-+        [](void *ctx) { static_cast<Context *>(ctx)->reactor->before_wait(); },
-+        [](void *ctx) { static_cast<Context *>(ctx)->reactor->execute_begin_callback(); },
-+        [](void *ctx) { return static_cast<Context *>(ctx)->reactor->get_timeout_msec(); },
-+        [](void *ctx) { return static_cast<int>(static_cast<Context *>(ctx)->reactor->catch_error()); },
-+        [](void *ctx, int timed_out) { static_cast<Context *>(ctx)->reactor->execute_end_callbacks(timed_out != 0); },
++        [](void *ctx) { static_cast<Context *>(ctx)->self->reactor_->before_wait(); },
++        [](void *ctx) { static_cast<Context *>(ctx)->self->reactor_->execute_begin_callback(); },
++        [](void *ctx) { return static_cast<int>(static_cast<Context *>(ctx)->self->reactor_->catch_error()); },
++        [](void *ctx, int timed_out) { static_cast<Context *>(ctx)->self->reactor_->execute_end_callbacks(timed_out != 0); },
  #ifdef SW_USE_IOURING
 -                if (sw_likely(errno == EINTR && reactor_->iouring_interrupt_handler)) {
 -                    reactor_->iouring_interrupt_handler(reactor_);
 -                }
 +        [](void *ctx) {
-+            return static_cast<int>(errno == EINTR && static_cast<Context *>(ctx)->reactor->iouring_interrupt_handler);
++            return static_cast<int>(errno == EINTR && static_cast<Context *>(ctx)->self->reactor_->iouring_interrupt_handler);
 +        },
 +        [](void *ctx) {
-+            Reactor *reactor = static_cast<Context *>(ctx)->reactor;
++            auto reactor = static_cast<Context *>(ctx)->self->reactor_;
 +            reactor->iouring_interrupt_handler(reactor);
 +        },
 +#else
@@ -368,21 +369,22 @@ index cc871e3..a1dbd96 100644
 -            event.reactor_id = reactor_->id;
 -            event.socket = static_cast<Socket *>(events_[i].data.ptr);
 +        [](void *ctx) {
-+            auto context = static_cast<Context *>(ctx);
-+            Reactor *reactor = context->reactor;
++            auto self = static_cast<Context *>(ctx)->self;
++            auto reactor = self->reactor_;
 +            swoole_sys_warning("[Reactor#%d] epoll_wait(epfd=%d, max_events=%d, timeout=%d) failed",
 +                               reactor->id,
-+                               context->epfd,
++                               self->epfd_,
 +                               reactor->max_event_num,
 +                               reactor->get_timeout_msec());
 +        },
-+        [](void *ctx, void *socket, int hup) {
++        [](void *ctx, void *socket, int fd, int hup) {
 +            auto context = static_cast<Context *>(ctx);
 +            Event &event = context->event;
-+            event.reactor_id = context->reactor->id;
 +            event.socket = static_cast<Socket *>(socket);
++            event.fd = fd < 0 ? event.socket->fd : fd;
++            event.reactor_id = context->self->reactor_->id;
              event.type = event.socket->fd_type;
-             event.fd = event.socket->fd;
+-            event.fd = event.socket->fd;
 -
 -            if (events_[i].events & (EPOLLRDHUP | EPOLLERR | EPOLLHUP)) {
 +            if (hup) {
@@ -426,12 +428,13 @@ index cc871e3..a1dbd96 100644
 -        SW_REACTOR_CONTINUE;
 -    }
 -    return 0;
++            swoole_trace("Event: fd=%d|reactor_id=%d|type=%d", event.fd, event.reactor_id, event.type);
 +        },
 +        [](void *socket) { return static_cast<int>(static_cast<Socket *>(socket)->removed); },
 +        [](void *socket) { return static_cast<int>((static_cast<Socket *>(socket)->events & SW_EVENT_ONCE) != 0); },
 +        [](void *ctx, uint32_t kind) {
 +            auto context = static_cast<Context *>(ctx);
-+            Reactor *reactor = context->reactor;
++            auto reactor = context->self->reactor_;
 +            ReactorHandler handler = kind == 2 ? reactor->get_error_handler(context->event.type)
 +                                               : reactor->get_handler(context->event.type,
 +                                                                      kind == 0 ? SW_EVENT_READ : SW_EVENT_WRITE);
@@ -442,12 +445,14 @@ index cc871e3..a1dbd96 100644
 +            static const char *const names[] = {"EPOLLIN", "EPOLLOUT", "EPOLLERR"};
 +            swoole_sys_warning("%s handle failed [fd=%d, type=%d]", names[kind], event.fd, event.type);
 +        },
-+        [](void *ctx, void *socket) { static_cast<Context *>(ctx)->reactor->_del(static_cast<Socket *>(socket)); },
++        [](void *ctx, void *socket) { static_cast<Context *>(ctx)->self->reactor_->_del(static_cast<Socket *>(socket)); },
++        nullptr,
++        nullptr,
 +    };
-+    return swr_v1_reactor_epoll_run(&ops) < 0 ? SW_ERR : SW_OK;
++    return swr_v1_reactor_run(&ops) < 0 ? SW_ERR : SW_OK;
  }
 diff --git a/src/reactor/kqueue.cc b/src/reactor/kqueue.cc
-index 6ebce45..cd8dfd1 100644
+index 6ebce45..4ba5a1c 100644
 --- a/src/reactor/kqueue.cc
 +++ b/src/reactor/kqueue.cc
 @@ -18,2 +18,5 @@
@@ -768,13 +773,14 @@ index 6ebce45..cd8dfd1 100644
 -
 -    return SW_OK;
  }
-@@ -256,75 +265,68 @@ int ReactorKqueue::wait() {
-     ReactorHandler handler;
+@@ -254,91 +263,63 @@ int ReactorKqueue::del(Socket *socket) {
+ int ReactorKqueue::wait() {
+-    Event event;
+-    ReactorHandler handler;
 -
 -    int i, n;
-+    int n = 0;
-     struct timespec t = {};
-     struct timespec *t_ptr;
+-    struct timespec t = {};
+-    struct timespec *t_ptr;
 -
 -    reactor_->before_wait();
 -
@@ -813,25 +819,7 @@ index 6ebce45..cd8dfd1 100644
 -            void *udata = (void *) kevent->udata;
 -            if (!udata) {
 -                continue;
-+    swr_v1_reactor_wait_state loop{};
-+    int wait_result = 0;
-+    int observed = 0;
-+    for (;;) {
-+        switch (swr_v1_reactor_wait_workflow(&loop, 2, observed)) {
-+        case 0: return SW_OK;
-+        case 1: reactor_->before_wait(); break;
-+        case 2: reactor_->execute_begin_callback(); break;
-+        case 3: {
-+                int milliseconds = reactor_->timeout_msec;
-+                auto timeout = swr_v1_reactor_kqueue_timeout(milliseconds, milliseconds <= 0 && reactor_->defer_tasks != nullptr);
-+                t.tv_sec = timeout.seconds;
-+                t.tv_nsec = timeout.nanoseconds;
-+                t_ptr = timeout.finite ? &t : nullptr;
-+                n = ::kevent(epfd_, nullptr, 0, events_, event_max_, t_ptr);
-+                wait_result = n;
-+                observed = wait_result;
-+                break;
-             }
+-            }
 -            switch (kevent->filter) {
 -            case EVFILT_READ:
 -            case EVFILT_WRITE: {
@@ -843,49 +831,11 @@ index 6ebce45..cd8dfd1 100644
 -                                           kevent->filter == EVFILT_READ ? "read" : "write",
 -                                           event.fd);
 -                        swoole_print_backtrace_on_error();
-+        case 4: observed = reactor_->catch_error(); break;
-+        case 5: reactor_->execute_end_callbacks(true); break;
-+        case 6: {
-+                swoole_trace_log(SW_TRACE_EVENT, "n %d events", n);
-+swr_v1_reactor_batch_cursor batch{};
-+                swr_v1_reactor_batch_record record{};
-+                int32_t batch_result;
-+                while ((batch_result = swr_v1_reactor_kqueue_record(events_, n, &batch, 1, &record)) > 0) {
-+            void *udata = reinterpret_cast<void *>(record.token);
-+            switch (record.kind) {
-+            case 1: {
-+                fill_event(&event, udata);
-+                    swr_v1_reactor_ready_workflow_state ready{};
-+                int ready_observed = 0;
-+                for (;;) {
-+                    int32_t ready_action = swr_v1_reactor_ready_workflow(&ready, 1, ready_observed);
-+                    if (ready_action <= 0) break;
-+                    switch (ready_action) {
-+                    case 10:
-+                        if (swr_v1_reactor_kqueue_record(events_, n, &batch, 0, &record) != 1) return SW_ERR;
-+                        ready_observed = record.mask;
-+                        break;
-+                    case 11: ready_observed = event.socket->removed; break;
-+                    case 12: ready_observed = (event.socket->events & SW_EVENT_ONCE) != 0; break;
-+                    case 1: case 2:
-+                        handler = reactor_->get_handler(event.type, ready_action == 1 ? SW_EVENT_READ : SW_EVENT_WRITE);
-+                        ready_observed = handler(reactor_, &event);
-+                        break;
-+                    case 4: del(event.socket); break;
-+                    case 6: case 7: {
-+                            if (swr_v1_reactor_kqueue_record(events_, n, &batch, 0, &record) != 1) return SW_ERR;
-+                            swoole_sys_warning("kqueue event %s socket#%d handler failed",
-+                                               record.filter == EVFILT_READ ? "read" : "write", event.fd);
-+                            swoole_print_backtrace_on_error();
-+                         } break;
-+                    default: return SW_ERR;
-                     }
+-                    }
 -                    del_once_socket(event.socket);
-+                    if (ready_action == 4) break;
-                 }
-+
-                 break;
-             }
+-                }
+-                break;
+-            }
 -            case EVFILT_SIGNAL: {
 -                Signal *signal_data = (Signal *) udata;
 -                if (signal_data->activated) {
@@ -900,40 +850,83 @@ index 6ebce45..cd8dfd1 100644
 -                                         swoole_signal_to_str(signal_data->signo));
 -                    }
 -                }
-+            case 2: {
-+                swr_reactor_dispatch_signal(static_cast<Signal *>(udata));
-                 break;
-@@ -333,12 +335,22 @@ int ReactorKqueue::wait() {
-                 swoole_error_log(
+-                break;
+-            }
+-            default:
+-                swoole_error_log(
 -                    SW_LOG_WARNING, SW_ERROR_EVENT_UNKNOWN_DATA, "unknown event filter[%d]", kevent->filter);
-+                    SW_LOG_WARNING, SW_ERROR_EVENT_UNKNOWN_DATA, "unknown event filter[%d]", record.filter);
-                 break;
+-                break;
++    // Rust runs upstream's loop (swr_v1_reactor_run); these are its native effects.
++    using Self = decltype(this);
++    struct Context {
++        Self self;
++        Event event;
++        int entries;
++    } context{this, {}, 0};
++    const swr_v1_reactor_wait_ops ops{
++        &context,
++        SWR_REACTOR_KQUEUE,
++        events_,
++        nullptr,
++        &reactor_->running,
++        &reactor_->once,
++        [](void *ctx, int *) {
++            auto self = static_cast<Context *>(ctx)->self;
++            int milliseconds = self->reactor_->timeout_msec;
++            auto timeout = swr_v1_reactor_kqueue_timeout(milliseconds, milliseconds <= 0 && self->reactor_->defer_tasks != nullptr);
++            struct timespec t = {};
++            t.tv_sec = timeout.seconds;
++            t.tv_nsec = timeout.nanoseconds;
++            int n = ::kevent(self->epfd_, nullptr, 0, self->events_, self->event_max_, timeout.finite ? &t : nullptr);
++            if (n > 0) {
++                swoole_trace_log(SW_TRACE_EVENT, "n %d events", n);
              }
 -        }
- 
+-
 -    _continue:
 -        reactor_->execute_end_callbacks(false);
 -        SW_REACTOR_CONTINUE;
-+                }
-+                if (batch_result < 0) return SW_ERR;
-+                break;
-+            }
-+        case 7: {
-+                swoole_sys_warning("kevent(epfd=%d) failed ", epfd_);
-+                break;
-+            }
-+        case 8:
-+            break;
-+        case 9: reactor_->execute_end_callbacks(false); break;
-+        case 10: observed = reactor_->running; break;
-+        case 13: observed = reactor_->once; break;
-+        default: return SW_ERR;
-+        }
-     }
+-    }
 -    return 0;
++            return n;
++        },
++        [](void *ctx) { static_cast<Context *>(ctx)->self->reactor_->before_wait(); },
++        [](void *ctx) { static_cast<Context *>(ctx)->self->reactor_->execute_begin_callback(); },
++        [](void *ctx) { return static_cast<int>(static_cast<Context *>(ctx)->self->reactor_->catch_error()); },
++        [](void *ctx, int timed_out) { static_cast<Context *>(ctx)->self->reactor_->execute_end_callbacks(timed_out != 0); },
++        nullptr,
++        nullptr,
++        [](void *ctx) { swoole_sys_warning("kevent(epfd=%d) failed ", static_cast<Context *>(ctx)->self->epfd_); },
++        [](void *ctx, void *socket, int, int) {
++            auto context = static_cast<Context *>(ctx);
++            context->self->fill_event(&context->event, socket);
++        },
++        [](void *socket) { return static_cast<int>(static_cast<Socket *>(socket)->removed); },
++        [](void *socket) { return static_cast<int>((static_cast<Socket *>(socket)->events & SW_EVENT_ONCE) != 0); },
++        [](void *ctx, uint32_t kind) {
++            auto context = static_cast<Context *>(ctx);
++            auto reactor = context->self->reactor_;
++            ReactorHandler handler = kind == 2 ? reactor->get_error_handler(context->event.type)
++                                               : reactor->get_handler(context->event.type,
++                                                                      kind == 0 ? SW_EVENT_READ : SW_EVENT_WRITE);
++            return handler(reactor, &context->event);
++        },
++        [](void *ctx, uint32_t kind) {
++            swoole_sys_warning("kqueue event %s socket#%d handler failed",
++                               kind == 0 ? "read" : "write",
++                               static_cast<Context *>(ctx)->event.fd);
++            swoole_print_backtrace_on_error();
++        },
++        [](void *ctx, void *socket) { static_cast<Context *>(ctx)->self->del(static_cast<Socket *>(socket)); },
++        [](void *signal) { swr_reactor_dispatch_signal(static_cast<Signal *>(signal)); },
++        [](void *, int filter) {
++            swoole_error_log(SW_LOG_WARNING, SW_ERROR_EVENT_UNKNOWN_DATA, "unknown event filter[%d]", filter);
++        },
++    };
++    return swr_v1_reactor_run(&ops) < 0 ? SW_ERR : SW_OK;
  }
 diff --git a/src/reactor/poll.cc b/src/reactor/poll.cc
-index e65b2c6..1ec3a7d 100644
+index e65b2c6..a3c76ff 100644
 --- a/src/reactor/poll.cc
 +++ b/src/reactor/poll.cc
 @@ -18,2 +18,5 @@
@@ -1001,8 +994,10 @@ index e65b2c6..1ec3a7d 100644
 -    if (!reactor_->_exists(socket)) {
 +    if (decision == 5) {
          swoole_error_log(SW_LOG_WARNING,
-@@ -152,25 +164,24 @@ int ReactorPoll::wait() {
-     ReactorHandler handler;
+@@ -150,79 +162,68 @@ int ReactorPoll::del(Socket *socket) {
+ int ReactorPoll::wait() {
+-    Event event;
+-    ReactorHandler handler;
 -
 -    reactor_->before_wait();
 -
@@ -1016,21 +1011,8 @@ index e65b2c6..1ec3a7d 100644
 -                                   reactor_->id,
 -                                   event_num,
 -                                   reactor_->get_timeout_msec());
-+    int event_num = 0;
-+    swr_v1_reactor_wait_state loop{};
-+    int wait_result = 0;
-+    int observed = 0;
-+    for (;;) {
-+        switch (swr_v1_reactor_wait_workflow(&loop, 0, observed)) {
-+        case 0: return SW_OK;
-+        case 1: reactor_->before_wait(); break;
-+        case 2: reactor_->execute_begin_callback(); break;
-+        case 3: {
-+                event_num = set_events();
-+                wait_result = poll(events_, event_num, reactor_->get_timeout_msec());
-+                observed = wait_result;
-                 break;
-             }
+-                break;
+-            }
 -        } else if (ret == 0) {
 -            reactor_->execute_end_callbacks(true);
 -            SW_REACTOR_CONTINUE;
@@ -1039,28 +1021,18 @@ index e65b2c6..1ec3a7d 100644
 -                if (events_[i].revents == 0) {
 -                    continue;
 -                }
-+        case 4: observed = reactor_->catch_error(); break;
-+        case 5: reactor_->execute_end_callbacks(true); break;
-+        case 6: {
-+                swr_v1_reactor_batch_cursor batch{};
-+                swr_v1_reactor_batch_record record{};
-+                int32_t batch_result;
-+                while ((batch_result = swr_v1_reactor_poll_record(events_, event_num, &batch, 1, &record)) > 0) {
- 
-@@ -178,4 +189,4 @@ int ReactorPoll::wait() {
-                 // socket this entry was built from rather than whichever socket now holds that fd.
+-
+-                // An earlier handler may remove a socket and register a new one on the same fd, so dispatch the
+-                // socket this entry was built from rather than whichever socket now holds that fd.
 -                event.socket = event_sockets_[i];
 -                event.fd = events_[i].fd;
-+                event.socket = event_sockets_[batch.current];
-+                event.fd = record.fd;
-                 event.reactor_id = reactor_->id;
-@@ -183,3 +194,3 @@ int ReactorPoll::wait() {
- 
+-                event.reactor_id = reactor_->id;
+-                event.type = event.socket->fd_type;
+-
 -                if (events_[i].revents & (POLLHUP | POLLERR)) {
-+                if (record.mask & 4) {
-                     event.socket->event_hup = 1;
-@@ -187,42 +198,66 @@ int ReactorPoll::wait() {
-                 swoole_trace("Event: fd=%d|reactor_id=%d|type=%d", event.fd, reactor_->id, event.type);
+-                    event.socket->event_hup = 1;
+-                }
+-                swoole_trace("Event: fd=%d|reactor_id=%d|type=%d", event.fd, reactor_->id, event.type);
 -                // in
 -                if ((events_[i].revents & POLLIN) && !event.socket->removed) {
 -                    handler = reactor_->get_handler(event.type, SW_EVENT_READ);
@@ -1068,50 +1040,8 @@ index e65b2c6..1ec3a7d 100644
 -                    if (ret < 0) {
 -                        swoole_sys_warning("POLLIN handle failed. fd=%d", event.fd);
 -                        swoole_print_backtrace_on_error();
-+                swr_v1_reactor_ready_workflow_state ready{};
-+                int ready_observed = 0;
-+                for (;;) {
-+                    int32_t ready_action = swr_v1_reactor_ready_workflow(&ready, 0, ready_observed);
-+                    if (ready_action <= 0) break;
-+                    switch (ready_action) {
-+                    case 10:
-+                        if (swr_v1_reactor_poll_record(events_, event_num, &batch, 0, &record) != 1) return SW_ERR;
-+                        ready_observed = record.mask;
-+                        break;
-+                    case 11: ready_observed = event.socket->removed; break;
-+                    case 12: ready_observed = (event.socket->events & SW_EVENT_ONCE) != 0; break;
-+                    case 1:
-+                        handler = reactor_->get_handler(event.type, SW_EVENT_READ);
-+                        ready_observed = handler(reactor_, &event);
-+                        
-+                        break;
-+case 2:
-+                        handler = reactor_->get_handler(event.type, SW_EVENT_WRITE);
-+                        ready_observed = handler(reactor_, &event);
-+                        
-+                        break;
-+case 3:
-+                        handler = reactor_->get_error_handler(event.type);
-+                        ready_observed = handler(reactor_, &event);
-+                        
-+                        break;
-+case 4: del(event.socket); break;
-+case 6: 
-+                            swoole_sys_warning("POLLIN handle failed. fd=%d", event.fd);
-+                            swoole_print_backtrace_on_error();
-+                         break;
-+case 7: 
-+                            swoole_sys_warning("POLLOUT handle failed. fd=%d", event.fd);
-+                            swoole_print_backtrace_on_error();
-+                         break;
-+case 8: 
-+                            swoole_sys_warning("POLLERR handle failed. fd=%d", event.fd);
-+                            swoole_print_backtrace_on_error();
-+                         break;
-+                    default: return SW_ERR;
-                     }
-+                    if (ready_action == 4) break;
-                 }
+-                    }
+-                }
 -                // out
 -                if ((events_[i].revents & POLLOUT) && !event.socket->removed) {
 -                    handler = reactor_->get_handler(event.type, SW_EVENT_WRITE);
@@ -1136,31 +1066,80 @@ index e65b2c6..1ec3a7d 100644
 -                }
 -                if (!event.socket->removed && (event.socket->events & SW_EVENT_ONCE)) {
 -                    del(event.socket);
-+
-                 }
-+                if (batch_result < 0) return SW_ERR;
-+                break;
-+            }
-+        case 7: {
-+                swoole_sys_warning("[Reactor#%d] poll(nfds=%d, timeout=%d) failed",
-+                                   reactor_->id,
-+                                   event_num,
-+                                   reactor_->get_timeout_msec());
-+                break;
+-                }
++    // Rust runs upstream's loop (swr_v1_reactor_run); these are its native effects.
++    using Self = decltype(this);
++    struct Context {
++        Self self;
++        Event event;
++        int entries;
++    } context{this, {}, 0};
++    const swr_v1_reactor_wait_ops ops{
++        &context,
++        SWR_REACTOR_POLL,
++        events_,
++        reinterpret_cast<void *const *>(event_sockets_),
++        &reactor_->running,
++        &reactor_->once,
++        [](void *ctx, int *entries) {
++            auto context = static_cast<Context *>(ctx);
++            auto self = context->self;
++            *entries = context->entries = self->set_events();
++            return ::poll(self->events_, context->entries, self->reactor_->get_timeout_msec());
++        },
++        [](void *ctx) { static_cast<Context *>(ctx)->self->reactor_->before_wait(); },
++        [](void *ctx) { static_cast<Context *>(ctx)->self->reactor_->execute_begin_callback(); },
++        [](void *ctx) { return static_cast<int>(static_cast<Context *>(ctx)->self->reactor_->catch_error()); },
++        [](void *ctx, int timed_out) { static_cast<Context *>(ctx)->self->reactor_->execute_end_callbacks(timed_out != 0); },
++        nullptr,
++        nullptr,
++        [](void *ctx) {
++            auto context = static_cast<Context *>(ctx);
++            auto reactor = context->self->reactor_;
++            swoole_sys_warning("[Reactor#%d] poll(nfds=%d, timeout=%d) failed",
++                               reactor->id,
++                               context->entries,
++                               reactor->get_timeout_msec());
++        },
++        [](void *ctx, void *socket, int fd, int hup) {
++            auto context = static_cast<Context *>(ctx);
++            Event &event = context->event;
++            event.socket = static_cast<Socket *>(socket);
++            event.fd = fd < 0 ? event.socket->fd : fd;
++            event.reactor_id = context->self->reactor_->id;
++            event.type = event.socket->fd_type;
++            if (hup) {
++                event.socket->event_hup = 1;
              }
-+        case 8:
-+            break;
-+        case 9: reactor_->execute_end_callbacks(false); break;
-+        case 10: observed = reactor_->running; break;
-+        case 13: observed = reactor_->once; break;
-+        default: return SW_ERR;
-         }
+-        }
 -        reactor_->execute_end_callbacks(false);
 -        SW_REACTOR_CONTINUE;
-     }
+-    }
 -    return SW_OK;
++            swoole_trace("Event: fd=%d|reactor_id=%d|type=%d", event.fd, event.reactor_id, event.type);
++        },
++        [](void *socket) { return static_cast<int>(static_cast<Socket *>(socket)->removed); },
++        [](void *socket) { return static_cast<int>((static_cast<Socket *>(socket)->events & SW_EVENT_ONCE) != 0); },
++        [](void *ctx, uint32_t kind) {
++            auto context = static_cast<Context *>(ctx);
++            auto reactor = context->self->reactor_;
++            ReactorHandler handler = kind == 2 ? reactor->get_error_handler(context->event.type)
++                                               : reactor->get_handler(context->event.type,
++                                                                      kind == 0 ? SW_EVENT_READ : SW_EVENT_WRITE);
++            return handler(reactor, &context->event);
++        },
++        [](void *ctx, uint32_t kind) {
++            static const char *const names[] = {"POLLIN", "POLLOUT", "POLLERR"};
++            swoole_sys_warning("%s handle failed. fd=%d", names[kind], static_cast<Context *>(ctx)->event.fd);
++            swoole_print_backtrace_on_error();
++        },
++        [](void *ctx, void *socket) { static_cast<Context *>(ctx)->self->del(static_cast<Socket *>(socket)); },
++        nullptr,
++        nullptr,
++    };
++    return swr_v1_reactor_run(&ops) < 0 ? SW_ERR : SW_OK;
  }
-@@ -230,12 +265,3 @@ int ReactorPoll::wait() {
+@@ -230,12 +231,3 @@ int ReactorPoll::wait() {
  int16_t translate_events_to_poll(int events) {
 -    int16_t poll_events = 0;
 -
@@ -1174,7 +1153,7 @@ index e65b2c6..1ec3a7d 100644
 -    return poll_events;
 +    return swr_v1_reactor_poll_to(events);
  }
-@@ -243,16 +269,3 @@ int16_t translate_events_to_poll(int events) {
+@@ -243,16 +235,3 @@ int16_t translate_events_to_poll(int events) {
  int translate_events_from_poll(int16_t events) {
 -    int sw_events = 0;
 -

@@ -50,7 +50,7 @@ def main():
                 methods=[]
                 body,_=block(text,text.index('int '+original_type+'::wait()'))
                 body=body.replace('int '+original_type+'::wait()', 'int wait()')
-                body=body.replace('struct kevent','NativeKevent').replace('::kevent(', 'native_kevent(').replace('epoll_wait(', 'native_epoll_wait(').replace('poll(events_', 'native_poll(events_')
+                body=body.replace('struct kevent','NativeKevent').replace('::kevent(', 'native_kevent(').replace('epoll_wait(', 'native_epoll_wait(').replace('poll(events_', 'native_poll(events_').replace('::poll(', '::native_poll(')
                 if backend=='kqueue':
                     helpers=['bool fetch_event(', 'void del_once_socket('] if label=='Original' else ['void fill_event(']
                     body+='\n'+'\n'.join(block(text,text.index(signature))[0] for signature in helpers)

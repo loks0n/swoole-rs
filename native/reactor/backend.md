@@ -81,44 +81,23 @@ only after draining; registration add/set do not read `removed`.
 
 ## Wait
 
-`wait()` on all three backends uses a Rust state machine for
-before/begin/wait/result/end/once sequencing; Native runs kernel waits,
-callbacks and warnings. Warning termination returns 0 for poll and `SW_ERR` for
-epoll/kqueue.
+`wait()` on all three backends is one Rust call, `swr_v1_reactor_run` (#336, #391).
+Rust runs upstream's loop: before/begin/kernel wait/result/end/once sequencing,
+decoding each `pollfd`, `epoll_event` or `kevent` entry (idle poll entries and
+null kqueue tokens are skipped) and the readiness order per socket: read, write,
+error unless read or write already ran, then the oneshot removal, each guarded by
+a fresh `removed` read. kqueue routes socket, signal and unknown entries. An
+uncaught wait failure returns 0 for poll and `SW_ERR` for epoll/kqueue.
+
+Native passes the kernel wait and the effects upstream reaches through `Reactor`
+(`before_wait`, begin/end callbacks, `catch_error`, handlers via `get_handler`,
+`del`/`_del`, warnings, epoll's io_uring EINTR handler) as `swr_v1_reactor_wait_ops`
+function pointers; `running` and `once` are read through pointers. `Socket::removed`
+and `event_hup` are bitfields, so small shims read and set them.
 
 The kqueue timeout reply gives a positive millisecond timeout priority over
 deferred work, keeps exact second/nanosecond arithmetic, and otherwise passes a
 null timeout; Native builds the `timespec`.
-
-The four-byte `WaitState` and `wait_step` ABI are frozen. The additive
-`wait_workflow` uses effects 0..9 and requests 10 running, 11 EINTR, 12
-io_uring handler, 13 once. Native supplies 0 for 11 when io_uring is not
-compiled. Catch classification precedes errno; handler presence is observed only
-after EINTR. Once is requested after end callbacks, then running only if needed.
-
-## Batch decoding
-
-A Rust cursor walks the same target C arrays the kernel filled. Rust owns record
-iteration, idle/null-token skips and readiness/filter decoding. Poll keeps its
-current-registry fd lookup; epoll/kqueue return opaque identity bits for Native.
-
-The cursor POD holds next/current indices. A reply holds identity bits, fd,
-readiness mask, original filter and record kind. Each call borrows only the
-initialized prefix Native declares; the API bounds-checks indices against that
-prefix, but Native must guarantee the prefix fits the allocation and is
-initialized. The current record is decoded again after each Native effect. ONCE
-removal ends the record immediately. kqueue `fill_event` is field marshalling
-only; the removal decision comes from the Rust action path.
-
-## Readiness workflow
-
-Record consumers delegate the observation schedule and handler-result/warning
-selection to Rust. `ready`/`ready_step` are unchanged. A 20-byte POD holds policy
-state and scalar facts. It requests fresh batch-mask and removed facts, runs the
-frozen policy, requests ONCE only when needed (including when a refreshed mask
-becomes empty) and refreshes the batch before committing. Handler results are
-supplied fresh; Rust picks the warning action only for negative results. Native
-performs reads, handler calls, logging and deletes.
 
 ## kqueue signals
 
