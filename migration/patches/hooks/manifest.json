@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-coroutine-io-policy.patch",
-      "sha256": "9f8fa3afc40933885573921485884bfeda1ccf56d79c1f10f1ccfa1bf0f52978",
+      "sha256": "76a492535be36c893720fb4055bc82bee57b6de7ca15793ee04920f77e0fa239",
       "upstream_paths": [
         "ext-src/swoole_runtime.cc",
         "include/swoole_coroutine_socket.h",

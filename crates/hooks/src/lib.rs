@@ -17,6 +17,7 @@ pub mod shutdown;
 pub mod sleep;
 pub mod vector;
 pub mod wait_event;
+pub mod wait_signal;
 
 /// The original per-hook guard. Some DNS hooks intentionally do not use it.
 #[unsafe(no_mangle)]
