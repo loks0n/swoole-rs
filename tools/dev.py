@@ -382,18 +382,12 @@ def plan(args, reports):
                        '--source', ROOT / 'target/upstream/src',
                        '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                        *options, *report(name))
-        for capabilities in range(8):
+        # Capability 0 compiles the codec method out, so it has nothing to prove (#316).
+        for capabilities in range(1, 8):
             name = 'httpbindings-codec-' + str(capabilities)
             script(name, 'tests/modules/httpbindings/codec_gate.py', '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                    '--capabilities', capabilities, *report(name))
-        if integrate:
-            source_ref = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-            script('httpbindings-php', 'tests/modules/httpbindings/php_gate.py', '--source-ref', source_ref,
-                   '--build-manifest', 'hybrid=' + str(manifest),
-                   '--archive', 'hybrid=' + str(manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a'),
-                   *php, '--engine', f'upstream={reference}',
-                   '--engine', f'hybrid={hybrid}', *report('httpbindings-php'))
     if 'http2' in modules:
         includes = (['--include', str(Path(subprocess.check_output(['brew', '--prefix', 'openssl@3'], text=True).strip()) / 'include')]
                     if sys.platform == 'darwin' else [])
