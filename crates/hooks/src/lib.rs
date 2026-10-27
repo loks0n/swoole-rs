@@ -10,6 +10,7 @@
 )]
 
 pub mod address;
+pub mod packet;
 pub mod sleep;
 
 /// The original per-hook guard. Some DNS hooks intentionally do not use it.
@@ -462,92 +463,6 @@ pub extern "C" fn swr_v1_hook_sleep_timeout(seconds: f64, minimum: f64) -> f64 {
     if seconds < minimum { minimum } else { seconds }
 }
 
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_packet_start(buffered: u64, header: u32, custom: bool) -> bool {
-    buffered > 0 && (buffered >= u64::from(header) || custom)
-}
-
-/// Negative length: missing protocol length; zero: receive another header;
-/// positive oversize: reject; otherwise receive/return the known packet.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_packet_length(length: i64, maximum: u32) -> i32 {
-    if length < 0 {
-        -1
-    } else if length == 0 {
-        0
-    } else if length > i64::from(maximum) {
-        2
-    } else {
-        1
-    }
-}
-
-/// Result of a length-protocol body read: the packet length once complete,
-/// otherwise -1 after a timeout or 0 (upstream 0f96dc478).
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_packet_result(buffered: u64, expected: i64, timed_out: bool) -> i64 {
-    if buffered == expected.cast_unsigned() {
-        expected
-    } else if timed_out {
-        -1
-    } else {
-        0
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_packet_window(size: u64, buffered: u64, maximum: u64) -> u64 {
-    size.wrapping_sub(buffered).min(maximum)
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct EofPlan {
-    pub offset: u64,
-    pub grow: u64,
-    pub action: i32,
-}
-
-/// Native scanning has finished. Select return, overflow, bounded growth or read.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_packet_eof(
-    found: i64,
-    eof_length: u32,
-    buffered: u64,
-    size: u64,
-    maximum: u32,
-) -> EofPlan {
-    let (offset, grow, action) = if found >= 0 {
-        (
-            found.unsigned_abs().wrapping_add(u64::from(eof_length)),
-            0,
-            1,
-        )
-    } else if buffered == u64::from(maximum) {
-        (0, 0, -1)
-    } else if buffered == size && size < u64::from(maximum) {
-        (0, size.wrapping_mul(2).min(u64::from(maximum)), 2)
-    } else {
-        (0, 0, 0)
-    };
-    EofPlan {
-        offset,
-        grow,
-        action,
-    }
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_packet_kind(length: bool, eof: bool) -> u32 {
-    if length {
-        1
-    } else if eof {
-        2
-    } else {
-        0
-    }
-}
-
 /// Accumulate only positive vectored progress within the pinned defined `ssize_t` domain.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_hook_vector_progress(result: i64, total: i64) -> i64 {
@@ -666,13 +581,6 @@ pub extern "C" fn swr_v1_hook_liveness_error(alive: bool, error: i32, reset: i32
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn packet_result_reports_timeout_on_partial_body() {
-        assert_eq!(swr_v1_hook_packet_result(8, 8, false), 8);
-        assert_eq!(swr_v1_hook_packet_result(8, 8, true), 8);
-        assert_eq!(swr_v1_hook_packet_result(5, 8, false), 0);
-        assert_eq!(swr_v1_hook_packet_result(5, 8, true), -1);
-    }
     #[test]
     fn transfer_preserves_partial_error_and_wrap() {
         assert_eq!(swr_v1_hook_transfer_result(-1, 0), -1);

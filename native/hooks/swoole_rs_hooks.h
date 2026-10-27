@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <sys/types.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -62,13 +63,29 @@ enum swr_hook_async_action { SWR_HOOK_ASYNC_REJECT = 0, SWR_HOOK_ASYNC_YIELD = 1
 int32_t swr_v1_hook_async_action(uint32_t phase, bool cancellable, bool success);
 int32_t swr_v1_hook_dns_error(int32_t error, int32_t asynchronous_timeout, int32_t resolve_timeout);
 double swr_v1_hook_sleep_timeout(double seconds, double minimum);
-bool swr_v1_hook_packet_start(uint64_t buffered, uint32_t header, bool custom);
-int32_t swr_v1_hook_packet_length(int64_t length, uint32_t maximum);
-int64_t swr_v1_hook_packet_result(uint64_t buffered, int64_t expected, bool timed_out);
-uint64_t swr_v1_hook_packet_window(uint64_t size, uint64_t buffered, uint64_t maximum);
-typedef struct { uint64_t offset; uint64_t grow; int32_t action; } swr_v1_hook_eof_plan;
-swr_v1_hook_eof_plan swr_v1_hook_packet_eof(int64_t found, uint32_t eof_length, uint64_t buffered, uint64_t size, uint32_t maximum);
-uint32_t swr_v1_hook_packet_kind(bool length, bool eof);
+/* Socket::recv_packet after its availability check, read timer and get_read_buffer.
+   buffer is the read buffer: swoole::String's leading fields. fail: 0 no package
+   length, 1 too large (warning naming the length), 2 no EOF within the maximum. */
+typedef struct { size_t length, size; int64_t offset; char *str; } swr_v1_hook_read_buffer;
+typedef struct {
+    void *context;
+    swr_v1_hook_read_buffer *buffer;
+    bool length_check, eof_check;
+    const char *eof;
+    uint8_t eof_len;
+    char length_type;
+    uint8_t length_size;
+    uint16_t length_offset;
+    uint32_t max_length;
+    ssize_t (*recv)(void *, char *, size_t);
+    ssize_t (*recv_all)(void *, char *, size_t);
+    ssize_t (*package_length)(void *, const char *, uint32_t, uint32_t *header_len);
+    void (*extend)(void *, size_t);
+    void (*reduce)(void *, int64_t);
+    void (*fail)(void *, uint32_t kind, ssize_t length);
+    bool (*timed_out)(void *);
+} swr_v1_hook_packet_ops;
+ssize_t swr_v1_hook_recv_packet(const swr_v1_hook_packet_ops *ops);
 int64_t swr_v1_hook_vector_progress(int64_t result, int64_t total);
 bool swr_v1_hook_vector_continue(int64_t result, uint64_t remaining);
 bool swr_v1_hook_shutdown_admit(bool connected, int32_t how, bool read, bool write, int32_t shut_read, int32_t shut_write);
@@ -100,7 +117,6 @@ static inline int64_t swr_hook_retry(IO io, Classify classify, Start start, Wait
         }
     }
 }
-static_assert(sizeof(swr_v1_hook_eof_plan) == 24, "EOF plan ABI");
 static_assert(sizeof(swr_v1_hook_curl_plan) == 8, "curl plan ABI");
 static_assert(sizeof(swr_v1_hook_timeout_plan) == 16, "timeout plan ABI");
 static_assert(sizeof(swr_v1_hook_retry_plan) == 8, "retry cursor ABI");

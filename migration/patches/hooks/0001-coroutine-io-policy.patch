@@ -861,7 +861,7 @@ index 0f7b169..36caf7b 100644
 -    }
      RETURN_TRUE;
 diff --git a/include/swoole_coroutine_socket.h b/include/swoole_coroutine_socket.h
-index cffe31a..5068ea9 100644
+index cffe31a..5fb92ef 100644
 --- a/include/swoole_coroutine_socket.h
 +++ b/include/swoole_coroutine_socket.h
 @@ -20,2 +20,7 @@
@@ -906,7 +906,13 @@ index cffe31a..5068ea9 100644
 +        case 2: set_err(errno); break;
 +        default: break;
          }
-@@ -493,8 +492,6 @@ class Socket {
+@@ -486,5 +485,2 @@ class Socket {
+ 
+-    ssize_t recv_packet_with_length_protocol();
+-    ssize_t recv_packet_with_eof_protocol();
+-
+     bool is_available(const EventType event) {
+@@ -493,8 +489,6 @@ class Socket {
          }
 -        if (sw_unlikely(is_closed())) {
 -            set_err(EBADF);
@@ -1080,7 +1086,7 @@ index 63ca2f2..f0514c6 100644
 +            break;
          }
 diff --git a/src/coroutine/socket.cc b/src/coroutine/socket.cc
-index 5a16f4c..e66476d 100644
+index 5a16f4c..ebf46e5 100644
 --- a/src/coroutine/socket.cc
 +++ b/src/coroutine/socket.cc
 @@ -20,2 +20,7 @@
@@ -1325,8 +1331,14 @@ index 5a16f4c..e66476d 100644
 +        [&]() { return timer.start(); },
 +        [&]() { return wait_event(SW_EVENT_READ); }, EINTR);
      check_return_value(retval);
-@@ -1349,10 +1368,5 @@ ssize_t Socket::recv_packet_with_length_protocol() {
+@@ -1343,126 +1362,2 @@ ssize_t Socket::recvfrom(void *_buf, size_t _n, sockaddr *_addr, socklen_t *_soc
  
+-ssize_t Socket::recv_packet_with_length_protocol() {
+-    ssize_t packet_len = SW_BUFFER_SIZE_STD;
+-    ssize_t retval;
+-    PacketLength pl;
+-    uint32_t header_len = protocol.package_length_offset + protocol.package_length_size;
+-
 -    if (read_buffer->length > 0) {
 -        if (read_buffer->length >= header_len ||
 -            (protocol.package_length_size == 0 && protocol.package_length_type == '\0')  // custom package_length_func
@@ -1335,91 +1347,224 @@ index 5a16f4c..e66476d 100644
 -        } else {
 -            goto _recv_header;
 -        }
-+    if (swr_v1_hook_packet_start(read_buffer->length, header_len,
-+                                  protocol.package_length_size == 0 && protocol.package_length_type == '\0')) {
-+        goto _get_length;
-     }
-@@ -1373,6 +1387,7 @@ _get_length:
-     swoole_trace_log(SW_TRACE_SOCKET, "packet_len=%ld, length=%ld", packet_len, read_buffer->length);
+-    }
+-
+-_recv_header:
+-    retval = recv(read_buffer->str + read_buffer->length, header_len - read_buffer->length);
+-    if (retval <= 0) {
+-        return retval;
+-    } else {
+-        read_buffer->length += retval;
+-    }
+-
+-_get_length:
+-    pl.header_len = 0;
+-    pl.buf = read_buffer->str;
+-    pl.buf_size = (uint32_t) read_buffer->length;
+-    packet_len = protocol.get_package_length(&protocol, socket, &pl);
+-    swoole_trace_log(SW_TRACE_SOCKET, "packet_len=%ld, length=%ld", packet_len, read_buffer->length);
 -    if (packet_len < 0) {
-+    const int length_action = swr_v1_hook_packet_length(packet_len, protocol.package_max_length);
-+    if (length_action < 0) {
-         set_err(SW_ERROR_PACKAGE_LENGTH_NOT_FOUND, "get package length failed");
-         return 0;
+-        set_err(SW_ERROR_PACKAGE_LENGTH_NOT_FOUND, "get package length failed");
+-        return 0;
 -    } else if (packet_len == 0) {
-+    } else if (length_action == 0) {
-         if (pl.header_len != 0) {
-@@ -1381,3 +1396,3 @@ _get_length:
-         goto _recv_header;
+-        if (pl.header_len != 0) {
+-            header_len = pl.header_len;
+-        }
+-        goto _recv_header;
 -    } else if (packet_len > protocol.package_max_length) {
-+    } else if (length_action == 2) {
-         read_buffer->clear();
-@@ -1405,5 +1420,4 @@ _get_length:
-         read_buffer->length += retval;
+-        read_buffer->clear();
+-        swoole_error_log(SW_LOG_WARNING,
+-                         SW_ERROR_PACKAGE_LENGTH_TOO_LARGE,
+-                         "packet length is too big, remote_addr=%s:%d, length=%zu",
+-                         socket->get_addr(),
+-                         socket->get_port(),
+-                         packet_len);
+-        set_err(SW_ERROR_PACKAGE_LENGTH_TOO_LARGE, sw_error);
+-        return -1;
+-    }
+-
+-    if ((size_t) packet_len <= read_buffer->length) {
+-        read_buffer->offset = packet_len;
+-        return packet_len;
+-    }
+-
+-    if ((size_t) packet_len > read_buffer->size) {
+-        read_buffer->extend(packet_len);
+-    }
+-
+-    retval = recv_all(read_buffer->str + read_buffer->length, packet_len - read_buffer->length);
+-    if (retval > 0) {
+-        read_buffer->length += retval;
 -        if (read_buffer->length != (size_t) packet_len) {
 -            retval = errCode == ETIMEDOUT ? -1 : 0;
 -        } else {
-+        retval = swr_v1_hook_packet_result(read_buffer->length, packet_len, errCode == ETIMEDOUT);
-+        if (retval == packet_len) {
-             read_buffer->offset = packet_len;
-@@ -1427,7 +1441,3 @@ ssize_t Socket::recv_packet_with_eof_protocol() {
-         buf = read_buffer->str + read_buffer->length;
+-            read_buffer->offset = packet_len;
+-            return packet_len;
+-        }
+-    }
+-
+-    return retval;
+-}
+-
+-ssize_t Socket::recv_packet_with_eof_protocol() {
+-    ssize_t retval, eof = -1;
+-    char *buf = nullptr;
+-    size_t l_buf = 0;
+-
+-    if (read_buffer->length > 0) {
+-        goto _find_eof;
+-    }
+-
+-    while (true) {
+-        buf = read_buffer->str + read_buffer->length;
 -        l_buf = read_buffer->size - read_buffer->length;
 -
 -        if (l_buf > SW_BUFFER_SIZE_BIG) {
 -            l_buf = SW_BUFFER_SIZE_BIG;
 -        }
-+        l_buf = swr_v1_hook_packet_window(read_buffer->size, read_buffer->length, SW_BUFFER_SIZE_BIG);
- 
-@@ -1447,6 +1457,8 @@ ssize_t Socket::recv_packet_with_eof_protocol() {
-         eof = swoole_strnpos(read_buffer->str, read_buffer->length, protocol.package_eof, protocol.package_eof_len);
+-
+-        retval = recv(buf, l_buf);
+-        if (retval <= 0) {
+-            read_buffer->clear();
+-            return retval;
+-        }
+-
+-        read_buffer->length += retval;
+-
+-        if (read_buffer->length < protocol.package_eof_len) {
+-            continue;
+-        }
+-
+-    _find_eof:
+-        eof = swoole_strnpos(read_buffer->str, read_buffer->length, protocol.package_eof, protocol.package_eof_len);
 -        if (eof >= 0) {
 -            return (read_buffer->offset = eof + protocol.package_eof_len);
-+        auto eof_plan = swr_v1_hook_packet_eof(eof, protocol.package_eof_len, read_buffer->length,
-+                                                read_buffer->size, protocol.package_max_length);
-+        if (eof_plan.action == 1) {
-+            return (read_buffer->offset = eof_plan.offset);
-         }
+-        }
 -        if (read_buffer->length == protocol.package_max_length) {
-+        if (eof_plan.action < 0) {
-             read_buffer->clear();
-@@ -1455,8 +1467,4 @@ ssize_t Socket::recv_packet_with_eof_protocol() {
-         }
+-            read_buffer->clear();
+-            set_err(SW_ERROR_PACKAGE_LENGTH_TOO_LARGE, "no package eof, package_max_length exceeded");
+-            return -1;
+-        }
 -        if (read_buffer->length == read_buffer->size && read_buffer->size < protocol.package_max_length) {
 -            size_t new_size = read_buffer->size * 2;
 -            if (new_size > protocol.package_max_length) {
 -                new_size = protocol.package_max_length;
 -            }
 -            read_buffer->extend(new_size);
-+        if (eof_plan.action == 2) {
-+            read_buffer->extend(eof_plan.grow);
-         }
-@@ -1498,7 +1506,10 @@ ssize_t Socket::recv_packet(double timeout) {
- 
+-        }
+-    }
+-    assert(0);
+-    return -1;
+-}
+-
+ /**
+@@ -1490,24 +1385,78 @@ ssize_t Socket::recv_packet(double timeout) {
+     get_read_buffer();
+-
+-    // unprocessed data
+-    if (read_buffer->offset > 0) {
+-        read_buffer->reduce(read_buffer->offset);
+-    }
+-
+-    ssize_t recv_bytes;
+-
 -    if (open_length_check) {
-+    switch (swr_v1_hook_packet_kind(open_length_check, open_eof_check)) {
-+    case 1:
-         recv_bytes = recv_packet_with_length_protocol();
+-        recv_bytes = recv_packet_with_length_protocol();
 -    } else if (open_eof_check) {
-+        break;
-+    case 2:
-         recv_bytes = recv_packet_with_eof_protocol();
+-        recv_bytes = recv_packet_with_eof_protocol();
 -    } else {
-+        break;
-+    default: {
-         recv_bytes = recv(read_buffer->str, read_buffer->size);
-@@ -1507,2 +1518,4 @@ ssize_t Socket::recv_packet(double timeout) {
+-        recv_bytes = recv(read_buffer->str, read_buffer->size);
+-        if (recv_bytes > 0) {
+-            read_buffer->length = read_buffer->offset = recv_bytes;
++    // Rust runs the whole receive over this view of read_buffer; native effects
++    // that touch the String sync the view first and refresh it after.
++    swr_v1_hook_read_buffer view{
++        read_buffer->length, read_buffer->size, static_cast<int64_t>(read_buffer->offset), read_buffer->str};
++    struct Context {
++        Socket *socket;
++        swr_v1_hook_read_buffer *view;
++        void store() const {
++            socket->read_buffer->length = view->length;
++            socket->read_buffer->offset = view->offset;
          }
-+        break;
-+    }
-     }
-@@ -1518,3 +1531,4 @@ bool Socket::shutdown(int _how) {
+-    }
+-    // Keep incomplete length-prefixed packets for a subsequent read after a timeout.
+-    if (recv_bytes <= 0 && !(open_length_check && recv_bytes < 0 && errCode == ETIMEDOUT)) {
+-        read_buffer->clear();
+-    }
++        void load() const {
++            *view = {socket->read_buffer->length,
++                     socket->read_buffer->size,
++                     static_cast<int64_t>(socket->read_buffer->offset),
++                     socket->read_buffer->str};
++        }
++    } context{this, &view};
++    const swr_v1_hook_packet_ops ops{
++        &context,
++        &view,
++        open_length_check,
++        open_eof_check,
++        protocol.package_eof,
++        protocol.package_eof_len,
++        protocol.package_length_type,
++        protocol.package_length_size,
++        protocol.package_length_offset,
++        protocol.package_max_length,
++        [](void *c, char *buf, size_t n) { return static_cast<Context *>(c)->socket->recv(buf, n); },
++        [](void *c, char *buf, size_t n) { return static_cast<Context *>(c)->socket->recv_all(buf, n); },
++        [](void *c, const char *, uint32_t size, uint32_t *header_len) {
++            Socket *sock = static_cast<Context *>(c)->socket;
++            PacketLength pl;
++            pl.header_len = 0;
++            pl.buf = sock->read_buffer->str;
++            pl.buf_size = size;
++            ssize_t packet_len = sock->protocol.get_package_length(&sock->protocol, sock->socket, &pl);
++            swoole_trace_log(SW_TRACE_SOCKET, "packet_len=%ld, length=%u", packet_len, size);
++            *header_len = pl.header_len;
++            return packet_len;
++        },
++        [](void *c, size_t size) {
++            auto *ctx = static_cast<Context *>(c);
++            ctx->store();
++            ctx->socket->read_buffer->extend(size);
++            ctx->load();
++        },
++        [](void *c, int64_t offset) {
++            auto *ctx = static_cast<Context *>(c);
++            ctx->store();
++            ctx->socket->read_buffer->reduce(offset);
++            ctx->load();
++        },
++        [](void *c, uint32_t kind, ssize_t packet_len) {
++            auto *ctx = static_cast<Context *>(c);
++            Socket *sock = ctx->socket;
++            ctx->store();
++            if (kind == 0) {
++                sock->set_err(SW_ERROR_PACKAGE_LENGTH_NOT_FOUND, "get package length failed");
++            } else if (kind == 1) {
++                swoole_error_log(SW_LOG_WARNING,
++                                 SW_ERROR_PACKAGE_LENGTH_TOO_LARGE,
++                                 "packet length is too big, remote_addr=%s:%d, length=%zu",
++                                 sock->socket->get_addr(),
++                                 sock->socket->get_port(),
++                                 packet_len);
++                sock->set_err(SW_ERROR_PACKAGE_LENGTH_TOO_LARGE, sw_error);
++            } else {
++                sock->set_err(SW_ERROR_PACKAGE_LENGTH_TOO_LARGE, "no package eof, package_max_length exceeded");
++            }
++        },
++        [](void *c) { return static_cast<Context *>(c)->socket->errCode == ETIMEDOUT; },
++    };
++    ssize_t recv_bytes = swr_v1_hook_recv_packet(&ops);
++    context.store();
+     return recv_bytes;
+@@ -1518,3 +1467,4 @@ bool Socket::shutdown(int _how) {
      int error = 0;
 -    if (!is_connected() || (_how == SHUT_RD && shutdown_read) || (_how == SHUT_WR && shutdown_write)) {
 +    bool live = is_connected();
 +    if (!swr_v1_hook_shutdown_admit(live, _how, live && shutdown_read, live && shutdown_write, SHUT_RD, SHUT_WR)) {
          error = ENOTCONN;
-@@ -1527,17 +1541,9 @@ bool Socket::shutdown(int _how) {
+@@ -1527,17 +1477,9 @@ bool Socket::shutdown(int _how) {
          }
 -        if (error == 0 || error == ENOTCONN) {
 -            if (error == ENOTCONN) {
@@ -1442,7 +1587,7 @@ index 5a16f4c..e66476d 100644
 -                shutdown_read = shutdown_write = true;
 -                break;
              }
-@@ -1558,6 +1564,7 @@ void Socket::ssl_close() const {
+@@ -1558,6 +1500,7 @@ void Socket::ssl_close() const {
  bool Socket::cancel(const EventType event) {
 -    if (!has_bound(event)) {
 +    auto action = swr_v1_hook_cancel_action(has_bound(event), event, SW_EVENT_READ, SW_EVENT_WRITE);
@@ -1452,19 +1597,19 @@ index 5a16f4c..e66476d 100644
 -    if (event == SW_EVENT_READ) {
 +    if (action == 1) {
          set_err(ECANCELED);
-@@ -1565,3 +1572,3 @@ bool Socket::cancel(const EventType event) {
+@@ -1565,3 +1508,3 @@ bool Socket::cancel(const EventType event) {
          return true;
 -    } else if (event == SW_EVENT_WRITE) {
 +    } else if (action == 2) {
          set_err(ECANCELED);
-@@ -1583,3 +1590,5 @@ bool Socket::cancel(const EventType event) {
+@@ -1583,3 +1526,5 @@ bool Socket::cancel(const EventType event) {
  bool Socket::close() {
 -    if (is_closed()) {
 +    bool closed = is_closed();
 +    auto action = swr_v1_hook_close_action(0, closed, !closed && connected, false);
 +    if (action < 0) {
          set_err(EBADF);
-@@ -1587,6 +1596,6 @@ bool Socket::close() {
+@@ -1587,6 +1532,6 @@ bool Socket::close() {
      }
 -    if (connected) {
 +    if (action == 1) {
@@ -1473,7 +1618,7 @@ index 5a16f4c..e66476d 100644
 -    if (sw_unlikely(has_bound())) {
 +    if (sw_unlikely(swr_v1_hook_close_action(1, false, false, has_bound()) == 2)) {
          socket->close_wait = 1;
-@@ -1636,8 +1645,11 @@ Socket::~Socket() {
+@@ -1636,8 +1581,11 @@ Socket::~Socket() {
  bool Socket::TimerController::start() {
 -    if (timeout != 0 && !*timer_pp) {
 +    auto actions = swr_v1_hook_timer(0, enabled, timeout != 0 && *timer_pp != nullptr, false, timeout);
@@ -1490,7 +1635,7 @@ index 5a16f4c..e66476d 100644
 +    }
 +    if (actions & SWR_HOOK_TIMER_SENTINEL) {
          *timer_pp = reinterpret_cast<TimerNode *>(-1);
-@@ -1648,6 +1660,9 @@ bool Socket::TimerController::start() {
+@@ -1648,6 +1596,9 @@ bool Socket::TimerController::start() {
  Socket::TimerController::~TimerController() {
 -    if (enabled && *timer_pp) {
 -        if (*timer_pp != reinterpret_cast<TimerNode *>(-1)) {
@@ -1504,7 +1649,7 @@ index 5a16f4c..e66476d 100644
 +    }
 +    if (actions & SWR_HOOK_TIMER_CLEAR) {
          *timer_pp = nullptr;
-@@ -1686,13 +1701,17 @@ bool Socket::TimeoutController::has_timedout(TimeoutType _type) {
+@@ -1686,13 +1637,17 @@ bool Socket::TimeoutController::has_timedout(TimeoutType _type) {
      SW_ASSERT_1BYTE(_type);
 -    if (timeout > 0) {
 -        if (sw_unlikely(startup_time == 0)) {
