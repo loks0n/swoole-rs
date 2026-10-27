@@ -1,22 +1,74 @@
 diff --git a/src/network/socket.cc b/src/network/socket.cc
-index 02480c6..63070de 100644
+index 02480c6..1423891 100644
 --- a/src/network/socket.cc
 +++ b/src/network/socket.cc
-@@ -414,3 +414,3 @@ int Socket::get_name() {
+@@ -62,2 +62,4 @@ void IOVector::update_iterator(ssize_t _n) {
+ 
++static_assert(SW_SENDFILE_CHUNK_SIZE == 65536, "swr_v1_socket_sendfile_chunk's chunk");
++
+ static bool check_sendfile_parameters(const File *file, off_t begin, size_t length, off_t *end) {
+@@ -68,21 +70,7 @@ static bool check_sendfile_parameters(const File *file, off_t begin, size_t leng
+     }
+-
+-    FileStatus file_stat;
+-    if (!file->stat(&file_stat)) {
+-        swoole_sys_warning("fstat('%s') failed", filename);
+-        return false;
+-    }
+-
+-    if (file_stat.st_size == 0) {
+-        swoole_error_log(SW_LOG_WARNING, SW_ERROR_FILE_EMPTY, "cannot send empty file '%s'", filename);
+-        return false;
+-    }
+-
+-    if (length == 0) {
+-        *end = file_stat.st_size;
+-    } else {
+-        *end = begin + static_cast<off_t>(length);
+-    }
+-
+-    if (begin < 0 || *end > file_stat.st_size) {
++    switch (swr_v1_socket_sendfile_range(file->get_fd(), begin, length, end)) {
++    case 0: return true;
++    case 1: swoole_sys_warning("fstat('%s') failed", filename); return false;
++    case 2: swoole_error_log(SW_LOG_WARNING, SW_ERROR_FILE_EMPTY, "cannot send empty file '%s'", filename); return false;
++    default:
+         swoole_error_log(
+@@ -91,9 +79,2 @@ static bool check_sendfile_parameters(const File *file, off_t begin, size_t leng
+     }
+-
+-    return true;
+-}
+-
+-static size_t get_sendfile_chunk_size(off_t begin, off_t end) {
+-    size_t real_length = end - begin;
+-    return real_length > SW_SENDFILE_CHUNK_SIZE ? SW_SENDFILE_CHUNK_SIZE : real_length;
+ }
+@@ -187,3 +168,3 @@ int Socket::sendfile_sync(const char *filename, off_t offset, size_t length) {
+         [this, &file, &offset, end]() {
+-            size_t sent_bytes = get_sendfile_chunk_size(offset, end);
++            size_t sent_bytes = swr_v1_socket_sendfile_chunk(offset, end);
+             ssize_t n = sendfile(file, &offset, sent_bytes);
+@@ -414,3 +395,3 @@ int Socket::get_name() {
      info.len = sizeof(info.addr);
 -    if (getsockname(fd, &info.addr.ss, &info.len) < 0) {
 +    if (!swr_v1_socket_get_name(fd, &info.addr.ss, &info.len)) {
          return -1;
-@@ -424,3 +424,3 @@ int Socket::get_peer_name(Address *sa) const {
+@@ -424,3 +405,3 @@ int Socket::get_peer_name(Address *sa) const {
      sa->type = socket_type;
 -    if (::getpeername(fd, &sa->addr.ss, &sa->len) != 0) {
 +    if (!swr_v1_socket_get_peer_name(fd, &sa->addr.ss, &sa->len)) {
          return SW_ERR;
-@@ -447,3 +447,3 @@ int Socket::bind(const std::string &_host, int port) {
+@@ -447,3 +428,3 @@ int Socket::bind(const std::string &_host, int port) {
  int Socket::bind(const struct sockaddr *sa, socklen_t len) {
 -    if (::bind(fd, sa, len) < 0) {
 +    if (!swr_v1_socket_bind(fd, sa, len)) {
          return SW_ERR;
+@@ -635,3 +616,3 @@ int Socket::handle_sendfile() {
+         case 3: {
+-    size_t sendn = get_sendfile_chunk_size(task->begin, task->end);
++    size_t sendn = swr_v1_socket_sendfile_chunk(task->begin, task->end);
+     ssize_t rv = sendfile(task->file, &task->begin, sendn);
 diff --git a/src/server/base.cc b/src/server/base.cc
 index cf0058d..29c4c6c 100644
 --- a/src/server/base.cc

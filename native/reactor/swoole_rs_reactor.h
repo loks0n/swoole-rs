@@ -155,6 +155,10 @@ bool swr_v1_socket_get_name(int fd, struct sockaddr *address, socklen_t *address
 bool swr_v1_socket_get_peer_name(int fd, struct sockaddr *address, socklen_t *address_length);
 bool swr_v1_socket_bind(int fd, const struct sockaddr *address, socklen_t length);
 swr_v1_socket_io_result swr_v1_socket_pending_error(int fd);
+/* sendfile's range check (fstat included) and chunk size: 0 with *end set, 1
+ * fstat failed (errno set), 2 empty file, 3 range outside the file. */
+int swr_v1_socket_sendfile_range(int file_fd, off_t begin, size_t length, off_t *end);
+size_t swr_v1_socket_sendfile_chunk(off_t begin, off_t end);
 /* network::Socket's per-request reads and writes: recv/send/peek with EINTR and
  * dont_restart, driving `tls` (ssl_recv/ssl_send/SSL_peek on `socket`) when set;
  * catch_error's classification (swReturnCode). */
