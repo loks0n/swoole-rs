@@ -151,15 +151,13 @@ to every command. Do not pass these for modules built into PHP (Homebrew):
 duplicate-module warnings break PHPT output. PHPTs run through PHP's official
 runner; never use upstream's custom runner or `tests/start.sh`.
 
-Benchmarks, after builds and tests have finished:
+Benchmarks, after builds and tests have finished, count instructions per request
+under callgrind (`benchmarks/README.md`):
 
 ```sh
-python3 benchmarks/run.py \
+python3 benchmarks/callgrind.py --requests 1000 --workload plaintext --workload json \
   --engine hybrid=target/hybrid/rust/modules/swoole.so \
-  --engine upstream=target/upstream/src/modules/swoole.so \
-  --requests 5000 --concurrency 1 16 --warmup 20 --repeat 3 \
-  --output target/reports/benchmarks-hybrid.json
+  --engine upstream=target/upstream/src/modules/swoole.so
 ```
 
-These localhost measurements can be client-limited and do not measure codec
-throughput. Module-specific gates are in [validation](validation-suite.md).
+Module-specific gates are in [validation](validation-suite.md).

@@ -21,8 +21,18 @@ import tempfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from benchmarks.run import WORKLOADS
 from tools.harness import ROOT, parse_engines
+
+PAYLOAD = bytes(range(256)) * 256
+# (corpus application, method, path, body, expected response body)
+WORKLOADS = {
+    'plaintext': ('01-hello', 'GET', '/', None, b'Hello, Swoole!\n'),
+    'json': ('02-router', 'GET', '/inspect?q=benchmark', None,
+             b'{"query":{"q":"benchmark"},"token":null}'),
+    'echo-64k': ('02-router', 'POST', '/echo', PAYLOAD, PAYLOAD),
+    'echo-1k': ('02-router', 'POST', '/echo', PAYLOAD[:1024], PAYLOAD[:1024]),
+    'service-health': ('04-job-service', 'GET', '/health', None, b'{"ok":true}'),
+}
 
 
 def wait_for_port(port, proc, seconds=180):

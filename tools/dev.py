@@ -811,8 +811,6 @@ def plan(args, reports):
                        *(['--peek-front'] if peek else []), *report(name))
         if 'websocket' in modules:
             script('websocket-benchmark', 'tests/modules/websocket/benchmark.py', *php, *engines, *report('websocket-benchmark'))
-        if integrate:
-            script('http-benchmark', 'benchmarks/run.py', *php, *engines, *report('http-benchmark'))
     return commands
 
 
