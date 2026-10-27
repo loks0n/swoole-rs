@@ -63,6 +63,20 @@ its own buffers on destruction, so allocation topology differs.
   `Address::verify_ip` is `clients_verify_ip` into native `tmp_address`.
 - Unsupported families and Apple scoped-IPv6 parsing go to the platform's
   `inet_pton` from Rust, errno included.
+
+## DNS (`src/network/dns.cc`)
+
+- `dns_lookup_impl_with_socket` is `clients_dns_query`: query packet, one send and
+  one receive through native coroutine-socket function pointers, then the
+  answer's A/AAAA addresses as text. Native keeps `resolv.conf` loading before it,
+  the socket and its timeout, and maps `ECANCELED` for Rust.
+- Both `network::gethostbyname` variants are `clients_gethostbyname`
+  (`gethostbyname2_r` with a growing buffer on Linux, `gethostbyname2` under a
+  lock elsewhere); `network::getaddrinfo` is `clients_getaddrinfo` into a native
+  array of `SW_DNS_HOST_BUFFER_SIZE`.
+- `swoole_load_resolv_conf`'s file read is `clients_resolv_conf` (libc `fopen`
+  and `fgets`); `get_ip_by_hosts` is `clients_hosts_lookup`, with the native
+  locale's space table passed in. The c-ares path stays native.
 - `ip_text` writes into 40-byte caller-local storage and returns the length.
   IPv6 is emitted as eight four-digit lowercase groups (as the original DNS
   helper does, not compressed `inet_ntop` text). Native builds the

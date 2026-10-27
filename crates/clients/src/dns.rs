@@ -1,0 +1,669 @@
+//! `dns_lookup_impl_with_socket`: one A or AAAA query to the configured server over
+//! UDP and the addresses in its answer. Native code passes the coroutine socket's
+//! `sendto` and `recv` and collects the addresses; it keeps loading `resolv.conf`.
+//! Every read of the reply stays inside the packet buffer.
+use crate::ip::swr_v1_clients_ip_text;
+use crate::{
+    swr_v1_clients_domain_decode, swr_v1_clients_domain_encode, swr_v1_clients_hosts_match,
+    swr_v1_clients_resolv_line,
+};
+use std::ffi::{CStr, c_char, c_int, c_void};
+
+/// `SW_BUFFER_SIZE_STD`.
+const PACKET: usize = 8192;
+/// `sizeof(RecordHeader)`.
+const HEADER: usize = 12;
+/// The fixed part of a resource record after its (compressed) name.
+const RECORD: usize = 10;
+/// Answers read, and bytes kept per answer's data.
+const MAX_ANSWERS: usize = 10;
+const RDATA: usize = 254;
+const A: u16 = 0x01;
+const AAAA: u16 = 0x1c;
+
+/// `SW_ERROR_DNSLOOKUP_RESOLVE_FAILED` and `SW_ERROR_CO_CANCELED`.
+const RESOLVE_FAILED: c_int = 711;
+const CANCELED: c_int = 10017;
+/// The domain does not encode: native warns `invalid domain[...]`.
+pub const INVALID_DOMAIN: c_int = -1;
+
+/// Sends `length` bytes to the DNS server; false on failure.
+pub type Send = unsafe extern "C" fn(*mut c_void, *const u8, usize) -> bool;
+/// Receives into `capacity` bytes; the length, 0/-1 on failure, `-ECANCELED` if
+/// the coroutine was cancelled.
+pub type Recv = unsafe extern "C" fn(*mut c_void, *mut u8, usize) -> isize;
+/// Collects one address in text form.
+pub type Push = unsafe extern "C" fn(*mut c_void, *const u8, usize);
+
+fn u16_at(packet: &[u8], at: usize) -> u16 {
+    let byte = |offset: usize| packet.get(offset).copied().unwrap_or(0);
+    u16::from_be_bytes([byte(at), byte(at + 1)])
+}
+
+fn c_len(bytes: &[u8]) -> usize {
+    bytes
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(bytes.len())
+}
+
+/// Queries `domain` for `family`'s address records with `request_id`, pushing each
+/// address of the answer; 0, [`INVALID_DOMAIN`], or the code native sets as the
+/// last error (also when the answer has no address).
+///
+/// # Safety
+/// `domain` is NUL-terminated; `send`, `recv` and `push` are native's, valid with
+/// `context`. `signed_char` is native `char`'s signedness.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_clients_dns_query(
+    domain: *const c_char,
+    family: c_int,
+    request_id: u16,
+    context: *mut c_void,
+    send: Send,
+    recv: Recv,
+    push: Push,
+    signed_char: bool,
+) -> c_int {
+    let mut packet = vec![0u8; PACKET];
+    packet[0..2].copy_from_slice(&request_id.to_be_bytes());
+    packet[2] = 1; // RD
+    packet[4..6].copy_from_slice(&1u16.to_be_bytes());
+
+    // SAFETY: the caller passes a NUL-terminated domain.
+    let name = unsafe { CStr::from_ptr(domain) }.to_bytes();
+    let capacity = PACKET - HEADER;
+    if name.len() > capacity - 3 {
+        return INVALID_DOMAIN;
+    }
+    let question = &mut packet[HEADER..];
+    // SAFETY: `name` and `question` are separate buffers of the given lengths.
+    if unsafe {
+        swr_v1_clients_domain_encode(name.as_ptr(), name.len(), question.as_mut_ptr(), capacity)
+    } < 0
+    {
+        return INVALID_DOMAIN;
+    }
+    let mut steps = HEADER + c_len(question) + 1;
+    let qtype = if family == libc::AF_INET6 { AAAA } else { A };
+    packet[steps..steps + 2].copy_from_slice(&qtype.to_be_bytes());
+    packet[steps + 2..steps + 4].copy_from_slice(&1u16.to_be_bytes());
+    steps += 4;
+    let query_initialized = PACKET.min(steps.max(HEADER + name.len() + 3));
+
+    // SAFETY: the native send takes `steps` bytes of the packet.
+    if !unsafe { send(context, packet.as_ptr(), steps) } {
+        return RESOLVE_FAILED;
+    }
+    // SAFETY: the native recv writes at most `PACKET - 1` bytes into the packet.
+    let received = unsafe { recv(context, packet.as_mut_ptr(), PACKET - 1) };
+    let Ok(received @ 1..) = usize::try_from(received) else {
+        return if received == -isize::try_from(libc::ECANCELED).unwrap_or(0) {
+            CANCELED
+        } else {
+            RESOLVE_FAILED
+        };
+    };
+    let received = received.min(PACKET - 1);
+    packet[received] = 0;
+    let initialized = query_initialized.max(received + 1);
+
+    let question = &mut packet[HEADER..initialized.max(HEADER)];
+    // SAFETY: `question` is initialized and writable for its length.
+    unsafe {
+        swr_v1_clients_domain_decode(question.as_mut_ptr(), question.len(), u8::from(signed_char))
+    };
+    let mut steps = HEADER + c_len(&packet[HEADER..]) + 2 + 4;
+
+    let answers = usize::from(u16_at(&packet, 6)).min(MAX_ANSWERS);
+    let mut records = Vec::with_capacity(answers);
+    for _ in 0..answers {
+        // The answer's name is a two-byte compression pointer.
+        steps += 2;
+        let kind = u16_at(&packet, steps);
+        let length = usize::from(u16_at(&packet, steps + 8));
+        steps += RECORD;
+        let mut data = [0u8; RDATA];
+        let end = PACKET.min(steps.saturating_add(length.min(RDATA)));
+        if let Some(source) = packet.get(steps..end) {
+            data[..source.len()].copy_from_slice(source);
+        }
+        records.push((kind, data));
+        steps = steps.saturating_add(length);
+    }
+
+    if u16_at(&packet, 0) != request_id {
+        return RESOLVE_FAILED;
+    }
+    let mut found = false;
+    for (kind, data) in &records {
+        let version = match *kind {
+            A => 4,
+            AAAA => 6,
+            _ => continue,
+        };
+        // SAFETY: `data` holds the 4- or 16-byte address.
+        let text = unsafe { swr_v1_clients_ip_text(version, data.as_ptr()) };
+        let length = usize::try_from(text.length).unwrap_or(0);
+        // SAFETY: the native push copies `length` bytes.
+        unsafe { push(context, text.bytes.as_ptr(), length) };
+        found = true;
+    }
+    if found { 0 } else { RESOLVE_FAILED }
+}
+
+/// `SW_DNS_LOOKUP_RANDOM`, masked out of `gethostbyname`'s flags.
+const LOOKUP_RANDOM: c_int = 1 << 11;
+
+#[cfg(target_os = "linux")]
+unsafe extern "C" {
+    fn gethostbyname2_r(
+        name: *const c_char,
+        family: c_int,
+        entry: *mut libc::hostent,
+        buffer: *mut c_char,
+        length: usize,
+        result: *mut *mut libc::hostent,
+        error: *mut c_int,
+    ) -> c_int;
+}
+#[cfg(not(target_os = "linux"))]
+unsafe extern "C" {
+    fn gethostbyname2(name: *const c_char, family: c_int) -> *mut libc::hostent;
+}
+
+/// Copies the entry's first address (`h_length` bytes, zero if it has none) to `addr`.
+///
+/// # Safety
+/// `entry` is a resolved hostent; `addr` holds `h_length` bytes.
+unsafe fn first_address(entry: &libc::hostent, addr: *mut c_char) {
+    let length = usize::try_from(entry.h_length).unwrap_or(0).min(46);
+    let mut bytes = [0u8; 46];
+    // SAFETY: `h_addr_list` is the resolver's null-terminated list, which some
+    // libcs (Apple's) do not align.
+    let first = unsafe { entry.h_addr_list.read_unaligned() };
+    if !first.is_null() {
+        // SAFETY: each address holds `h_length` bytes.
+        unsafe { std::ptr::copy_nonoverlapping(first.cast::<u8>(), bytes.as_mut_ptr(), length) };
+    }
+    // SAFETY: the caller's `addr` holds `h_length` bytes.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), addr.cast(), length) };
+}
+
+/// `network::gethostbyname(flags, name, addr)`: the first address of `name` for the
+/// flags' family into `addr`; 0, or -1 if it does not resolve.
+///
+/// # Safety
+/// `name` is NUL-terminated; `addr` holds an address of the family.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_clients_gethostbyname(
+    flags: c_int,
+    name: *const c_char,
+    addr: *mut c_char,
+) -> c_int {
+    let family = flags & !LOOKUP_RANDOM;
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: hostent is plain data.
+        let mut entry: libc::hostent = unsafe { std::mem::zeroed() };
+        let mut buffer = vec![0 as c_char; 256];
+        let mut result = std::ptr::null_mut();
+        let mut error = 0;
+        loop {
+            // SAFETY: every out-parameter is valid for the call.
+            let rc = unsafe {
+                gethostbyname2_r(
+                    name,
+                    family,
+                    &raw mut entry,
+                    buffer.as_mut_ptr(),
+                    buffer.len(),
+                    &raw mut result,
+                    &raw mut error,
+                )
+            };
+            if rc == libc::ERANGE {
+                buffer.resize(buffer.len() * 2, 0);
+                continue;
+            }
+            if rc != 0 || result.is_null() {
+                return -1;
+            }
+            break;
+        }
+        // SAFETY: `entry` was filled by the resolver; `addr` is the caller's.
+        unsafe { first_address(&entry, addr) };
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _held = LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // SAFETY: the lock serializes gethostbyname2's shared result.
+        let entry = unsafe { gethostbyname2(name, family) };
+        // SAFETY: a non-null result is the resolver's entry, read under the lock.
+        let Some(entry) = (unsafe { entry.as_ref() }) else {
+            return -1;
+        };
+        // SAFETY: as above.
+        unsafe { first_address(entry, addr) };
+    }
+    0
+}
+
+/// What `getaddrinfo` found.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Resolved {
+    /// getaddrinfo's error, or 0.
+    pub error: c_int,
+    /// Addresses written to `results`.
+    pub count: c_int,
+}
+
+/// `network::getaddrinfo`: resolves `host` (and `service`, null for none) into at
+/// most `capacity` socket addresses; `unknown` reports an entry of another family,
+/// which keeps its zeroed slot.
+///
+/// # Safety
+/// `host` and a non-null `service` are NUL-terminated; `results` holds `capacity`
+/// zeroed entries.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_clients_getaddrinfo(
+    host: *const c_char,
+    service: *const c_char,
+    family: c_int,
+    socktype: c_int,
+    protocol: c_int,
+    results: *mut libc::sockaddr_in6,
+    capacity: usize,
+    unknown: unsafe extern "C" fn(c_int),
+) -> Resolved {
+    // SAFETY: addrinfo is plain data.
+    let mut hints: libc::addrinfo = unsafe { std::mem::zeroed() };
+    hints.ai_family = family;
+    hints.ai_socktype = socktype;
+    hints.ai_protocol = protocol;
+    let mut list = std::ptr::null_mut();
+    // SAFETY: the strings are the caller's; `list` receives the resolver's list.
+    let error = unsafe { libc::getaddrinfo(host, service, &raw const hints, &raw mut list) };
+    if error != 0 {
+        return Resolved { error, count: 0 };
+    }
+    let mut count = 0;
+    let mut entry = list;
+    while count < capacity {
+        // SAFETY: `entry` walks the resolver's list until null.
+        let Some(item) = (unsafe { entry.as_ref() }) else {
+            break;
+        };
+        // SAFETY: slot `count` is within the caller's `capacity`.
+        let slot = unsafe { results.add(count) }.cast::<u8>();
+        let size = match item.ai_family {
+            libc::AF_INET => size_of::<libc::sockaddr_in>(),
+            libc::AF_INET6 => size_of::<libc::sockaddr_in6>(),
+            other => {
+                // SAFETY: the native warning takes any family.
+                unsafe { unknown(other) };
+                0
+            }
+        };
+        // SAFETY: `ai_addr` holds the family's address; the slot holds a sockaddr_in6.
+        unsafe { std::ptr::copy_nonoverlapping(item.ai_addr.cast::<u8>(), slot, size) };
+        count += 1;
+        entry = item.ai_next;
+    }
+    // SAFETY: `list` came from getaddrinfo.
+    unsafe { libc::freeaddrinfo(list) };
+    Resolved {
+        error: 0,
+        count: c_int::try_from(count).unwrap_or(0),
+    }
+}
+
+/// `swoole_load_resolv_conf`'s file read: the first `nameserver` of the file at
+/// `path`, read in `fgets` lines of up to 99 bytes, into `server` (16 bytes,
+/// NUL-terminated); 1 found, 0 none, -1 the file did not open (errno is fopen's).
+///
+/// # Safety
+/// `path` is NUL-terminated; `server` holds 16 bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_clients_resolv_conf(
+    path: *const c_char,
+    server: *mut c_char,
+) -> c_int {
+    // SAFETY: both strings are NUL-terminated.
+    let file = unsafe { libc::fopen(path, c"rt".as_ptr()) };
+    if file.is_null() {
+        return -1;
+    }
+    let mut line = [0 as c_char; 100];
+    let mut found = 0;
+    // SAFETY: `line` holds 100 bytes and `file` is open.
+    while !unsafe { libc::fgets(line.as_mut_ptr(), 100, file) }.is_null() {
+        // SAFETY: fgets NUL-terminated the line.
+        let text = unsafe { CStr::from_ptr(line.as_ptr()) }.to_bytes();
+        // SAFETY: `text` is the line's bytes.
+        let plan = unsafe { swr_v1_clients_resolv_line(text.as_ptr(), text.len()) };
+        if plan.kind == 0 {
+            continue;
+        }
+        if plan.kind == 1 && plan.length < 16 {
+            // SAFETY: the caller's `server` holds 16 bytes.
+            let server = unsafe { std::slice::from_raw_parts_mut(server.cast::<u8>(), 16) };
+            let token = text
+                .get(plan.offset..plan.offset + plan.length)
+                .unwrap_or_default();
+            server[..token.len()].copy_from_slice(token);
+            server[token.len()] = 0;
+            found = c_int::from(plan.length != 0);
+        }
+        break;
+    }
+    // SAFETY: `file` came from fopen.
+    unsafe { libc::fclose(file) };
+    found
+}
+
+/// `get_ip_by_hosts`: the address `domain` has in the hosts file at `path`, pushed
+/// as text; whether one was found. Lines split as `std::getline` does, cut at the
+/// first `#`; `spaces` is the native locale's 256-entry space table.
+///
+/// # Safety
+/// `path` is NUL-terminated, `domain` holds `domain_length` bytes, `spaces` 256;
+/// `push` is native's, valid with `context`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_clients_hosts_lookup(
+    path: *const c_char,
+    domain: *const u8,
+    domain_length: usize,
+    spaces: *const u8,
+    context: *mut c_void,
+    push: Push,
+) -> bool {
+    // SAFETY: `path` is NUL-terminated.
+    let path = unsafe { CStr::from_ptr(path) };
+    let Ok(contents) = std::fs::read(
+        <std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(path.to_bytes()),
+    ) else {
+        return false;
+    };
+    let mut lines: Vec<&[u8]> = contents.split(|&byte| byte == b'\n').collect();
+    if contents.last() == Some(&b'\n') {
+        lines.pop();
+    }
+    for line in lines {
+        let mut line = line.to_vec();
+        if let Some(comment) = line.iter().position(|&byte| byte == b'#') {
+            line[comment] = 0;
+        }
+        // SAFETY: `line` and `domain` are initialized; `spaces` holds 256 entries.
+        let found = unsafe {
+            swr_v1_clients_hosts_match(line.as_ptr(), line.len(), domain, domain_length, spaces)
+        };
+        if found.found != 0 {
+            let address = line
+                .get(found.offset..found.offset + found.length)
+                .unwrap_or_default();
+            // SAFETY: the native push copies `address`.
+            unsafe { push(context, address.as_ptr(), address.len()) };
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    struct Exchange {
+        query: Vec<u8>,
+        reply: Vec<u8>,
+        results: Vec<String>,
+    }
+
+    unsafe extern "C" fn sent(context: *mut c_void, data: *const u8, length: usize) -> bool {
+        let exchange = unsafe { &mut *context.cast::<RefCell<Exchange>>() };
+        exchange.borrow_mut().query = unsafe { std::slice::from_raw_parts(data, length) }.to_vec();
+        true
+    }
+    unsafe extern "C" fn answered(context: *mut c_void, out: *mut u8, capacity: usize) -> isize {
+        let exchange = unsafe { &*context.cast::<RefCell<Exchange>>() };
+        let mut exchange = exchange.borrow_mut();
+        let id = [exchange.query[0], exchange.query[1]];
+        exchange.reply[..2].copy_from_slice(&id);
+        let n = exchange.reply.len().min(capacity);
+        unsafe { std::ptr::copy_nonoverlapping(exchange.reply.as_ptr(), out, n) };
+        isize::try_from(n).unwrap()
+    }
+    unsafe extern "C" fn cancelled(_: *mut c_void, _: *mut u8, _: usize) -> isize {
+        -isize::try_from(libc::ECANCELED).unwrap()
+    }
+    unsafe extern "C" fn collect(context: *mut c_void, text: *const u8, length: usize) {
+        let exchange = unsafe { &*context.cast::<RefCell<Exchange>>() };
+        let text = unsafe { std::slice::from_raw_parts(text, length) };
+        exchange
+            .borrow_mut()
+            .results
+            .push(String::from_utf8(text.to_vec()).unwrap());
+    }
+
+    fn reply(records: &[(u16, &[u8])]) -> Vec<u8> {
+        let mut packet = vec![
+            0,
+            0,
+            0x81,
+            0x80,
+            0,
+            1,
+            0,
+            u8::try_from(records.len()).unwrap(),
+            0,
+            0,
+            0,
+            0,
+        ];
+        packet.extend_from_slice(b"\x07example\x04test\x00\x00\x01\x00\x01");
+        for (kind, data) in records {
+            packet.extend_from_slice(&[0xc0, 12]);
+            packet.extend_from_slice(&kind.to_be_bytes());
+            packet.extend_from_slice(&[0, 1, 0, 0, 0, 60]);
+            packet.extend_from_slice(&u16::try_from(data.len()).unwrap().to_be_bytes());
+            packet.extend_from_slice(data);
+        }
+        packet
+    }
+
+    fn query(family: c_int, reply: Vec<u8>, recv: Recv) -> (c_int, Exchange) {
+        let exchange = RefCell::new(Exchange {
+            query: Vec::new(),
+            reply,
+            results: Vec::new(),
+        });
+        let context = (&raw const exchange).cast_mut().cast();
+        let error = unsafe {
+            swr_v1_clients_dns_query(
+                c"example.test".as_ptr(),
+                family,
+                7,
+                context,
+                sent,
+                recv,
+                collect,
+                true,
+            )
+        };
+        (error, exchange.into_inner())
+    }
+
+    #[test]
+    fn asks_once_and_reads_addresses() {
+        let cname: &[u8] = b"\x03www\xc0\x0c";
+        let (error, exchange) = query(
+            libc::AF_INET,
+            reply(&[(5, cname), (A, &[192, 0, 2, 1]), (A, &[192, 0, 2, 2])]),
+            answered,
+        );
+        assert_eq!(error, 0);
+        assert_eq!(exchange.results, ["192.0.2.1", "192.0.2.2"]);
+        assert_eq!(&exchange.query[..12], &[0, 7, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            &exchange.query[12..],
+            b"\x07example\x04test\x00\x00\x01\x00\x01"
+        );
+
+        let six = [0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+        let (error, exchange) = query(libc::AF_INET6, reply(&[(AAAA, &six)]), answered);
+        assert_eq!(
+            (error, exchange.results),
+            (
+                0,
+                vec!["2001:0db8:0000:0000:0000:0000:0000:0001".to_string()]
+            )
+        );
+        assert_eq!(
+            &exchange.query[exchange.query.len() - 4..],
+            &[0, 0x1c, 0, 1]
+        );
+
+        assert_eq!(
+            query(libc::AF_INET, reply(&[(5, cname)]), answered).0,
+            RESOLVE_FAILED
+        );
+        assert_eq!(query(libc::AF_INET, reply(&[]), cancelled).0, CANCELED);
+        let mut truncated = reply(&[(A, &[192, 0, 2, 1])]);
+        truncated[7] = 200;
+        assert_eq!(
+            query(libc::AF_INET, truncated, answered).1.results,
+            ["192.0.2.1"]
+        );
+    }
+
+    unsafe extern "C" fn ignore(_: c_int) {}
+
+    #[test]
+    fn resolves_through_libc() {
+        let mut addr = [0 as c_char; 16];
+        assert_eq!(
+            unsafe {
+                swr_v1_clients_gethostbyname(
+                    libc::AF_INET,
+                    c"localhost".as_ptr(),
+                    addr.as_mut_ptr(),
+                )
+            },
+            0
+        );
+        assert_eq!(
+            addr[..4]
+                .iter()
+                .map(|&b| b.cast_unsigned())
+                .collect::<Vec<_>>(),
+            [127, 0, 0, 1]
+        );
+        assert_eq!(
+            unsafe {
+                swr_v1_clients_gethostbyname(
+                    libc::AF_UNIX,
+                    c"localhost".as_ptr(),
+                    addr.as_mut_ptr(),
+                )
+            },
+            -1
+        );
+
+        let mut results: [libc::sockaddr_in6; 16] = unsafe { std::mem::zeroed() };
+        let found = unsafe {
+            swr_v1_clients_getaddrinfo(
+                c"127.0.0.1".as_ptr(),
+                c"80".as_ptr(),
+                libc::AF_INET,
+                libc::SOCK_STREAM,
+                0,
+                results.as_mut_ptr(),
+                16,
+                ignore,
+            )
+        };
+        assert_eq!(found, Resolved { error: 0, count: 1 });
+        let v4 = unsafe { &*results.as_ptr().cast::<libc::sockaddr_in>() };
+        assert_eq!(
+            (u16::from_be(v4.sin_port), v4.sin_addr.s_addr.to_ne_bytes()),
+            (80, [127, 0, 0, 1])
+        );
+        let failed = unsafe {
+            swr_v1_clients_getaddrinfo(
+                c"127.0.0.1".as_ptr(),
+                c"no-such-service-swr".as_ptr(),
+                libc::AF_INET,
+                0,
+                0,
+                results.as_mut_ptr(),
+                16,
+                ignore,
+            )
+        };
+        assert_ne!(failed.error, 0);
+    }
+
+    #[test]
+    fn reads_resolv_conf_and_hosts() {
+        let dir = std::env::temp_dir().join(format!("swr-dns-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let resolv = dir.join("resolv.conf");
+        std::fs::write(
+            &resolv,
+            "# comment\nsearch lan\nnameserver 10.0.0.53\nnameserver 10.0.0.54\n",
+        )
+        .unwrap();
+        let path = std::ffi::CString::new(resolv.to_str().unwrap()).unwrap();
+        let mut server = [0 as c_char; 16];
+        assert_eq!(
+            unsafe { swr_v1_clients_resolv_conf(path.as_ptr(), server.as_mut_ptr()) },
+            1
+        );
+        assert_eq!(unsafe { CStr::from_ptr(server.as_ptr()) }, c"10.0.0.53");
+        assert_eq!(
+            unsafe {
+                swr_v1_clients_resolv_conf(
+                    c"/nonexistent/resolv.conf".as_ptr(),
+                    server.as_mut_ptr(),
+                )
+            },
+            -1
+        );
+
+        let hosts = dir.join("hosts");
+        std::fs::write(&hosts, "127.0.0.1 localhost\n10.1.1.1 app.local # app\n#10.9.9.9 off.local\n10.2.2.2 last.local").unwrap();
+        let path = std::ffi::CString::new(hosts.to_str().unwrap()).unwrap();
+        let spaces: Vec<u8> = (0..=255u8)
+            .map(|byte| u8::from(byte.is_ascii_whitespace() || byte == 0x0b))
+            .collect();
+        let lookup = |name: &str| {
+            let exchange = RefCell::new(Exchange {
+                query: Vec::new(),
+                reply: Vec::new(),
+                results: Vec::new(),
+            });
+            let context = (&raw const exchange).cast_mut().cast();
+            let found = unsafe {
+                swr_v1_clients_hosts_lookup(
+                    path.as_ptr(),
+                    name.as_ptr(),
+                    name.len(),
+                    spaces.as_ptr(),
+                    context,
+                    collect,
+                )
+            };
+            (found, exchange.into_inner().results)
+        };
+        assert_eq!(lookup("app.local"), (true, vec!["10.1.1.1".to_string()]));
+        assert_eq!(lookup("last.local"), (true, vec!["10.2.2.2".to_string()]));
+        assert!(!lookup("off.local").0);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+}
