@@ -13,6 +13,16 @@ uint32_t swr_v1_hook_filter(uint32_t flags, uint32_t unavailable);
 bool swr_v1_hook_file_result(bool open, int64_t result);
 int32_t swr_v1_hook_flock(bool cooperative, int32_t operation, int32_t nonblock, int32_t exclusive, int32_t shared, int32_t unlock);
 int32_t swr_v1_hook_lock_result(int32_t result, bool would_block);
+/* PHP's sleep family, whole: argument checks, duration and the sleep. Pass
+ * coroutine_sleep (System::sleep) inside a coroutine, null outside one. Status 0
+ * done; 1 argument `value` invalid; 2 interrupted, time left in seconds and
+ * nanoseconds; 3 warn (nanosleep: then true; sleep_until: target passed, then false). */
+typedef int32_t (*swr_v1_hooks_coroutine_sleep)(double seconds);
+typedef struct { int32_t status; int64_t value, seconds, nanoseconds; } swr_v1_hooks_sleep_outcome;
+swr_v1_hooks_sleep_outcome swr_v1_hooks_sleep(int64_t seconds, swr_v1_hooks_coroutine_sleep coroutine_sleep);
+swr_v1_hooks_sleep_outcome swr_v1_hooks_usleep(int64_t microseconds, swr_v1_hooks_coroutine_sleep coroutine_sleep);
+swr_v1_hooks_sleep_outcome swr_v1_hooks_nanosleep(int64_t seconds, int64_t nanoseconds, swr_v1_hooks_coroutine_sleep coroutine_sleep);
+swr_v1_hooks_sleep_outcome swr_v1_hooks_sleep_until(double timestamp, double top, swr_v1_hooks_coroutine_sleep coroutine_sleep);
 double swr_v1_hook_backoff(double current, double initial, double maximum);
 int64_t swr_v1_hook_transfer_result(int64_t result, uint64_t total);
 typedef struct { uint64_t total; bool again; } swr_v1_hook_transfer_plan;

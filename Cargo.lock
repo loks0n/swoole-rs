@@ -245,6 +245,9 @@ version = "0.1.0"
 [[package]]
 name = "swoole-rs-hooks"
 version = "0.1.0"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "swoole-rs-http"
