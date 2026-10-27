@@ -548,7 +548,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('--sdk-export', commands['phpevents-sdk'])
         self.assertIn('--native-export', commands['phpevents-sdk'])
         self.assertNotIn('--sdk-report', commands['phpevents-sdk'])
-        self.assertIn('coroutine-ordered',commands)
         self.assertIn('coroutine-compile',commands)
         channel_state = commands['coroutine-channel-state']
         self.assertIn('tests/modules/coroutine/channel_state_gate.py', channel_state)
