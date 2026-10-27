@@ -58,10 +58,10 @@ with tempfile.TemporaryDirectory(prefix='swr-builtins-') as tmp:
             if field not in source_header:raise ValueError('Deferred queue field is not bound')
             cls=cls.replace('CallbackManager *defer_tasks=nullptr;', '\n'+field+'\nint timeout_msec=17;'+block(source_header,source_header.index('int get_timeout_msec('))[0]+'\n')
             report['protected_manager_unchanged']=True
-            # kqueue's wait loop is upstream's again (#336): both sides observe the queue natively.
             native_predicate='} else if (reactor_->defer_tasks) {'
-            if native_predicate not in original['src/reactor/kqueue.cc'] or native_predicate not in (t/'src/reactor/kqueue.cc').read_text():raise ValueError('Actual kqueue observation source is not bound')
-            report['kqueue_observation_source']={'native':native_predicate,'selected':native_predicate,'runtime_qualified':False}
+            selected_predicate='milliseconds <= 0 && self->reactor_->defer_tasks != nullptr'
+            if native_predicate not in original['src/reactor/kqueue.cc'] or selected_predicate not in (t/'src/reactor/kqueue.cc').read_text():raise ValueError('Actual kqueue observation source is not bound')
+            report['kqueue_observation_source']={'native':native_predicate,'selected':selected_predicate,'runtime_qualified':False}
             (t/'builtins.inc').write_text(cls+'}\n')
             for standard in ['c++14','c++17','c++20']:
                 binary=t/(variant+'-'+standard);cmd=['c++','-std='+standard,'-O1','-g','-I'+str(t),'-I'+str(ROOT/'native/reactor'),ROOT/'tests/modules/reactor/builtins.cc',a.archive.resolve(),'-lpthread','-o',binary]

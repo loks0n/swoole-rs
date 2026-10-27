@@ -94,7 +94,8 @@ try:
     selected=next(row for row in identities if row['rust_feature_bits']&16384)
     report['source_attestation']=attest(a.build_manifest,a.archive,selected,a.source_ref,16384)
     selected_inputs=json.loads(a.build_manifest.read_text())['inputs']['rust_sources_sha256']
-    report['selected_batch_decoder_compiled']='crates/reactor/src/batch.rs' in selected_inputs
+    # The wait loop (#391) is where the kernel arrays are decoded now.
+    report['selected_batch_decoder_compiled']='crates/reactor/src/wait_loop.rs' in selected_inputs
     if a.require_batch and not report['selected_batch_decoder_compiled']:raise ValueError('Selected source predates the Rust batch decoder; no current caller qualification')
     report['selected_callback_storage_compiled']='crates/reactor/src/callbacks.rs' in selected_inputs
     if a.callbacks and not report['selected_callback_storage_compiled']:raise ValueError('Selected source predates Rust callback storage; no current caller qualification')

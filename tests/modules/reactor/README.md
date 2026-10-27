@@ -23,7 +23,6 @@ one of `--blocking`, `--iov-progress`, `--ordinary-io`, `--socket-policy`,
 
 Gates that need no upstream source:
 
-- `batch.py --archive A --report R [--sanitize]`: kernel-array decode and POD layout.
 - `compile_gate.py --source S --report R`: original and patched backend translation units compile as C++14.
 - `buffer_typed_compile.py --source S --master-patch P --report R`: typed Buffer compositions compile.
 - `declarations.py --archive A --report R`: every `swr_v1_reactor_*`/`swr_v1_stream_*` declaration in the header is defined in the archive.

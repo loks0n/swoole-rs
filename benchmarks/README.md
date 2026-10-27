@@ -22,6 +22,26 @@ python3 benchmarks/callgrind.py --requests 1000 --workload plaintext --workload 
   --engine upstream=target/upstream/src/modules/swoole.so
 ```
 
+Results go to `target/callgrind/<timestamp>/callgrind.json` unless `--output` says
+otherwise; a bare `--profiles` keeps the profiles next to them, for
+`callgrind_annotate --inclusive=no`.
+
+### Before/after
+
+Build the other commit in a git worktree under `target/`, not a clone or a
+scratch directory, so every build and profile stays inside this checkout where
+`dev.py prune` can find it:
+
+```sh
+git worktree add target/worktrees/base origin/main
+(cd target/worktrees/base && python3 tools/build_upstream.py && python3 tools/build_hybrid.py --module buffer)
+python3 tools/build_hybrid.py --module buffer
+python3 benchmarks/callgrind.py --requests 1000 --workload plaintext --profiles \
+  --engine base=target/worktrees/base/target/hybrid/rust-buffer/modules/swoole.so \
+  --engine branch=target/hybrid/rust-buffer/modules/swoole.so
+git worktree remove --force target/worktrees/base
+```
+
 ## Throughput
 
 ```sh

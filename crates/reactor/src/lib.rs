@@ -7,13 +7,9 @@
     )
 )]
 #[cfg(unix)]
-mod batch;
-#[cfg(target_os = "linux")]
-mod epoll_wait;
+mod wait_loop;
 #[cfg(unix)]
-pub use batch::*;
-#[cfg(target_os = "linux")]
-pub use epoll_wait::*;
+pub use wait_loop::*;
 #[cfg(unix)]
 mod backend;
 #[cfg(unix)]
@@ -61,9 +57,6 @@ pub use write_workflow::*;
 
 mod wait;
 pub use wait::*;
-
-mod ready_workflow;
-pub use ready_workflow::*;
 
 mod flush;
 pub use flush::*;

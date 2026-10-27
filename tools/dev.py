@@ -281,9 +281,6 @@ def plan(args, reports):
             script(phase, 'tests/modules/reactor/output.py', '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', flag,
                    '--report', reports / (phase + '.json'))
-        script('reactor-batch', 'tests/modules/reactor/batch.py',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
-               '--report', reports / 'reactor-batch.json')
         script('reactor-backend-storage', 'tests/modules/reactor/backend_storage.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize',
                '--report', reports / 'reactor-backend-storage.json')
@@ -899,6 +896,34 @@ def shard(commands, reports, index, count):
     return [(name, command) for name, command in commands if name in everywhere or slot[root(name)] == index - 1]
 
 
+# Pinned reference and patch-editing checkouts: rebuilt rarely, or may hold uncommitted work.
+PRUNE_KEEP = {'upstream', 'patches'}
+
+
+def prune(root, older_than_hours):
+    """Delete per-build output under target/ untouched for the window; return (paths, bytes) freed."""
+    cutoff = time.time() - older_than_hours * 3600
+    target = root / 'target'
+    hybrid = target / 'hybrid'
+    candidates = []
+    # Each hybrid build (and its alias) is its own candidate; per-branch builds are the growth.
+    for directory, keep in [(target, PRUNE_KEEP | {'hybrid'}), (hybrid, {'builds'}), (hybrid / 'builds', set())]:
+        if directory.is_dir():
+            candidates += [path for path in directory.iterdir() if path.name not in keep]
+    freed, removed = 0, []
+    for path in candidates:
+        if path.lstat().st_mtime >= cutoff:
+            continue
+        if path.is_dir() and not path.is_symlink():
+            freed += sum(f.lstat().st_size for f in path.rglob('*') if not f.is_dir() or f.is_symlink())
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            freed += path.lstat().st_size
+            path.unlink()
+        removed.append(path)
+    return removed, freed
+
+
 def shard_spec(value):
     index, _, count = value.partition('/')
     if not (index.isdigit() and count.isdigit() and 1 <= int(index) <= int(count)):
@@ -938,7 +963,9 @@ def schedule(commands, dependencies):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('lane', choices=['edit', 'candidate', 'integrate'])
+    parser.add_argument('lane', choices=['edit', 'candidate', 'integrate', 'prune'])
+    parser.add_argument('--older-than', type=float, default=24, metavar='HOURS',
+                        help='prune: delete target/ build output untouched for this long')
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument('--module', choices=SELECTABLE, action='append')
     selection.add_argument('--all-modules', action='store_true', help='Select every concrete registered Rust module')
@@ -976,6 +1003,11 @@ def main():
     parser.add_argument('--frozen-source', help='Require this literal 40-hex HEAD and a clean checkout before and after each integration phase')
     parser.add_argument('--plan', action='store_true', help='Print commands without executing or writing reports')
     args = parser.parse_args()
+    if args.lane == 'prune':
+        removed, freed = prune(ROOT, args.older_than)
+        if removed:
+            print('dev.py prune: freed %.1f GB in %d entries under target/' % (freed / 1e9, len(removed)))
+        return 0
     if args.changed_since:
         args.module = changed_modules(args.changed_since)
         if not args.module:
