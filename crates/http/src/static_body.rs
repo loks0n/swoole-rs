@@ -123,7 +123,7 @@ mod tests {
                         let mut actual = Vec::new();
                         loop {
                             let action = unsafe {
-                                swr_v1_http_static_body(&mut state, length, u32::from(keep))
+                                swr_v1_http_static_body(&raw mut state, length, u32::from(keep))
                             };
                             assert!(action >= 0);
                             if action == Action::Done as i32 {
@@ -182,7 +182,7 @@ mod tests {
         ] {
             let mut actual = state;
             assert_eq!(
-                unsafe { swr_v1_http_static_body(&mut actual, 1, 1) },
+                unsafe { swr_v1_http_static_body(&raw mut actual, 1, 1) },
                 INVALID
             );
             assert_eq!(actual, state);

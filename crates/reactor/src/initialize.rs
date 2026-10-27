@@ -155,8 +155,9 @@ mod tests {
                     let mut state = ReactorInitState::default();
                     let mut actions = Vec::new();
                     loop {
-                        let action =
-                            unsafe { swr_v1_reactor_init_next(&mut state, 1, hook, main, trim) };
+                        let action = unsafe {
+                            swr_v1_reactor_init_next(&raw mut state, 1, hook, main, trim)
+                        };
                         if action == 0 {
                             break;
                         }

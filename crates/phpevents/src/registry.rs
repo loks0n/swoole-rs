@@ -154,13 +154,22 @@ mod tests {
     fn fallible_admission_and_replacement_have_one_owner() {
         let mut owner = std::ptr::null_mut();
         unsafe {
-            assert_eq!(swr_v1_phpevents_registry_try_insert(&mut owner, -7, 0), 0);
+            assert_eq!(
+                swr_v1_phpevents_registry_try_insert(&raw mut owner, -7, 0),
+                0
+            );
             let first = owner;
             assert_eq!(swr_v1_phpevents_registry_contains(owner, -7), 1);
-            assert_eq!(swr_v1_phpevents_registry_try_insert(&mut owner, -7, 41), 0);
+            assert_eq!(
+                swr_v1_phpevents_registry_try_insert(&raw mut owner, -7, 41),
+                0
+            );
             assert_eq!(owner, first);
             assert_eq!(swr_v1_phpevents_registry_get(owner, -7), 41);
-            assert_eq!(swr_v1_phpevents_registry_try_insert(&mut owner, 0, 29), 0);
+            assert_eq!(
+                swr_v1_phpevents_registry_try_insert(&raw mut owner, 0, 29),
+                0
+            );
             assert_eq!(owner, first);
             assert_eq!(swr_v1_phpevents_registry_erase(owner, -7), 1);
             assert_eq!(swr_v1_phpevents_registry_get(owner, 0), 29);

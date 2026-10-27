@@ -92,7 +92,12 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_callback_control(
     loop {
         // SAFETY: `state.stage` is a live, exclusive field; the constants are the caller's.
         let action = unsafe {
-            swr_v1_phpcoroutines_scheduler_control(&mut state.stage, kind, observation, constants)
+            swr_v1_phpcoroutines_scheduler_control(
+                &raw mut state.stage,
+                kind,
+                observation,
+                constants,
+            )
         };
         match action {
             13 => {
@@ -131,7 +136,12 @@ mod tests {
                 let mut actions = Vec::new();
                 loop {
                     let p = unsafe {
-                        swr_v1_phpcoroutines_configure_owned(&mut state, &mut owner, 1, created)
+                        swr_v1_phpcoroutines_configure_owned(
+                            &raw mut state,
+                            &raw mut owner,
+                            1,
+                            created,
+                        )
                     };
                     actions.push(p.plan.action);
                     if p.plan.action == 8 {
@@ -162,28 +172,58 @@ mod tests {
         };
         let mut state = CallbackControlState::default();
         let p = unsafe {
-            swr_v1_phpcoroutines_callback_control(&mut state, &mut owner, 0, 0, &constants)
+            swr_v1_phpcoroutines_callback_control(
+                &raw mut state,
+                &raw mut owner,
+                0,
+                0,
+                &raw const constants,
+            )
         };
         assert_eq!((p.action, p.identity), (18, 71));
         unsafe {
             *owner.identity.get() = 81;
         }
         let p = unsafe {
-            swr_v1_phpcoroutines_callback_control(&mut state, &mut owner, 0, 0, &constants)
+            swr_v1_phpcoroutines_callback_control(
+                &raw mut state,
+                &raw mut owner,
+                0,
+                0,
+                &raw const constants,
+            )
         };
         assert_eq!((p.action, p.identity), (1, 81));
         let mut state = CallbackControlState::default();
         let p = unsafe {
-            swr_v1_phpcoroutines_callback_control(&mut state, &mut owner, 2, 0, core::ptr::null())
+            swr_v1_phpcoroutines_callback_control(
+                &raw mut state,
+                &raw mut owner,
+                2,
+                0,
+                core::ptr::null(),
+            )
         };
         assert_eq!(p.action, 12);
         let p = unsafe {
-            swr_v1_phpcoroutines_callback_control(&mut state, &mut owner, 2, 0, core::ptr::null())
+            swr_v1_phpcoroutines_callback_control(
+                &raw mut state,
+                &raw mut owner,
+                2,
+                0,
+                core::ptr::null(),
+            )
         };
         assert_eq!((p.action, p.identity), (14, 81));
         assert_eq!(unsafe { *owner.identity.get() }, 81);
         let p = unsafe {
-            swr_v1_phpcoroutines_callback_control(&mut state, &mut owner, 2, 0, core::ptr::null())
+            swr_v1_phpcoroutines_callback_control(
+                &raw mut state,
+                &raw mut owner,
+                2,
+                0,
+                core::ptr::null(),
+            )
         };
         assert_eq!((p.action, unsafe { *owner.identity.get() }), (0, 0));
     }

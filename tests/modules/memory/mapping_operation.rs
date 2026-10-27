@@ -17,7 +17,7 @@ unsafe fn allocate(
     };
     let mut output = MappingEffect::default();
     assert_eq!(
-        unsafe { swr_v2_memory_mapping_step(&mut state, &mut output) },
+        unsafe { swr_v2_memory_mapping_step(&raw mut state, &raw mut output) },
         1
     );
     if !anonymous {
@@ -25,7 +25,7 @@ unsafe fn allocate(
         state.descriptor = descriptor;
         state.result = 1;
         assert_eq!(
-            unsafe { swr_v2_memory_mapping_step(&mut state, &mut output) },
+            unsafe { swr_v2_memory_mapping_step(&raw mut state, &raw mut output) },
             1
         );
     }
@@ -38,7 +38,7 @@ unsafe fn allocate(
     state.memory = storage.as_mut_ptr().cast();
     state.result = 1; // Initialized local backing stands in for a successful map.
     assert_eq!(
-        unsafe { swr_v2_memory_mapping_step(&mut state, &mut output) },
+        unsafe { swr_v2_memory_mapping_step(&raw mut state, &raw mut output) },
         0
     );
     assert_eq!(storage[0] as usize, total);
@@ -61,7 +61,7 @@ unsafe fn release(payload: *mut u8, base: *mut u8, total: usize) {
     };
     let mut output = MappingEffect::default();
     assert_eq!(
-        unsafe { swr_v2_memory_mapping_step(&mut state, &mut output) },
+        unsafe { swr_v2_memory_mapping_step(&raw mut state, &raw mut output) },
         1
     );
     assert_eq!(
@@ -70,7 +70,7 @@ unsafe fn release(payload: *mut u8, base: *mut u8, total: usize) {
     );
     state.result = 0; // No actual munmap or lifetime transition.
     assert_eq!(
-        unsafe { swr_v2_memory_mapping_step(&mut state, &mut output) },
+        unsafe { swr_v2_memory_mapping_step(&raw mut state, &raw mut output) },
         0
     );
 }
@@ -92,7 +92,7 @@ fn mapping_operations_preserve_normal_effect_parameters_and_publication() {
             };
             let mut output = MappingEffect::default();
             assert_eq!(
-                unsafe { swr_v2_memory_mapping_step(&mut state, &mut output) },
+                unsafe { swr_v2_memory_mapping_step(&raw mut state, &raw mut output) },
                 1
             );
             assert_eq!(
@@ -101,7 +101,7 @@ fn mapping_operations_preserve_normal_effect_parameters_and_publication() {
             );
             state.result = 0; // No actual mprotect.
             assert_eq!(
-                unsafe { swr_v2_memory_mapping_step(&mut state, &mut output) },
+                unsafe { swr_v2_memory_mapping_step(&raw mut state, &raw mut output) },
                 0
             );
             assert_eq!(output.result, 0);
@@ -131,14 +131,14 @@ fn mapping_growth_uses_complete_nested_success_effects_before_publication() {
             };
             let mut output = MappingEffect::default();
             assert_eq!(
-                unsafe { swr_v2_memory_mapping_step(&mut state, &mut output) },
+                unsafe { swr_v2_memory_mapping_step(&raw mut state, &raw mut output) },
                 1
             );
             assert_eq!((output.action, output.size), (8, requested));
             let destination = unsafe { allocate(&mut new, requested, true, -1) };
             state.memory = destination;
             assert_eq!(
-                unsafe { swr_v2_memory_mapping_step(&mut state, &mut output) },
+                unsafe { swr_v2_memory_mapping_step(&raw mut state, &raw mut output) },
                 1
             );
             assert_eq!((output.action, output.memory), (10, source.cast()));
@@ -155,7 +155,7 @@ fn mapping_growth_uses_complete_nested_success_effects_before_publication() {
             }
             unsafe { release(source, old.as_mut_ptr().cast(), old[0] as usize) };
             assert_eq!(
-                unsafe { swr_v2_memory_mapping_step(&mut state, &mut output) },
+                unsafe { swr_v2_memory_mapping_step(&raw mut state, &raw mut output) },
                 0
             );
             assert_eq!(output.memory, destination.cast());

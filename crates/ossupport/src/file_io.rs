@@ -55,30 +55,57 @@ mod tests {
     #[test]
     fn empty_stops_without_io() {
         let mut s = FileIoState::default();
-        assert_eq!(unsafe { swr_v1_os_file_io_next(&mut s, 0, -1, true) }, 0);
+        assert_eq!(
+            unsafe { swr_v1_os_file_io_next(&raw mut s, 0, -1, true) },
+            0
+        );
         assert_eq!(s.completed, 0);
     }
     #[test]
     fn progress_retry_zero_and_warning_have_distinct_prefixes() {
         let mut s = FileIoState::default();
-        assert_eq!(unsafe { swr_v1_os_file_io_next(&mut s, 4, 0, false) }, 1);
-        assert_eq!(unsafe { swr_v1_os_file_io_next(&mut s, 4, 2, false) }, 1);
+        assert_eq!(
+            unsafe { swr_v1_os_file_io_next(&raw mut s, 4, 0, false) },
+            1
+        );
+        assert_eq!(
+            unsafe { swr_v1_os_file_io_next(&raw mut s, 4, 2, false) },
+            1
+        );
         assert_eq!(s.completed, 2);
-        assert_eq!(unsafe { swr_v1_os_file_io_next(&mut s, 4, -1, true) }, 1);
+        assert_eq!(
+            unsafe { swr_v1_os_file_io_next(&raw mut s, 4, -1, true) },
+            1
+        );
         assert_eq!(s.completed, 2);
-        assert_eq!(unsafe { swr_v1_os_file_io_next(&mut s, 4, 0, true) }, 0);
+        assert_eq!(unsafe { swr_v1_os_file_io_next(&raw mut s, 4, 0, true) }, 0);
         assert_eq!(s.completed, 2);
         let mut s = FileIoState::default();
-        assert_eq!(unsafe { swr_v1_os_file_io_next(&mut s, 1, 0, false) }, 1);
-        assert_eq!(unsafe { swr_v1_os_file_io_next(&mut s, 1, -1, false) }, 2);
-        assert_eq!(unsafe { swr_v1_os_file_io_next(&mut s, 1, 1, false) }, 0);
+        assert_eq!(
+            unsafe { swr_v1_os_file_io_next(&raw mut s, 1, 0, false) },
+            1
+        );
+        assert_eq!(
+            unsafe { swr_v1_os_file_io_next(&raw mut s, 1, -1, false) },
+            2
+        );
+        assert_eq!(
+            unsafe { swr_v1_os_file_io_next(&raw mut s, 1, 1, false) },
+            0
+        );
         assert_eq!(s.completed, 0);
     }
     #[test]
     fn exact_completion_avoids_an_extra_call() {
         let mut s = FileIoState::default();
-        assert_eq!(unsafe { swr_v1_os_file_io_next(&mut s, 3, 0, false) }, 1);
-        assert_eq!(unsafe { swr_v1_os_file_io_next(&mut s, 3, 3, false) }, 0);
+        assert_eq!(
+            unsafe { swr_v1_os_file_io_next(&raw mut s, 3, 0, false) },
+            1
+        );
+        assert_eq!(
+            unsafe { swr_v1_os_file_io_next(&raw mut s, 3, 3, false) },
+            0
+        );
         assert_eq!(s.completed, 3);
     }
 }

@@ -177,7 +177,7 @@ mod tests {
             .iter()
             .map(|&value| {
                 let reply =
-                    unsafe { swr_v1_reactor_output_workflow(&mut state, operation, value, 8) };
+                    unsafe { swr_v1_reactor_output_workflow(&raw mut state, operation, value, 8) };
                 (reply.action, reply.value)
             })
             .collect()
@@ -237,7 +237,7 @@ mod tests {
         assert_eq!(std::mem::size_of::<OutputWorkflow>(), 64);
         let mut state = OutputWorkflow::default();
         assert_eq!(
-            unsafe { swr_v1_reactor_output_workflow(&mut state, 3, 0, 8) }.action,
+            unsafe { swr_v1_reactor_output_workflow(&raw mut state, 3, 0, 8) }.action,
             -1
         );
     }

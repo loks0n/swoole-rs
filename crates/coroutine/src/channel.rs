@@ -249,7 +249,7 @@ mod tests {
             unsafe {
                 swr_v1_channel_owned_step(
                     cursor,
-                    &mut self.state,
+                    &raw mut self.state,
                     self.queues[0],
                     self.queues[1],
                     self.queues[2],
@@ -262,7 +262,7 @@ mod tests {
         fn view(&self) -> ChannelView {
             unsafe {
                 swr_v1_channel_view_read(
-                    &self.state,
+                    &raw const self.state,
                     self.queues[0],
                     self.queues[1],
                     self.queues[2],

@@ -3,10 +3,13 @@ use super::*;
 fn ring_layout_headers_wrap_and_multi_releaser_publication() {
     unsafe {
         let (mut total, mut payload) = (0, 0);
-        assert_eq!(swr_v1_memory_ring_layout(1025, &mut total, &mut payload), 0);
+        assert_eq!(
+            swr_v1_memory_ring_layout(1025, &raw mut total, &raw mut payload),
+            0
+        );
         assert_eq!((total, payload), (1032, 1000));
         assert_eq!(
-            swr_v1_memory_ring_layout(u32::MAX, &mut total, &mut payload),
+            swr_v1_memory_ring_layout(u32::MAX, &raw mut total, &raw mut payload),
             -1
         );
         assert_eq!((total, payload), (0, 0));
@@ -21,7 +24,7 @@ fn ring_layout_headers_wrap_and_multi_releaser_publication() {
             status: 0,
             free_count: count.as_ptr(),
         };
-        let first = swr_v1_memory_ring_alloc(&mut ring, 7);
+        let first = swr_v1_memory_ring_alloc(&raw mut ring, 7);
         assert_eq!(first.cast::<u8>(), ring.memory.add(8));
         assert_eq!(ring.memory.add(2).cast::<u16>().read(), u16::MAX);
         assert_eq!(ring.memory.add(4).cast::<u32>().read(), 8);
@@ -35,7 +38,7 @@ fn ring_layout_headers_wrap_and_multi_releaser_publication() {
             -1
         );
         for _ in 0..10000 {
-            let item = swr_v1_memory_ring_alloc(&mut ring, 113);
+            let item = swr_v1_memory_ring_alloc(&raw mut ring, 113);
             if !item.is_null() {
                 ptr::write_bytes(item, 42, 113);
                 assert_eq!(
@@ -112,7 +115,7 @@ fn actual_shared_storage_matches_frozen_snapshot_abi_without_whole_header_borrow
                 1 => u32::MAX,
                 _ => step % 129 + 1,
             };
-            let before = swr_v1_memory_ring_alloc(&mut state, requested);
+            let before = swr_v1_memory_ring_alloc(&raw mut state, requested);
             let after = swr_v1_memory_ring_storage_alloc(pointer, requested);
             assert_eq!(before.is_null(), after.is_null());
             assert_eq!(
@@ -172,8 +175,8 @@ fn collection_bound_can_come_from_a_later_record_with_an_earlier_release_in_flig
             status: 0,
             free_count: count.as_ptr(),
         };
-        let first = swr_v1_memory_ring_alloc(&mut ring, 8);
-        let second = swr_v1_memory_ring_alloc(&mut ring, 8);
+        let first = swr_v1_memory_ring_alloc(&raw mut ring, 8);
+        let second = swr_v1_memory_ring_alloc(&raw mut ring, 8);
         assert!(!first.is_null() && !second.is_null());
         assert_eq!(
             swr_v1_memory_ring_free(ring.memory.cast(), ring.size, ring.free_count, second),

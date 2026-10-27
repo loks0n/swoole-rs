@@ -138,25 +138,25 @@ mod tests {
         unsafe {
             assert_eq!(
                 swr_v1_phpevents_callbacks(
-                    &mut phase,
+                    &raw mut phase,
                     0,
                     r.as_mut_ptr(),
                     w.as_mut_ptr(),
                     11,
                     22,
-                    &mut identity
+                    &raw mut identity
                 ),
                 0
             );
             assert_eq!(
                 swr_v1_phpevents_callbacks(
-                    &mut phase,
+                    &raw mut phase,
                     3,
                     r.as_mut_ptr(),
                     w.as_mut_ptr(),
                     0,
                     0,
-                    &mut identity
+                    &raw mut identity
                 ),
                 1
             );
@@ -165,26 +165,26 @@ mod tests {
             write(w.as_mut_ptr(), 33);
             assert_eq!(
                 swr_v1_phpevents_callbacks(
-                    &mut phase,
+                    &raw mut phase,
                     3,
                     r.as_mut_ptr(),
                     w.as_mut_ptr(),
                     0,
                     0,
-                    &mut identity
+                    &raw mut identity
                 ),
                 2
             );
             assert_eq!(identity, 33);
             assert_eq!(
                 swr_v1_phpevents_callbacks(
-                    &mut phase,
+                    &raw mut phase,
                     3,
                     r.as_mut_ptr(),
                     w.as_mut_ptr(),
                     0,
                     0,
-                    &mut identity
+                    &raw mut identity
                 ),
                 0
             );
@@ -205,60 +205,60 @@ mod tests {
             for expected in [2, 3, 6] {
                 assert_eq!(
                     swr_v1_phpevents_update_owned(
-                        &mut phase,
+                        &raw mut phase,
                         1536,
                         0,
-                        &mut r,
-                        &mut w,
+                        &raw mut r,
+                        &raw mut w,
                         33,
                         44,
-                        &mut identity
+                        &raw mut identity
                     ),
                     expected
                 );
             }
             assert_eq!(identity, 11);
-            assert_eq!(read(&mut r), 11);
+            assert_eq!(read(&raw mut r), 11);
             assert_eq!(
                 swr_v1_phpevents_update_owned(
-                    &mut phase,
+                    &raw mut phase,
                     1536,
                     0,
-                    &mut r,
-                    &mut w,
+                    &raw mut r,
+                    &raw mut w,
                     33,
                     44,
-                    &mut identity
+                    &raw mut identity
                 ),
                 10
             );
-            assert_eq!(read(&mut r), 33);
-            assert_eq!(read(&mut w), 22);
+            assert_eq!(read(&raw mut r), 33);
+            assert_eq!(read(&raw mut w), 22);
             assert_eq!(identity, 22);
             assert_eq!(
                 swr_v1_phpevents_update_owned(
-                    &mut phase,
+                    &raw mut phase,
                     1536,
                     0,
-                    &mut r,
-                    &mut w,
+                    &raw mut r,
+                    &raw mut w,
                     33,
                     44,
-                    &mut identity
+                    &raw mut identity
                 ),
                 14
             );
-            assert_eq!(read(&mut w), 44);
+            assert_eq!(read(&raw mut w), 44);
             assert_eq!(
                 swr_v1_phpevents_update_owned(
-                    &mut phase,
+                    &raw mut phase,
                     1536,
                     0,
-                    &mut r,
-                    &mut w,
+                    &raw mut r,
+                    &raw mut w,
                     33,
                     44,
-                    &mut identity
+                    &raw mut identity
                 ),
                 1
             );

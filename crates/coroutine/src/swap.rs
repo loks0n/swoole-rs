@@ -111,7 +111,7 @@ mod tests {
                                 &raw mut status,
                                 op,
                                 cell.as_ptr(),
-                                &task,
+                                &raw const task,
                                 bailout,
                             );
                             let proceed = op != 1 || bailout == 0;

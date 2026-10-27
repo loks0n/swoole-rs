@@ -85,7 +85,7 @@ mod repeat_tests {
             };
             let mut effects = 0;
             unsafe {
-                while swr_v1_phpcoroutines_repeat(&mut state) != 0 {
+                while swr_v1_phpcoroutines_repeat(&raw mut state) != 0 {
                     assert_eq!(state.index, effects);
                     effects += 1; // inert observation, no real sleep/coroutine
                 }
@@ -98,9 +98,9 @@ mod repeat_tests {
             pending: 0,
         };
         unsafe {
-            assert_eq!(swr_v1_phpcoroutines_repeat(&mut state), 1);
+            assert_eq!(swr_v1_phpcoroutines_repeat(&raw mut state), 1);
             assert_eq!(state.index, i64::MAX - 1);
-            assert_eq!(swr_v1_phpcoroutines_repeat(&mut state), 0);
+            assert_eq!(swr_v1_phpcoroutines_repeat(&raw mut state), 0);
             assert_eq!(state.index, i64::MAX);
         }
     }

@@ -47,7 +47,7 @@ mod tests {
     fn empty_size_has_no_native_call() {
         let mut s = RandomBytesState::default();
         assert_eq!(
-            unsafe { swr_v1_os_random_bytes_next(&mut s, 0, -1, true) },
+            unsafe { swr_v1_os_random_bytes_next(&raw mut s, 0, -1, true) },
             0
         );
         assert_eq!(s.completed, 0);
@@ -56,24 +56,24 @@ mod tests {
     fn zero_and_transient_repeat_but_fatal_returns_partial_progress() {
         let mut s = RandomBytesState::default();
         assert_eq!(
-            unsafe { swr_v1_os_random_bytes_next(&mut s, 7, 0, false) },
+            unsafe { swr_v1_os_random_bytes_next(&raw mut s, 7, 0, false) },
             1
         );
         assert_eq!(
-            unsafe { swr_v1_os_random_bytes_next(&mut s, 7, 3, false) },
+            unsafe { swr_v1_os_random_bytes_next(&raw mut s, 7, 3, false) },
             1
         );
         assert_eq!(
-            unsafe { swr_v1_os_random_bytes_next(&mut s, 7, 0, false) },
+            unsafe { swr_v1_os_random_bytes_next(&raw mut s, 7, 0, false) },
             1
         );
         assert_eq!(
-            unsafe { swr_v1_os_random_bytes_next(&mut s, 7, -1, true) },
+            unsafe { swr_v1_os_random_bytes_next(&raw mut s, 7, -1, true) },
             1
         );
         assert_eq!(s.completed, 3);
         assert_eq!(
-            unsafe { swr_v1_os_random_bytes_next(&mut s, 7, -1, false) },
+            unsafe { swr_v1_os_random_bytes_next(&raw mut s, 7, -1, false) },
             0
         );
         assert_eq!(s.completed, 3);
@@ -82,11 +82,11 @@ mod tests {
     fn exact_completion_does_not_request_more_entropy() {
         let mut s = RandomBytesState::default();
         assert_eq!(
-            unsafe { swr_v1_os_random_bytes_next(&mut s, 4, 0, false) },
+            unsafe { swr_v1_os_random_bytes_next(&raw mut s, 4, 0, false) },
             1
         );
         assert_eq!(
-            unsafe { swr_v1_os_random_bytes_next(&mut s, 4, 4, true) },
+            unsafe { swr_v1_os_random_bytes_next(&raw mut s, 4, 4, true) },
             0
         );
         assert_eq!(s.completed, 4);

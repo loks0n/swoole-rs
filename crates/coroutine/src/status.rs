@@ -87,11 +87,11 @@ mod tests {
     fn owned_publication_preserves_admission_and_separate_native_effect_barriers() {
         let mut status = CoroutineStatus { state: 0, code: 0 };
         unsafe {
-            let run = swr_v1_coroutine_status_transition(&mut status, 0, 0, 0);
+            let run = swr_v1_coroutine_status_transition(&raw mut status, 0, 0, 0);
             assert_eq!((status.state, status.code), (0, 0));
             // Native current/origin and clock effects finish before stage1.
             assert_eq!(
-                swr_v1_coroutine_status_transition(&mut status, 0, 0, 1),
+                swr_v1_coroutine_status_transition(&raw mut status, 0, 0, 1),
                 run
             );
             assert_eq!((status.state, status.code), (2, 0));
@@ -100,10 +100,12 @@ mod tests {
                     for code in [-2, -1, 0] {
                         status = CoroutineStatus { state: 2, code };
                         let expected = coroutine_transition(op, facts, code);
-                        let decided = swr_v1_coroutine_status_transition(&mut status, op, facts, 0);
+                        let decided =
+                            swr_v1_coroutine_status_transition(&raw mut status, op, facts, 0);
                         assert_eq!(decided, expected);
                         assert_eq!((status.state, status.code), (2, code));
-                        let applied = swr_v1_coroutine_status_transition(&mut status, op, facts, 1);
+                        let applied =
+                            swr_v1_coroutine_status_transition(&raw mut status, op, facts, 1);
                         assert_eq!(applied, expected);
                         assert_eq!(
                             status.state,
@@ -125,11 +127,12 @@ mod tests {
                 }
             }
             status = CoroutineStatus { state: 1, code: 0 };
-            let admitted = swr_v1_coroutine_status_transition(&mut status, 3, crate::CANCELABLE, 0);
+            let admitted =
+                swr_v1_coroutine_status_transition(&raw mut status, 3, crate::CANCELABLE, 0);
             assert_eq!(admitted.resume_code, -2);
             assert_eq!(status.code, 0); // Native copy/clear can still occur.
-            swr_v1_coroutine_status_transition(&mut status, 3, crate::CANCELABLE, 1);
-            let view = swr_v1_coroutine_status_read(&status);
+            swr_v1_coroutine_status_transition(&raw mut status, 3, crate::CANCELABLE, 1);
+            let view = swr_v1_coroutine_status_read(&raw const status);
             assert_eq!(
                 (
                     view.state,
@@ -140,8 +143,8 @@ mod tests {
                 ),
                 (1, -2, 1, 0, 1)
             );
-            swr_v1_coroutine_status_transition(&mut status, 8, 0, 1);
-            let view = swr_v1_coroutine_status_read(&status);
+            swr_v1_coroutine_status_transition(&raw mut status, 8, 0, 1);
+            let view = swr_v1_coroutine_status_read(&raw const status);
             assert_eq!((view.code, view.canceled, view.timedout), (-1, 0, 1));
             assert_eq!(coroutine_transition(8, 0, 0).error, -4); // Old API unchanged.
         }

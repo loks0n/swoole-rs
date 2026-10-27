@@ -307,8 +307,8 @@ mod tests {
                     input.as_ptr(),
                     input.len(),
                     input.len() - 4,
-                    &mut state,
-                    &mut span,
+                    &raw mut state,
+                    &raw mut span,
                 )
             },
             1
@@ -324,8 +324,8 @@ mod tests {
                     input.as_ptr(),
                     input.len(),
                     input.len() - 4,
-                    &mut state,
-                    &mut span,
+                    &raw mut state,
+                    &raw mut span,
                 )
             },
             0
@@ -340,7 +340,12 @@ mod tests {
         let mut result = Vec::new();
         loop {
             let status = unsafe {
-                swr_v1_http_cookie_next(data.as_mut_ptr(), data.len(), &mut cursor, &mut out)
+                swr_v1_http_cookie_next(
+                    data.as_mut_ptr(),
+                    data.len(),
+                    &raw mut cursor,
+                    &raw mut out,
+                )
             };
             if status == 0 {
                 break;

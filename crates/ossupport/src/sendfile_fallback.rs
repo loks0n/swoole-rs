@@ -55,12 +55,12 @@ mod tests {
     fn zero_size_still_requests_native_read_then_warns_on_zero() {
         let mut s = SendfileFallbackState::default();
         assert_eq!(
-            unsafe { swr_v1_os_sendfile_fallback_next(&mut s, 0, 64, 0) },
+            unsafe { swr_v1_os_sendfile_fallback_next(&raw mut s, 0, 64, 0) },
             1
         );
         assert_eq!(s.amount, 0);
         assert_eq!(
-            unsafe { swr_v1_os_sendfile_fallback_next(&mut s, 0, 64, 0) },
+            unsafe { swr_v1_os_sendfile_fallback_next(&raw mut s, 0, 64, 0) },
             3
         );
         assert_eq!(s.result, -1);
@@ -70,22 +70,22 @@ mod tests {
         for result in [-2, -1, 0, 1, 7] {
             let mut s = SendfileFallbackState::default();
             assert_eq!(
-                unsafe { swr_v1_os_sendfile_fallback_next(&mut s, 100, 64, 0) },
+                unsafe { swr_v1_os_sendfile_fallback_next(&raw mut s, 100, 64, 0) },
                 1
             );
             assert_eq!(s.amount, 64);
             assert_eq!(
-                unsafe { swr_v1_os_sendfile_fallback_next(&mut s, 100, 64, 7) },
+                unsafe { swr_v1_os_sendfile_fallback_next(&raw mut s, 100, 64, 7) },
                 2
             );
             assert_eq!(s.amount, 7);
             assert_eq!(
-                unsafe { swr_v1_os_sendfile_fallback_next(&mut s, 100, 64, result) },
+                unsafe { swr_v1_os_sendfile_fallback_next(&raw mut s, 100, 64, result) },
                 if result < 0 { 4 } else { 5 }
             );
             assert_eq!(s.result, result);
             assert_eq!(
-                unsafe { swr_v1_os_sendfile_fallback_next(&mut s, 100, 64, 0) },
+                unsafe { swr_v1_os_sendfile_fallback_next(&raw mut s, 100, 64, 0) },
                 0
             );
         }

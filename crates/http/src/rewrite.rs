@@ -272,13 +272,27 @@ mod tests {
         let mut output = [0xcc; 16];
         let mut written = 99;
         assert_eq!(
-            unsafe { swr_v1_http_rewrite_literal(&request, output.as_mut_ptr(), 8, &mut written) },
+            unsafe {
+                swr_v1_http_rewrite_literal(
+                    &raw const request,
+                    output.as_mut_ptr(),
+                    8,
+                    &raw mut written,
+                )
+            },
             INVALID
         );
         assert_eq!(output, [0xcc; 16]);
         assert_eq!(written, 99);
         assert_eq!(
-            unsafe { swr_v1_http_rewrite_literal(&request, output.as_mut_ptr(), 9, &mut written) },
+            unsafe {
+                swr_v1_http_rewrite_literal(
+                    &raw const request,
+                    output.as_mut_ptr(),
+                    9,
+                    &raw mut written,
+                )
+            },
             1
         );
         assert_eq!(&output[..written], b"/b\0suffix");

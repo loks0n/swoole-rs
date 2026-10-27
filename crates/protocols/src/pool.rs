@@ -384,7 +384,7 @@ mod tests {
             assert_eq!(pool.entries.len(), model.len());
             for (&key, &token) in &model {
                 assert_eq!(pool.entries[pool.indices[&key].index], (key, token));
-                assert_eq!(unsafe { swr_v1_bus_pool_find(&pool, key) }, token);
+                assert_eq!(unsafe { swr_v1_bus_pool_find(&raw const pool, key) }, token);
             }
         }
         assert!(!pool.insert(1000, 0));
@@ -548,10 +548,10 @@ mod tests {
             assert_eq!(swr_v1_bus_pool_release(pool), -1);
             assert_eq!(swr_v1_bus_pool_find(pool, u64::MAX), 17);
             let mut id = 42;
-            assert_eq!(swr_v1_bus_pool_at(pool, 1, &mut id), 0);
+            assert_eq!(swr_v1_bus_pool_at(pool, 1, &raw mut id), 0);
             assert_eq!(id, 42);
             assert_eq!(swr_v1_bus_pool_at(pool, 0, std::ptr::null_mut()), 0);
-            assert_eq!(swr_v1_bus_pool_at(pool, 0, &mut id), 17);
+            assert_eq!(swr_v1_bus_pool_at(pool, 0, &raw mut id), 17);
             assert_eq!(id, u64::MAX);
             assert_eq!(swr_v1_bus_pool_pop(pool), 17);
             assert_eq!(swr_v1_bus_pool_pop(pool), 0);

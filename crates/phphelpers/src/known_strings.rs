@@ -109,17 +109,21 @@ mod tests {
         let mut cursor = 0;
         for expected in STRINGS {
             let mut length = MaybeUninit::<usize>::uninit();
-            let name = unsafe { swr_v1_phphelpers_known_next(&mut cursor, length.as_mut_ptr()) };
+            let name =
+                unsafe { swr_v1_phphelpers_known_next(&raw mut cursor, length.as_mut_ptr()) };
             assert_eq!(name, expected.as_ptr().cast());
             assert_eq!(unsafe { length.assume_init() }, expected.len() - 1);
         }
         let mut length = 37;
-        assert!(unsafe { swr_v1_phphelpers_known_next(&mut cursor, &mut length) }.is_null());
+        assert!(
+            unsafe { swr_v1_phphelpers_known_next(&raw mut cursor, &raw mut length) }.is_null()
+        );
         assert_eq!(length, 37);
         assert_eq!(cursor, STRINGS.len());
         cursor = 0;
         assert!(
-            unsafe { swr_v1_phphelpers_known_next(&mut cursor, std::ptr::null_mut()) }.is_null()
+            unsafe { swr_v1_phphelpers_known_next(&raw mut cursor, std::ptr::null_mut()) }
+                .is_null()
         );
         assert_eq!(cursor, 0);
     }

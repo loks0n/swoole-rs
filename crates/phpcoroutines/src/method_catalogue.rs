@@ -166,7 +166,7 @@ mod tests {
                 let mut rows = Vec::new();
                 loop {
                     let p = unsafe {
-                        swr_v1_phpcoroutines_method(&mut cursor, kind, caps, 0x400, 0x80)
+                        swr_v1_phpcoroutines_method(&raw mut cursor, kind, caps, 0x400, 0x80)
                     };
                     assert_eq!(p.slot as usize, rows.len());
                     if p.done != 0 {
@@ -194,11 +194,11 @@ mod tests {
     fn stable_static_names_and_terminal_cursor() {
         let mut first = MethodCursor { next: 0, output: 0 };
         let mut second = MethodCursor { next: 0, output: 0 };
-        let a = unsafe { swr_v1_phpcoroutines_method(&mut first, 0, 0, 1, 2) };
-        let b = unsafe { swr_v1_phpcoroutines_method(&mut second, 0, 1, 1, 2) };
+        let a = unsafe { swr_v1_phpcoroutines_method(&raw mut first, 0, 0, 1, 2) };
+        let b = unsafe { swr_v1_phpcoroutines_method(&raw mut second, 0, 1, 1, 2) };
         assert_eq!(a.name, b.name);
-        while unsafe { swr_v1_phpcoroutines_method(&mut first, 0, 0, 1, 2) }.done == 0 {}
-        let p = unsafe { swr_v1_phpcoroutines_method(&mut first, 0, 0, 1, 2) };
+        while unsafe { swr_v1_phpcoroutines_method(&raw mut first, 0, 0, 1, 2) }.done == 0 {}
+        let p = unsafe { swr_v1_phpcoroutines_method(&raw mut first, 0, 0, 1, 2) };
         assert_eq!((p.done, p.slot), (1, 37));
         assert!(p.name.is_null());
     }

@@ -80,7 +80,7 @@ pub unsafe extern "C" fn swr_v1_reactor_run(ops: *const WaitOps) -> i32 {
         unsafe { (ops.begin)(context) };
         let mut entries: c_int = 0;
         // SAFETY: the native kernel wait accepts `context` and a live entry count.
-        let ready = unsafe { (ops.wait)(context, &mut entries) };
+        let ready = unsafe { (ops.wait)(context, &raw mut entries) };
         if ready < 0 {
             // SAFETY: the native effect accepts `context` and reads this thread's errno.
             if unsafe { (ops.catch_error)(context) } == 0 {

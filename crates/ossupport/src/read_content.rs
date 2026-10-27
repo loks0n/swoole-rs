@@ -41,7 +41,7 @@ mod tests {
                 for last in [i64::MIN, -1, 0] {
                     let mut state = ReadContentState::default();
                     let actions = [i64::MIN, a, b, last]
-                        .map(|n| unsafe { swr_v1_os_read_content_next(&mut state, n) });
+                        .map(|n| unsafe { swr_v1_os_read_content_next(&raw mut state, n) });
                     assert_eq!(actions, [1, 2, 2, 0]);
                 }
             }
@@ -51,10 +51,10 @@ mod tests {
     fn first_read_is_unconditional_and_nonpositive_never_grows_or_retries() {
         for n in [i64::MIN, -1, 0] {
             let mut state = ReadContentState::default();
-            assert_eq!(unsafe { swr_v1_os_read_content_next(&mut state, n) }, 1);
-            assert_eq!(unsafe { swr_v1_os_read_content_next(&mut state, n) }, 0);
+            assert_eq!(unsafe { swr_v1_os_read_content_next(&raw mut state, n) }, 1);
+            assert_eq!(unsafe { swr_v1_os_read_content_next(&raw mut state, n) }, 0);
             assert_eq!(
-                unsafe { swr_v1_os_read_content_next(&mut state, 1) },
+                unsafe { swr_v1_os_read_content_next(&raw mut state, 1) },
                 u32::MAX
             );
         }

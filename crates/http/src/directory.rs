@@ -278,7 +278,7 @@ pub unsafe extern "C" fn swr_v2_http_directory_page(
         part: page.part,
     };
     // SAFETY: `page` is a local copy of the caller's spans; output follows its contract.
-    unsafe { swr_v1_http_index_page(&page, output, capacity, written) }
+    unsafe { swr_v1_http_index_page(&raw const page, output, capacity, written) }
 }
 
 /// Complete page append policy over the sole ordered directory owner. Actions
@@ -314,7 +314,7 @@ mod tests {
     fn legacy_value_copy_and_direct_page_emission() {
         unsafe {
             let mut lazy = ptr::null_mut();
-            assert_eq!(swr_v2_http_directory_clone(ptr::null(), &mut lazy), 0);
+            assert_eq!(swr_v2_http_directory_clone(ptr::null(), &raw mut lazy), 0);
             assert!(lazy.is_null());
             for count in [1, 17, 65, 257] {
                 let owner = swr_v2_http_directory_new();
@@ -333,7 +333,7 @@ mod tests {
                     expected.insert(name);
                 }
                 let mut copy = ptr::null_mut();
-                assert_eq!(swr_v2_http_directory_clone(owner, &mut copy), 0);
+                assert_eq!(swr_v2_http_directory_clone(owner, &raw mut copy), 0);
                 assert!(!copy.is_null());
                 assert_ne!(owner, copy);
                 assert_eq!((*owner).names, (*copy).names);
@@ -364,16 +364,21 @@ mod tests {
                     };
                     let mut written = 0;
                     assert_eq!(
-                        swr_v1_http_index_page(&page, ptr::null_mut(), 0, &mut written),
+                        swr_v1_http_index_page(
+                            &raw const page,
+                            ptr::null_mut(),
+                            0,
+                            &raw mut written
+                        ),
                         0
                     );
                     let mut rendered = vec![0; written];
                     assert_eq!(
                         swr_v1_http_index_page(
-                            &page,
+                            &raw const page,
                             rendered.as_mut_ptr(),
                             rendered.len(),
-                            &mut written
+                            &raw mut written
                         ),
                         0
                     );
@@ -383,11 +388,11 @@ mod tests {
                         swr_v2_http_directory_emit(
                             owner,
                             index,
-                            &page,
+                            &raw const page,
                             buffer.as_mut_ptr(),
                             3,
                             buffer.len() - 8,
-                            &mut result
+                            &raw mut result
                         ),
                         3
                     );
@@ -509,10 +514,10 @@ mod tests {
                     swr_v2_http_directory_page(
                         owner,
                         0,
-                        &page,
+                        &raw const page,
                         output.as_mut_ptr(),
                         capacity,
-                        &mut written,
+                        &raw mut written,
                     )
                 },
                 0

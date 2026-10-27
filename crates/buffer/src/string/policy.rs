@@ -287,7 +287,7 @@ mod tests {
                     let original = fields(source);
                     let mut result = StringTransition::EMPTY;
                     assert_eq!(
-                        unsafe { swr_v1_string_transition(&source, 1, &mut result) },
+                        unsafe { swr_v1_string_transition(&raw const source, 1, &raw mut result) },
                         OK
                     );
                     assert_eq!(fields(result.state), fields(EMPTY_STATE));
@@ -302,12 +302,12 @@ mod tests {
             owner: EMPTY_STATE,
         };
         assert_eq!(
-            unsafe { swr_v1_string_transition(&EMPTY_STATE, 0, &mut result) },
+            unsafe { swr_v1_string_transition(&EMPTY_STATE, 0, &raw mut result) },
             INVALID
         );
         assert_eq!(fields(result.owner), fields(EMPTY_STATE));
         assert_eq!(
-            unsafe { swr_v1_string_transition(std::ptr::null(), 1, &mut result) },
+            unsafe { swr_v1_string_transition(std::ptr::null(), 1, &raw mut result) },
             INVALID
         );
         assert_eq!(

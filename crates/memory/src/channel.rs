@@ -408,7 +408,7 @@ pub unsafe extern "C" fn swr_v1_memory_channel_storage_in(
     // SAFETY: `fields` passed `valid` (above).
     let mut state = unsafe { fields.load() };
     // SAFETY: `state` is a local snapshot; the caller's buffer follows swr_v1_memory_channel_in's contract.
-    let result = unsafe { swr_v1_memory_channel_in(&mut state, input, length) };
+    let result = unsafe { swr_v1_memory_channel_in(&raw mut state, input, length) };
     if result == 0 {
         // SAFETY: `fields` passed `valid` (above).
         unsafe { fields.publish(&state, true) };
@@ -432,7 +432,7 @@ pub unsafe extern "C" fn swr_v1_memory_channel_storage_out(
     // SAFETY: `fields` passed `valid` (above).
     let mut state = unsafe { fields.load() };
     // SAFETY: `state` is a local snapshot; the caller's buffer follows swr_v1_memory_channel_out's contract.
-    let result = unsafe { swr_v1_memory_channel_out(&mut state, output, capacity, 1) };
+    let result = unsafe { swr_v1_memory_channel_out(&raw mut state, output, capacity, 1) };
     if result >= 0 {
         // SAFETY: `fields` passed `valid` (above).
         unsafe { fields.publish(&state, false) };

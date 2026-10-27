@@ -132,15 +132,15 @@ mod tests {
             let mut first = ptr::null_mut();
             let mut next = ptr::null_mut();
             for value in [101, 102, 103] {
-                assert_eq!(swr_v1_reactor_deferred_push(&mut first, value), 0);
+                assert_eq!(swr_v1_reactor_deferred_push(&raw mut first, value), 0);
             }
             let mut phase = 0;
             let mut token = 0;
             let mut trace = Vec::new();
-            while swr_v1_reactor_deferred_step(first, &mut phase, &mut token) == 1 {
+            while swr_v1_reactor_deferred_step(first, &raw mut phase, &raw mut token) == 1 {
                 let copied = token;
                 assert_eq!(
-                    swr_v1_reactor_deferred_step(first, &mut phase, &mut token),
+                    swr_v1_reactor_deferred_step(first, &raw mut phase, &raw mut token),
                     2
                 );
                 assert_eq!(token, copied);
@@ -149,7 +149,7 @@ mod tests {
                 // no Native payload is executed by this Rust token unit.
                 trace.push((3, copied));
                 if copied == 101 {
-                    assert_eq!(swr_v1_reactor_deferred_push(&mut next, 201), 0);
+                    assert_eq!(swr_v1_reactor_deferred_push(&raw mut next, 201), 0);
                 }
                 trace.push((4, copied));
             }
@@ -167,23 +167,29 @@ mod tests {
                     (4, 103)
                 ]
             );
-            assert_eq!(swr_v1_reactor_deferred_clear(&mut first, &mut token), 0);
+            assert_eq!(
+                swr_v1_reactor_deferred_clear(&raw mut first, &raw mut token),
+                0
+            );
             assert!(first.is_null());
             assert_eq!(
-                swr_v1_reactor_deferred_step(next, &mut phase, &mut token),
+                swr_v1_reactor_deferred_step(next, &raw mut phase, &raw mut token),
                 1
             );
             assert_eq!(token, 201);
             assert_eq!(
-                swr_v1_reactor_deferred_step(next, &mut phase, &mut token),
+                swr_v1_reactor_deferred_step(next, &raw mut phase, &raw mut token),
                 2
             );
             assert_eq!(token, 201);
             assert_eq!(
-                swr_v1_reactor_deferred_step(next, &mut phase, &mut token),
+                swr_v1_reactor_deferred_step(next, &raw mut phase, &raw mut token),
                 0
             );
-            assert_eq!(swr_v1_reactor_deferred_clear(&mut next, &mut token), 0);
+            assert_eq!(
+                swr_v1_reactor_deferred_clear(&raw mut next, &raw mut token),
+                0
+            );
             assert!(next.is_null());
         }
     }

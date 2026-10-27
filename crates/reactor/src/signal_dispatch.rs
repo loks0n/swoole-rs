@@ -48,7 +48,7 @@ mod tests {
                     let mut observed = 0;
                     loop {
                         let action =
-                            unsafe { swr_v1_reactor_signal_workflow(&mut state, observed) };
+                            unsafe { swr_v1_reactor_signal_workflow(&raw mut state, observed) };
                         trace.push(action);
                         observed = match action {
                             10 => activated,
@@ -69,7 +69,10 @@ mod tests {
                     };
                     assert_eq!(trace, expected);
                     assert_eq!(state.phase, 4);
-                    assert_eq!(unsafe { swr_v1_reactor_signal_workflow(&mut state, 1) }, 0);
+                    assert_eq!(
+                        unsafe { swr_v1_reactor_signal_workflow(&raw mut state, 1) },
+                        0
+                    );
                 }
             }
         }

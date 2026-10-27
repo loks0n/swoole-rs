@@ -294,13 +294,13 @@ mod tests {
         for (op, facts) in [(0, PRODUCERS), (1, CONSUMERS)] {
             let mut c = ChannelCursor { phase: 0 };
             unsafe {
-                assert_eq!(swr_v1_channel_step(&mut c, op, facts), YIELD);
+                assert_eq!(swr_v1_channel_step(&raw mut c, op, facts), YIELD);
                 assert_eq!(
-                    swr_v1_channel_step(&mut c, op, HAS_TIMER | CANCELED | TIMEDOUT | CLOSED),
+                    swr_v1_channel_step(&raw mut c, op, HAS_TIMER | CANCELED | TIMEDOUT | CLOSED),
                     DELETE
                 );
                 assert_eq!(
-                    swr_v1_channel_step(&mut c, op, CANCELED | TIMEDOUT | CLOSED),
+                    swr_v1_channel_step(&raw mut c, op, CANCELED | TIMEDOUT | CLOSED),
                     -3
                 );
             }
@@ -310,13 +310,13 @@ mod tests {
     fn close_finishes_producer_loop_before_consumer_loop() {
         let mut c = ChannelCursor { phase: 0 };
         unsafe {
-            assert_eq!(swr_v1_channel_step(&mut c, 2, 0), PUBLISH_CLOSED);
+            assert_eq!(swr_v1_channel_step(&raw mut c, 2, 0), PUBLISH_CLOSED);
             assert_eq!(
-                swr_v1_channel_step(&mut c, 2, PRODUCERS | CONSUMERS),
+                swr_v1_channel_step(&raw mut c, 2, PRODUCERS | CONSUMERS),
                 WAKE_PRODUCER
             );
-            assert_eq!(swr_v1_channel_step(&mut c, 2, CONSUMERS), WAKE_CONSUMER);
-            assert_eq!(swr_v1_channel_step(&mut c, 2, PRODUCERS), DONE);
+            assert_eq!(swr_v1_channel_step(&raw mut c, 2, CONSUMERS), WAKE_CONSUMER);
+            assert_eq!(swr_v1_channel_step(&raw mut c, 2, PRODUCERS), DONE);
         }
     }
 }

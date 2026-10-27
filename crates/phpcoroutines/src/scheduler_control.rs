@@ -88,7 +88,12 @@ mod tests {
             let mut actions = Vec::new();
             loop {
                 let action = unsafe {
-                    swr_v1_phpcoroutines_scheduler_control(&mut stage, 0, observation, &constants)
+                    swr_v1_phpcoroutines_scheduler_control(
+                        &raw mut stage,
+                        0,
+                        observation,
+                        &raw const constants,
+                    )
                 };
                 if action == 0 {
                     break;
@@ -127,10 +132,10 @@ mod tests {
             loop {
                 let action = unsafe {
                     swr_v1_phpcoroutines_scheduler_control(
-                        &mut stage,
+                        &raw mut stage,
                         kind,
                         observation,
-                        &constants,
+                        &raw const constants,
                     )
                 };
                 if action == 0 {
@@ -146,7 +151,9 @@ mod tests {
         // Cache/options operations never dereference unused resolver/tag facts.
         let mut stage = 0;
         assert_eq!(
-            unsafe { swr_v1_phpcoroutines_scheduler_control(&mut stage, 3, 0, std::ptr::null()) },
+            unsafe {
+                swr_v1_phpcoroutines_scheduler_control(&raw mut stage, 3, 0, std::ptr::null())
+            },
             16
         );
     }

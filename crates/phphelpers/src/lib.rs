@@ -1404,7 +1404,7 @@ mod tests {
             for position in 0..count {
                 let mut plan = ArgumentPlan::default();
                 assert_eq!(
-                    unsafe { swr_v1_phphelpers_arguments(count, position, &mut plan) },
+                    unsafe { swr_v1_phphelpers_arguments(count, position, &raw mut plan) },
                     1
                 );
                 let source: Vec<_> = (0..count).collect();
@@ -1427,21 +1427,21 @@ mod tests {
             for valid in [0, 1] {
                 let mut phase = 0;
                 assert_eq!(
-                    unsafe { swr_v1_phphelpers_callable(&mut phase, truthy, valid) },
+                    unsafe { swr_v1_phphelpers_callable(&raw mut phase, truthy, valid) },
                     1
                 );
-                let next = unsafe { swr_v1_phphelpers_callable(&mut phase, truthy, valid) };
+                let next = unsafe { swr_v1_phphelpers_callable(&raw mut phase, truthy, valid) };
                 if truthy == 0 {
                     assert_eq!(next, 3);
                 } else {
                     assert_eq!(next, 2);
                     assert_eq!(
-                        unsafe { swr_v1_phphelpers_callable(&mut phase, truthy, valid) },
+                        unsafe { swr_v1_phphelpers_callable(&raw mut phase, truthy, valid) },
                         if valid == 0 { 4 } else { 5 }
                     );
                 }
                 assert_eq!(
-                    unsafe { swr_v1_phphelpers_callable(&mut phase, truthy, valid) },
+                    unsafe { swr_v1_phphelpers_callable(&raw mut phase, truthy, valid) },
                     0
                 );
             }
@@ -1473,13 +1473,13 @@ mod tests {
             for existing in [0, 1] {
                 let mut phase = 0;
                 let first =
-                    unsafe { swr_v1_phphelpers_merge_keyed(&mut phase, 0, existing, numeric) };
+                    unsafe { swr_v1_phphelpers_merge_keyed(&raw mut phase, 0, existing, numeric) };
                 assert_eq!(first, if numeric != 0 { 1 } else { 2 });
                 let next =
-                    unsafe { swr_v1_phphelpers_merge_keyed(&mut phase, 0, existing, numeric) };
+                    unsafe { swr_v1_phphelpers_merge_keyed(&raw mut phase, 0, existing, numeric) };
                 assert_eq!(next, if numeric != 0 { 3 } else { 4 });
                 let final_action =
-                    unsafe { swr_v1_phphelpers_merge_keyed(&mut phase, 0, existing, numeric) };
+                    unsafe { swr_v1_phphelpers_merge_keyed(&raw mut phase, 0, existing, numeric) };
                 assert_eq!(
                     final_action,
                     if existing != 0 {
@@ -1491,7 +1491,7 @@ mod tests {
                     }
                 );
                 assert_eq!(
-                    unsafe { swr_v1_phphelpers_merge_keyed(&mut phase, 0, existing, numeric) },
+                    unsafe { swr_v1_phphelpers_merge_keyed(&raw mut phase, 0, existing, numeric) },
                     0
                 );
             }
@@ -1509,11 +1509,11 @@ mod tests {
         let value = b"<i\0t>\0";
         let mut output = TypeLayout::default();
         assert_eq!(
-            unsafe { swr_v1_phphelpers_type_layout(value.as_ptr(), 2, 5, &mut output) },
+            unsafe { swr_v1_phphelpers_type_layout(value.as_ptr(), 2, 5, &raw mut output) },
             0
         );
         assert_eq!(
-            unsafe { swr_v1_phphelpers_type_span(value.as_ptr(), value.len(), 5, &mut output) },
+            unsafe { swr_v1_phphelpers_type_span(value.as_ptr(), value.len(), 5, &raw mut output) },
             1
         );
         assert_eq!(
@@ -1523,7 +1523,9 @@ mod tests {
         for bytes in [b"<int>".as_slice(), b"".as_slice()] {
             output.offset = 77;
             assert_eq!(
-                unsafe { swr_v1_phphelpers_type_span(bytes.as_ptr(), bytes.len(), 5, &mut output) },
+                unsafe {
+                    swr_v1_phphelpers_type_span(bytes.as_ptr(), bytes.len(), 5, &raw mut output)
+                },
                 0
             );
             assert_eq!(output.offset, 77);

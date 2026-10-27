@@ -102,7 +102,7 @@ mod tests {
                     let mut observed = 0;
                     let mut actions = Vec::new();
                     loop {
-                        let a = unsafe { swr_v1_coroutine_entry_step(&mut c, observed) };
+                        let a = unsafe { swr_v1_coroutine_entry_step(&raw mut c, observed) };
                         if a.action == 6 {
                             assert_eq!(
                                 a.result,

@@ -648,7 +648,7 @@ mod tests {
     impl Owned {
         fn new() -> Self {
             let mut out = ptr::null_mut();
-            assert_eq!(unsafe { swr_v1_timer_create(&mut out) }, OK);
+            assert_eq!(unsafe { swr_v1_timer_create(&raw mut out) }, OK);
             Self(out)
         }
         fn add(&self, now: i64, delay: i64, persistent: bool, token: usize) -> TimerView {
@@ -661,7 +661,7 @@ mod tests {
                         delay,
                         u32::from(persistent),
                         ptr::without_provenance_mut(token),
-                        &mut out,
+                        &raw mut out,
                     )
                 },
                 OK
@@ -670,30 +670,30 @@ mod tests {
         }
         fn get(&self, id: i64) -> TimerView {
             let mut out = TimerView::default();
-            assert_eq!(unsafe { swr_v1_timer_get(self.0, id, &mut out) }, OK);
+            assert_eq!(unsafe { swr_v1_timer_get(self.0, id, &raw mut out) }, OK);
             out
         }
         fn stats(&self) -> TimerStats {
             let mut out = TimerStats::default();
-            assert_eq!(unsafe { swr_v1_timer_stats_get(self.0, &mut out) }, OK);
+            assert_eq!(unsafe { swr_v1_timer_stats_get(self.0, &raw mut out) }, OK);
             out
         }
         fn next(&self, expected: i32) -> TimerView {
             let mut out = TimerView::default();
-            assert_eq!(unsafe { swr_v1_timer_next(self.0, &mut out) }, expected);
+            assert_eq!(unsafe { swr_v1_timer_next(self.0, &raw mut out) }, expected);
             out
         }
         fn complete(&self, id: i64, expected: i32) -> TimerView {
             let mut out = TimerView::default();
             assert_eq!(
-                unsafe { swr_v1_timer_complete(self.0, id, &mut out) },
+                unsafe { swr_v1_timer_complete(self.0, id, &raw mut out) },
                 expected
             );
             out
         }
         fn end(&self) -> i64 {
             let mut delay = 99;
-            assert_eq!(unsafe { swr_v1_timer_end(self.0, &mut delay) }, OK);
+            assert_eq!(unsafe { swr_v1_timer_end(self.0, &raw mut delay) }, OK);
             delay
         }
         fn prime(&self) {
@@ -723,7 +723,7 @@ mod tests {
                     self.end();
                 }
                 let mut view = TimerView::default();
-                while swr_v1_timer_drain(self.0, &mut view) == RELEASE {}
+                while swr_v1_timer_drain(self.0, &raw mut view) == RELEASE {}
                 assert_eq!(swr_v1_timer_release(self.0), OK);
             }
         }
@@ -752,7 +752,7 @@ mod tests {
         let young = q.add(20, 1, false, 5);
         let mut out = TimerView::default();
         assert_eq!(
-            unsafe { swr_v1_timer_update(q.0, young.id, 0, &mut out) },
+            unsafe { swr_v1_timer_update(q.0, young.id, 0, &raw mut out) },
             OK
         );
         q.next(EMPTY);
@@ -777,7 +777,10 @@ mod tests {
             assert_eq!(q.complete(b.id, INVALID), TimerView::default());
             assert_eq!(q.stats().active_id, a.id);
             let mut out = TimerView::default();
-            assert_eq!(unsafe { swr_v1_timer_update(q.0, a.id, 100, &mut out) }, OK);
+            assert_eq!(
+                unsafe { swr_v1_timer_update(q.0, a.id, 100, &raw mut out) },
+                OK
+            );
             let completed = q.complete(a.id, if persistent { OK } else { RELEASE });
             assert_eq!(completed.id, a.id);
             assert_eq!(completed.deadline, 100);
@@ -828,26 +831,26 @@ mod tests {
         q.next(OK);
         let mut out = TimerView::default();
         assert_eq!(
-            unsafe { swr_v1_timer_remove(q.0, a.id, &mut out) },
+            unsafe { swr_v1_timer_remove(q.0, a.id, &raw mut out) },
             DEFERRED
         );
         assert_eq!(q.get(a.id).removed, 1);
         assert_eq!(
-            unsafe { swr_v1_timer_remove(q.0, a.id, &mut out) },
+            unsafe { swr_v1_timer_remove(q.0, a.id, &raw mut out) },
             NOT_FOUND
         );
         assert_eq!(out, TimerView::default());
         assert_eq!(unsafe { swr_v1_timer_release(q.0) }, PENDING);
         assert_eq!(unsafe { swr_v1_timer_close(q.0) }, OK);
         q.next(BUSY);
-        assert_eq!(unsafe { swr_v1_timer_drain(q.0, &mut out) }, RELEASE);
+        assert_eq!(unsafe { swr_v1_timer_drain(q.0, &raw mut out) }, RELEASE);
         assert_eq!(out.id, b.id);
-        assert_eq!(unsafe { swr_v1_timer_drain(q.0, &mut out) }, DEFERRED);
+        assert_eq!(unsafe { swr_v1_timer_drain(q.0, &raw mut out) }, DEFERRED);
         assert_eq!(out, TimerView::default());
         assert_eq!(q.complete(a.id, RELEASE).token, a.token);
         q.next(CLOSING);
         assert_eq!(q.end(), -1);
-        assert_eq!(unsafe { swr_v1_timer_drain(q.0, &mut out) }, EMPTY);
+        assert_eq!(unsafe { swr_v1_timer_drain(q.0, &raw mut out) }, EMPTY);
         assert_eq!(unsafe { swr_v1_timer_begin(q.0, 10) }, CLOSING);
     }
 
@@ -859,28 +862,31 @@ mod tests {
         let mut ids = [99, 99];
         let mut count = 99;
         assert_eq!(
-            unsafe { swr_v1_timer_ids(q.0, ptr::null_mut(), 0, &mut count) },
+            unsafe { swr_v1_timer_ids(q.0, ptr::null_mut(), 0, &raw mut count) },
             CAPACITY
         );
         assert_eq!(count, 2);
         assert_eq!(
-            unsafe { swr_v1_timer_ids(q.0, ids.as_mut_ptr(), 1, &mut count) },
+            unsafe { swr_v1_timer_ids(q.0, ids.as_mut_ptr(), 1, &raw mut count) },
             CAPACITY
         );
         assert_eq!(ids, [99, 99]);
         assert_eq!(
-            unsafe { swr_v1_timer_ids(q.0, ids.as_mut_ptr(), 2, &mut count) },
+            unsafe { swr_v1_timer_ids(q.0, ids.as_mut_ptr(), 2, &raw mut count) },
             OK
         );
         ids.sort();
         assert_eq!(ids, [a.id, b.id]);
         let mut out = TimerView::default();
         for id in ids {
-            assert_eq!(unsafe { swr_v1_timer_remove(q.0, id, &mut out) }, RELEASE);
+            assert_eq!(
+                unsafe { swr_v1_timer_remove(q.0, id, &raw mut out) },
+                RELEASE
+            );
             q.invariant();
         }
         assert_eq!(
-            unsafe { swr_v1_timer_ids(q.0, ptr::null_mut(), 0, &mut count) },
+            unsafe { swr_v1_timer_ids(q.0, ptr::null_mut(), 0, &raw mut count) },
             OK
         );
         assert_eq!(count, 0);
@@ -896,7 +902,7 @@ mod tests {
         let before = q.stats();
         let mut out = TimerView::default();
         assert_eq!(
-            unsafe { swr_v1_timer_add(q.0, 5, 1, 0, ptr::dangling_mut(), &mut out) },
+            unsafe { swr_v1_timer_add(q.0, 5, 1, 0, ptr::dangling_mut(), &raw mut out) },
             OVERFLOW
         );
         assert_eq!(out, TimerView::default());
@@ -953,13 +959,16 @@ mod tests {
                                 q.0,
                                 id,
                                 i64::try_from(seed % 100).unwrap(),
-                                &mut out,
+                                &raw mut out,
                             )
                         },
                         OK
                     );
                 } else {
-                    assert_eq!(unsafe { swr_v1_timer_remove(q.0, id, &mut out) }, RELEASE);
+                    assert_eq!(
+                        unsafe { swr_v1_timer_remove(q.0, id, &raw mut out) },
+                        RELEASE
+                    );
                 }
             }
             q.invariant();
@@ -970,7 +979,7 @@ mod tests {
     fn allocation_failures_preserve_id_time_entries_and_existing_views() {
         let mut handle = ptr::dangling_mut();
         FAIL_AFTER.set(Some(0));
-        let status = unsafe { swr_v1_timer_create(&mut handle) };
+        let status = unsafe { swr_v1_timer_create(&raw mut handle) };
         FAIL_AFTER.set(None);
         assert_eq!(status, NOMEM);
         assert!(handle.is_null());
@@ -978,7 +987,8 @@ mod tests {
             let q = Owned::new();
             let mut out = TimerView::default();
             FAIL_AFTER.set(Some(nth));
-            let status = unsafe { swr_v1_timer_add(q.0, 10, 5, 0, ptr::dangling_mut(), &mut out) };
+            let status =
+                unsafe { swr_v1_timer_add(q.0, 10, 5, 0, ptr::dangling_mut(), &raw mut out) };
             FAIL_AFTER.set(None);
             if nth < 2 {
                 assert_eq!(status, NOMEM);
@@ -1006,8 +1016,16 @@ mod tests {
         let last_id = unsafe { (*q.0).last_id };
         let mut out = first;
         FAIL_AFTER.set(Some(0));
-        let status =
-            unsafe { swr_v1_timer_add(q.0, 99, 1, 0, ptr::without_provenance_mut(999), &mut out) };
+        let status = unsafe {
+            swr_v1_timer_add(
+                q.0,
+                99,
+                1,
+                0,
+                ptr::without_provenance_mut(999),
+                &raw mut out,
+            )
+        };
         FAIL_AFTER.set(None);
         assert_eq!(status, NOMEM);
         assert_eq!(out, TimerView::default());
@@ -1030,8 +1048,8 @@ mod tests {
         let last = unsafe { (*q.0).last_id };
         let mut out = TimerView::default();
         FAIL_AFTER.set(Some(0));
-        let updated = unsafe { swr_v1_timer_update(q.0, last, 0, &mut out) };
-        let removed = unsafe { swr_v1_timer_remove(q.0, 1, &mut out) };
+        let updated = unsafe { swr_v1_timer_update(q.0, last, 0, &raw mut out) };
+        let removed = unsafe { swr_v1_timer_remove(q.0, 1, &raw mut out) };
         let allocation_not_attempted = FAIL_AFTER.replace(None);
         assert_eq!(updated, OK);
         assert_eq!(removed, RELEASE);
@@ -1065,12 +1083,15 @@ mod tests {
                         .nth(usize::try_from(seed % model.len() as u64).unwrap())
                         .unwrap();
                     if seed % 4 == 1 {
-                        assert_eq!(unsafe { swr_v1_timer_remove(q.0, id, &mut out) }, RELEASE);
+                        assert_eq!(
+                            unsafe { swr_v1_timer_remove(q.0, id, &raw mut out) },
+                            RELEASE
+                        );
                         assert_eq!(out, model.remove(&id).unwrap());
                     } else {
                         let deadline = now + i64::try_from(seed % 53).unwrap();
                         assert_eq!(
-                            unsafe { swr_v1_timer_update(q.0, id, deadline, &mut out) },
+                            unsafe { swr_v1_timer_update(q.0, id, deadline, &raw mut out) },
                             OK
                         );
                         model.get_mut(&id).unwrap().deadline = deadline;
@@ -1081,7 +1102,7 @@ mod tests {
                     now += i64::try_from(seed % 7).unwrap();
                     assert_eq!(unsafe { swr_v1_timer_begin(q.0, now) }, OK);
                     loop {
-                        let status = unsafe { swr_v1_timer_next(q.0, &mut out) };
+                        let status = unsafe { swr_v1_timer_next(q.0, &raw mut out) };
                         if status == EMPTY {
                             if let Some(deadline) = model.values().map(|v| v.deadline).min() {
                                 assert!(
@@ -1139,28 +1160,28 @@ mod tests {
         let mut view = q.add(0, 1, false, 1);
         let original = view;
         assert_eq!(
-            unsafe { swr_v1_timer_get(ptr::null(), 1, &mut view) },
+            unsafe { swr_v1_timer_get(ptr::null(), 1, &raw mut view) },
             INVALID
         );
         assert_eq!(view, TimerView::default());
         assert_eq!(
-            unsafe { swr_v1_timer_complete(q.0, original.id, &mut view) },
+            unsafe { swr_v1_timer_complete(q.0, original.id, &raw mut view) },
             INVALID
         );
         assert_eq!(unsafe { swr_v1_timer_begin(q.0, -1) }, INVALID);
         assert_eq!(
-            unsafe { swr_v1_timer_add(q.0, i64::MAX, 1, 0, ptr::dangling_mut(), &mut view) },
+            unsafe { swr_v1_timer_add(q.0, i64::MAX, 1, 0, ptr::dangling_mut(), &raw mut view) },
             OVERFLOW
         );
         assert_eq!(
-            unsafe { swr_v1_timer_add(q.0, 0, 1, 2, ptr::dangling_mut(), &mut view) },
+            unsafe { swr_v1_timer_add(q.0, 0, 1, 2, ptr::dangling_mut(), &raw mut view) },
             INVALID
         );
         assert_eq!(
-            unsafe { swr_v1_timer_update(q.0, 1, -1, &mut view) },
+            unsafe { swr_v1_timer_update(q.0, 1, -1, &raw mut view) },
             INVALID
         );
-        assert_eq!(unsafe { swr_v1_timer_drain(q.0, &mut view) }, INVALID);
+        assert_eq!(unsafe { swr_v1_timer_drain(q.0, &raw mut view) }, INVALID);
         assert_eq!(q.get(original.id), original);
         q.prime();
         assert_eq!(unsafe { swr_v1_timer_begin(q.0, 1) }, OK);
@@ -1168,7 +1189,7 @@ mod tests {
         assert_eq!(unsafe { (*q.0).captured }, 1);
         q.next(OK);
         let mut delay = 123;
-        assert_eq!(unsafe { swr_v1_timer_end(q.0, &mut delay) }, BUSY);
+        assert_eq!(unsafe { swr_v1_timer_end(q.0, &raw mut delay) }, BUSY);
         assert_eq!(delay, -1);
         q.complete(original.id, RELEASE);
         q.end();

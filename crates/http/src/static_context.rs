@@ -98,7 +98,7 @@ impl HttpStaticContext {
                 root.len(),
                 self.filename.as_mut_ptr(),
                 self.filename.len(),
-                &mut self.path,
+                &raw mut self.path,
                 facts,
             )
         };
@@ -363,7 +363,7 @@ pub unsafe extern "C" fn swr_v2_http_context_observe(
     result.last = owner.path.last;
     result.directory_count = owner.directory.len();
     // SAFETY: `owner.tasks` is a live field of this context.
-    result.task_count = unsafe { swr_v2_http_tasks_count(&owner.tasks) };
+    result.task_count = unsafe { swr_v2_http_tasks_count(&raw const owner.tasks) };
     // SAFETY: `output` is non-null (checked above), aligned and writable per the caller contract.
     unsafe { output.write(result) };
     0
@@ -438,14 +438,16 @@ pub unsafe extern "C" fn swr_v2_http_context_format(
     let render = |output, capacity, written| {
         if kind == 0 {
             // SAFETY: `boundary` is a local; output follows the caller's render contract.
-            unsafe { swr_v1_http_static_content_type(&boundary, output, capacity, written) }
+            unsafe {
+                swr_v1_http_static_content_type(&raw const boundary, output, capacity, written)
+            }
         } else {
             // SAFETY: `range` is a local; output follows the caller's render contract.
-            unsafe { swr_v1_http_range_format(&range, output, capacity, written) }
+            unsafe { swr_v1_http_range_format(&raw const range, output, capacity, written) }
         }
     };
     let mut length = 0;
-    let status = render(std::ptr::null_mut(), 0, &mut length);
+    let status = render(std::ptr::null_mut(), 0, &raw mut length);
     if status < 0 {
         return status;
     }
@@ -460,7 +462,7 @@ pub unsafe extern "C" fn swr_v2_http_context_format(
         return ALLOCATION;
     }
     value.resize(capacity, 0);
-    let status = render(value.as_mut_ptr(), value.len(), &mut length);
+    let status = render(value.as_mut_ptr(), value.len(), &raw mut length);
     if status < 0 {
         return status;
     }
@@ -589,7 +591,13 @@ pub unsafe extern "C" fn swr_v2_http_context_path(
             let url = owner.rewritten.as_ref().unwrap_or(&owner.original);
             // SAFETY: `url` is the owner's live text; `input` lends `length` initialized bytes.
             unsafe {
-                swr_v1_http_static_location(url.as_ptr(), url.len(), input, length, &mut owner.path)
+                swr_v1_http_static_location(
+                    url.as_ptr(),
+                    url.len(),
+                    input,
+                    length,
+                    &raw mut owner.path,
+                )
             }
         }
         // SAFETY: the owner's filename buffer is writable through its length, initialized at
@@ -604,7 +612,7 @@ pub unsafe extern "C" fn swr_v2_http_context_path(
             )
         },
         // SAFETY: `owner.facts.status` is a live, exclusive field.
-        3 => unsafe { swr_v1_http_static_catch(owner.path.last, &mut owner.facts.status) },
+        3 => unsafe { swr_v1_http_static_catch(owner.path.last, &raw mut owner.facts.status) },
         4 => owner.ensure_directory_slash(),
         5 => {
             owner.path.phase = 0;
@@ -695,7 +703,14 @@ pub unsafe extern "C" fn swr_v2_http_context_page(
     };
     // SAFETY: `input` is a local copy of the caller's spans; output follows the contract.
     unsafe {
-        swr_v2_http_directory_page(&owner.directory, index, &input, output, capacity, written)
+        swr_v2_http_directory_page(
+            &raw const owner.directory,
+            index,
+            &raw const input,
+            output,
+            capacity,
+            written,
+        )
     }
 }
 /// Range scratch/commit:0=begin,1=prepare,2=push,3=clear. Native RNG/MIME/date
@@ -717,15 +732,15 @@ pub unsafe extern "C" fn swr_v2_http_context_task(
     };
     match operation {
         // SAFETY: `owner.tasks` is a live, exclusive field of this context.
-        0 => unsafe { swr_v2_http_tasks_begin(&mut owner.tasks) },
+        0 => unsafe { swr_v2_http_tasks_begin(&raw mut owner.tasks) },
         // SAFETY: as above; `format` and `written` follow tasks_prepare's contract.
         1 => unsafe {
-            swr_v2_http_tasks_prepare(&mut owner.tasks, offset, length, format, written)
+            swr_v2_http_tasks_prepare(&raw mut owner.tasks, offset, length, format, written)
         },
         // SAFETY: as above.
-        2 => unsafe { swr_v2_http_tasks_push(&mut owner.tasks) },
+        2 => unsafe { swr_v2_http_tasks_push(&raw mut owner.tasks) },
         // SAFETY: as above.
-        3 => unsafe { swr_v2_http_tasks_clear(&mut owner.tasks) },
+        3 => unsafe { swr_v2_http_tasks_clear(&raw mut owner.tasks) },
         _ => INVALID,
     }
 }
@@ -743,7 +758,7 @@ pub unsafe extern "C" fn swr_v2_http_context_tasks(
         return INVALID;
     };
     // SAFETY: `owner.tasks` is live; output follows task_snapshot's contract.
-    unsafe { swr_v2_http_tasks_snapshot(&owner.tasks, output, capacity, written) }
+    unsafe { swr_v2_http_tasks_snapshot(&raw const owner.tasks, output, capacity, written) }
 }
 
 #[cfg(test)]
@@ -761,13 +776,21 @@ mod tests {
     fn read(owner: *const HttpStaticContext, kind: u32) -> Vec<u8> {
         let mut length = 0;
         assert_eq!(
-            unsafe { swr_v2_http_context_text(owner, kind, std::ptr::null_mut(), 0, &mut length) },
+            unsafe {
+                swr_v2_http_context_text(owner, kind, std::ptr::null_mut(), 0, &raw mut length)
+            },
             0
         );
         let mut value = vec![0; length];
         assert_eq!(
             unsafe {
-                swr_v2_http_context_text(owner, kind, value.as_mut_ptr(), value.len(), &mut length)
+                swr_v2_http_context_text(
+                    owner,
+                    kind,
+                    value.as_mut_ptr(),
+                    value.len(),
+                    &raw mut length,
+                )
             },
             0
         );
@@ -815,16 +838,16 @@ mod tests {
         let owner = make();
         let mut index = 99;
         assert_eq!(
-            unsafe { swr_v2_http_context_rewrite_step(owner, 2, 0, &mut index) },
+            unsafe { swr_v2_http_context_rewrite_step(owner, 2, 0, &raw mut index) },
             1
         );
         assert_eq!(index, 0);
         assert_eq!(
-            unsafe { swr_v2_http_context_rewrite_step(owner, 0, 2, &mut index) },
+            unsafe { swr_v2_http_context_rewrite_step(owner, 0, 2, &raw mut index) },
             3
         );
         assert_eq!(
-            unsafe { swr_v2_http_context_rewrite_step(owner, 0, 5, &mut index) },
+            unsafe { swr_v2_http_context_rewrite_step(owner, 0, 5, &raw mut index) },
             4
         );
         assert_eq!(
@@ -832,12 +855,12 @@ mod tests {
             0
         );
         assert_eq!(
-            unsafe { swr_v2_http_context_rewrite_step(owner, 0, 3, &mut index) },
+            unsafe { swr_v2_http_context_rewrite_step(owner, 0, 3, &raw mut index) },
             1
         );
         assert_eq!(index, 1);
         assert_eq!(
-            unsafe { swr_v2_http_context_rewrite_step(owner, 0, 1, &mut index) },
+            unsafe { swr_v2_http_context_rewrite_step(owner, 0, 1, &raw mut index) },
             2
         );
         let pattern = HttpProxyText {
@@ -850,18 +873,24 @@ mod tests {
             length: bytes.len(),
         };
         assert_eq!(
-            unsafe { swr_v2_http_context_rewrite_literal(owner, &pattern, &replacement) },
+            unsafe {
+                swr_v2_http_context_rewrite_literal(
+                    owner,
+                    &raw const pattern,
+                    &raw const replacement,
+                )
+            },
             1
         );
         bytes.fill(b'x');
         assert_eq!(read(owner, URL), b"/normal?q=1");
         assert_eq!(read(owner, ORIGINAL), b"/files?q=1");
         assert_eq!(
-            unsafe { swr_v2_http_context_rewrite_step(owner, 0, 4, &mut index) },
+            unsafe { swr_v2_http_context_rewrite_step(owner, 0, 4, &raw mut index) },
             0
         );
         assert_eq!(
-            unsafe { swr_v2_http_context_rewrite_step(owner, 0, 1, &mut index) },
+            unsafe { swr_v2_http_context_rewrite_step(owner, 0, 1, &raw mut index) },
             INVALID
         );
         assert_eq!(index, 1);
@@ -921,7 +950,7 @@ mod tests {
                     URL,
                     output.as_mut_ptr(),
                     output.len(),
-                    &mut written,
+                    &raw mut written,
                 )
             },
             OVERFLOW
@@ -970,7 +999,10 @@ mod tests {
     fn initialized_facts_and_nested_stores_have_one_custodian() {
         let owner = make();
         let mut facts = HttpStaticObservation::default();
-        assert_eq!(unsafe { swr_v2_http_context_observe(owner, &mut facts) }, 0);
+        assert_eq!(
+            unsafe { swr_v2_http_context_observe(owner, &raw mut facts) },
+            0
+        );
         assert_eq!(facts.status, 200);
         assert_eq!(facts.file_ready, 0);
         for name in [b"z".as_slice(), b"a", b"z"] {
@@ -991,7 +1023,9 @@ mod tests {
             0
         );
         assert_eq!(
-            unsafe { swr_v2_http_context_task(owner, 1, 17, 23, std::ptr::null(), &mut written) },
+            unsafe {
+                swr_v2_http_context_task(owner, 1, 17, 23, std::ptr::null(), &raw mut written)
+            },
             0
         );
         assert_eq!(
@@ -1000,12 +1034,15 @@ mod tests {
             },
             0
         );
-        assert_eq!(unsafe { swr_v2_http_context_observe(owner, &mut facts) }, 0);
+        assert_eq!(
+            unsafe { swr_v2_http_context_observe(owner, &raw mut facts) },
+            0
+        );
         assert_eq!(facts.directory_count, 2);
         assert_eq!(facts.task_count, 1);
         let mut task = HttpStaticTask::default();
         assert_eq!(
-            unsafe { swr_v2_http_context_tasks(owner, &mut task, 1, &mut written) },
+            unsafe { swr_v2_http_context_tasks(owner, &raw mut task, 1, &raw mut written) },
             0
         );
         unsafe { swr_v2_http_context_drop(owner) };

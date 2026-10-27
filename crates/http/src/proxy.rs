@@ -195,7 +195,7 @@ pub unsafe extern "C" fn swr_v2_http_proxy_authorization(
     let mut count = 0;
     // SAFETY: forwards the caller's credentials; `plain` and `count` are disjoint locals.
     let status =
-        unsafe { swr_v1_http_proxy_credentials(credentials, plain.as_mut_ptr(), &mut count) };
+        unsafe { swr_v1_http_proxy_credentials(credentials, plain.as_mut_ptr(), &raw mut count) };
     if status < 0 {
         return status;
     }
@@ -359,7 +359,7 @@ mod tests {
                     swr_v1_http_proxy_credentials(
                         credentials.as_ptr(),
                         output.as_mut_ptr(),
-                        &mut written,
+                        &raw mut written,
                     )
                 },
                 0
@@ -387,7 +387,7 @@ mod tests {
                 swr_v1_http_proxy_credentials(
                     credentials.as_ptr(),
                     output.as_mut_ptr(),
-                    &mut written,
+                    &raw mut written,
                 )
             },
             INVALID
@@ -405,7 +405,7 @@ mod tests {
                 swr_v2_http_proxy_authorization(
                     credentials.as_ptr(),
                     output.as_mut_ptr(),
-                    &mut count,
+                    &raw mut count,
                 )
             },
             0
@@ -416,7 +416,7 @@ mod tests {
         let empty = [span(b""), span(b"")];
         assert_eq!(
             unsafe {
-                swr_v2_http_proxy_authorization(empty.as_ptr(), output.as_mut_ptr(), &mut count)
+                swr_v2_http_proxy_authorization(empty.as_ptr(), output.as_mut_ptr(), &raw mut count)
             },
             0
         );
@@ -435,7 +435,9 @@ mod tests {
         let expected=b"CONNECT t:-2147483648 HTTP/1.1\r\nHost: h:-2147483648\r\nUser-Agent: Swoole/6.2.2\r\nProxy-Connection: Keep-Alive\r\nProxy-Authorization: Basic YWJj\r\n\r\n";
         let mut count = 0;
         assert_eq!(
-            unsafe { swr_v1_http_proxy_pack(&request, std::ptr::null_mut(), 0, &mut count) },
+            unsafe {
+                swr_v1_http_proxy_pack(&raw const request, std::ptr::null_mut(), 0, &raw mut count)
+            },
             0
         );
         assert_eq!(count, expected.len());
@@ -443,7 +445,12 @@ mod tests {
             let mut buffer = vec![0xcc; capacity + 1];
             assert_eq!(
                 unsafe {
-                    swr_v1_http_proxy_pack(&request, buffer.as_mut_ptr(), capacity, &mut count)
+                    swr_v1_http_proxy_pack(
+                        &raw const request,
+                        buffer.as_mut_ptr(),
+                        capacity,
+                        &raw mut count,
+                    )
                 },
                 0
             );
@@ -467,21 +474,35 @@ mod tests {
         let mut count = 91;
         assert_eq!(
             unsafe {
-                swr_v1_http_proxy_pack(&request, output.as_mut_ptr(), usize::MAX, &mut count)
+                swr_v1_http_proxy_pack(
+                    &raw const request,
+                    output.as_mut_ptr(),
+                    usize::MAX,
+                    &raw mut count,
+                )
             },
             OVERFLOW
         );
         assert_eq!(output, [0xcc; 4]);
         assert_eq!(count, 91);
         assert_eq!(
-            unsafe { swr_v1_http_proxy_pack(&request, std::ptr::null_mut(), 1, &mut count) },
+            unsafe {
+                swr_v1_http_proxy_pack(&raw const request, std::ptr::null_mut(), 1, &raw mut count)
+            },
             INVALID
         );
         assert_eq!(count, 91);
         let mut huge = request;
         huge.target.length = isize::MAX as usize + 1;
         assert_eq!(
-            unsafe { swr_v1_http_proxy_pack(&huge, output.as_mut_ptr(), output.len(), &mut count) },
+            unsafe {
+                swr_v1_http_proxy_pack(
+                    &raw const huge,
+                    output.as_mut_ptr(),
+                    output.len(),
+                    &raw mut count,
+                )
+            },
             OVERFLOW
         );
         assert_eq!(output, [0xcc; 4]);

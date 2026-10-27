@@ -113,7 +113,12 @@ pub unsafe extern "C" fn swr_v1_http_multipart_filename(data: *mut u8, capacity:
     loop {
         // SAFETY: `data` holds `capacity` writable bytes with a reachable NUL (see the contract).
         let status = unsafe {
-            crate::headers::swr_v1_http_cookie_next(data, capacity, &mut cursor, &mut cookie)
+            crate::headers::swr_v1_http_cookie_next(
+                data,
+                capacity,
+                &raw mut cursor,
+                &raw mut cookie,
+            )
         };
         if status != 1 {
             return status;
@@ -150,8 +155,8 @@ mod tests {
                     crate::headers::swr_v1_http_cookie_next(
                         expected.as_mut_ptr(),
                         expected.len(),
-                        &mut cursor,
-                        &mut out,
+                        &raw mut cursor,
+                        &raw mut out,
                     )
                 };
                 if status != 1 {
@@ -198,15 +203,15 @@ mod tests {
             length: 1,
             ..Default::default()
         };
-        assert_eq!(unsafe { swr_v1_http_multipart_data(&mut data) }, 1);
+        assert_eq!(unsafe { swr_v1_http_multipart_data(&raw mut data) }, 1);
         data.has_file = 1;
         data.upload_size = usize::MAX;
-        assert_eq!(unsafe { swr_v1_http_multipart_data(&mut data) }, 2);
+        assert_eq!(unsafe { swr_v1_http_multipart_data(&raw mut data) }, 2);
         assert_eq!(data.upload_size, 0);
         data.written = 0;
-        assert_eq!(unsafe { swr_v1_http_multipart_data(&mut data) }, 3);
+        assert_eq!(unsafe { swr_v1_http_multipart_data(&raw mut data) }, 3);
         assert_eq!(data.flags, 0);
-        assert_eq!(unsafe { swr_v1_http_multipart_data(&mut data) }, 4);
+        assert_eq!(unsafe { swr_v1_http_multipart_data(&raw mut data) }, 4);
         assert_eq!(data.flags, 3);
         assert_eq!(swr_v1_http_multipart_result(-1, usize::MAX, 1), -1);
         assert_eq!(swr_v1_http_multipart_result(1, 2, 0), 0);

@@ -243,7 +243,7 @@ mod tests {
         let before = destination;
         let mut written = 91;
         assert_eq!(
-            unsafe { swr_v2_http_tasks_snapshot(owner, &mut destination, 1, &mut written) },
+            unsafe { swr_v2_http_tasks_snapshot(owner, &raw mut destination, 1, &raw mut written) },
             crate::OVERFLOW
         );
         assert_eq!(destination, before);
@@ -251,7 +251,12 @@ mod tests {
         let mut output = [HttpStaticTask::default(); 2];
         assert_eq!(
             unsafe {
-                swr_v2_http_tasks_snapshot(owner, output.as_mut_ptr(), output.len(), &mut written)
+                swr_v2_http_tasks_snapshot(
+                    owner,
+                    output.as_mut_ptr(),
+                    output.len(),
+                    &raw mut written,
+                )
             },
             0
         );
@@ -260,7 +265,12 @@ mod tests {
         assert_eq!(output, [HttpStaticTask::default(); 2]);
         assert_eq!(
             unsafe {
-                swr_v2_http_tasks_snapshot(std::ptr::null(), std::ptr::null_mut(), 0, &mut written)
+                swr_v2_http_tasks_snapshot(
+                    std::ptr::null(),
+                    std::ptr::null_mut(),
+                    0,
+                    &raw mut written,
+                )
             },
             0
         );
@@ -289,7 +299,7 @@ mod tests {
         };
         let mut written = 0;
         assert_eq!(
-            unsafe { swr_v2_http_tasks_prepare(owner, 3, 5, &format, &mut written) },
+            unsafe { swr_v2_http_tasks_prepare(owner, 3, 5, &raw const format, &raw mut written) },
             0
         );
         assert!(written > 0);
@@ -297,7 +307,7 @@ mod tests {
         boundary.fill(b'x');
         let mut snapshot = HttpStaticTask::default();
         assert_eq!(
-            unsafe { swr_v2_http_tasks_copy(owner, 0, &mut snapshot) },
+            unsafe { swr_v2_http_tasks_copy(owner, 0, &raw mut snapshot) },
             0
         );
         assert!(
@@ -309,12 +319,15 @@ mod tests {
         assert_eq!(unsafe { swr_v2_http_tasks_clear(owner) }, 0);
         assert_eq!(unsafe { swr_v2_http_tasks_count(owner) }, 0);
         assert_eq!(
-            unsafe { swr_v2_http_tasks_prepare(owner, 0, 100, std::ptr::null(), &mut written) },
+            unsafe { swr_v2_http_tasks_prepare(owner, 0, 100, std::ptr::null(), &raw mut written) },
             0
         );
         assert_eq!(unsafe { swr_v2_http_tasks_push(owner) }, 0);
         let mut full = HttpStaticTask::default();
-        assert_eq!(unsafe { swr_v2_http_tasks_copy(owner, 0, &mut full) }, 0);
+        assert_eq!(
+            unsafe { swr_v2_http_tasks_copy(owner, 0, &raw mut full) },
+            0
+        );
         assert_eq!(full.part_header, snapshot.part_header);
         assert_eq!(full.offset, 0);
         assert_eq!(full.length, 100);
@@ -322,19 +335,21 @@ mod tests {
         assert_eq!(snapshot.length, 5);
         let mut required = 0;
         assert_eq!(
-            unsafe { swr_v2_http_tasks_snapshot(owner, std::ptr::null_mut(), 0, &mut required) },
+            unsafe {
+                swr_v2_http_tasks_snapshot(owner, std::ptr::null_mut(), 0, &raw mut required)
+            },
             0
         );
         assert_eq!(required, 1);
         let mut bulk = HttpStaticTask::default();
         assert_eq!(
-            unsafe { swr_v2_http_tasks_snapshot(owner, &mut bulk, 1, &mut required) },
+            unsafe { swr_v2_http_tasks_snapshot(owner, &raw mut bulk, 1, &raw mut required) },
             0
         );
         assert_eq!(bulk, full);
 
         assert_eq!(
-            unsafe { swr_v2_http_tasks_copy(owner, 1, &mut full) },
+            unsafe { swr_v2_http_tasks_copy(owner, 1, &raw mut full) },
             INVALID
         );
         assert_eq!(full.length, 100);

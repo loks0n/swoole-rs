@@ -250,7 +250,14 @@ mod tests {
         let mut output = [0xa5; 128];
         let mut n = 0;
         assert_eq!(
-            unsafe { swr_v1_http_range_format(&input, output.as_mut_ptr(), output.len(), &mut n) },
+            unsafe {
+                swr_v1_http_range_format(
+                    &raw const input,
+                    output.as_mut_ptr(),
+                    output.len(),
+                    &raw mut n,
+                )
+            },
             0
         );
         assert_eq!(
@@ -259,7 +266,14 @@ mod tests {
         );
         input.part = 1;
         assert_eq!(
-            unsafe { swr_v1_http_range_format(&input, output.as_mut_ptr(), output.len(), &mut n) },
+            unsafe {
+                swr_v1_http_range_format(
+                    &raw const input,
+                    output.as_mut_ptr(),
+                    output.len(),
+                    &raw mut n,
+                )
+            },
             0
         );
         assert_eq!(&output[..n], b"\r\n--ab\0cd--\r\n");
@@ -295,10 +309,10 @@ mod tests {
                             assert_eq!(
                                 unsafe {
                                     swr_v1_http_range_format(
-                                        &input,
+                                        &raw const input,
                                         std::ptr::null_mut(),
                                         0,
-                                        &mut written,
+                                        &raw mut written,
                                     )
                                 },
                                 0
@@ -309,10 +323,10 @@ mod tests {
                                 assert_eq!(
                                     unsafe {
                                         swr_v1_http_range_format(
-                                            &input,
+                                            &raw const input,
                                             output.as_mut_ptr(),
                                             capacity,
-                                            &mut written,
+                                            &raw mut written,
                                         )
                                     },
                                     0
@@ -344,7 +358,12 @@ mod tests {
         let mut written = 99;
         assert_eq!(
             unsafe {
-                swr_v1_http_range_format(&input, storage.as_mut_ptr(), storage.len(), &mut written)
+                swr_v1_http_range_format(
+                    &raw const input,
+                    storage.as_mut_ptr(),
+                    storage.len(),
+                    &raw mut written,
+                )
             },
             INVALID
         );
@@ -356,7 +375,7 @@ mod tests {
             ..Default::default()
         };
         let before = state;
-        assert_eq!(unsafe { swr_v1_http_range_finish(&mut state) }, INVALID);
+        assert_eq!(unsafe { swr_v1_http_range_finish(&raw mut state) }, INVALID);
         assert_eq!(state, before);
     }
     #[test]
@@ -370,17 +389,17 @@ mod tests {
             if_range: 1,
             ..Default::default()
         };
-        assert_eq!(unsafe { swr_v1_http_range_finish(&mut state) }, 2);
+        assert_eq!(unsafe { swr_v1_http_range_finish(&raw mut state) }, 2);
         assert_eq!((state.status, state.content_length), (299, 123));
         state.end_length = 9;
-        assert_eq!(unsafe { swr_v1_http_range_finish(&mut state) }, 3);
+        assert_eq!(unsafe { swr_v1_http_range_finish(&raw mut state) }, 3);
         assert_eq!((state.status, state.content_length), (206, 132));
         state.modified = 1;
-        assert_eq!(unsafe { swr_v1_http_range_finish(&mut state) }, 4);
+        assert_eq!(unsafe { swr_v1_http_range_finish(&raw mut state) }, 4);
         assert_eq!((state.status, state.content_length), (206, 132));
-        assert_eq!(unsafe { swr_v1_http_range_finish(&mut state) }, 1);
+        assert_eq!(unsafe { swr_v1_http_range_finish(&raw mut state) }, 1);
         assert_eq!((state.status, state.content_length), (206, 100));
-        assert_eq!(unsafe { swr_v1_http_range_finish(&mut state) }, 0);
+        assert_eq!(unsafe { swr_v1_http_range_finish(&raw mut state) }, 0);
         assert_eq!(state.status, 200);
     }
 }

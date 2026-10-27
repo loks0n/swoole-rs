@@ -46,13 +46,13 @@ mod tests {
     fn original_zero_seed_and_explicit_publication() {
         let mut state = SchedulerPhase { started: 0 };
         unsafe {
-            assert_eq!(swr_v1_phpcoroutines_scheduler_phase(&mut state, 0), 0);
-            assert_eq!(swr_v1_phpcoroutines_scheduler_phase(&mut state, 1), 1);
+            assert_eq!(swr_v1_phpcoroutines_scheduler_phase(&raw mut state, 0), 0);
+            assert_eq!(swr_v1_phpcoroutines_scheduler_phase(&raw mut state, 1), 1);
             // Admission reads do not clear the original sticky started state.
-            assert_eq!(swr_v1_phpcoroutines_scheduler_phase(&mut state, 0), 1);
-            assert_eq!(swr_v1_phpcoroutines_scheduler_phase(&mut state, 0), 1);
-            assert_eq!(swr_v1_phpcoroutines_scheduler_phase(&mut state, 2), 0);
-            assert_eq!(swr_v1_phpcoroutines_scheduler_phase(&mut state, 0), 0);
+            assert_eq!(swr_v1_phpcoroutines_scheduler_phase(&raw mut state, 0), 1);
+            assert_eq!(swr_v1_phpcoroutines_scheduler_phase(&raw mut state, 0), 1);
+            assert_eq!(swr_v1_phpcoroutines_scheduler_phase(&raw mut state, 2), 0);
+            assert_eq!(swr_v1_phpcoroutines_scheduler_phase(&raw mut state, 0), 0);
         }
     }
 }

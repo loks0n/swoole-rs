@@ -219,7 +219,7 @@ mod tests {
             iov_len: 7,
         };
         unsafe {
-            let owner = swr_v1_reactor_iov_owned_new(&source, 1);
+            let owner = swr_v1_reactor_iov_owned_new(&raw const source, 1);
             assert_eq!(owner.status, 0);
             let partial = swr_v1_reactor_iov_owned_progress(owner.iterator, 2, 1, 0, 0);
             assert_eq!(

@@ -733,20 +733,22 @@ mod tests {
         };
         for server in 0..=1 {
             let mut out = [0xcc; 47];
-            let n = unsafe { sw_rs_http2_pack_settings(out.as_mut_ptr().add(1), 45, &s, server) };
+            let n = unsafe {
+                sw_rs_http2_pack_settings(out.as_mut_ptr().add(1), 45, &raw const s, server)
+            };
             assert_eq!(n, if server == 0 { 45 } else { 39 });
             assert_eq!(out[0], 0xcc);
             assert_eq!(out[n + 1], 0xcc);
             let mut frame = Http2FrameFacts::default();
             assert_eq!(
-                unsafe { sw_rs_http2_decode_frame(out.as_ptr().add(1), n, 0, 0, &mut frame) },
+                unsafe { sw_rs_http2_decode_frame(out.as_ptr().add(1), n, 0, 0, &raw mut frame) },
                 1
             );
             assert_eq!((frame.kind, frame.length), (4, (n - 9) as u32));
             for item in out[10..n + 1].as_chunks::<6>().0 {
                 let mut id = 0;
                 let mut value = 0;
-                unsafe { sw_rs_http2_unpack_setting(item.as_ptr(), &mut id, &mut value) };
+                unsafe { sw_rs_http2_unpack_setting(item.as_ptr(), &raw mut id, &raw mut value) };
                 assert!((1..=6).contains(&id));
                 if id == 1 {
                     assert_eq!(value, s.header_table_size);
@@ -763,7 +765,7 @@ mod tests {
         let bytes = header(255, 0xffffff, 0x80, 0xffffffff);
         let mut f = Http2FrameFacts::default();
         assert_eq!(
-            unsafe { sw_rs_http2_decode_frame(bytes.as_ptr(), 9, 0, 0, &mut f) },
+            unsafe { sw_rs_http2_decode_frame(bytes.as_ptr(), 9, 0, 0, &raw mut f) },
             1
         );
         assert_eq!(f.stream_id, 0x7fffffff);
@@ -779,7 +781,7 @@ mod tests {
             for server in 0..=1 {
                 for has_deflater in 0..=1 {
                     let mut p = Http2SettingPlan::default();
-                    unsafe { sw_rs_http2_setting_plan(id, 2, 1, has_deflater, server, &mut p) };
+                    unsafe { sw_rs_http2_setting_plan(id, 2, 1, has_deflater, server, &raw mut p) };
                     assert_eq!(
                         p.field,
                         if [1, 3, 4, 5, 6].contains(&id) {
@@ -800,7 +802,7 @@ mod tests {
     #[test]
     fn chunk_window_and_pipeline_bits() {
         let mut chunk = Http2ChunkPlan::default();
-        unsafe { sw_rs_http2_chunk(20, 16, 1, &mut chunk) };
+        unsafe { sw_rs_http2_chunk(20, 16, 1, &raw mut chunk) };
         assert_eq!(
             chunk,
             Http2ChunkPlan {
@@ -808,7 +810,7 @@ mod tests {
                 flags: 0
             }
         );
-        unsafe { sw_rs_http2_chunk(16, 16, 257, &mut chunk) };
+        unsafe { sw_rs_http2_chunk(16, 16, 257, &raw mut chunk) };
         assert_eq!(chunk.flags, 1);
         assert_eq!(sw_rs_http2_window_action(16, 16, 0), 0);
         assert_eq!(sw_rs_http2_window_action(16, 0, 0), 1);
@@ -819,7 +821,7 @@ mod tests {
                 for kind in 0..=9 {
                     for frame_flags in 0..8 {
                         let mut p = Http2ResponsePlan::default();
-                        unsafe { sw_rs_http2_response(kind, frame_flags, flags, read, &mut p) };
+                        unsafe { sw_rs_http2_response(kind, frame_flags, flags, read, &raw mut p) };
                         let end = frame_flags & 1 != 0 || kind == 3 || kind == 7;
                         assert_eq!(p.end, u32::from(end));
                         assert_eq!(

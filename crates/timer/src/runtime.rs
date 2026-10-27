@@ -213,11 +213,14 @@ mod tests {
     fn delay_checks_limits_before_writing_and_keeps_native_clock_fallback() {
         let mut result = 77;
         unsafe {
-            assert_eq!(swr_v1_timer_delay_deadline(-1, 20, -5, &mut result), 1);
+            assert_eq!(swr_v1_timer_delay_deadline(-1, 20, -5, &raw mut result), 1);
             assert_eq!(result, 15);
             for (now, old, delay) in [(i64::MAX, 0, 1), (-1, i64::MIN, -1), (0, 0, -1)] {
                 result = 77;
-                assert_eq!(swr_v1_timer_delay_deadline(now, old, delay, &mut result), 0);
+                assert_eq!(
+                    swr_v1_timer_delay_deadline(now, old, delay, &raw mut result),
+                    0
+                );
                 assert_eq!(result, 77);
             }
             assert_eq!(

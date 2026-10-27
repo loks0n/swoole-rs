@@ -151,7 +151,7 @@ mod tests {
             swr_v1_channel_tokens_remove(owner, a);
             let mut count = 0;
             let mut out = a;
-            while swr_v1_channel_tokens_front(owner, &mut out) == 1 {
+            while swr_v1_channel_tokens_front(owner, &raw mut out) == 1 {
                 assert_eq!(out, if count % 2 == 0 { ptr::null_mut() } else { b });
                 swr_v1_channel_tokens_pop(owner);
                 count += 1;

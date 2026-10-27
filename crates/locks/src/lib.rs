@@ -188,7 +188,7 @@ fn deadline(millis: i32) -> timespec {
         tv_nsec: 0,
     };
     // SAFETY: `now` is a live, writable timespec.
-    unsafe { clock_gettime(CLOCK_REALTIME, &mut now) };
+    unsafe { clock_gettime(CLOCK_REALTIME, &raw mut now) };
     now.tv_sec += (millis / 1000) as time_t;
     now.tv_nsec += (millis % 1000) as c_long * 1_000_000;
     now.tv_sec += (now.tv_nsec / 1_000_000_000) as time_t;
@@ -250,10 +250,10 @@ pub unsafe extern "C" fn swr_v1_locks_lock(
                     let deadline = deadline(timeout);
                     return if read {
                         // SAFETY: `lock` is an initialized rwlock; `deadline` is live.
-                        unsafe { pthread_rwlock_timedrdlock(lock, &deadline) }
+                        unsafe { pthread_rwlock_timedrdlock(lock, &raw const deadline) }
                     } else {
                         // SAFETY: as above.
-                        unsafe { pthread_rwlock_timedwrlock(lock, &deadline) }
+                        unsafe { pthread_rwlock_timedwrlock(lock, &raw const deadline) }
                     };
                 }
                 return poll(timeout, try_lock);
@@ -503,7 +503,7 @@ pub unsafe extern "C" fn swr_v1_locks_wait(word: *mut u32, timeout: f64) -> i32 
             FUTEX_WAIT,
             0,
             if timeout > 0.0 {
-                &duration as *const timespec
+                &raw const duration
             } else {
                 std::ptr::null()
             },

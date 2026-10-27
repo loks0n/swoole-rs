@@ -201,7 +201,7 @@ pub(crate) unsafe fn path_step(
             };
             // SAFETY: phase 1 initialized `length + 1 <= capacity` output bytes.
             let result =
-                unsafe { swr_v1_http_url_decode(output, length, &mut state.filename_length) };
+                unsafe { swr_v1_http_url_decode(output, length, &raw mut state.filename_length) };
             if result != 0 {
                 return result;
             }
@@ -362,7 +362,13 @@ mod tests {
         assert_eq!(state.filename_length, 12);
         assert_eq!(
             unsafe {
-                swr_v1_http_static_location(url.as_ptr(), url.len(), b"/A".as_ptr(), 2, &mut state)
+                swr_v1_http_static_location(
+                    url.as_ptr(),
+                    url.len(),
+                    b"/A".as_ptr(),
+                    2,
+                    &raw mut state,
+                )
             },
             1
         );

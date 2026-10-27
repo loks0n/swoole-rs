@@ -60,7 +60,8 @@ mod tests {
         let mut state = FileContentState::default();
         let mut out = Vec::new();
         loop {
-            let action = unsafe { swr_v1_os_file_content_next(&mut state, ready, size, maximum) };
+            let action =
+                unsafe { swr_v1_os_file_content_next(&raw mut state, ready, size, maximum) };
             out.push(action);
             if action != 1 && action != 2 {
                 break;
@@ -93,20 +94,20 @@ mod tests {
     fn only_requested_facts_are_observed() {
         let mut state = FileContentState::default();
         assert_eq!(
-            unsafe { swr_v1_os_file_content_next(&mut state, true, i64::MIN, u64::MAX) },
+            unsafe { swr_v1_os_file_content_next(&raw mut state, true, i64::MIN, u64::MAX) },
             1
         );
         assert_eq!(
-            unsafe { swr_v1_os_file_content_next(&mut state, false, 7, u64::MAX) },
+            unsafe { swr_v1_os_file_content_next(&raw mut state, false, 7, u64::MAX) },
             2
         );
         assert_eq!(
-            unsafe { swr_v1_os_file_content_next(&mut state, false, -99, 6) },
+            unsafe { swr_v1_os_file_content_next(&raw mut state, false, -99, 6) },
             5
         );
         assert_eq!(state.size, 7);
         assert_eq!(
-            unsafe { swr_v1_os_file_content_next(&mut state, true, 1, 1) },
+            unsafe { swr_v1_os_file_content_next(&raw mut state, true, 1, 1) },
             u32::MAX
         );
         assert_eq!(

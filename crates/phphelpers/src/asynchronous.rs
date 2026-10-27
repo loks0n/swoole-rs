@@ -42,22 +42,22 @@ mod tests {
         for observed in [0, 1] {
             let mut blocking = 0;
             assert_eq!(
-                unsafe { swr_v1_phphelpers_async(&mut blocking, 1, observed) },
+                unsafe { swr_v1_phphelpers_async(&raw mut blocking, 1, observed) },
                 2
             );
             assert_eq!(blocking, 2);
             let mut conditional = 0;
             assert_eq!(
-                unsafe { swr_v1_phphelpers_async(&mut conditional, 0, 0) },
+                unsafe { swr_v1_phphelpers_async(&raw mut conditional, 0, 0) },
                 1
             );
             assert_eq!(conditional, 1);
             assert_eq!(
-                unsafe { swr_v1_phphelpers_async(&mut conditional, 0, observed) },
+                unsafe { swr_v1_phphelpers_async(&raw mut conditional, 0, observed) },
                 if observed != 0 { 3 } else { 2 }
             );
             assert_eq!(
-                unsafe { swr_v1_phphelpers_async(&mut conditional, 0, observed) },
+                unsafe { swr_v1_phphelpers_async(&raw mut conditional, 0, observed) },
                 0
             );
         }

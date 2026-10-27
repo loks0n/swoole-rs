@@ -8,30 +8,30 @@ fn sizing_and_invalid_plans_fail_closed() {
         assert_eq!(mem::offset_of!(Row, key), 24);
         let (mut rows, mut conflict) = (0, 0.0);
         assert_eq!(
-            swr_v1_memory_table_config(65, 0.0, &mut rows, &mut conflict),
+            swr_v1_memory_table_config(65, 0.0, &raw mut rows, &raw mut conflict),
             0
         );
         assert_eq!((rows, conflict), (128, 0.2));
         assert_eq!(
-            swr_v1_memory_table_config(u32::MAX, 2.0, &mut rows, &mut conflict),
+            swr_v1_memory_table_config(u32::MAX, 2.0, &raw mut rows, &raw mut conflict),
             0
         );
         assert_eq!((rows, conflict), (0x8000_0000, 1.0));
         assert_eq!(
-            swr_v1_memory_table_config(64, f32::NAN, &mut rows, &mut conflict),
+            swr_v1_memory_table_config(64, f32::NAN, &raw mut rows, &raw mut conflict),
             -1
         );
         let mut layout = Layout::default();
         assert_eq!(
-            swr_v1_memory_table_layout(64, usize::MAX, 0.2, &mut layout),
+            swr_v1_memory_table_layout(64, usize::MAX, 0.2, &raw mut layout),
             -1
         );
-        assert_eq!(swr_v1_memory_table_layout(64, 23, 0.2, &mut layout), 0);
+        assert_eq!(swr_v1_memory_table_layout(64, 23, 0.2, &raw mut layout), 0);
         let count = (64.0f32 * 1.2) as usize;
         assert_eq!(layout.total, count * 111 + 48 + (count - 64) * 24 + 64 * 8);
         let mut bytes = vec![0u64; layout.total.div_ceil(8)];
         assert_eq!(
-            swr_v1_memory_table_arena(bytes.as_mut_ptr().cast(), &layout),
+            swr_v1_memory_table_arena(bytes.as_mut_ptr().cast(), &raw const layout),
             0
         );
         let row = bytes.as_ptr().cast::<*mut Row>().add(1).read();
@@ -50,15 +50,15 @@ fn sizing_and_invalid_plans_fail_closed() {
         );
         layout.pool_offset = 1;
         assert_eq!(
-            swr_v1_memory_table_arena(bytes.as_mut_ptr().cast(), &layout),
+            swr_v1_memory_table_arena(bytes.as_mut_ptr().cast(), &raw const layout),
             -1
         );
         let mut width = 0;
         assert_eq!(
-            swr_v1_memory_table_column_size(3, usize::MAX, &mut width),
+            swr_v1_memory_table_column_size(3, usize::MAX, &raw mut width),
             -1
         );
-        assert_eq!(swr_v1_memory_table_column_size(3, 7, &mut width), 0);
+        assert_eq!(swr_v1_memory_table_column_size(3, 7, &raw mut width), 0);
         assert_eq!(width, 11);
     }
 }
@@ -73,7 +73,7 @@ fn collision_deletion_iteration_and_unaligned_values() {
         assert_eq!(swr_v1_memory_table_init(root, b"a".as_ptr(), 1), 0);
         let mut plan = Plan::default();
         assert_eq!(
-            swr_v1_memory_table_set_plan(root, b"b".as_ptr(), 1, &mut plan),
+            swr_v1_memory_table_set_plan(root, b"b".as_ptr(), 1, &raw mut plan),
             1
         );
         assert_eq!((plan.parent, plan.level, plan.flags), (root.cast(), 1, 1));
@@ -82,13 +82,13 @@ fn collision_deletion_iteration_and_unaligned_values() {
         assert_eq!(swr_v1_memory_table_init(third, b"c".as_ptr(), 1), 0);
         ptr::addr_of_mut!((*second).next).write_unaligned(third);
         assert_eq!(
-            swr_v1_memory_table_set_plan(root, b"c".as_ptr(), 1, &mut plan),
+            swr_v1_memory_table_set_plan(root, b"c".as_ptr(), 1, &raw mut plan),
             0
         );
         assert_eq!((plan.row, plan.level, plan.flags), (third.cast(), 3, 2));
         let number = 123456i64;
         assert_eq!(
-            swr_v1_memory_table_set_value(second, 0, 8, 1, (&number as *const i64).cast(), 0),
+            swr_v1_memory_table_set_value(second, 0, 8, 1, (&raw const number).cast(), 0),
             0
         );
         assert_eq!(
@@ -97,43 +97,43 @@ fn collision_deletion_iteration_and_unaligned_values() {
         );
         let mut removed = ptr::null_mut();
         assert_eq!(
-            swr_v1_memory_table_delete(root, b"a".as_ptr(), 1, 23, &mut removed),
+            swr_v1_memory_table_delete(root, b"a".as_ptr(), 1, 23, &raw mut removed),
             0
         );
         assert_eq!(removed, second.cast());
         assert_eq!(swr_v1_memory_table_get(root, b"b".as_ptr(), 1), root);
         let mut output = 0i64;
         assert_eq!(
-            swr_v1_memory_table_get_number(root, 0, (&mut output as *mut i64).cast()),
+            swr_v1_memory_table_get_number(root, 0, (&raw mut output).cast()),
             0
         );
         assert_eq!(output, number);
         let (mut string, mut length) = (ptr::null_mut(), 0);
         assert_eq!(
-            swr_v1_memory_table_get_string(root, 8, 11, &mut string, &mut length),
+            swr_v1_memory_table_get_string(root, 8, 11, &raw mut string, &raw mut length),
             0
         );
         assert_eq!(slice::from_raw_parts(string, length as usize), b"1234567");
         let current = third.cast::<u8>().add(111).cast::<Row>();
         let (mut index, mut advance) = (0, 0);
         assert_eq!(
-            swr_v1_memory_table_next(root, 1, current, 111, &mut index, &mut advance),
+            swr_v1_memory_table_next(root, 1, current, 111, &raw mut index, &raw mut advance),
             0
         );
         assert_eq!((index, advance), (2, 0));
         assert_eq!(swr_v1_memory_table_get(current, b"c".as_ptr(), 1), current);
         assert_eq!(
-            swr_v1_memory_table_next(root, 2, current, 111, &mut index, &mut advance),
+            swr_v1_memory_table_next(root, 2, current, 111, &raw mut index, &raw mut advance),
             1
         );
         assert_eq!(index, 0);
         assert_eq!(
-            swr_v1_memory_table_delete(root, b"c".as_ptr(), 1, 23, &mut removed),
+            swr_v1_memory_table_delete(root, b"c".as_ptr(), 1, 23, &raw mut removed),
             0
         );
         assert_eq!(removed, third.cast());
         assert_eq!(
-            swr_v1_memory_table_next(root, 9, current, 111, &mut index, &mut advance),
+            swr_v1_memory_table_next(root, 9, current, 111, &raw mut index, &raw mut advance),
             0
         );
         assert_eq!((index, advance), (9, 1)); // Preserve native single-row iterator behavior.
@@ -180,9 +180,12 @@ fn native_storage_stride_alignment_preserves_frozen_logical_plan_and_header() {
             for item in 0..=128usize {
                 let mut logical = Layout::default();
                 let mut storage = Layout::default();
-                assert_eq!(swr_v1_memory_table_layout(rows, item, 0.2, &mut logical), 0);
                 assert_eq!(
-                    swr_v1_memory_table_storage_layout(rows, item, 0.2, &mut storage),
+                    swr_v1_memory_table_layout(rows, item, 0.2, &raw mut logical),
+                    0
+                );
+                assert_eq!(
+                    swr_v1_memory_table_storage_layout(rows, item, 0.2, &raw mut storage),
                     0
                 );
                 assert_eq!(logical.row_size, 88 + item);
@@ -198,7 +201,7 @@ fn native_storage_stride_alignment_preserves_frozen_logical_plan_and_header() {
                 }
                 let mut arena = vec![0u64; storage.total.div_ceil(8)];
                 assert_eq!(
-                    swr_v1_memory_table_arena(arena.as_mut_ptr().cast(), &storage),
+                    swr_v1_memory_table_arena(arena.as_mut_ptr().cast(), &raw const storage),
                     0
                 );
                 let pointers = arena.as_ptr().cast::<*mut Row>();
@@ -221,7 +224,7 @@ fn native_storage_stride_alignment_preserves_frozen_logical_plan_and_header() {
         for item in [usize::MAX, usize::MAX - 88] {
             let mut storage = Layout::default();
             assert_eq!(
-                swr_v1_memory_table_storage_layout(64, item, 0.2, &mut storage),
+                swr_v1_memory_table_storage_layout(64, item, 0.2, &raw mut storage),
                 -1
             );
             assert_eq!(
@@ -263,7 +266,12 @@ fn binary_key_equality_checks_every_byte_without_reading_beyond_either_span() {
                     assert!(swr_v1_memory_table_get(row, key.as_ptr(), length as u16).is_null());
                     let mut plan = Plan::default();
                     assert_eq!(
-                        swr_v1_memory_table_set_plan(row, key.as_ptr(), length as u16, &mut plan),
+                        swr_v1_memory_table_set_plan(
+                            row,
+                            key.as_ptr(),
+                            length as u16,
+                            &raw mut plan
+                        ),
                         1
                     );
                     assert_eq!(plan.parent, row.cast());
@@ -274,7 +282,7 @@ fn binary_key_equality_checks_every_byte_without_reading_beyond_either_span() {
                             key.as_ptr(),
                             length as u16,
                             0,
-                            &mut removed
+                            &raw mut removed
                         ),
                         1
                     );
@@ -434,26 +442,37 @@ fn iterator_resume_owns_bucket_and_collision_progress_with_native_observations()
         let mut current = [0xabab_abab_abab_ababu64; 12];
         let (mut absolute, mut collision) = (99u32, 99u32);
         let fields = IteratorFields {
-            absolute: &mut absolute,
-            collision: &mut collision,
+            absolute: &raw mut absolute,
+            collision: &raw mut collision,
             current: current.as_mut_ptr().cast(),
             row_size: 96,
         };
-        assert_eq!(swr_v1_memory_table_iterator_reset(&fields), 0);
+        assert_eq!(swr_v1_memory_table_iterator_reset(&raw const fields), 0);
         assert_eq!((absolute, collision), (0, 0));
         assert_eq!(current, [0; 12]);
         let mut observed = Vec::new();
         let mut cursor_states = Vec::new();
         for _ in 0..5 {
             let mut index = 999;
-            let mut status =
-                swr_v1_memory_table_iterator_step(&fields, 3, ptr::null_mut(), 0, &mut index);
+            let mut status = swr_v1_memory_table_iterator_step(
+                &raw const fields,
+                3,
+                ptr::null_mut(),
+                0,
+                &raw mut index,
+            );
             while status == 1 {
                 // This models the native activity observation and lock effect;
                 // Rust receives a locked root or NULL, never an unlocked header.
                 let row = buckets[index as usize];
                 let locked = if active(row) { row } else { ptr::null_mut() };
-                status = swr_v1_memory_table_iterator_step(&fields, 3, locked, 1, &mut index);
+                status = swr_v1_memory_table_iterator_step(
+                    &raw const fields,
+                    3,
+                    locked,
+                    1,
+                    &raw mut index,
+                );
             }
             assert_eq!(status, 0);
             cursor_states.push((absolute, collision));
@@ -473,11 +492,17 @@ fn iterator_resume_owns_bucket_and_collision_progress_with_native_observations()
             [4; 8]
         );
         // Empty/end forward clears only the header; rewind clears the full row.
-        assert_eq!(swr_v1_memory_table_iterator_reset(&fields), 0);
+        assert_eq!(swr_v1_memory_table_iterator_reset(&raw const fields), 0);
         assert_eq!(current, [0; 12]);
         let mut index = 999;
         assert_eq!(
-            swr_v1_memory_table_iterator_step(&fields, 0, ptr::null_mut(), 0, &mut index),
+            swr_v1_memory_table_iterator_step(
+                &raw const fields,
+                0,
+                ptr::null_mut(),
+                0,
+                &raw mut index
+            ),
             0
         );
         assert_eq!((absolute, collision, index), (0, 0, 0));
@@ -489,8 +514,8 @@ fn iterator_invalid_scalar_contracts_reject_without_cursor_or_current_publicatio
     let (mut absolute, mut collision) = (7u32, 9u32);
     let mut current = [0xabab_abab_abab_ababu64; 12];
     let mut fields = IteratorFields {
-        absolute: &mut absolute,
-        collision: &mut collision,
+        absolute: &raw mut absolute,
+        collision: &raw mut collision,
         current: current.as_mut_ptr().cast(),
         row_size: 96,
     };
@@ -498,24 +523,52 @@ fn iterator_invalid_scalar_contracts_reject_without_cursor_or_current_publicatio
         let mut index = 999;
         assert_eq!(
             unsafe {
-                swr_v1_memory_table_iterator_step(&fields, 8, ptr::null_mut(), phase, &mut index)
+                swr_v1_memory_table_iterator_step(
+                    &raw const fields,
+                    8,
+                    ptr::null_mut(),
+                    phase,
+                    &raw mut index,
+                )
             },
             -1
         );
         assert_eq!(index, 0);
     }
     fields.row_size = 87;
-    assert_eq!(unsafe { swr_v1_memory_table_iterator_reset(&fields) }, -1);
+    assert_eq!(
+        unsafe { swr_v1_memory_table_iterator_reset(&raw const fields) },
+        -1
+    );
     let mut index = 999;
     assert_eq!(
-        unsafe { swr_v1_memory_table_iterator_step(&fields, 8, ptr::null_mut(), 0, &mut index) },
+        unsafe {
+            swr_v1_memory_table_iterator_step(
+                &raw const fields,
+                8,
+                ptr::null_mut(),
+                0,
+                &raw mut index,
+            )
+        },
         -1
     );
     fields.row_size = 96;
     fields.absolute = ptr::null_mut();
-    assert_eq!(unsafe { swr_v1_memory_table_iterator_reset(&fields) }, -1);
     assert_eq!(
-        unsafe { swr_v1_memory_table_iterator_step(&fields, 8, ptr::null_mut(), 0, &mut index) },
+        unsafe { swr_v1_memory_table_iterator_reset(&raw const fields) },
+        -1
+    );
+    assert_eq!(
+        unsafe {
+            swr_v1_memory_table_iterator_step(
+                &raw const fields,
+                8,
+                ptr::null_mut(),
+                0,
+                &raw mut index,
+            )
+        },
         -1
     );
     assert_eq!((absolute, collision), (7, 9));
@@ -576,20 +629,20 @@ fn mutation_owns_real_links_and_counters_around_native_pool_effect_boundaries() 
     let mut flags = 717;
     unsafe {
         let mut first = mutation(&counters, root, b"a", 0);
-        first.out_flags = &mut flags;
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut first), 0);
+        first.out_flags = &raw mut flags;
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut first), 0);
         assert_eq!((first.row, first.phase, flags), (root, 2, 1));
         assert_eq!(counters.values(), (1, 1, 0, 0, 0, 0));
         let mut update = mutation(&counters, root, b"a", 0);
-        update.out_flags = &mut flags;
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut update), 0);
+        update.out_flags = &raw mut flags;
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut update), 0);
         assert_eq!(flags, 0);
         assert_eq!(counters.values(), (1, 1, 0, 1, 0, 0));
 
         flags = 717;
         let mut aborted = mutation(&counters, root, b"b", 0);
-        aborted.out_flags = &mut flags;
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut aborted), 1);
+        aborted.out_flags = &raw mut flags;
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut aborted), 1);
         assert_eq!(
             (aborted.phase, aborted.row, flags),
             (1, ptr::null_mut(), 717)
@@ -598,28 +651,28 @@ fn mutation_owns_real_links_and_counters_around_native_pool_effect_boundaries() 
         assert!(next(root).is_null());
         // A failed pool allocation does not resume; first conflict observation
         // remains counted, exactly at the original before-allocation boundary.
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut aborted), -1);
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut aborted), -1);
         assert_eq!(counters.values(), (1, 1, 0, 1, 1, 1));
 
         let mut add = mutation(&counters, root, b"b", 0);
-        add.out_flags = &mut flags;
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut add), 1);
+        add.out_flags = &raw mut flags;
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut add), 1);
         add.row = second;
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut add), 0);
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut add), 0);
         assert_eq!((next(root), flags), (second, 1));
         assert_eq!(counters.values(), (2, 2, 0, 1, 2, 1));
         let mut add = mutation(&counters, root, b"c", 0);
-        add.out_flags = &mut flags;
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut add), 1);
+        add.out_flags = &raw mut flags;
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut add), 1);
         add.row = third;
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut add), 0);
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut add), 0);
         third.cast::<u8>().add(88).write_bytes(0xcc, 8);
         assert_eq!((next(second), flags), (third, 3));
         assert_eq!(counters.values(), (3, 3, 0, 1, 3, 2));
 
         let key = vec![b'b'];
         let mut delete = mutation(&counters, root, &key, 1);
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut delete), 1);
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut delete), 1);
         drop(key); // Delete resume does not borrow its already-consumed key token.
         assert_eq!(
             (delete.phase, delete.removed, next(root)),
@@ -627,26 +680,26 @@ fn mutation_owns_real_links_and_counters_around_native_pool_effect_boundaries() 
         );
         assert_eq!(counters.values(), (3, 3, 0, 1, 3, 2));
         assert_eq!(swr_v1_memory_table_clear(second, 1), 0); // simulated native pool effect
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut delete), 0);
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut delete), 0);
         assert_eq!(counters.values(), (2, 3, 1, 1, 3, 2));
         let mut delete = mutation(&counters, root, b"a", 1);
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut delete), 1);
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut delete), 1);
         assert_eq!(delete.removed, third);
         assert_eq!(
             slice::from_raw_parts(root.cast::<u8>().add(88), 8),
             [0xcc; 8]
         );
         assert_eq!(swr_v1_memory_table_clear(third, 1), 0);
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut delete), 0);
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut delete), 0);
         assert_eq!(counters.values(), (1, 3, 2, 1, 3, 2));
         let mut absent = mutation(&counters, root, b"absent", 1);
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut absent), 2);
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut absent), 2);
         assert_eq!(counters.values(), (1, 3, 2, 1, 3, 2));
         let mut last = mutation(&counters, root, b"c", 1);
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut last), 0);
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut last), 0);
         assert_eq!(counters.values(), (0, 3, 3, 1, 3, 2));
         assert!(!active(root));
-        assert_eq!(swr_v1_memory_table_mutation_step(&mut last), -1); // completed tokens cannot replay
+        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut last), -1); // completed tokens cannot replay
     }
 }
 
@@ -657,7 +710,7 @@ fn mutation_rejects_invalid_scalar_context_before_row_or_counter_writes() {
     let mut flags = 717;
     for case in 0..5 {
         let mut m = mutation(&counters, row.as_mut_ptr().cast(), b"valid", 0);
-        m.out_flags = &mut flags;
+        m.out_flags = &raw mut flags;
         match case {
             0 => m.mode = 2,
             1 => m.phase = 2,
@@ -666,7 +719,7 @@ fn mutation_rejects_invalid_scalar_context_before_row_or_counter_writes() {
             4 => m.key_length = 64,
             _ => unreachable!(),
         }
-        assert_eq!(unsafe { swr_v1_memory_table_mutation_step(&mut m) }, -1);
+        assert_eq!(unsafe { swr_v1_memory_table_mutation_step(&raw mut m) }, -1);
         assert_eq!(flags, 717);
         assert_eq!(row, [0; 12]);
         assert_eq!(counters.values(), (0, 0, 0, 0, 0, 0));
@@ -687,19 +740,19 @@ fn rust_only_independent_root_mutations_share_atomic_statistics_without_native_r
                     let second = unsafe { row.as_mut_ptr().add(12).cast::<Row>() };
                     unsafe {
                         let mut a = mutation(&counters, root, b"a", 0);
-                        assert_eq!(swr_v1_memory_table_mutation_step(&mut a), 0);
+                        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut a), 0);
                         let mut b = mutation(&counters, root, b"b", 0);
-                        assert_eq!(swr_v1_memory_table_mutation_step(&mut b), 1);
+                        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut b), 1);
                         b.row = second;
-                        assert_eq!(swr_v1_memory_table_mutation_step(&mut b), 0);
+                        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut b), 0);
                         let mut update = mutation(&counters, root, b"a", 0);
-                        assert_eq!(swr_v1_memory_table_mutation_step(&mut update), 0);
+                        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut update), 0);
                         let mut b = mutation(&counters, root, b"b", 1);
-                        assert_eq!(swr_v1_memory_table_mutation_step(&mut b), 1);
+                        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut b), 1);
                         assert_eq!(swr_v1_memory_table_clear(b.removed, 1), 0);
-                        assert_eq!(swr_v1_memory_table_mutation_step(&mut b), 0);
+                        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut b), 0);
                         let mut a = mutation(&counters, root, b"a", 1);
-                        assert_eq!(swr_v1_memory_table_mutation_step(&mut a), 0);
+                        assert_eq!(swr_v1_memory_table_mutation_step(&raw mut a), 0);
                     }
                 }
             })
@@ -723,7 +776,7 @@ fn teardown_preserves_duplicate_declaration_order_and_real_field_lifetimes() {
             let list = Box::into_raw(Box::new(columns.clone()));
             let mut index = ptr::null_mut();
             assert_eq!(
-                crate::table_columns::swr_v1_memory_table_columns_create(&mut index),
+                crate::table_columns::swr_v1_memory_table_columns_create(&raw mut index),
                 0
             );
             if created {
@@ -779,7 +832,7 @@ fn teardown_preserves_duplicate_declaration_order_and_real_field_lifetimes() {
             let mut actions = Vec::new();
             let mut deleted = Vec::new();
             loop {
-                let status = swr_v1_memory_table_teardown_step(&mut state, &mut effect);
+                let status = swr_v1_memory_table_teardown_step(&raw mut state, &raw mut effect);
                 if status == 0 {
                     break;
                 }
@@ -826,7 +879,7 @@ fn teardown_preserves_duplicate_declaration_order_and_real_field_lifetimes() {
             assert_eq!((state.phase, effect.action), (8, 0));
             assert!(effect.token.is_null());
             assert_eq!(
-                swr_v1_memory_table_teardown_step(&mut state, &mut effect),
+                swr_v1_memory_table_teardown_step(&raw mut state, &raw mut effect),
                 0
             );
         }
@@ -845,7 +898,7 @@ fn teardown_invalid_scalar_cursor_rejects_before_acquiring_resources() {
             list: ptr::null_mut(),
             iterator: ptr::null_mut(),
             pool: ptr::null_mut(),
-            memory: &mut memory,
+            memory: &raw mut memory,
             mutex: ptr::null_mut(),
             table: ptr::null_mut(),
             phase: 0,
@@ -855,7 +908,7 @@ fn teardown_invalid_scalar_cursor_rejects_before_acquiring_resources() {
             action: 7,
         };
         assert_eq!(
-            swr_v1_memory_table_teardown_step(&mut state, &mut effect),
+            swr_v1_memory_table_teardown_step(&raw mut state, &raw mut effect),
             -1
         );
         assert_eq!((state.phase, state.position, effect.action), (0, 0, 0));
@@ -863,17 +916,17 @@ fn teardown_invalid_scalar_cursor_rejects_before_acquiring_resources() {
         state.count = 0;
         state.phase = 9;
         assert_eq!(
-            swr_v1_memory_table_teardown_step(&mut state, &mut effect),
+            swr_v1_memory_table_teardown_step(&raw mut state, &raw mut effect),
             -1
         );
         state.phase = 0;
         state.memory = ptr::null_mut();
         assert_eq!(
-            swr_v1_memory_table_teardown_step(&mut state, &mut effect),
+            swr_v1_memory_table_teardown_step(&raw mut state, &raw mut effect),
             -1
         );
         assert_eq!(
-            swr_v1_memory_table_teardown_step(ptr::null_mut(), &mut effect),
+            swr_v1_memory_table_teardown_step(ptr::null_mut(), &raw mut effect),
             -1
         );
     }
@@ -895,16 +948,16 @@ struct MetadataStore {
 impl MetadataStore {
     fn fields(&mut self, counters: &CounterStore) -> MetadataFields {
         MetadataFields {
-            size: &mut self.size,
-            mask: &mut self.mask,
-            item_size: &mut self.item,
-            memory_size: &mut self.memory_size,
-            conflict: &mut self.conflict,
-            created: &mut self.created,
-            rows: &mut self.rows,
-            pool: &mut self.pool,
-            iterator: &mut self.iterator,
-            memory: &mut self.memory,
+            size: &raw mut self.size,
+            mask: &raw mut self.mask,
+            item_size: &raw mut self.item,
+            memory_size: &raw mut self.memory_size,
+            conflict: &raw mut self.conflict,
+            created: &raw mut self.created,
+            rows: &raw mut self.rows,
+            pool: &raw mut self.pool,
+            iterator: &raw mut self.iterator,
+            memory: &raw mut self.memory,
             counters: counters.fields(),
         }
     }
@@ -928,7 +981,7 @@ fn metadata_initialization_validates_before_writes_and_owns_real_scalar_targets(
         };
         let mut fields = storage.fields(&counters);
         assert_eq!(
-            swr_v1_memory_table_metadata_initialize(&fields, 101, f32::NAN),
+            swr_v1_memory_table_metadata_initialize(&raw const fields, 101, f32::NAN),
             -1
         );
         assert_eq!(
@@ -945,13 +998,13 @@ fn metadata_initialization_validates_before_writes_and_owns_real_scalar_targets(
         let valid = fields.mask;
         fields.mask = ptr::null_mut();
         assert_eq!(
-            swr_v1_memory_table_metadata_initialize(&fields, 101, 0.5),
+            swr_v1_memory_table_metadata_initialize(&raw const fields, 101, 0.5),
             -1
         );
         assert_eq!(storage.size, 997);
         fields.mask = valid;
         assert_eq!(
-            swr_v1_memory_table_metadata_initialize(&fields, 101, 0.5),
+            swr_v1_memory_table_metadata_initialize(&raw const fields, 101, 0.5),
             0
         );
         assert_eq!(
@@ -981,35 +1034,56 @@ fn creation_publishes_only_validated_ready_storage_and_preserves_logical_account
         let counters = CounterStore::default();
         let mut storage = MetadataStore::default();
         let fields = storage.fields(&counters);
-        assert_eq!(swr_v1_memory_table_metadata_initialize(&fields, 64, 0.5), 0);
+        assert_eq!(
+            swr_v1_memory_table_metadata_initialize(&raw const fields, 64, 0.5),
+            0
+        );
         storage.item = 1;
         let mut state = Creation::default();
-        assert_eq!(swr_v1_memory_table_creation_step(&fields, &mut state), 1);
+        assert_eq!(
+            swr_v1_memory_table_creation_step(&raw const fields, &raw mut state),
+            1
+        );
         assert_eq!(
             (state.phase, state.logical.row_size, state.physical.row_size),
             (1, 89, 96)
         );
         assert_eq!(storage.created, 0);
         assert!(storage.memory.is_null());
-        assert_eq!(swr_v1_memory_table_creation_step(&fields, &mut state), -1);
+        assert_eq!(
+            swr_v1_memory_table_creation_step(&raw const fields, &raw mut state),
+            -1
+        );
         let mut arena = vec![0u64; state.physical.total.div_ceil(8)];
         state.memory = arena.as_mut_ptr().cast();
-        assert_eq!(swr_v1_memory_table_arena(state.memory, &state.physical), 0);
+        assert_eq!(
+            swr_v1_memory_table_arena(state.memory, &raw const state.physical),
+            0
+        );
         let mut pool = 1u64;
         let mut iterator = 2u64;
-        state.pool = (&mut pool as *mut u64).cast();
-        state.iterator = (&mut iterator as *mut u64).cast();
+        state.pool = (&raw mut pool).cast();
+        state.iterator = (&raw mut iterator).cast();
         let expected = state.physical;
         state.physical.row_size += 8;
-        assert_eq!(swr_v1_memory_table_creation_step(&fields, &mut state), -1);
+        assert_eq!(
+            swr_v1_memory_table_creation_step(&raw const fields, &raw mut state),
+            -1
+        );
         assert_eq!(storage.created, 0);
         assert!(storage.memory.is_null());
         state.physical = expected;
         storage.item = 2;
-        assert_eq!(swr_v1_memory_table_creation_step(&fields, &mut state), -1);
+        assert_eq!(
+            swr_v1_memory_table_creation_step(&raw const fields, &raw mut state),
+            -1
+        );
         assert_eq!(storage.created, 0);
         storage.item = 1;
-        assert_eq!(swr_v1_memory_table_creation_step(&fields, &mut state), 0);
+        assert_eq!(
+            swr_v1_memory_table_creation_step(&raw const fields, &raw mut state),
+            0
+        );
         assert_eq!((state.phase, storage.created), (2, 1));
         assert_eq!(
             (storage.memory, storage.pool, storage.iterator),
@@ -1026,10 +1100,13 @@ fn creation_publishes_only_validated_ready_storage_and_preserves_logical_account
                 .add(64 * mem::size_of::<*mut Row>())
                 .cast()
         );
-        assert_eq!(swr_v1_memory_table_creation_step(&fields, &mut state), -1);
+        assert_eq!(
+            swr_v1_memory_table_creation_step(&raw const fields, &raw mut state),
+            -1
+        );
         let mut repeated = Creation::default();
         assert_eq!(
-            swr_v1_memory_table_creation_step(&fields, &mut repeated),
+            swr_v1_memory_table_creation_step(&raw const fields, &raw mut repeated),
             -1
         );
         assert_eq!(storage.created, 1);
@@ -1047,7 +1124,7 @@ fn declaration_couples_real_offsets_duplicate_index_and_native_owned_tokens() {
         assert_eq!(mem::size_of::<Declaration>(), 96);
         let mut index = ptr::null_mut();
         assert_eq!(
-            crate::table_columns::swr_v1_memory_table_columns_create(&mut index),
+            crate::table_columns::swr_v1_memory_table_columns_create(&raw mut index),
             0
         );
         let mut item_size = 0;
@@ -1059,28 +1136,28 @@ fn declaration_couples_real_offsets_duplicate_index_and_native_owned_tokens() {
         ] {
             let mut state = Declaration {
                 index,
-                item_size: &mut item_size,
+                item_size: &raw mut item_size,
                 name: name.as_ptr(),
                 length: name.len(),
                 kind,
                 requested,
                 ..Declaration::default()
             };
-            assert_eq!(swr_v1_memory_table_declaration_step(&mut state), 1);
+            assert_eq!(swr_v1_memory_table_declaration_step(&raw mut state), 1);
             assert_eq!((state.width, item_size), (width, offset));
             let column = Box::into_raw(Box::new(DeclarationColumn {
                 width,
                 index: usize::MAX,
             }));
             state.column = column.cast();
-            state.column_index = &mut (*column).index;
-            state.column_width = &mut (*column).width;
-            assert_eq!(swr_v1_memory_table_declaration_step(&mut state), 2);
+            state.column_index = &raw mut (*column).index;
+            state.column_width = &raw mut (*column).width;
+            assert_eq!(swr_v1_memory_table_declaration_step(&raw mut state), 2);
             assert_eq!(((*column).index, item_size), (offset, offset));
             public_list.push(column);
-            assert_eq!(swr_v1_memory_table_declaration_step(&mut state), 0);
+            assert_eq!(swr_v1_memory_table_declaration_step(&raw mut state), 0);
             assert_eq!(item_size, offset + width as usize);
-            assert_eq!(swr_v1_memory_table_declaration_step(&mut state), -1);
+            assert_eq!(swr_v1_memory_table_declaration_step(&raw mut state), -1);
         }
         assert_eq!(item_size, 25);
         assert_eq!(
@@ -1106,28 +1183,28 @@ fn declaration_oom_requests_native_append_rollback_without_publishing() {
     unsafe {
         let mut index = ptr::null_mut();
         assert_eq!(
-            crate::table_columns::swr_v1_memory_table_columns_create(&mut index),
+            crate::table_columns::swr_v1_memory_table_columns_create(&raw mut index),
             0
         );
         let mut item_size = 19;
         let name = b"new";
         let mut state = Declaration {
             index,
-            item_size: &mut item_size,
+            item_size: &raw mut item_size,
             name: name.as_ptr(),
             length: name.len(),
             kind: 1,
             ..Declaration::default()
         };
-        assert_eq!(swr_v1_memory_table_declaration_step(&mut state), 1);
+        assert_eq!(swr_v1_memory_table_declaration_step(&raw mut state), 1);
         let mut column = Box::new(DeclarationColumn { width: 8, index: 0 });
-        state.column = (&mut *column as *mut DeclarationColumn).cast();
-        state.column_index = &mut column.index;
-        state.column_width = &mut column.width;
-        assert_eq!(swr_v1_memory_table_declaration_step(&mut state), 2);
+        state.column = (&raw mut *column).cast();
+        state.column_index = &raw mut column.index;
+        state.column_width = &raw mut column.width;
+        assert_eq!(swr_v1_memory_table_declaration_step(&raw mut state), 2);
         let mut public_list = vec![state.column];
         crate::allocation_tests::FAIL_AFTER.set(Some(0));
-        let status = swr_v1_memory_table_declaration_step(&mut state);
+        let status = swr_v1_memory_table_declaration_step(&raw mut state);
         crate::allocation_tests::FAIL_AFTER.set(None);
         assert_eq!(status, 3);
         assert_eq!(public_list.pop(), Some(state.column));
@@ -1137,7 +1214,7 @@ fn declaration_oom_requests_native_append_rollback_without_publishing() {
             0
         );
         drop(column);
-        assert_eq!(swr_v1_memory_table_declaration_step(&mut state), -1);
+        assert_eq!(swr_v1_memory_table_declaration_step(&raw mut state), -1);
         assert_eq!(
             crate::table_columns::swr_v1_memory_table_columns_discard(index),
             0
@@ -1150,34 +1227,34 @@ fn declaration_rejects_type_overflow_and_changed_width_before_publication() {
     unsafe {
         let mut index = ptr::null_mut();
         assert_eq!(
-            crate::table_columns::swr_v1_memory_table_columns_create(&mut index),
+            crate::table_columns::swr_v1_memory_table_columns_create(&raw mut index),
             0
         );
         let mut item_size = usize::MAX - 3;
         let mut state = Declaration {
             index,
-            item_size: &mut item_size,
+            item_size: &raw mut item_size,
             kind: 9,
             ..Declaration::default()
         };
-        assert_eq!(swr_v1_memory_table_declaration_step(&mut state), -2);
+        assert_eq!(swr_v1_memory_table_declaration_step(&raw mut state), -2);
         state.kind = 1;
-        assert_eq!(swr_v1_memory_table_declaration_step(&mut state), -1);
+        assert_eq!(swr_v1_memory_table_declaration_step(&raw mut state), -1);
         assert_eq!((item_size, state.phase), (usize::MAX - 3, 0));
         item_size = 0;
-        assert_eq!(swr_v1_memory_table_declaration_step(&mut state), 1);
+        assert_eq!(swr_v1_memory_table_declaration_step(&raw mut state), 1);
         let mut column = DeclarationColumn {
             width: 8,
             index: 99,
         };
-        state.column = (&mut column as *mut DeclarationColumn).cast();
-        state.column_index = &mut column.index;
-        state.column_width = &mut column.width;
-        assert_eq!(swr_v1_memory_table_declaration_step(&mut state), 2);
+        state.column = (&raw mut column).cast();
+        state.column_index = &raw mut column.index;
+        state.column_width = &raw mut column.width;
+        assert_eq!(swr_v1_memory_table_declaration_step(&raw mut state), 2);
         column.width = 9;
-        assert_eq!(swr_v1_memory_table_declaration_step(&mut state), 3);
+        assert_eq!(swr_v1_memory_table_declaration_step(&raw mut state), 3);
         assert_eq!((item_size, state.phase, column.width), (0, 3, 9));
-        assert_eq!(swr_v1_memory_table_declaration_step(&mut state), -1);
+        assert_eq!(swr_v1_memory_table_declaration_step(&raw mut state), -1);
         assert_eq!(
             crate::table_columns::swr_v1_memory_table_columns_discard(index),
             0
@@ -1202,17 +1279,17 @@ fn lookup_preserves_full_u16_normalization_and_native_callback_fact_boundary() {
                 length,
                 ..Lookup::default()
             };
-            assert_eq!(swr_v1_memory_table_lookup_step(&mut state), 1);
+            assert_eq!(swr_v1_memory_table_lookup_step(&raw mut state), 1);
             assert_eq!(state.length, if length < 64 { length } else { 63 });
             assert!(state.row.is_null());
             // Represents the completed native callback result, not a Rust callback.
             state.hash = u64::from(length);
-            assert_eq!(swr_v1_memory_table_lookup_step(&mut state), 0);
+            assert_eq!(swr_v1_memory_table_lookup_step(&raw mut state), 0);
             assert_eq!(
                 (state.index, state.row, state.phase),
                 ((length & 1) as usize, roots[(length & 1) as usize], 2)
             );
-            assert_eq!(swr_v1_memory_table_lookup_step(&mut state), -1);
+            assert_eq!(swr_v1_memory_table_lookup_step(&raw mut state), -1);
         }
     }
 }
@@ -1221,15 +1298,15 @@ fn lookup_preserves_full_u16_normalization_and_native_callback_fact_boundary() {
 fn lookup_rejects_invalid_scalar_span_before_pointer_array_access() {
     unsafe {
         let mut state = Lookup::default();
-        assert_eq!(swr_v1_memory_table_lookup_step(&mut state), -1);
+        assert_eq!(swr_v1_memory_table_lookup_step(&raw mut state), -1);
         let root = ptr::null_mut();
-        state.rows = &root;
+        state.rows = &raw const root;
         state.count = 1;
         state.mask = usize::MAX;
         state.length = 64;
-        assert_eq!(swr_v1_memory_table_lookup_step(&mut state), 1);
+        assert_eq!(swr_v1_memory_table_lookup_step(&raw mut state), 1);
         state.hash = 1;
-        assert_eq!(swr_v1_memory_table_lookup_step(&mut state), -1);
+        assert_eq!(swr_v1_memory_table_lookup_step(&raw mut state), -1);
         assert_eq!((state.index, state.phase), (1, 1));
         assert!(state.row.is_null());
     }
@@ -1263,7 +1340,7 @@ fn clear_cursor_uses_live_facts_in_order_across_batch_boundaries() {
         let mut seen = Vec::new();
         unsafe {
             loop {
-                let status = swr_v1_memory_table_clear_step(&mut state);
+                let status = swr_v1_memory_table_clear_step(&raw mut state);
                 if status == 0 {
                     break;
                 }
@@ -1281,7 +1358,7 @@ fn clear_cursor_uses_live_facts_in_order_across_batch_boundaries() {
                     seen.push(column.index);
                 }
             }
-            assert_eq!(swr_v1_memory_table_clear_step(&mut state), 0);
+            assert_eq!(swr_v1_memory_table_clear_step(&raw mut state), 0);
         }
         assert_eq!(seen, (0..count).map(|i| i * 16).collect::<Vec<_>>());
         let mut expected = vec![0xa5u8; bytes.len()];
@@ -1293,7 +1370,7 @@ fn clear_cursor_uses_live_facts_in_order_across_batch_boundaries() {
     }
     let mut empty = Clear::default();
     unsafe {
-        assert_eq!(swr_v1_memory_table_clear_step(&mut empty), 0);
+        assert_eq!(swr_v1_memory_table_clear_step(&raw mut empty), 0);
     }
 }
 
@@ -1304,7 +1381,7 @@ fn clear_cursor_failure_preserves_prior_batches_and_refuses_restart() {
         width: 8,
         kind: 1,
     };
-    let token = (&mut fact as *mut Column).cast::<c_void>();
+    let token = (&raw mut fact).cast::<c_void>();
     // Duplicate tokens retain their exact order; they do not become owners.
     let tokens = [token; 9];
     let mut bytes = vec![0xa5u8; 104];
@@ -1316,18 +1393,18 @@ fn clear_cursor_failure_preserves_prior_batches_and_refuses_restart() {
         ..Clear::default()
     };
     unsafe {
-        assert_eq!(swr_v1_memory_table_clear_step(&mut state), 1);
+        assert_eq!(swr_v1_memory_table_clear_step(&raw mut state), 1);
         assert_eq!(state.tokens, [token; 8]);
         state.batch.fill(fact);
-        assert_eq!(swr_v1_memory_table_clear_step(&mut state), 1);
+        assert_eq!(swr_v1_memory_table_clear_step(&raw mut state), 1);
         assert_eq!((state.position, state.take), (8, 1));
         assert_eq!(&bytes[88..96], &[0; 8]);
         state.batch[0] = Column { index: 16, ..fact };
         let before = bytes.clone();
-        assert_eq!(swr_v1_memory_table_clear_step(&mut state), -1);
+        assert_eq!(swr_v1_memory_table_clear_step(&raw mut state), -1);
         assert_eq!(bytes, before);
         state.batch[0] = fact;
-        assert_eq!(swr_v1_memory_table_clear_step(&mut state), -1);
+        assert_eq!(swr_v1_memory_table_clear_step(&raw mut state), -1);
         assert_eq!(bytes, before);
         let null_tokens = [ptr::null_mut()];
         let mut invalid = Clear {
@@ -1337,7 +1414,7 @@ fn clear_cursor_failure_preserves_prior_batches_and_refuses_restart() {
             item_size: 16,
             ..Clear::default()
         };
-        assert_eq!(swr_v1_memory_table_clear_step(&mut invalid), -1);
+        assert_eq!(swr_v1_memory_table_clear_step(&raw mut invalid), -1);
         assert_eq!(bytes, before);
     }
 }
@@ -1368,11 +1445,11 @@ fn value_warning_precedes_any_write_and_normal_values_complete_in_one_call() {
                 };
                 let before = bytes.clone();
                 unsafe {
-                    let status = swr_v1_memory_table_value_step(&mut state);
+                    let status = swr_v1_memory_table_value_step(&raw mut state);
                     if kind == 3 && length > 4 {
                         assert_eq!(status, 1);
                         assert_eq!(bytes, before); // warning effect BEFORE writes
-                        assert_eq!(swr_v1_memory_table_value_step(&mut state), 0);
+                        assert_eq!(swr_v1_memory_table_value_step(&raw mut state), 0);
                     } else {
                         assert_eq!(status, 0);
                     }
@@ -1386,7 +1463,7 @@ fn value_warning_precedes_any_write_and_normal_values_complete_in_one_call() {
                     }
                     assert_eq!(bytes, expected);
                     drop(value); // terminal replay must not access input storage
-                    assert_eq!(swr_v1_memory_table_value_step(&mut state), -1);
+                    assert_eq!(swr_v1_memory_table_value_step(&raw mut state), -1);
                     assert_eq!(bytes, expected);
                 }
             }
@@ -1403,48 +1480,48 @@ fn iterator_release_preserves_null_skip_and_native_effect_order_without_borrows(
         let mut replacement = Some(Box::new(9u8));
         let mut state = IteratorRelease {
             current: row.as_mut().unwrap().as_mut_ptr().cast(),
-            mutex: (&mut **mutex.as_mut().unwrap() as *mut u8).cast(),
+            mutex: (&raw mut **mutex.as_mut().unwrap()).cast(),
             phase: 0,
         };
         let mut effect = TeardownEffect::default();
         assert_eq!(
-            swr_v1_memory_table_iterator_release_step(&mut state, &mut effect),
+            swr_v1_memory_table_iterator_release_step(&raw mut state, &raw mut effect),
             1
         );
         assert_eq!((effect.token, effect.action), (state.current, 1));
         drop(row.take());
         // Native refreshes actual mutex field after custom free callback; Rust
         // does not hold the earlier native token as hidden shadow ownership.
-        state.mutex = (&mut **replacement.as_mut().unwrap() as *mut u8).cast();
+        state.mutex = (&raw mut **replacement.as_mut().unwrap()).cast();
         assert_eq!(
-            swr_v1_memory_table_iterator_release_step(&mut state, &mut effect),
+            swr_v1_memory_table_iterator_release_step(&raw mut state, &raw mut effect),
             1
         );
         assert_eq!((effect.token, effect.action), (state.mutex, 2));
         drop(replacement.take());
         drop(mutex.take());
         assert_eq!(
-            swr_v1_memory_table_iterator_release_step(&mut state, &mut effect),
+            swr_v1_memory_table_iterator_release_step(&raw mut state, &raw mut effect),
             0
         );
         assert!(effect.token.is_null() && effect.action == 0);
         assert_eq!(
-            swr_v1_memory_table_iterator_release_step(&mut state, &mut effect),
+            swr_v1_memory_table_iterator_release_step(&raw mut state, &raw mut effect),
             0
         );
         let mut null = IteratorRelease::default();
         assert_eq!(
-            swr_v1_memory_table_iterator_release_step(&mut null, &mut effect),
+            swr_v1_memory_table_iterator_release_step(&raw mut null, &raw mut effect),
             1
         );
         assert!(effect.token.is_null() && effect.action == 2); // delete-null effect
         assert_eq!(
-            swr_v1_memory_table_iterator_release_step(&mut null, &mut effect),
+            swr_v1_memory_table_iterator_release_step(&raw mut null, &raw mut effect),
             0
         );
         null.phase = 3;
         assert_eq!(
-            swr_v1_memory_table_iterator_release_step(&mut null, &mut effect),
+            swr_v1_memory_table_iterator_release_step(&raw mut null, &raw mut effect),
             -1
         );
     }
@@ -1488,7 +1565,8 @@ fn collection_free_core_teardown_preserves_real_resource_effects_without_column_
             let mut actions = Vec::new();
             loop {
                 crate::allocation_tests::FAIL_AFTER.set(Some(0));
-                let status = swr_v1_memory_table_core_teardown_step(&mut state, &mut effect);
+                let status =
+                    swr_v1_memory_table_core_teardown_step(&raw mut state, &raw mut effect);
                 let unchanged = crate::allocation_tests::FAIL_AFTER.replace(None);
                 assert_eq!(unchanged, Some(0));
                 if status == 0 {
@@ -1520,7 +1598,7 @@ fn collection_free_core_teardown_preserves_real_resource_effects_without_column_
             // Actual owner/memory field is already freed; terminal scratch resume
             // remains valid and does not inspect that released allocation.
             assert_eq!(
-                swr_v1_memory_table_core_teardown_step(&mut state, &mut effect),
+                swr_v1_memory_table_core_teardown_step(&raw mut state, &raw mut effect),
                 0
             );
         }
@@ -1540,7 +1618,7 @@ fn collection_free_core_refuses_legacy_or_mixed_collection_custody() {
                 list: ptr::null_mut(),
                 iterator: ptr::null_mut(),
                 pool: ptr::null_mut(),
-                memory: &mut memory,
+                memory: &raw mut memory,
                 mutex: ptr::null_mut(),
                 table: ptr::null_mut(),
                 phase: 0,
@@ -1560,7 +1638,7 @@ fn collection_free_core_refuses_legacy_or_mixed_collection_custody() {
                 action: 99,
             };
             assert_eq!(
-                swr_v1_memory_table_core_teardown_step(&mut state, &mut effect),
+                swr_v1_memory_table_core_teardown_step(&raw mut state, &raw mut effect),
                 -1
             );
             assert!(effect.token.is_null());
@@ -1581,14 +1659,18 @@ fn construction_sequences_normal_storage_effects_before_single_publication() {
                     let mut metadata = MetadataStore::default();
                     let fields = metadata.fields(&counters);
                     assert_eq!(
-                        swr_v1_memory_table_metadata_initialize(&fields, rows, conflict),
+                        swr_v1_memory_table_metadata_initialize(&raw const fields, rows, conflict),
                         0
                     );
                     metadata.item = item;
                     let mut state = Construction::default();
                     let mut effect = ConstructionEffect::default();
                     assert_eq!(
-                        swr_v1_memory_table_construction_step(&fields, &mut state, &mut effect),
+                        swr_v1_memory_table_construction_step(
+                            &raw const fields,
+                            &raw mut state,
+                            &raw mut effect
+                        ),
                         1
                     );
                     assert_eq!(
@@ -1599,7 +1681,11 @@ fn construction_sequences_normal_storage_effects_before_single_publication() {
                     let mut arena = vec![0x5a5a5a5a5a5a5a5au64; effect.size.div_ceil(8)];
                     state.storage.memory = arena.as_mut_ptr().cast();
                     assert_eq!(
-                        swr_v1_memory_table_construction_step(&fields, &mut state, &mut effect),
+                        swr_v1_memory_table_construction_step(
+                            &raw const fields,
+                            &raw mut state,
+                            &raw mut effect
+                        ),
                         1
                     );
                     assert_eq!(
@@ -1640,9 +1726,13 @@ fn construction_sequences_normal_storage_effects_before_single_publication() {
                     }
                     assert_eq!(*effect.memory.cast::<u8>(), 0x5a);
                     let mut pool_token = 7u64;
-                    state.storage.pool = (&mut pool_token as *mut u64).cast();
+                    state.storage.pool = (&raw mut pool_token).cast();
                     assert_eq!(
-                        swr_v1_memory_table_construction_step(&fields, &mut state, &mut effect),
+                        swr_v1_memory_table_construction_step(
+                            &raw const fields,
+                            &raw mut state,
+                            &raw mut effect
+                        ),
                         1
                     );
                     assert_eq!(
@@ -1656,9 +1746,13 @@ fn construction_sequences_normal_storage_effects_before_single_publication() {
                             && metadata.iterator.is_null()
                     );
                     let mut iterator_token = 9u64;
-                    state.storage.iterator = (&mut iterator_token as *mut u64).cast();
+                    state.storage.iterator = (&raw mut iterator_token).cast();
                     assert_eq!(
-                        swr_v1_memory_table_construction_step(&fields, &mut state, &mut effect),
+                        swr_v1_memory_table_construction_step(
+                            &raw const fields,
+                            &raw mut state,
+                            &raw mut effect
+                        ),
                         0
                     );
                     assert_eq!(effect.action, 0);
@@ -1689,19 +1783,31 @@ fn factory_sequences_actual_modes_and_initializes_only_after_native_tokens() {
                     legacy,
                     ..Default::default()
                 };
-                assert_eq!(swr_v1_memory_table_factory_step(ptr::null(), &mut state), 1);
+                assert_eq!(
+                    swr_v1_memory_table_factory_step(ptr::null(), &raw mut state),
+                    1
+                );
                 let mut table_token = 1u64;
-                state.table = (&mut table_token as *mut u64).cast();
-                assert_eq!(swr_v1_memory_table_factory_step(ptr::null(), &mut state), 2);
+                state.table = (&raw mut table_token).cast();
+                assert_eq!(
+                    swr_v1_memory_table_factory_step(ptr::null(), &raw mut state),
+                    2
+                );
                 let mut mutex_token = 2u64;
-                state.mutex = (&mut mutex_token as *mut u64).cast();
+                state.mutex = (&raw mut mutex_token).cast();
                 let mut list_token = 3u64;
                 if legacy == 1 {
-                    assert_eq!(swr_v1_memory_table_factory_step(ptr::null(), &mut state), 3);
-                    state.list = (&mut list_token as *mut u64).cast();
+                    assert_eq!(
+                        swr_v1_memory_table_factory_step(ptr::null(), &raw mut state),
+                        3
+                    );
+                    state.list = (&raw mut list_token).cast();
                 }
                 assert_eq!(metadata.size, 0);
-                assert_eq!(swr_v1_memory_table_factory_step(&fields, &mut state), 0);
+                assert_eq!(
+                    swr_v1_memory_table_factory_step(&raw const fields, &raw mut state),
+                    0
+                );
                 assert_eq!(metadata.size, requested.next_power_of_two() as usize);
                 assert_eq!(metadata.mask, metadata.size - 1);
                 assert_eq!(metadata.conflict, 0.5);

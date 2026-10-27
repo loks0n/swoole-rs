@@ -380,7 +380,9 @@ mod tests {
                 expected.push(0);
                 let mut capacity = 0;
                 assert_eq!(
-                    unsafe { swr_v1_http_url_capacity(input.as_ptr(), input.len(), &mut capacity) },
+                    unsafe {
+                        swr_v1_http_url_capacity(input.as_ptr(), input.len(), &raw mut capacity)
+                    },
                     0
                 );
                 assert_eq!(capacity, expected.len());
@@ -393,7 +395,7 @@ mod tests {
                             input.len(),
                             output.as_mut_ptr(),
                             capacity,
-                            &mut written,
+                            &raw mut written,
                         )
                     },
                     0
@@ -416,12 +418,12 @@ mod tests {
                     input.len(),
                     encoded.as_mut_ptr(),
                     encoded.len(),
-                    &mut length
+                    &raw mut length
                 ),
                 0
             );
             assert_eq!(
-                swr_v1_http_url_decode(encoded.as_mut_ptr(), length, &mut length),
+                swr_v1_http_url_decode(encoded.as_mut_ptr(), length, &raw mut length),
                 0
             );
         }
@@ -430,7 +432,11 @@ mod tests {
         let mut malformed = b"%+%0%GG%a0+%00!\0".to_vec();
         unsafe {
             assert_eq!(
-                swr_v1_http_url_decode(malformed.as_mut_ptr(), malformed.len() - 1, &mut length),
+                swr_v1_http_url_decode(
+                    malformed.as_mut_ptr(),
+                    malformed.len() - 1,
+                    &raw mut length
+                ),
                 0
             );
         }
@@ -442,18 +448,24 @@ mod tests {
         let mut length = 7;
         unsafe {
             assert_eq!(
-                swr_v1_http_url_encode(b"!!".as_ptr(), 2, output.as_mut_ptr(), 4, &mut length),
+                swr_v1_http_url_encode(b"!!".as_ptr(), 2, output.as_mut_ptr(), 4, &raw mut length),
                 INVALID
             );
             assert_eq!(output, [99; 4]);
             assert_eq!(length, 0);
             assert_eq!(
-                swr_v1_http_url_capacity(std::ptr::null(), 0, &mut length),
+                swr_v1_http_url_capacity(std::ptr::null(), 0, &raw mut length),
                 0
             );
             assert_eq!(length, 1);
             assert_eq!(
-                swr_v1_http_url_encode(std::ptr::null(), 0, output.as_mut_ptr(), 1, &mut length),
+                swr_v1_http_url_encode(
+                    std::ptr::null(),
+                    0,
+                    output.as_mut_ptr(),
+                    1,
+                    &raw mut length
+                ),
                 0
             );
             assert_eq!(output[0], 0);
@@ -464,12 +476,12 @@ mod tests {
         let mut written = 9;
         unsafe {
             assert_eq!(
-                swr_v1_http_url_capacity(std::ptr::null(), usize::MAX, &mut written),
+                swr_v1_http_url_capacity(std::ptr::null(), usize::MAX, &raw mut written),
                 OVERFLOW
             );
             assert_eq!(written, 0);
             assert_eq!(
-                swr_v1_http_url_decode(std::ptr::null_mut(), usize::MAX, &mut written),
+                swr_v1_http_url_decode(std::ptr::null_mut(), usize::MAX, &raw mut written),
                 OVERFLOW
             );
             assert_eq!(written, 0);
@@ -491,8 +503,9 @@ mod tests {
             (&b"boundary=x"[..], 99, None),
         ] {
             let mut result = HttpSpan::default();
-            let status =
-                unsafe { swr_v1_http_boundary(input.as_ptr(), input.len(), offset, &mut result) };
+            let status = unsafe {
+                swr_v1_http_boundary(input.as_ptr(), input.len(), offset, &raw mut result)
+            };
             assert_eq!(status, i32::from(expected.is_some()));
             if let Some(expected) = expected {
                 assert_eq!(

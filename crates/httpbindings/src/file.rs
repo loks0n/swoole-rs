@@ -105,7 +105,7 @@ mod tests {
     fn invalid_ranges_and_cursors_do_not_publish_a_result() {
         let mut value = 91;
         assert_eq!(
-            unsafe { swr_v1_httpbindings_file_range(i64::MAX, i64::MIN, 0, &mut value) },
+            unsafe { swr_v1_httpbindings_file_range(i64::MAX, i64::MIN, 0, &raw mut value) },
             3
         );
         assert_eq!(value, 91);
@@ -114,7 +114,7 @@ mod tests {
             -1
         );
         let mut phase = u32::MAX;
-        assert_eq!(unsafe { swr_v1_httpbindings_file(&mut phase, 1) }, -1);
+        assert_eq!(unsafe { swr_v1_httpbindings_file(&raw mut phase, 1) }, -1);
         assert_eq!(phase, u32::MAX);
     }
 }
