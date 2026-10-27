@@ -43,8 +43,10 @@ its sub-issues. It may reprioritise or close any ticket.
 ## Executor agents
 
 Interchangeable and disposable: no special environment, authentication or setup
-beyond a checkout, `gh` with `GH_TOKEN`, and the toolchain. Prefer cloud
-environments to one shared machine. Each executor loops:
+beyond a checkout, `gh` with `GH_TOKEN`, and the toolchain. Executors run in cloud
+environments by default (`.devcontainer/` provides everything, `gh` included; see
+docs/development.md); a local machine runs the goal agent and at most one reviewer,
+so no laptop fills its disk with many agents' builds. Each executor loops:
 
 1. Claim the highest-priority, oldest unblocked `status:ready` issue without
    `needs:decision` (see
