@@ -135,8 +135,9 @@ inside `swr_v1_ws_mask` (deliberately invalid calls, not ABI bugs).
 
 ## Known failures
 
-- The original `send_close_frame` PHPT fails: its parent sends twice then kills
-  the server with no receive barrier. Its assertion stays unchanged.
+- The original `send_close_frame` PHPT is racy: its parent sends twice then kills
+  the server with no receive barrier. Its assertion stays unchanged, and
+  `run.py` records it unsupported (`RACY`, #111).
 - On macOS, the instrumented Rust archive compiles but fails to link because the
   runtime lacks `___asan_version_mismatch_check_v8`.
 - The C++ oracle in `test_codec.py` excludes alignment sanitizing because the upstream

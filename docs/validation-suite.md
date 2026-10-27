@@ -27,8 +27,8 @@ native callers, not Rust or PHP.
 
 These fail on both upstream and hybrid unless noted:
 
-- `tests/swoole_websocket_server/send_close_frame.phpt`: empty output instead of
-  `lalalala`.
+- `tests/swoole_websocket_server/send_close_frame.phpt`: racy on upstream, so
+  `run.py` records it unsupported (`RACY`, #111).
 - An original close-frame PHPT and the randomized HTTP cookie parser
   (`create_request` fails on 67 of 501 split points).
 - `memory/top` PHPT is skipped.

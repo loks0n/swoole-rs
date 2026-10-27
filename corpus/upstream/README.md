@@ -84,11 +84,12 @@ diff/generated-PHP files per engine/test. Tests are never blessed or rewritten t
 match the prototype. Source is fetched rather than vendored; upstream copyright,
 license notices, helpers, and license file are preserved in the disposable copy.
 
-The expanded selection currently exposes `send_close_frame.phpt` failing with
-empty output versus expected `lalalala` on both upstream and hybrid, on macOS
-and Linux. It remains registered and failed, with original assertions intact.
-Its parent kills the server immediately after two sends; teardown timing is a
-hypothesis, not a confirmed diagnosis.
+`send_close_frame.phpt` is racy on upstream: its parent kills the server as soon
+as the client's two pushes return, usually before the server has handled the
+second frame, so the expected `lalalala` is never printed. On Linux upstream
+passed 1 of 20 runs; with a 500 ms wait before the kill, 20 of 20 (#111). It
+stays registered with its assertions intact, and `RACY` in `run.py` records it
+unsupported instead of running it.
 
 The expanded audit registers all 33 original WebSocket PHPTs, plus timer `info`,
 `stats`, `clearAll`, `after_fork`, `reinit_1` and `reinit_2`. Original timer assertions

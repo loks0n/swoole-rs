@@ -59,7 +59,7 @@ engines, 20 scenarios):
   close; requires an unmasked two-byte FIN+CLOSE reply with status 1000 and EOF.
 - Original PHPTs: 15 of 34 in `tests/swoole_websocket_server/` are selected.
   `--module websocket` selects `pack` only; add `--module websocket-network` for
-  the socket cases. `send_close_frame` fails on both engines.
+  the socket cases. `send_close_frame` is racy on upstream and recorded unsupported (#111).
 - Autobahn: see [validation](validation-suite.md#autobahn).
 
 Not covered: server-initiated or simultaneous close, close reason echo,
