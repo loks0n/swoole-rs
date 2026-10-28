@@ -594,6 +594,13 @@ def plan(args, reports):
             script('framing-versioned-expectation', 'corpus/upstream/versioned.py',
                    '--source', ROOT / 'target/upstream/src', '--case', 'tests/swoole_server/wrong_eof_setting.phpt',
                    *php_for('mbstring'), *engines, *report('framing-versioned-expectation'))
+            # Upstream's own framing/MIME GoogleTests, on the reference and the overlay (Linux trees).
+            if sys.platform.startswith('linux'):
+                script('framing-native-originals', 'tests/modules/framing/core.py', '--source', ROOT / 'target/upstream/src',
+                       '--config', manifest.parent / 'src/config.h',
+                       '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
+                       '--build-root', ROOT / 'target/native-originals/framing', '--jobs', args.jobs,
+                       *report('framing-native-originals'))
     if 'utilities' in modules:
         script('utilities-native', 'tests/modules/utilities/gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report('utilities-native'))
