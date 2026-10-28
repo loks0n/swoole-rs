@@ -45,20 +45,7 @@ binary messages from eight clients reach the independently computed CRC32
 worker, and that eight empty datagrams get no callback (pinned recvfrom's
 `ret <= 0` branch).
 
-`address_span.py --source PINNED_REFERENCE --native-report NATIVE_CORE_REPORT
---output REPORT` uses a completed native-core build library and checks six real
-`Address` spans against pinned C++ (`address_span.cc`). Known caller behaviour
-it documents: fresh `::1` gives CRC 2630436834, but 814556344 after the same
-thread formats a longer IPv6 address; a fresh thread starts zeroed and fork
-inherits the previous tail; short filesystem Unix recvfrom exposes two
-preexisting tail bytes. Rust matches C++ for every span.
-
 ## x86_64
-
-`x86_probe.rs` includes the production source unchanged in a freestanding
-x86_64 Linux ELF that exits nonzero on any failed check. Build it with
-`rustc --target x86_64-unknown-linux-gnu`, `-C panic=abort`, static relocation,
-rust-lld and link args `-nostdlib -static -no-pie`, then run it in the devcontainer (see `docs/development.md`).
 
 ## Known gaps
 

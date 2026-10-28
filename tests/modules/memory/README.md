@@ -56,14 +56,6 @@ engines (18/19 pass). The child's OOM is delayed by Zend
 (`zend_handle_delayed_oom()`) until after the table row is unlocked, so the
 expected dead-owner warning never appears. macOS emits the warning.
 
-`force_unlock_diagnostic.py` investigates this. It builds a modified copy of the
-pinned test (child body unchanged) that reports the child's output and, on Linux,
-reads the shared row's lock/PID from `/proc/self/mem`. It never runs or
-reclassifies the original PHPT. It takes `--source`, `--engine`, `--php-extension`
-and `--output`; `--native-trace` (Linux NTS only,
-uses `--php-config` and `--cc`) also compiles `force_unlock_native.c` to trace
-the get handler, the row lock and Zend's delayed-OOM state.
-
 ## Original native GoogleTests
 
 ```
@@ -167,12 +159,7 @@ upstream, which blocks default activation.
 
 ```
 python3 -m unittest tests/modules/memory/test_benchmark.py
-python3 tests/modules/memory/test_staging.py --source /absolute/pinned/upstream --output OUT.json
-python3 tests/modules/memory/test_mapping_operation.py --source /absolute/pinned/upstream --output OUT.json
 ```
 
 - `test_benchmark.py`: `benchmark.py` timing-case inventories with mocked runs.
-- `test_staging.py`: `gate.py` and `channel_compat.py` overlays change every
-  declared destination, and a wrong patch checksum is refused before mutation.
-- `test_mapping_operation.py`: the mapping overlay applies and
-  `selected_model()` extracts the complete `SharedMemory` bodies.
+

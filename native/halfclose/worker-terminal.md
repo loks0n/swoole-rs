@@ -1,11 +1,5 @@
 # Worker termination and in-flight responses (open)
 
-When an event worker dies while it owns a suspended HTTP response, the client
-connection stays open with no bytes and no EOF. `worker_terminal.py` (flags
-`--probe-worker-kill`, `--probe-retiring-worker-kill`, `--probe-worker-drain`,
-`--probe-worker-exit-zero`) signals only a worker verified to be in the isolated
-test server's process group.
-
 | Scenario | Result on macOS and Linux |
 | --- | --- |
 | normal response | passes |

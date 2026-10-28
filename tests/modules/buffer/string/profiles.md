@@ -62,12 +62,6 @@ Optional `--php`, `--php-config` and `--php-extension` select the PHP SDK.
 `tests/modules/coroutine/production_stack.py` and
 `tests/modules/reactor/production_supported.py` import its header helpers.
 
-## System allocator: `system-allocator.py`
-
-```sh
-python3 tests/modules/buffer/string/system-allocator.py --source S --archive A --directory /abs/new/dir
-```
-
 Interposes malloc/calloc/realloc/free (`DYLD_INSERT_LIBRARIES` or `LD_PRELOAD`,
 test child only) and runs 24 fresh-process scenarios per engine: cold growth
 trace (malloc 64, realloc 256..4096, free), failure at each growth, constructor

@@ -67,9 +67,6 @@ differ across platforms.
 
 ## Benchmarks
 
-`python3 tests/modules/error/benchmark_runner_test.py` checks the runner's
-timeout cleanup and report shape with synthetic processes; it does not measure.
-
 Prepare (correctness checks, optimized consumers, state `--check` and
 `--check-latency` with clocks disabled; the destination must not exist):
 

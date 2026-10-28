@@ -65,21 +65,6 @@ the main control has sanitizer symbols, pass `--allocation-native-report`.
 
 ## php.py
 
-Runs the unchanged local TLS/DTLS PHPTs listed in `php-local-cases.json`
-(default) or `php-verification-cases.json` against a published export
-(`swoole.so`, `reference.so`, `libswoole_rs_ffi.a`, `build-manifest.json`),
-after checking the export hashes, the PHP SDK against the build manifest, and
-that the selected extension calls every TLS export while the reference calls
-none. Linux only (uses `ldd`/`objdump`).
-
-```sh
-python3 tests/modules/tls/php.py --source PINNED_GIT --artifacts EXPORT_DIR \
-  --runner MATCHING_SDK_RUN_TESTS_PHP --manifest tests/modules/tls/php-verification-cases.json \
-  --dh-witness --output R [--container-inspect INSPECT_JSON] \
-  --php-extension pdo --php-extension pdo_sqlite --php-extension curl \
-  --php-extension sockets --php-extension tokenizer --php-extension posix --php-extension mbstring
-```
-
 `--dh-witness` adds `php-dh.phpt` (DHE server with the pinned DH params at
 security level 0); `--dh-witness-only` runs just that.
 
