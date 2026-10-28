@@ -1,7 +1,10 @@
 //! Complete selected range orchestration. Native executes requested MIME/RNG/
 //! calendar effects after return; Rust retains only owned values and scalar cursors.
 use super::{HttpStaticContext, swr_v2_http_context_format};
-use crate::*;
+use crate::{
+    HttpProxyText, HttpRangeFinish, HttpRangeFormat, HttpRangeState, HttpSpan, INVALID, OVERFLOW,
+    bytes,
+};
 
 #[derive(Default, Clone, Copy)]
 enum Stage {
@@ -274,6 +277,9 @@ mod tests {
     use crate::static_context::{
         HttpStaticObservation, swr_v2_http_context_drop, swr_v2_http_context_new,
         swr_v2_http_context_observed, swr_v2_http_context_publish,
+    };
+    use crate::{
+        HttpStaticTask, swr_v2_http_tasks_copy, swr_v2_http_tasks_count, swr_v2_http_tasks_snapshot,
     };
     fn owner() -> *mut HttpStaticContext {
         let owner = unsafe { swr_v2_http_context_new(b"/file".as_ptr(), 5, 128) };

@@ -39,7 +39,10 @@ pub unsafe extern "C" fn sw_rs_http2_receive_next(
     success: u32,
     facts: *const Http2ReceiveFacts,
 ) -> u32 {
-    use receive_action::*;
+    use receive_action::{
+        APPEND, BUFFER, CONTEXT, DONE, END_BUFFER, ERROR, FLOW, FORM, HANDLE, LENGTH, MULTIPART,
+        REMOVE, RESET, START, WARN,
+    };
     let facts = &*facts;
     let finish = || if facts.end_stream != 0 { LENGTH } else { DONE };
     match stage {

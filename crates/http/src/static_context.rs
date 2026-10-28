@@ -1,6 +1,13 @@
 //! Sole selected static-handler context. Native effects see independent copied
 //! observations; no Rust-owned text or container pointer crosses the boundary.
-use crate::*;
+use crate::{
+    HttpDirectory, HttpIndexPage, HttpProxyText, HttpRangeFormat, HttpStaticPath, HttpStaticTask,
+    HttpTasks, INVALID, OVERFLOW, bytes, swr_v1_http_range_format, swr_v1_http_static_catch,
+    swr_v1_http_static_content_type, swr_v1_http_static_index_path, swr_v1_http_static_location,
+    swr_v1_http_static_path, swr_v2_http_directory_page, swr_v2_http_tasks_begin,
+    swr_v2_http_tasks_clear, swr_v2_http_tasks_count, swr_v2_http_tasks_prepare,
+    swr_v2_http_tasks_push, swr_v2_http_tasks_snapshot,
+};
 use std::alloc::{Layout, alloc};
 mod range;
 mod selection;

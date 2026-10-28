@@ -1,5 +1,5 @@
 //! Typed first-party cursor family. Legacy mutable chunk APIs remain separate.
-use super::*;
+use super::{Buffer, EMPTY, Entry, INVALID, Mode, NOMEM, OK, c_void, create_buffer};
 
 type Dispose = Option<unsafe extern "C" fn(*mut c_void)>;
 
@@ -211,6 +211,8 @@ pub(crate) unsafe extern "C" fn swr_v1_buffer_typed_pop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{swr_v1_buffer_append, swr_v1_buffer_release};
+    use std::{mem, ptr, slice};
 
     unsafe extern "C" fn never_called(_: *mut c_void) {
         panic!("Rust must never invoke Native disposal");

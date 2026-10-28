@@ -93,7 +93,7 @@ pub use epoll::*;
     target_os = "dragonfly"
 ))]
 mod kqueue {
-    use super::*;
+    use super::{BackendEvents, BackendLayout, event_data, free_events, new_events};
     pub type KqueueEvents = BackendEvents<libc::kevent>;
 
     #[unsafe(no_mangle)]

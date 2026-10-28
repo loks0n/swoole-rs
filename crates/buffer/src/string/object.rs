@@ -2,7 +2,10 @@
 //! itself; Rust calls its allocator directly and edits its fields in the original
 //! order. Fields are re-read after every allocator call, because the allocator may
 //! change either String, and no reference to a String outlives an allocator call.
-use super::*;
+use super::{
+    APPEND, APPEND_I32, COPY, INVALID, NO_SOURCE, NOMEM, OK, OVERFLOW, POP, REPEAT, StringEdit,
+    StringState, TERMINATE, WRITE, aligned, ptr,
+};
 use std::ffi::c_void;
 
 /// Layout of `swoole::Allocator`.
