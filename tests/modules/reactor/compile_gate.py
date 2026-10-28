@@ -21,11 +21,15 @@ a = p.parse_args()
 if a.report.exists():
     raise SystemExit('Refusing to replace an existing compile receipt')
 manifest = json.loads((ROOT/'migration/patches/reactor/manifest.json').read_text())
+# The hybrid always carries the graduated buffer module, whose Buffer the write path uses;
+# its string storage (0003) is outside these units, as in buffer_typed_compile.py.
+buffer_manifest = json.loads((ROOT/'migration/patches/buffer/manifest.json').read_text())
+buffer_patches = [entry for entry in buffer_manifest['patches'] if entry['path'] != '0003-string-storage.patch']
 # Stage every declared overlay destination, including narrow Admin consumers.
 # Compiling the backend subset does not permit silently omitting a patch input.
 inputs = sorted({'include', 'src/reactor', 'src/network/stream.cc',
                  'src/network/socket.cc', 'thirdparty/multipart_parser.h'} |
-                {name for entry in manifest['patches'] for name in entry['upstream_paths']})
+                {name for entry in manifest['patches'] + buffer_patches for name in entry['upstream_paths']})
 rows = []
 patch_proofs = []
 with tempfile.TemporaryDirectory(prefix='swr-reactor-compile-') as tmp:
@@ -43,11 +47,13 @@ with tempfile.TemporaryDirectory(prefix='swr-reactor-compile-') as tmp:
     flags += ['-DHAVE_EPOLL'] if linux else ['-DHAVE_KQUEUE']
     for variant in ['original', 'patched', 'disabled']:
         if variant == 'patched':
-            for entry in manifest['patches']:
-                patch = ROOT/'migration/patches/reactor'/entry['path']
+            for module, entries in [('buffer', buffer_patches), ('reactor', manifest['patches'])]:
+              for entry in entries:
+                patch = ROOT/'migration/patches'/module/entry['path']
                 if hashlib.sha256(patch.read_bytes()).hexdigest() != entry['sha256']:
                     raise ValueError('Patch checksum differs')
                 patch_proofs.append(apply_patch_verified(tree,patch,entry['upstream_paths'],entry['sha256']))
+            flags += ['-DSWOOLE_RS_BUFFER=1', '-I'+str(ROOT/'native/include'), '-I'+str(ROOT/'native/buffer')]
         for name in [*backends, 'stream']:
             selected_flags = [flag for flag in flags if variant != 'disabled' or flag != '-DSWOOLE_RS_REACTOR']
             cmd = ['c++', *selected_flags, '-c', str(tree/(('src/network/' if name == 'stream' else 'src/reactor/')+name+'.cc')), '-o', str(tree/(variant+'-'+name+'.o'))]

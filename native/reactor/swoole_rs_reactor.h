@@ -86,6 +86,41 @@ enum { SWR_REACTOR_POLL, SWR_REACTOR_EPOLL, SWR_REACTOR_KQUEUE };
 /* Reactor handler tables (read/write/error per fd type, write and error defaults).
  * Handlers are ReactorHandler: int (*)(Reactor *, Event *). get kind: 0 read, 1 write,
  * 2 error; error_only false adds get_error_handler's read and write fallbacks. */
+/* network::Socket's write-path fields, embedded in Socket in this order and with these
+ * types (Socket static_asserts it), and the reactor's buffered write over them
+ * (Reactor::write_func). The data, or iov[count], is what to queue; offset is what the
+ * send took. Outcome 0: value is the result. Otherwise return SW_ERR after: 1 the
+ * "data packet is too large" warning, 2 the output buffer overflow warning, 3
+ * swoole_set_last_error(errno), 4 Buffer::check(status). */
+typedef struct swr_v1_buffer swr_v1_buffer;
+typedef struct {
+    void *out_buffer;
+    void *send_timer;
+    uint32_t buffer_size;
+    uint8_t close_wait;
+    uint8_t nonblock;
+    uint8_t ssl_send;
+} swr_v1_socket_output;
+typedef struct {
+    const uint8_t *data;
+    const struct iovec *iov;
+    size_t count;
+    size_t length;
+} swr_v1_reactor_write_payload;
+typedef struct {
+    void *context;
+    void (*set_nonblock)(void *);
+    ssize_t (*send)(void *); /* keeps the kernel's errno */
+    swr_v1_buffer *(*create_buffer)(void *); /* out_buffer = new Buffer(chunk_size) */
+    void (*watch_writable)(void *); /* add_write_event unless already writable */
+} swr_v1_reactor_write_ops;
+typedef struct {
+    ssize_t value;
+    int32_t outcome;
+    int32_t status;
+} swr_v1_reactor_write_result;
+swr_v1_reactor_write_result swr_v1_reactor_write(swr_v1_socket_output *output, bool *kernel_nobufs, swr_v1_buffer *buffer,
+    uint32_t default_buffer_size, const swr_v1_reactor_write_payload *payload, const swr_v1_reactor_write_ops *ops);
 /* swoole::Event, and accessors for the network::Socket fields the wait loop uses. */
 typedef struct {
     int fd;

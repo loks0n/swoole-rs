@@ -89,6 +89,15 @@
         "src/reactor/kqueue.cc",
         "src/reactor/poll.cc"
       ]
+    },
+    {
+      "path": "0012-write-path.patch",
+      "sha256": "a22e7c8791996165bac74cf2676aac85433e6dd72df9dc51d6b4fa362ee264d6",
+      "upstream_paths": [
+        "include/swoole_reactor.h",
+        "include/swoole_socket.h",
+        "src/reactor/base.cc"
+      ]
     }
   ]
 }

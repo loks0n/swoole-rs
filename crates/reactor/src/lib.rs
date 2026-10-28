@@ -19,6 +19,10 @@ mod poll;
 #[cfg(unix)]
 pub use poll::*;
 #[cfg(unix)]
+mod write;
+#[cfg(unix)]
+pub use write::*;
+#[cfg(unix)]
 mod registration;
 #[cfg(unix)]
 pub use registration::*;
