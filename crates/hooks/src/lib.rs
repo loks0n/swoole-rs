@@ -24,6 +24,8 @@ pub mod sleep;
 pub mod socket_wait;
 pub mod stdio;
 pub mod transfer;
+#[cfg(feature = "iouring")]
+pub mod uring;
 pub mod vector;
 pub mod wait_event;
 pub mod wait_signal;
@@ -98,53 +100,6 @@ pub extern "C" fn swr_v1_hook_transfer(
     Transfer {
         total,
         again: (result < 0 && wait) || (result > 0 && total < requested),
-    }
-}
-
-/// `io_uring` submit result: 0 finish, 1 defer, 2 sleep and retry, 3 retry,
-/// -1 diagnose. Host errno constants are classified natively, without mutation.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_submit(
-    result: i32,
-    again: bool,
-    busy: bool,
-    interrupted: bool,
-) -> i32 {
-    if result >= 0 {
-        0
-    } else if again {
-        1
-    } else if busy {
-        2
-    } else if interrupted {
-        3
-    } else {
-        -1
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, PartialEq, Eq)]
-pub struct Completion {
-    pub result: i64,
-    pub error: i32,
-}
-
-/// `io_uring` reports negative errno. ECANCELED intentionally maps to timeout.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_completion(result: i64, canceled: i32, timeout: i32) -> Completion {
-    if result < 0 {
-        #[expect(
-            clippy::cast_possible_truncation,
-            reason = "io_uring results are an i32 cqe.res"
-        )]
-        let error = result.wrapping_neg() as i32;
-        Completion {
-            result: -1,
-            error: if error == canceled { timeout } else { error },
-        }
-    } else {
-        Completion { result, error: 0 }
     }
 }
 
@@ -425,25 +380,5 @@ mod tests {
         assert_eq!(swr_v1_hook_timer(1, false, true, false, 1.0), 0);
         assert_eq!(swr_v1_hook_timer(1, true, true, false, 1.0), 24);
         assert_eq!(swr_v1_hook_timer(1, true, true, true, -1.0), 16);
-    }
-
-    #[test]
-    fn distinct_completion_and_submit_results() {
-        assert_eq!(
-            swr_v1_hook_completion(-125, 125, 110),
-            Completion {
-                result: -1,
-                error: 110
-            }
-        );
-        assert_eq!(
-            swr_v1_hook_completion(0, 125, 110),
-            Completion {
-                result: 0,
-                error: 0
-            }
-        );
-        assert_eq!(swr_v1_hook_submit(-1, true, true, true), 1);
-        assert_eq!(swr_v1_hook_submit(1, true, true, true), 0);
     }
 }

@@ -13,6 +13,7 @@
       "depends_on": [],
       "owned_paths": [
         "crates/ffi/",
+        "crates/server/",
         "crates/zend-sys/",
         "crates/zend/",
         "native/include/",
@@ -221,7 +222,8 @@
         "src/coroutine/iouring.cc",
         "src/coroutine/uring_socket.cc",
         "ext-src/swoole_runtime.cc",
-        "include/swoole_coroutine_socket.h"
+        "include/swoole_coroutine_socket.h",
+        "include/swoole_iouring.h"
       ],
       "abi_contract": "docs/hooks-abi-v1.md",
       "feature_bit_reserved": 65536
