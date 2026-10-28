@@ -28,6 +28,8 @@ MODULES = {'websocket': ('M02', 1), 'buffer': ('M01', 2), 'timer': ('M03', 4),
 # no --module or configure switch, and no cargo feature.
 GRADUATED = ('base64', 'buffer', 'crc32', 'error', 'framing', 'http', 'protocols', 'websocket', 'timer')
 SELECTABLE = sorted(set(MODULES) - set(GRADUATED))
+# What the integration bridge patch touches: the --with(out)-swoole-rs switch.
+BRIDGE_PATHS = {'config.m4', 'CMakeLists.txt', 'ext-src/php_swoole.cc'}
 # Modules a module cannot build without: PHP Table stores rows in memory's TableV2.
 REQUIRES = {'phpcollections': ('memory',)}
 
@@ -371,6 +373,10 @@ def build(args, parser):
     if getattr(args, 'fix_halfclose', False):
         selected.add('M15')
     patches = patches_for([module for module in plan['modules'] if module['id'] in selected])
+    if args.backend == 'upstream':
+        # The upstream fallback links no Rust: it takes only the bridge switch, so the
+        # server sources that call crates/server stay pristine (#801).
+        patches = [patch for patch in patches if set(patch['upstream_paths']) <= BRIDGE_PATHS]
     archive, rust_inputs, rust_compilation = None, None, None
     # The Rust io_uring engine replaces upstream's when the build enables io_uring.
     cargo_extra = ['iouring'] if 'hooks' in args.module and '--enable-iouring' in args.configure else []
