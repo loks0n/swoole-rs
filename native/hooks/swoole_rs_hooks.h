@@ -98,7 +98,7 @@ uint32_t swr_v1_hook_timeout_action(double timeout, double startup);
 typedef struct { double remaining; bool expired; } swr_v1_hook_timeout_plan;
 swr_v1_hook_timeout_plan swr_v1_hook_timeout_remaining(double timeout, double elapsed, double minimum);
 typedef struct { uint32_t flags; bool conflict; } swr_v1_hook_curl_plan;
-swr_v1_hook_curl_plan swr_v1_hook_curl_flags(uint32_t flags, uint32_t native_flag, uint32_t php_flag);
+swr_v1_hook_curl_plan swr_v1_hook_curl_flags(uint32_t flags, uint32_t native, uint32_t php);
 enum swr_hook_async_action { SWR_HOOK_ASYNC_REJECT = 0, SWR_HOOK_ASYNC_YIELD = 1, SWR_HOOK_ASYNC_COMPLETE = 2, SWR_HOOK_ASYNC_CANCEL = 3, SWR_HOOK_ASYNC_RESUME = 4 };
 int32_t swr_v1_hook_async_action(uint32_t phase, bool cancellable, bool success);
 int32_t swr_v1_hook_dns_error(int32_t error, int32_t asynchronous_timeout, int32_t resolve_timeout);

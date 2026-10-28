@@ -16,13 +16,13 @@ enum SwrPhpEventCallbackMode {
  * WRITE is observed freshly
  * after READ destruction. No slot clear is introduced. READ/WRITE return2. */
 uint32_t swr_v1_phpevents_callbacks(uint32_t *phase, uint32_t mode,
-    SwrPhpEventCallback *read, SwrPhpEventCallback *write,
+    SwrPhpEventCallback *readable, SwrPhpEventCallback *writable,
     uintptr_t new_read, uintptr_t new_write, uintptr_t *identity);
 /* Existing update actions, with persistent pair checks/publications internal.
  * Native constructs payloads, defers returned identity and performs backend work
  * only after return. A publication follows the completed Native deferral. */
 uint32_t swr_v1_phpevents_update_owned(uint32_t *phase, int64_t events,
-    int64_t observation, SwrPhpEventCallback *read, SwrPhpEventCallback *write,
+    int64_t observation, SwrPhpEventCallback *readable, SwrPhpEventCallback *writable,
     uintptr_t new_read, uintptr_t new_write, uintptr_t *identity);
 enum SwrPhpEventInitAction {
     SWR_EVENT_INIT_ERROR=0, SWR_EVENT_INIT_OK=1, SWR_EVENT_INIT_CLI=2,

@@ -23,7 +23,7 @@ SwrFramingSpan swr_v1_framing_mime_fallback(void);
 /* Borrowed initialized filename. Returns last-dot successor (or0), bounded by
  * length, before native allocation; SIZE_MAX for invalid input extent. */
 size_t swr_v1_framing_mime_suffix_offset(const uint8_t *, size_t);
-size_t swr_v1_framing_mime_suffix(const uint8_t *, size_t, uint8_t *, size_t, uint8_t native_char_signed);
+size_t swr_v1_framing_mime_suffix(const uint8_t *, size_t, uint8_t *, size_t, uint8_t native_signed);
 #ifdef __cplusplus
 }
 #endif

@@ -135,7 +135,7 @@ enum SwrPhpDefinitionAction { SWR_PHP_DEFINITION_FALSE=0, SWR_PHP_DEFINITION_TRU
  * SELF result/kind and LOOKUP result are fresh copied observations. Class result
  * is consumed while the native local zend::String remains alive for diagnostics. */
 uint32_t swr_v1_phphelpers_parse_definition(uint32_t *, const uint8_t *, size_t length,
-                                          uint32_t value_kind, uint8_t observation);
+                                          uint32_t kind, uint8_t observation);
 typedef struct SwrPhpBuiltinState { uint32_t phase; int32_t index; } SwrPhpBuiltinState;
 enum SwrPhpBuiltinAction { SWR_PHP_BUILTIN_DONE=0, SWR_PHP_BUILTIN_TYPED=1,
     SWR_PHP_BUILTIN_CAPTURE_ARGUMENTS=2, SWR_PHP_BUILTIN_ARGUMENT=3,
@@ -242,7 +242,7 @@ uint32_t swr_v1_phphelpers_vm(uint32_t *, uint32_t operation, uint32_t operand,
 /* operation assign=0,reference-foreach=1,unset=2; result dispatch=0,handle=1,
  * reference error=2,list deletion error=3. list fact used only by unset. */
 uint32_t swr_v1_phphelpers_opcode(uint32_t, uint8_t typed, uint8_t list);
-int64_t swr_v1_phphelpers_json_options(int64_t, int64_t object_array_mask, uint8_t assoc);
+int64_t swr_v1_phphelpers_json_options(int64_t, int64_t mask, uint8_t assoc);
 /* Exact pinned diagnostic definition projection into native uninitialized
  * writable storage; no allocator/callback. Value/output spans must be disjoint.
  * Native owns string allocation/publication; returns0 without writes if invalid. */

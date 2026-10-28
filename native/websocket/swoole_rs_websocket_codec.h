@@ -26,7 +26,7 @@ int64_t swr_v1_ws_decode(uint8_t *data, size_t length, swr_ws_decoded *output);
 bool swr_v1_ws_control_invalid(uint8_t opcode, uint8_t flags, size_t length);
 /* Actual bytes written, including header/key only when FLAG_ENCODE_HEADER_ONLY.
  * 0 rejects overflow. No input/output overlap is permitted for encoding. */
-size_t swr_v1_ws_encoded_size(size_t payload_length, uint8_t flags);
+size_t swr_v1_ws_encoded_size(size_t length, uint8_t flags);
 size_t swr_v1_ws_encode(const uint8_t *data, size_t length, uint8_t opcode, uint8_t flags,
                        uint8_t *output, size_t capacity);
 size_t swr_v1_ws_encode_close(int32_t code, const uint8_t *reason, size_t length, uint8_t flags,

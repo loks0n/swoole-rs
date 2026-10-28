@@ -29,7 +29,7 @@ enum swr_v1_clients_object_action {
 struct swr_v1_clients_object_plan { uint32_t action, stage; };
 struct swr_v1_clients_object_plan swr_v1_clients_object_next(uint32_t operation, uint32_t stage, uint8_t fact);
 struct swr_v1_clients_ip_plan { uint8_t bytes[16]; uint32_t length; };
-struct swr_v1_clients_ip_plan swr_v1_clients_ip(uint8_t version, const uint8_t *data, size_t length, uint8_t allow_decimal_zeroes);
+struct swr_v1_clients_ip_plan swr_v1_clients_ip(uint8_t version, const uint8_t *data, size_t length, uint8_t allow_zeroes);
 uint8_t swr_v1_clients_loopback(uint8_t version, const uint8_t *address);
 struct swr_v1_clients_ip_text_plan { uint8_t bytes[40]; uint32_t length; };
 struct swr_v1_clients_ip_text_plan swr_v1_clients_ip_text(uint8_t version, const uint8_t *address);
@@ -154,7 +154,7 @@ enum swr_v1_clients_transport_action {
 };
 struct swr_v1_clients_transport_plan { uint32_t action, stage; };
 struct swr_v1_clients_transport_plan swr_v1_clients_transport_next(uint32_t stage, uint32_t facts);
-intptr_t swr_v1_clients_datagram_send(intptr_t result, intptr_t narrowed_length);
+intptr_t swr_v1_clients_datagram_send(intptr_t result, intptr_t length);
 /* Sole private pool; binary keys, FIFO opaque native tokens. Allocation returns
  * 0 success/1 OOM/2 invalid; caller throws only after return. Never destroys Client.
  * All calls require live owner/no concurrent mutation; key storage is native. */

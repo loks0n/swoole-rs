@@ -159,7 +159,7 @@ typedef struct swr_v1_memory_heap_node {
  * copies one live node and advances index in Rust; terminal output is cleared.
  *1 record,0 end,-1 invalid; native printf executes only after return. */
 int32_t swr_v1_memory_heap_debug_step(const void *, size_t *, swr_v1_memory_heap_node *);
-int32_t swr_v1_memory_heap_create(size_t capacity, uint32_t max_heap, void **);
+int32_t swr_v1_memory_heap_create(size_t capacity, uint32_t max, void **);
 void swr_v1_memory_heap_release(void *);
 size_t swr_v1_memory_heap_count(const void *);
 swr_v1_memory_heap_node *swr_v1_memory_heap_at(const void *, size_t index);
@@ -227,7 +227,7 @@ typedef struct swr_v1_memory_mapping_extent_result {
  * Outputs are separate exclusive PODs. Relocation requires disjoint mappings. */
 void *swr_v1_memory_mapping_initialize(void *base, size_t total);
 int32_t swr_v1_memory_mapping_extent(const void *payload, swr_v1_memory_mapping_extent_result *);
-int32_t swr_v1_memory_mapping_relocate(const void *old_payload, void *new_payload);
+int32_t swr_v1_memory_mapping_relocate(const void *old, void *new_);
 int32_t swr_v1_memory_mapping_size(size_t requested, size_t *total);
 int32_t swr_v1_memory_mapping_product(size_t count, size_t width, size_t *requested);
 int32_t swr_v1_memory_mapping_copy(size_t old_total, size_t new_total, size_t *bytes);

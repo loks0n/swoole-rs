@@ -43,7 +43,7 @@ struct swr_v1_corebase_mkdir_state {
     size_t length;
     size_t next;
 };
-int32_t swr_v1_corebase_mkdir_next(const uint8_t *input, size_t length, uint8_t *output,
+int32_t swr_v1_corebase_mkdir_next(const uint8_t *input, size_t input_length, uint8_t *output,
                                  size_t capacity, struct swr_v1_corebase_mkdir_state *state);
 /* Zeroed stack cursor, never a native owner/registry. Execute each returned
  * action after Rust returns, then supply a copied boolean when requested.

@@ -43,7 +43,7 @@ swr_v1_coroutine_bailout_action swr_v1_coroutine_bailout_step(swr_v1_coroutine_b
 void swr_v1_coroutine_identity_route(swr_v1_coroutine_identity *, swr_v1_coroutine_identity *, void *, uint32_t);
 
 typedef struct { uint32_t actions; int32_t state, resume_code, error; } swr_v1_coroutine_plan;
-swr_v1_coroutine_plan swr_v1_coroutine_transition(uint32_t operation, uint32_t facts, int32_t resume_code);
+swr_v1_coroutine_plan swr_v1_coroutine_transition(uint32_t op, uint32_t facts, int32_t code);
 typedef void (*swr_v1_coroutine_swap_function)(void *);
 typedef struct { swr_v1_coroutine_swap_function function; } swr_v1_coroutine_swap_callback;
 typedef struct { swr_v1_coroutine_plan plan; swr_v1_coroutine_swap_function function; void *task; } swr_v1_coroutine_dispatch_result;
@@ -65,7 +65,7 @@ enum swr_channel_action {
     SWR_CH_ERROR_TIMEOUT = -1, SWR_CH_ERROR_CLOSED = -2,
     SWR_CH_ERROR_CANCELED = -3, SWR_CH_INVALID = -4
 };
-int32_t swr_v1_channel_step(swr_v1_channel_cursor *, uint32_t operation, uint32_t facts);
+int32_t swr_v1_channel_step(swr_v1_channel_cursor *, uint32_t op, uint32_t facts);
 /* Sole pointer-token FIFOs. Native owns payloads and translates allocation
  * failures after return. Each call requires a live, exclusively accessed owner. */
 typedef struct swr_v1_channel_tokens swr_v1_channel_tokens;
@@ -110,7 +110,7 @@ swr_v1_coroutine_dispatch_result swr_v1_coroutine_dispatch(swr_v1_coroutine_stat
  * CANCEL copy/clear and RUN current/origin/clock precede publication; TIMEOUT
  * publication precedes Native resume. No Rust borrow spans Native effects. */
 swr_v1_coroutine_plan swr_v1_coroutine_status_transition(swr_v1_coroutine_status *,
-    uint32_t operation, uint32_t fresh_facts, uint32_t stage);
+    uint32_t op, uint32_t facts, uint32_t stage);
 /* Typed same-layout Context cells. Raw initialization is performed only at the
  * original publication points; no reference to uninitialized fields is formed. */
 typedef struct { void *pointer; } swr_v1_context_stack_cell;
@@ -139,7 +139,7 @@ swr_v1_context_stack_view swr_v1_context_stack_step(swr_v1_context_stack_cell *,
 swr_v1_channel_owned_action swr_v1_channel_owned_step(swr_v1_channel_owned_cursor *,
     swr_v1_channel_state *, swr_v1_channel_tokens *data,
     swr_v1_channel_tokens *producers, swr_v1_channel_tokens *consumers,
-    uint32_t operation, uint32_t external_facts, void *input);
+    uint32_t op, uint32_t external, void *input);
 /* Whole pop/push/close, driving the step machine to completion and performing
  * each Native effect through `effects`: `query` returns fresh CANCELED/TIMEDOUT
  * bits, `suspend` enqueues the current coroutine and yields (returning

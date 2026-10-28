@@ -26,7 +26,7 @@ typedef struct { swr_resp_cursor cursor; uint8_t command_seen; } swr_resp_php_st
 int32_t swr_v1_resp_php_next(const uint8_t *, size_t, swr_resp_php_state *, swr_resp_span *, uint8_t *range);
 /* Fixed64-byte NUL-terminated handler key; returns length,0 on invalid input.
  * Existing PHP raw-length validation remains native; empty input is allowed. */
-size_t swr_v1_resp_handler_key(const uint8_t *, size_t, uint8_t *output64);
+size_t swr_v1_resp_handler_key(const uint8_t *, size_t, uint8_t *output);
 int64_t swr_v1_resp_parse(const uint8_t *, size_t, swr_resp_span *, size_t capacity);
 /* Optional range byte reports signed-long overflow without touching native errno. */
 int64_t swr_v1_resp_parse_range(const uint8_t *, size_t, swr_resp_span *, size_t capacity, uint8_t *range);
