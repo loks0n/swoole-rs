@@ -69,9 +69,6 @@ double swr_v1_hook_backoff(double current, double initial, double maximum);
 int64_t swr_v1_hook_transfer_result(int64_t result, uint64_t total);
 typedef struct { uint64_t total; bool again; } swr_v1_hook_transfer_plan;
 swr_v1_hook_transfer_plan swr_v1_hook_transfer(int64_t result, uint64_t total, uint64_t requested, bool wait);
-int32_t swr_v1_hook_submit(int32_t result, bool again, bool busy, bool interrupted);
-typedef struct { int64_t result; int32_t error; } swr_v1_hook_completion_plan;
-swr_v1_hook_completion_plan swr_v1_hook_completion(int64_t result, int32_t canceled, int32_t timeout);
 enum swr_hook_timer_action { SWR_HOOK_TIMER_ENABLE = 1, SWR_HOOK_TIMER_ADD = 2, SWR_HOOK_TIMER_SENTINEL = 4, SWR_HOOK_TIMER_DELETE = 8, SWR_HOOK_TIMER_CLEAR = 16 };
 uint32_t swr_v1_hook_timer(uint32_t operation, bool enabled, bool present, bool sentinel, double timeout);
 enum swr_hook_wait_action { SWR_HOOK_WAIT_DONE = 0, SWR_HOOK_WAIT_CALLBACK = 1, SWR_HOOK_WAIT_SLEEP = 2, SWR_HOOK_WAIT_CANCELED = -1, SWR_HOOK_WAIT_INVALID = -2 };
@@ -298,6 +295,5 @@ static_assert(sizeof(swr_v1_hook_timeout_plan) == 16, "timeout plan ABI");
 static_assert(sizeof(swr_v1_hook_wait_plan) == 16, "wait cursor ABI");
 static_assert(sizeof(swr_v1_hook_event_plan) == 8, "event waiter ABI");
 static_assert(sizeof(swr_v1_hook_transfer_plan) == 16, "transfer ABI");
-static_assert(sizeof(swr_v1_hook_completion_plan) == 16, "completion ABI");
 #endif
 #endif

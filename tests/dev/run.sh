@@ -19,7 +19,6 @@ for test in \
     tests/modules/phpcollections/test_gate.py \
     tests/modules/phpcollections/test_prepare_benchmark.py \
     tests/modules/phpcollections/test_runtime.py \
-    tests/modules/phpcollections/test_sdk.py \
     tests/modules/phpcoroutines/test_activated_boundary.py \
     tests/modules/phpcoroutines/test_bootstrap_fallback.py \
     tests/modules/phpcoroutines/test_config_boundary.py \
@@ -47,6 +46,7 @@ for test in \
     tests/modules/phphelpers/test_gate.py \
     tests/modules/phphelpers/test_php_benchmark.py \
     tests/modules/phphelpers/test_runtime.py \
+    tests/modules/phphelpers/test_sdk.py \
     tests/modules/ports/test_configured_flags.py \
     tests/modules/ports/test_count_checkpoints.py \
     tests/modules/reactor/test_buffer_typed_identity.py \

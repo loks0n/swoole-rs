@@ -410,6 +410,8 @@ name = "swoole-rs-hooks"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "openssl-sys",
+ "swoole-rs-uring-sys",
 ]
 
 [[package]]
@@ -527,6 +529,15 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "openssl-sys",
+]
+
+[[package]]
+name = "swoole-rs-uring-sys"
+version = "0.1.0"
+dependencies = [
+ "bindgen",
+ "cc",
+ "pkg-config",
 ]
 
 [[package]]
