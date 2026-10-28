@@ -1928,7 +1928,7 @@ index 04e0462..de48820 100644
 +        return swr_v1_clients_loopback(6, addr.inet_v6.sin6_addr.s6_addr);
      }
 diff --git a/src/network/client.cc b/src/network/client.cc
-index 56678c7..d172097 100644
+index 56678c7..2f78626 100644
 --- a/src/network/client.cc
 +++ b/src/network/client.cc
 @@ -25,2 +25,7 @@
@@ -2028,7 +2028,7 @@ index 56678c7..d172097 100644
 -    if (!tmp_addr.assign(socket->socket_type, host, port, !async)) {
 +    if (!tmp_addr.assign(socket->socket_type, host, port, !is_async())) {
          return SW_ERR;
-@@ -188,28 +201,4 @@ int Client::get_peer_name(Address *addr) const {
+@@ -188,28 +201,6 @@ int Client::get_peer_name(Address *addr) const {
  int Client::shutdown(int _how) {
 -    if (!socket || closed) {
 -        return SW_ERR;
@@ -2056,19 +2056,21 @@ index 56678c7..d172097 100644
 -            return SW_OK;
 -        }
 -    } else {
-+    const int result = swr_v1_clients_shutdown(state_.get(), socket != nullptr, socket ? socket->fd : -1, _how, ::shutdown);
++    const uint32_t request = _how == SHUT_RD ? 0 : (_how == SHUT_WR ? 1 : (_how == SHUT_RDWR ? 2 : 3));
++    const int result =
++        swr_v1_clients_shutdown(state_.get(), socket != nullptr, socket ? socket->fd : -1, _how, request, ::shutdown);
 +    if (result == -2) {
          swoole_set_last_error(EINVAL);
-@@ -217,2 +206,3 @@ int Client::shutdown(int _how) {
+@@ -217,2 +208,3 @@ int Client::shutdown(int _how) {
      }
 +    return result;
  }
-@@ -324,3 +314,3 @@ static int Client_inet_addr(Client *cli, const char *host, int port) {
+@@ -324,3 +316,3 @@ static int Client_inet_addr(Client *cli, const char *host, int port) {
  
 -    if (!cli->server_addr.assign(cli->socket->socket_type, host, port, !cli->async)) {
 +    if (!cli->server_addr.assign(cli->socket->socket_type, host, port, !cli->is_async())) {
          if (!cli->dns_completed && swoole_get_last_error() == SW_ERROR_BAD_HOST_ADDR) {
-@@ -336,21 +326,22 @@ static int Client_inet_addr(Client *cli, const char *host, int port) {
+@@ -336,21 +328,22 @@ static int Client_inet_addr(Client *cli, const char *host, int port) {
  Client::~Client() {
 -    if (!socket) {
 -        return;
@@ -2110,10 +2112,9 @@ index 56678c7..d172097 100644
 +        }
 +        stage = plan.stage;
      }
-@@ -362,114 +353,123 @@ Client::~Client() {
+@@ -362,114 +355,122 @@ Client::~Client() {
   */
-+// Rust runs the close over the client's state; these are its effects. onClose may
-+// delete the client, so the socket saved first decides whether it still exists.
++// Rust runs the close; onClose may delete the client, so only the saved socket is read after it.
  int Client::close() {
 -    if (socket == nullptr || closed) {
 -        return SW_ERR;
@@ -2337,7 +2338,7 @@ index 56678c7..d172097 100644
 -
 -    return ret;
  }
-@@ -488,60 +488,44 @@ static int Client_dns_lookup(Client *cli) {
+@@ -488,60 +489,44 @@ static int Client_dns_lookup(Client *cli) {
  static int Client_tcp_connect_async(Client *cli, const char *host, int port, double timeout, int nonblock) {
 -    int ret;
 -
@@ -2438,7 +2439,7 @@ index 56678c7..d172097 100644
 +        stage = plan.stage;
 +    }
  }
-@@ -549,17 +533,24 @@ static int Client_tcp_connect_async(Client *cli, const char *host, int port, dou
+@@ -549,17 +534,24 @@ static int Client_tcp_connect_async(Client *cli, const char *host, int port, dou
  static ssize_t Client_tcp_send_async(Client *cli, const char *data, size_t length, int flags) {
 +    uint32_t stage = 100;
      ssize_t n = length;
@@ -2475,7 +2476,7 @@ index 56678c7..d172097 100644
 -    }
 -    return n;
  }
-@@ -603,89 +594,61 @@ static ssize_t Client_tcp_recv_sync(Client *cli, char *data, size_t len, int fla
+@@ -603,89 +595,61 @@ static ssize_t Client_tcp_recv_sync(Client *cli, char *data, size_t len, int fla
  static int Client_udp_connect(Client *cli, const char *host, int port, double timeout, int udp_connect) {
 -    cli->set_timeout(timeout);
 -    if (!cli->async && timeout > 0) {
@@ -2620,7 +2621,7 @@ index 56678c7..d172097 100644
 -        return SW_ERR;
 +        stage = plan.stage;
      }
-@@ -694,8 +657,4 @@ static int Client_udp_connect(Client *cli, const char *host, int port, double ti
+@@ -694,8 +658,4 @@ static int Client_udp_connect(Client *cli, const char *host, int port, double ti
  static ssize_t Client_udp_send(Client *cli, const char *data, size_t len, int flags) {
 -    ssize_t n = cli->socket->sendto(cli->server_addr, data, len, 0);
 -    if (n < 0 || n < (ssize_t) len) {
@@ -2631,12 +2632,12 @@ index 56678c7..d172097 100644
 +    const ssize_t result = cli->socket->sendto(cli->server_addr, data, len, 0);
 +    return swr_v1_clients_datagram_send(result, static_cast<ssize_t>(len));
  }
-@@ -703,3 +662,3 @@ static ssize_t Client_udp_send(Client *cli, const char *data, size_t len, int fl
+@@ -703,3 +663,3 @@ static ssize_t Client_udp_send(Client *cli, const char *data, size_t len, int fl
  static ssize_t Client_udp_recv(Client *cli, char *data, size_t length, int flags) {
 -    if (cli->async) {
 +    if (cli->is_async()) {
          return cli->socket->recvfrom_sync(data, length, flags, &cli->remote_addr);
-@@ -717,112 +676,78 @@ static int Client_onPackage(const Protocol *proto, Socket *conn, const RecvData
+@@ -717,112 +677,78 @@ static int Client_onPackage(const Protocol *proto, Socket *conn, const RecvData
  static int Client_onStreamRead(Reactor *reactor, Event *event) {
 -    ssize_t n;
      auto *cli = (Client *) event->socket->object;
@@ -2819,12 +2820,12 @@ index 56678c7..d172097 100644
 -    }
 -    return SW_OK;
  }
-@@ -844,3 +769,3 @@ static int Client_onError(Reactor *reactor, Event *event) {
+@@ -844,3 +770,3 @@ static int Client_onError(Reactor *reactor, Event *event) {
      auto *cli = (Client *) event->socket->object;
 -    if (cli->active) {
 +    if (cli->is_active()) {
          return cli->close();
-@@ -859,8 +784,8 @@ static void Client_onTimeout(Timer *timer, TimerNode *tnode) {
+@@ -859,8 +785,8 @@ static void Client_onTimeout(Timer *timer, TimerNode *tnode) {
      if (cli->open_ssl && cli->socket->ssl_state != SW_SSL_STATE_READY) {
 -        cli->active = false;
 +        cli->set_active(false);
@@ -2836,7 +2837,7 @@ index 56678c7..d172097 100644
 -        cli->active = false;
 +        cli->set_active(false);
      }
-@@ -904,77 +829,74 @@ static int Client_onWrite(Reactor *reactor, Event *event) {
+@@ -904,77 +830,74 @@ static int Client_onWrite(Reactor *reactor, Event *event) {
      auto *cli = (Client *) event->socket->object;
 -    Socket *_socket = cli->socket;
 -    int ret;

@@ -76,8 +76,9 @@ pub unsafe extern "C" fn swr_v1_clients_set_flag(state: *mut ClientState, flag: 
 }
 
 /// `Client::shutdown(how)`: 0, -1, or -2 for native to set `EINVAL` and fail.
-/// `live` is `socket != nullptr`; `syscall` is `shutdown(2)` on `fd`. Upstream's
-/// `SHUT_RDWR` records only a read shutdown, and so does this.
+/// `request` is `how` as 0 `SHUT_RD`, 1 `SHUT_WR`, 2 `SHUT_RDWR`, other invalid;
+/// `live` is `socket != nullptr`; `syscall` is `shutdown(2)`, called with `fd` and
+/// `how` unchanged. Upstream's `SHUT_RDWR` records only a read shutdown, and so does this.
 ///
 /// # Safety
 /// `state` is a live handle, not borrowed elsewhere during the call.
@@ -87,6 +88,7 @@ pub unsafe extern "C" fn swr_v1_clients_shutdown(
     live: bool,
     fd: i32,
     how: i32,
+    request: u32,
     syscall: unsafe extern "C" fn(i32, i32) -> i32,
 ) -> i32 {
     // SAFETY: a live, unborrowed handle (see above).
@@ -94,11 +96,11 @@ pub unsafe extern "C" fn swr_v1_clients_shutdown(
     if !live || state.closed {
         return -1;
     }
-    let call = match how {
-        libc::SHUT_RD if !state.shutdown_read => 0,
-        libc::SHUT_WR if !state.shutdown_write => 1,
-        libc::SHUT_RDWR => 2,
-        libc::SHUT_RD | libc::SHUT_WR => return -1,
+    let call = match request {
+        0 if !state.shutdown_read => 0,
+        1 if !state.shutdown_write => 1,
+        2 => 2,
+        0 | 1 => return -1,
         _ => return -2,
     };
     // SAFETY: shutdown(2) on the client's descriptor; failure is reported by its result.
@@ -198,7 +200,13 @@ mod tests {
     }
 
     fn shutdown(state: *mut ClientState, live: bool, how: i32) -> i32 {
-        unsafe { swr_v1_clients_shutdown(state, live, 3, how, fake_shutdown) }
+        let request = match how {
+            libc::SHUT_RD => 0,
+            libc::SHUT_WR => 1,
+            libc::SHUT_RDWR => 2,
+            _ => 3,
+        };
+        unsafe { swr_v1_clients_shutdown(state, live, 3, how, request, fake_shutdown) }
     }
 
     #[test]

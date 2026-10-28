@@ -76,9 +76,10 @@ swr_v1_clients_state *swr_v1_clients_state_new(bool is_async);
 void swr_v1_clients_state_free(swr_v1_clients_state *state);
 bool swr_v1_clients_flag(const swr_v1_clients_state *state, uint32_t flag);
 void swr_v1_clients_set_flag(swr_v1_clients_state *state, uint32_t flag, bool value);
-/* Client::shutdown(how): 0, -1, or -2 for native to set EINVAL. live is socket != nullptr;
- * syscall is shutdown(2) on fd. */
-int32_t swr_v1_clients_shutdown(swr_v1_clients_state *state, bool live, int32_t fd, int32_t how,
+/* Client::shutdown(how): 0, -1, or -2 for native to set EINVAL. request is how as 0 SHUT_RD,
+ * 1 SHUT_WR, 2 SHUT_RDWR, other invalid; live is socket != nullptr; syscall is shutdown(2),
+ * called with fd and how unchanged. */
+int32_t swr_v1_clients_shutdown(swr_v1_clients_state *state, bool live, int32_t fd, int32_t how, uint32_t request,
                                 int32_t (*syscall)(int32_t, int32_t));
 /* Client::close(). on_close returns false when it threw; the client may be gone after it,
  * so only orphaned (over the socket saved by socket()) and close_fd run afterwards. */
