@@ -61,15 +61,18 @@ shared native words. Opcodes: load = 0, store = 1, add-fetch = 2, sub-fetch = 3,
 compare-set = 4; `expected` is the last argument. Loads/stores are relaxed
 (matching native volatile access); RMW/CAS use seq-cst like `__sync`. Arithmetic
 wraps at `u32`/`i64` width. CAS returns 0/1 and leaves the word unchanged on
-failure. Atomic objects and their lifetime stay native; callers must keep the
-storage live and exclude concurrent destruction.
+failure. Callers keep the storage live and exclude concurrent destruction.
+
+PHP Atomic, Atomic\Long and their Thread counterparts are Rust classes
+(`crates/phplocks`, `swr_v1_phplocks_*`). C++ supplies the method tables, the
+global-pool words (Atomic) and the `ThreadResource`s that hold Thread words;
+Rust owns registration, objects and methods (see `docs/zend.md`).
 
 `swr_v1_locks_wait` / `swr_v1_locks_wakeup` exist on Linux only and implement
 the `HAVE_FUTEX` path: CAS token consumption, a single futex syscall (no hidden
 EINTR/spurious-wake retry), timeout conversion and result/errno. NaN/out-of-range
 timeout casts are undefined input. PHP Atomic and its Thread counterpart call
-upstream's `sw_atomic_futex_wait/wakeup`, which reach them through the utilities
-module; non-futex builds use upstream's C++ wait registry.
+them directly; non-futex builds use upstream's C++ wait registry.
 
 ## Coroutine lock policy
 

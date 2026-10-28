@@ -28,12 +28,14 @@ impl Call {
     /// `frame` and `value` are the live frame and return slot Zend passed this
     /// handler, and the `Call` does not outlive the handler.
     #[must_use]
+    #[inline]
     pub unsafe fn new(frame: *mut zend_execute_data, value: *mut zval) -> Self {
         Self { frame, value }
     }
 
     /// `ZEND_NUM_ARGS()`.
     #[must_use]
+    #[inline]
     pub fn num_args(&self) -> u32 {
         // SAFETY: a live frame.
         let this = unsafe { (*self.frame).This };
@@ -43,6 +45,7 @@ impl Call {
 
     /// `Z_OBJ_P(ZEND_THIS)`: valid in a non-static method only.
     #[must_use]
+    #[inline]
     pub fn this(&self) -> *mut zend_object {
         // SAFETY: a live frame.
         let this = unsafe { (*self.frame).This };
@@ -51,6 +54,7 @@ impl Call {
     }
 
     /// `ZEND_CALL_ARG(execute_data, n)`, 1-based; `n` is at most `num_args()`.
+    #[inline]
     fn arg(&self, n: u32) -> *mut zval {
         self.frame
             .cast::<zval>()
@@ -60,6 +64,7 @@ impl Call {
     /// `ZEND_PARSE_PARAMETERS_START(min, max)`'s count check.
     /// # Errors
     /// The count is outside `min..=max`; Zend has thrown an `ArgumentCountError`.
+    #[inline]
     pub fn arity(&self, min: u32, max: u32) -> Result<(), Invalid> {
         let count = self.num_args();
         if (min..=max).contains(&count) {
@@ -74,6 +79,7 @@ impl Call {
     /// argument was not passed.
     /// # Errors
     /// The argument is not an int under the caller's typing mode; Zend has thrown.
+    #[inline]
     pub fn long(&self, n: u32, default: i64) -> Result<i64, Invalid> {
         if n > self.num_args() {
             return Ok(default);
@@ -98,6 +104,7 @@ impl Call {
     /// argument was not passed.
     /// # Errors
     /// The argument is not a float under the caller's typing mode; Zend has thrown.
+    #[inline]
     pub fn double(&self, n: u32, default: f64) -> Result<f64, Invalid> {
         if n > self.num_args() {
             return Ok(default);
@@ -138,12 +145,14 @@ impl Call {
         Invalid
     }
 
+    #[inline]
     fn set(&self, type_info: u32) {
         // SAFETY: the return slot is live for the handler.
         unsafe { (*self.value).u1 = _zval_struct__bindgen_ty_1 { type_info } };
     }
 
     /// `RETVAL_LONG`.
+    #[inline]
     pub fn set_long(&self, value: i64) {
         // SAFETY: the return slot is live for the handler.
         unsafe { (*self.value).value = zend_value { lval: value } };
@@ -151,6 +160,7 @@ impl Call {
     }
 
     /// `RETVAL_BOOL`.
+    #[inline]
     pub fn set_bool(&self, value: bool) {
         self.set(if value { IS_TRUE } else { IS_FALSE });
     }
