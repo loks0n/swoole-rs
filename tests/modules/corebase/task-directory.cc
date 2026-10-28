@@ -12,9 +12,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static void require(bool condition) {
-    if (!condition) throw std::runtime_error("task-directory witness failed");
+static void require_at(bool condition, int line) {
+    if (!condition) throw std::runtime_error("task-directory witness failed at line " + std::to_string(line));
 }
+#define require(condition) require_at((condition), __LINE__)
 static void remove_tree(const std::string &path) {
     struct stat info;
     if (lstat(path.c_str(), &info) != 0) return;
@@ -53,6 +54,7 @@ static bool exists_dir(const std::string &path) {
     struct stat info; return stat(path.c_str(), &info) == 0 && S_ISDIR(info.st_mode);
 }
 int main(int argc, char **argv) {
+    std::setvbuf(stdout, nullptr, _IONBF, 0);
     Scratch scratch;
     swoole_init();
     FILE *sink = std::tmpfile(); require(sink);
@@ -80,11 +82,12 @@ int main(int argc, char **argv) {
     require(!swoole_set_task_tmpdir(file + "/child") && SwooleG.task_tmpfile == prior);
     std::puts("file-parent:reject,old-publication");
     std::string nul = scratch.root + std::string("\0ignored", 8);
-    require(swoole_set_task_tmpdir(nul) && swoole_get_task_tmpdir() == template_for(scratch.root));
-    std::puts("embedded-nul:c-string-prefix,template-published");
+    // v6.2.4 checks access() on the C-string prefix but publishes the whole string.
+    require(swoole_set_task_tmpdir(nul) && swoole_get_task_tmpdir() == nul + "/" SW_TASK_TMP_FILE);
+    std::puts("embedded-nul:prefix-checked,raw-string-published");
     std::string long_nul = scratch.root + std::string(1, '\0') + std::string(512, 'z');
-    require(swoole_set_task_tmpdir(long_nul) && swoole_get_task_tmpdir() == template_for(scratch.root));
-    std::puts("embedded-nul-long:raw-length-ignored-on-access-success");
+    require(!swoole_set_task_tmpdir(long_nul) && swoole_get_task_tmpdir() == long_nul + "/" SW_TASK_TMP_FILE);
+    std::puts("embedded-nul-long:raw-length-rejected,published");
     SwooleG.task_tmpfile = scratch.root;
     require(swoole_set_task_tmpdir(swoole_get_task_tmpdir())
             && swoole_get_task_tmpdir() == template_for(scratch.root));
@@ -122,8 +125,9 @@ int main(int argc, char **argv) {
             "WARNING\tswoole_mkdir_recursive(): mkdir('" + file + "/child') failed, Error: "
             + std::strerror(ENOTDIR) + "[" + std::to_string(ENOTDIR) + "]\n"
             "WARNING\tswoole_set_task_tmpdir(): create task tmp dir('" + file + "/child') failed\n"
+            "WARNING\tswoole_set_task_tmpdir(): task tmp_dir is too large, the max size is '255'\n"
             "WARNING\tswoole_set_task_tmpdir(): task tmp_dir is too large, the max size is '255'\n");
-    std::puts("warnings:four-exact-payloads,ordered,no-extras");
+    std::puts("warnings:five-exact-payloads,ordered,no-extras");
     const std::string bad_parent = file + "/child";
     const std::string too_long = sized_path(scratch.root,
         SW_TASK_TMP_PATH_SIZE - std::strlen(SW_TASK_TMP_FILE) - 1);
