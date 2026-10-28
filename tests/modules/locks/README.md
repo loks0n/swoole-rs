@@ -17,7 +17,7 @@ python3 tests/modules/locks/gate.py --source target/upstream/src \
   --archive target/release/libswoole_rs_ffi.a --sanitize
 ```
 
-## Registered gates
+## Native gate
 
 - `gate.py --source S --archive A [--sanitize] [--rust-asan] [--output R]`
   (`locks-native`): compiles the pinned pthread bodies and the Rust overlay
@@ -40,19 +40,17 @@ python3 tests/modules/locks/gate.py --source target/upstream/src \
 - `core.py --source S --config CONFIG_H --archive A --build-root DIR --output R`:
   builds upstream and locks-only native trees (Linux) and runs the 14 unchanged
   lock GTests one process each.
-- `state.py --engine ... [--require-zts]`: paired PHP witness (`state.php`) for
+- `state.py --engine ... [--require-zts]` (`locks-state`, integrate lane): paired PHP witness (`state.php`) for
   integer wrap, CAS, lock behaviour and coroutine mutual exclusion; under ZTS
   also real threads sharing 32/64-bit atomics. Observations must match.
-- `owned.py --engine ...`: NTS Atomic/Atomic\Long (1,792 checks each) and 128
-  same-owner roundtrips per available lock kind.
 - `threads.py --engine ... --php-extension sockets`: real ZTS threads with a
   barrier, 20,000 increments per Thread Atomic width and 2,000 mutex-protected
   updates. Requires ZTS engines; also used by `tests/modules/integration/zts.py`.
-- `constructor.py --source S --archive A --output R [--sanitize] [--rust-asan]`:
+- `constructor.py --source S --archive A --output R [--sanitize] [--rust-asan]` (`locks-constructor`):
   lock constructors with faults injected at the native pthread init/attribute/
   pshared boundaries; checks no leaked storage, attribute cleanup, exception
   code/message and first-error propagation through the direct ABI.
-- `platforms.py --source S --output R`: compiles the header as C11/C++14 on the
+- `platforms.py --source S --output R` (`locks-platforms`): compiles the header as C11/C++14 on the
   host and checks synthetic FreeBSD/Android (and Apple mobile on macOS) macros
   are rejected.
 - `benchmark.py --prepare DIR --core-root CORE`, then `benchmark.py --prepared DIR`:
@@ -71,4 +69,22 @@ python3 tests/modules/locks/gate.py --source target/upstream/src \
   `gate.py` covers the same operations deterministically.
 - `constructor.py`: the native baseline leaks on failed construction and is
   reported as `native_baseline_passed: false`; the gate checks the Rust rows.
-- `owned.py` on macOS: SPINLOCK is unavailable and not exercised.
+
+## Gate audit (#487)
+
+`locks-native` is kept. It is a thread, fork, futex and timeout differential of
+the pinned pthread bodies against the Rust overlay under ASan/UBSan, with about
+160,000 checks no PHPT reaches.
+
+Three scripts that no phase ran now are phases:
+
+- `locks-constructor`: fault injection at pthread init, attribute and pshared calls.
+- `locks-platforms`: the platform guard compile.
+- `locks-state`: wrap at `PHP_INT_MAX`, CAS and lock observations, which must
+  match upstream.
+
+`owned.py` is deleted. Its ordinary add, sub, cmpset, set and lock round trips
+are `swoole_atomic/atomic.phpt` and `swoole_lock/{mutex,lock_read}.phpt`, which
+the PHPT gate runs on both engines.
+
+`core.py` (the 14 upstream lock GTests) still runs in no CI lane. That is #736.
