@@ -48,6 +48,15 @@
         "src/server/base.cc",
         "src/server/reactor_thread.cc"
       ]
+    },
+    {
+      "path": "0008-socket-registry.patch",
+      "sha256": "780a104e80d9a08fdb37cba1bf84363afafeafcb81c385a57c48da6eac1bbeb5",
+      "upstream_paths": [
+        "ext-src/swoole_admin_server.cc",
+        "include/swoole_reactor.h",
+        "src/reactor/poll.cc"
+      ]
     }
   ]
 }

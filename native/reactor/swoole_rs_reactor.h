@@ -129,6 +129,21 @@ swr_v1_reactor_poll_snapshot *swr_v1_reactor_poll_new(size_t);
 void swr_v1_reactor_poll_free(swr_v1_reactor_poll_snapshot *);
 /* Actual target libc pollfd storage, borrowed until owner destruction. */
 struct pollfd *swr_v1_reactor_poll_data(swr_v1_reactor_poll_snapshot *);
+/* The socket of each pollfd entry, borrowed likewise. */
+void **swr_v1_reactor_poll_sockets(swr_v1_reactor_poll_snapshot *);
+/* The fd -> socket registry (Reactor::sockets_); null reads as empty. put: 0, or -2 out of memory. */
+typedef struct swr_v1_reactor_registry swr_v1_reactor_registry;
+swr_v1_reactor_registry *swr_v1_reactor_registry_new(void);
+void swr_v1_reactor_registry_free(swr_v1_reactor_registry *);
+int swr_v1_reactor_registry_put(swr_v1_reactor_registry *, int fd, void *socket, int events);
+void swr_v1_reactor_registry_set(swr_v1_reactor_registry *, int fd, int events); /* if registered */
+void swr_v1_reactor_registry_remove(swr_v1_reactor_registry *, int fd);
+void *swr_v1_reactor_registry_get(const swr_v1_reactor_registry *, int fd);
+size_t swr_v1_reactor_registry_count(const swr_v1_reactor_registry *);
+/* Visits a copy of the entries; 0, or -2 out of memory. */
+int swr_v1_reactor_registry_foreach(const swr_v1_reactor_registry *, void *context, void (*visit)(void *, int fd, void *socket));
+/* Rebuilds the snapshot from the registry; the entry count. */
+int swr_v1_reactor_poll_fill(swr_v1_reactor_poll_snapshot *, const swr_v1_reactor_registry *);
 typedef struct { uint32_t phase; } swr_v1_reactor_flush_state;
 typedef struct { int64_t seconds, nanoseconds; uint32_t finite; } swr_v1_reactor_kqueue_timeout_result;
 // Independent zero state; requests10running/11EINTR/12uring-handler/13once.
