@@ -212,21 +212,6 @@ impl HttpRangeFinish {
     }
 }
 
-/// Finish range accounting:0=done,1=append full task,2=construct ending boundary,
-/// 3=call native If-Range date test,4=clear tasks. Publish returned accounting
-/// before each requested native operation; resume only after it returns.
-/// # Safety
-/// State is initialized/aligned/exclusively writable POD. The caller supplies
-/// `end_length` after action2 and modified after action3; no owner/borrow survives.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_http_range_finish(state: *mut HttpRangeFinish) -> i32 {
-    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
-    let Some(state) = (unsafe { state.as_mut() }) else {
-        return INVALID;
-    };
-    state.step()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -375,7 +360,7 @@ mod tests {
             ..Default::default()
         };
         let before = state;
-        assert_eq!(unsafe { swr_v1_http_range_finish(&raw mut state) }, INVALID);
+        assert_eq!(state.step(), INVALID);
         assert_eq!(state, before);
     }
     #[test]
@@ -389,17 +374,17 @@ mod tests {
             if_range: 1,
             ..Default::default()
         };
-        assert_eq!(unsafe { swr_v1_http_range_finish(&raw mut state) }, 2);
+        assert_eq!(state.step(), 2);
         assert_eq!((state.status, state.content_length), (299, 123));
         state.end_length = 9;
-        assert_eq!(unsafe { swr_v1_http_range_finish(&raw mut state) }, 3);
+        assert_eq!(state.step(), 3);
         assert_eq!((state.status, state.content_length), (206, 132));
         state.modified = 1;
-        assert_eq!(unsafe { swr_v1_http_range_finish(&raw mut state) }, 4);
+        assert_eq!(state.step(), 4);
         assert_eq!((state.status, state.content_length), (206, 132));
-        assert_eq!(unsafe { swr_v1_http_range_finish(&raw mut state) }, 1);
+        assert_eq!(state.step(), 1);
         assert_eq!((state.status, state.content_length), (206, 100));
-        assert_eq!(unsafe { swr_v1_http_range_finish(&raw mut state) }, 0);
+        assert_eq!(state.step(), 0);
         assert_eq!(state.status, 200);
     }
 }

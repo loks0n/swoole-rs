@@ -1,9 +1,11 @@
 # HTTP native boundary (M04)
 
 M04 is opt-in behind feature bit 256. The overlays cover `src/protocol/http.cc`,
-`src/server/static_handler.cc` and the existing StaticHandler inline bodies.
-Public C++ layouts and signatures, native storage and reference identity, and the
-third-party parsers (llhttp, multipart) are unchanged. v1 declarations are in
+`src/server/static_handler.cc` and `include/swoole_static_handler.h`, whose
+`StaticHandler` is a facade over the Rust static context
+([static-context-v2.md](static-context-v2.md)). Other public C++ layouts and
+signatures, native storage and reference identity, and the third-party parsers
+(llhttp, multipart) are unchanged. v1 declarations are in
 `swoole_rs_http.h`; v2 owners are described in the companion files listed at the
 end.
 
@@ -193,35 +195,24 @@ progress instead of looping.
 
 - `swr_v1_http_rewrite_rule` returns the pattern span and regex flag. Only a paired
   leading/trailing `~` (length ≥ 2) is stripped.
-- `swr_v1_http_rewrite_literal(url, pattern, replacement)` returns 0 = no match
-  (no mutation), 1 = match with the required size, or negative on error. Capacity
-  0 queries the size; otherwise it must fit the whole result. No NUL is written,
-  and embedded NULs are significant.
-- Native keeps the rule container and `std::regex`, including `regex_error`
-  continuation. A literal match publishes and stops even when the output equals the
+- `Server::apply_rewrite_rules` drives the static context's rewrite steps
+  (`swr_v2_http_context_rewrite_*`). Native keeps the rule container and
+  `std::regex`, including `regex_error` continuation. A literal match publishes and stops even when the output equals the
   input; an unchanged regex result falls through to the next rule. The intermediate
   suffix allocation is gone.
 
 ### Range parsing and formatting
 
-- `swr_v1_http_range_next`: zero-initialize `swr_v1_http_range_state` per parse,
-  keep the same input and file size across calls, and do not touch its fields. It
-  returns 1 = one offset/length, 0 = done, 2 = unrecognized unit (immediate
-  full-file fallback, bypassing If-Range), negative = invalid/overflow (native
-  416). Parts already emitted stay published. Suffix and open ranges, skipped
-  unsatisfiable starts, zero suffixes, whitespace, trailing commas and CR follow
-  the pinned rules.
+- `StaticHandler::parse_range` runs in the static context
+  (`swr_v2_http_context_range_*`). Suffix and open ranges, skipped unsatisfiable
+  starts, zero suffixes, whitespace, trailing commas and CR follow the pinned
+  rules; an unrecognized unit falls back to the full file, bypassing If-Range.
 - `swr_v1_http_range_format`: part 0 = the multipart header (`snprintf`
   semantics, boundary/MIME stop at NUL, wrapping `offset+length-1`); part 1 = the
   binary-safe final boundary. Capacity 0 returns the full size; otherwise at most
   capacity − 1 bytes plus NUL. A header longer than `INT_MAX` returns 1 (native
   EOVERFLOW) with the first byte reset to NUL and count 0; with capacity 0 it
   returns `SIZE_MAX`. Header capacity must fit `INT_MAX` (the caller uses 512).
-- `swr_v1_http_range_finish` actions: 0 = done, 1 = append full task, 2 = build
-  ending boundary, 3 = If-Range date test, 4 = clear tasks. Native publishes the
-  returned accounting/status before each action. 206 becomes visible after the
-  ending boundary is assigned. If-Range replacement publishes 200 only after the
-  append succeeds and keeps the old last task's `part_header` bytes.
 
 ### Response body
 
@@ -235,7 +226,7 @@ length) sends part header then file, followed by the ending part. Send errors ar
 ignored as before. This only covers the final file/range path; 404, 304 and
 autoindex keep their native flow.
 
-### Inline StaticHandler helpers
+### StaticHandler helpers
 
 - `swr_v1_http_static_boundary` returns the static prefix and 24 random characters
   only for an empty boundary.
@@ -243,9 +234,6 @@ autoindex keep their native flow.
   the multipart content type only when there is more than one task; with zero or
   one task the MIME catalog reference is returned directly. Capacity 0 returns the
   exact size without a terminator; otherwise the whole value must fit.
-- `swr_v1_http_static_path_check` searches for parent tokens bytewise (including
-  NULs) and checks root containment with `strncmp` prefix rules plus a `/` at
-  `root.size()`. It keeps the original uint32 length narrowing.
 - `swr_v1_http_static_catch` sets 404 only for the terminal matched location.
 
 ### Static-response selection
@@ -269,8 +257,6 @@ without changing the scratch.
 
 ### Index selection, routing, status
 
-- `swr_v1_http_index_file` (phases 0..3): 0/1 = return false/true, 2 = enumerate
-  directory, 3 = intersect with configured indexes, 4 = set_filename/lstat.
 - `swr_v1_http_transport_route` returns 1 = WebSocket, 2 = HTTP2, 0 = error.
   WebSocket status ≥ 2 wins even when both flags are set.
 - `swr_v1_http_unknown_status` formats a signed 32-bit decimal followed by

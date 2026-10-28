@@ -1,72 +1,200 @@
 diff --git a/include/swoole_static_handler.h b/include/swoole_static_handler.h
-index 71a18bb..02c4ab7 100644
+index 71a18bb..a6b028e 100644
 --- a/include/swoole_static_handler.h
 +++ b/include/swoole_static_handler.h
-@@ -21,2 +21,4 @@
+@@ -21,5 +21,7 @@
  #include "swoole_mime_type.h"
-+#include "swoole_rs_http.h"
-+#include <stdexcept>
++#include "swoole_rs_http_context.h"
  
-@@ -25,2 +27,3 @@
- 
+ #include <string>
+-#include <set>
++#include <vector>
 +
- namespace swoole {
-@@ -79,8 +82,3 @@ class StaticHandler {
-     bool catch_error() {
+ 
+@@ -34,33 +36,20 @@ struct RewriteRule {
+ 
++// A facade over the Rust static context (swr_v2_http_context_*): it holds only the
++// server and the context handle. Path, stat, range, index and boundary state is Rust's.
+ class StaticHandler {
+-  private:
+-    Server *serv;
+-    std::string request_url;
+-    std::string original_url;
+-    std::string dir_path;
+-    std::set<std::string> dir_files;
+-    std::string index_file;
+-    typedef struct {
+-        off_t offset;
+-        size_t length;
+-        char part_header[SW_HTTP_SERVER_PART_HEADER];
+-    } task_t;
+-    std::vector<task_t> tasks;
+-
+-    size_t l_filename = 0;
+-    char filename[PATH_MAX];
+-    struct stat file_stat;
+-    bool last = false;
+-    std::string content_type;
+-    std::string boundary;
+-    std::string end_part;
+-    size_t content_length = 0;
++    Server *serv_;
++    swr_v2_http_context *context_;
++    swr_v2_http_observation observe() const;
++    std::string text(uint32_t kind) const;
++    bool stat_file();
++    bool set_filename();
++    uint32_t ensure_boundary();
++    bool is_modified_range(const std::string &date) const;
++    friend class swoole::Server;  // apply_rewrite_rules drives the context's rewrite steps
+ 
+   public:
+-    int status_code = SW_HTTP_OK;
+-    StaticHandler(Server *_server, const char *url, size_t url_length)
+-        : request_url(url, url_length), original_url(url, url_length) {
+-        serv = _server;
+-    }
+-
++    StaticHandler(Server *server, const char *url, size_t length);
++    ~StaticHandler();
++    StaticHandler(const StaticHandler &) = delete;
++    StaticHandler &operator=(const StaticHandler &) = delete;
+     /**
+@@ -71,122 +60,21 @@ class StaticHandler {
+     bool try_serve_index_file();
+-
+-    bool is_modified(const std::string &date_if_modified_since) const;
+-    bool is_modified_range(const std::string &date_range) const;
+-    size_t make_index_page(String *buffer);
+     bool get_dir_files();
+-    bool set_filename(const std::string &filename);
+-
+-    bool catch_error() {
 -        if (last) {
 -            status_code = SW_HTTP_NOT_FOUND;
 -            return true;
 -        } else {
 -            return false;
 -        }
-+        return swr_v1_http_static_catch(last, &status_code) == 1;
-     }
-@@ -120,5 +118,8 @@ class StaticHandler {
-     const std::string &get_boundary() {
+-    }
+-
+-    bool has_index_file() const {
+-        return !index_file.empty();
+-    }
+-
+-    bool is_enabled_auto_index() const {
+-        return serv->http_autoindex;
+-    }
+-
++    size_t make_index_page(String *buffer);
+     static std::string get_date();
+-
+-    time_t get_file_mtime() const {
+-#ifdef __MACH__
+-        return file_stat.st_mtimespec.tv_sec;
+-#else
+-        return file_stat.st_mtim.tv_sec;
+-#endif
+-    }
+-
+     std::string get_date_last_modified() const;
+-
+-    const char *get_filename() const {
+-        return filename;
+-    }
+-
+-    const std::string &get_request_url() const {
+-        return request_url;
+-    }
+-
+-    void set_request_url(const std::string &rewritten_url) {
+-        request_url = rewritten_url;
+-    }
+-
+-    const std::string &get_boundary() {
 -        if (boundary.empty()) {
 -            boundary = std::string(SW_HTTP_SERVER_BOUNDARY_PREKEY);
 -            swoole_random_string(boundary, SW_HTTP_SERVER_BOUNDARY_TOTAL_SIZE - sizeof(SW_HTTP_SERVER_BOUNDARY_PREKEY));
-+        static_assert(sizeof(SW_HTTP_SERVER_BOUNDARY_PREKEY) == 15 && SW_HTTP_SERVER_BOUNDARY_TOTAL_SIZE == 39,
-+                      "Pinned HTTP boundary policy changed");
-+        size_t random_length = 0;
-+        if (auto prefix = swr_v1_http_static_boundary(boundary.size(), &random_length)) {
-+            boundary = std::string(reinterpret_cast<const char *>(prefix));
-+            swoole_random_string(boundary, random_length);
-         }
-@@ -128,8 +129,18 @@ class StaticHandler {
-     const std::string &get_content_type() {
+-        }
+-        return boundary;
+-    }
+-
+-    const std::string &get_content_type() {
 -        if (tasks.size() > 1) {
 -            content_type = std::string("multipart/byteranges; boundary=") + get_boundary();
-+        if (auto prefix = swr_v1_http_static_content_prefix(tasks.size())) {
-+            // Keep the original two native argument/growth/exception boundaries.
-+            auto combine = [](std::string &&value, const std::string &boundary) {
-+                swr_v1_http_proxy_text input{reinterpret_cast<const uint8_t *>(boundary.data()), boundary.size()};
-+                // Preserve native string max_size/append exception semantics.
-+                if (boundary.size() > value.max_size() - value.size()) value.append(boundary);
-+                value.resize(value.size() + boundary.size());
-+                size_t length = 0;
-+                if (swr_v1_http_static_content_type(&input, reinterpret_cast<uint8_t *>(&value[0]), value.size(), &length) < 0)
-+                    throw std::length_error("HTTP content type buffer");
-+                return std::move(value);
-+            };
-+            content_type = combine(std::string(reinterpret_cast<const char *>(prefix)), get_boundary());
-             return content_type;
+-            return content_type;
 -        } else {
 -            return get_mimetype();
-         }
-+        return get_mimetype();
-     }
-@@ -171,3 +182,3 @@ class StaticHandler {
-     bool is_absolute_path() {
+-        }
+-    }
+-
+-    const std::string &get_mimetype() const {
+-        return mime_type::get(get_filename());
+-    }
+-
+-    std::string get_filename_std_string() {
+-        return {filename, l_filename};
+-    }
+-
+-    bool get_absolute_path();
+-
+-    const std::string &get_original_url() const {
+-        return original_url;
+-    }
+-
+-    size_t get_filesize() const {
+-        return file_stat.st_size;
+-    }
+-
+-    const std::vector<task_t> &get_tasks() {
+-        return tasks;
+-    }
+-
+-    bool is_dir() const {
+-        return S_ISDIR(file_stat.st_mode);
+-    }
+-
+-    bool is_link() const {
+-        return S_ISLNK(file_stat.st_mode);
+-    }
+-
+-    bool is_file() const {
+-        return S_ISREG(file_stat.st_mode);
+-    }
+-
+-    bool is_absolute_path() {
 -        return swoole_strnpos(filename, l_filename, SW_STRL("..")) == -1;
-+        return swr_v1_http_static_path_check(reinterpret_cast<const uint8_t *>(filename), l_filename, nullptr, 0, 0) == 1;
-     }
-@@ -176,6 +187,4 @@ class StaticHandler {
-         const std::string &document_root = serv->get_document_root();
+-    }
+-
+-    bool is_located_in_document_root() {
+-        const std::string &document_root = serv->get_document_root();
 -        const size_t l_document_root = document_root.length();
 -
 -        return l_filename > l_document_root && filename[l_document_root] == '/' &&
 -               swoole_str_starts_with(filename, l_filename, document_root.c_str(), l_document_root);
-+        return swr_v1_http_static_path_check(reinterpret_cast<const uint8_t *>(filename), l_filename,
-+            reinterpret_cast<const uint8_t *>(document_root.data()), document_root.size(), 1) == 1;
-     }
+-    }
+-
+-    size_t get_content_length() const {
+-        return content_length;
+-    }
+-
+-    const std::string &get_end_part() {
+-        return end_part;
+-    }
+-
++    bool is_modified(const std::string &date) const;
++    bool has_index_file() const;
++    bool is_enabled_auto_index() const;
++    bool is_dir() const;
+     void parse_range(const char *range, const char *if_range);
++    std::vector<swr_v2_http_static_task> copy_tasks() const;
++    size_t get_content_length() const;
++    const std::string &get_mimetype() const;
++    const std::string &get_content_type(std::string &scratch);
++    size_t get_filesize() const;
++    time_t get_file_mtime() const;
++    int32_t get_status() const;
++    // Copies into native scratch; no Rust pointer escapes.
++    void copy_filename(char *output, size_t capacity) const;
++    size_t copy_end_part(char *output, size_t capacity) const;
+ };

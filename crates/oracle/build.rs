@@ -186,9 +186,10 @@ fn http_frame() {
     fs::write(out("http_frame_enums.inc"), enums.concat()).unwrap();
 }
 
-/// `StaticHandler::parse_range` from the pinned `static_handler.cc` (upstream) and from
-/// it with the http static-ranges patch applied (candidate, calling Rust), with the
-/// candidate's part-header helpers, copied unchanged for `shim/http_range.cc`.
+/// `StaticHandler::parse_range` from the pinned `static_handler.cc` (upstream, for
+/// `shim/http_range.cc`) and, with the http static-ranges patch applied, the Rust
+/// static context's `parse_range` with `ensure_boundary` and `resume_range_header`
+/// (candidate, for `shim/http_range_context.cc`), copied unchanged.
 fn http_range() {
     let patch = "../../migration/patches/http/0002-static-ranges.patch";
     println!("cargo:rerun-if-changed={patch}");
@@ -198,16 +199,27 @@ fn http_range() {
         &upstream,
         &fs::read_to_string(patch).expect("static-ranges patch"),
     );
-    for (name, text) in [("upstream", &upstream), ("candidate", &candidate)] {
-        let parts: Vec<String> = [
-            "static size_t http_range_header(",
-            "static std::string http_range_end(",
-            "void StaticHandler::parse_range(",
-        ]
-        .into_iter()
-        .filter(|signature| text.contains(signature))
-        .map(|signature| definition(text, signature))
-        .collect();
+    let engines = [
+        (
+            "upstream",
+            &upstream,
+            &["void StaticHandler::parse_range("][..],
+        ),
+        (
+            "candidate",
+            &candidate,
+            &[
+                "static int32_t resume_range_header(",
+                "uint32_t StaticHandler::ensure_boundary(",
+                "void StaticHandler::parse_range(",
+            ][..],
+        ),
+    ];
+    for (name, text, signatures) in engines {
+        let parts: Vec<String> = signatures
+            .iter()
+            .map(|signature| definition(text, signature))
+            .collect();
         fs::write(
             out(&format!("http_range_{name}.inc")),
             parts.join("\n") + "\n",
@@ -491,18 +503,18 @@ fn main() {
         .include(env::var("OUT_DIR").unwrap())
         .file("shim/protocols.cc")
         .compile("swoole_oracle_protocols");
-    for engine in ["upstream", "candidate"] {
-        cpp()
-            .define("SWR_RANGE_ENGINE", engine)
-            .define(
-                "SWR_RANGE_INC",
-                format!("\"http_range_{engine}.inc\"").as_str(),
-            )
-            .include("../../native/http")
-            .include(env::var("OUT_DIR").unwrap())
-            .file("shim/http_range.cc")
-            .compile(&format!("swoole_{engine}_http_range"));
-    }
+    cpp()
+        .define("SWR_RANGE_ENGINE", "upstream")
+        .define("SWR_RANGE_INC", "\"http_range_upstream.inc\"")
+        .include("../../native/http")
+        .include(env::var("OUT_DIR").unwrap())
+        .file("shim/http_range.cc")
+        .compile("swoole_upstream_http_range");
+    cpp()
+        .include("../../native/http")
+        .include(env::var("OUT_DIR").unwrap())
+        .file("shim/http_range_context.cc")
+        .compile("swoole_candidate_http_range");
     cpp()
         .define("SWR_FRAME_ENGINE", "upstream")
         .define("SWR_FRAME_INC", "\"http_frame_upstream.inc\"")

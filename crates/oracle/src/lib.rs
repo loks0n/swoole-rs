@@ -393,7 +393,7 @@ pub mod http_range {
 
     /// `StaticHandler::parse_range(range, if_range ? "" : nullptr)` compiled from one
     /// engine's `static_handler.cc` (`upstream` pinned, `candidate` with the http
-    /// static-ranges patch, which calls the Rust exports), on a file of `filesize`
+    /// static-ranges patch, over the Rust static context), on a file of `filesize`
     /// bytes with this MIME type and boundary, `is_modified_range` answering
     /// `modified`. Up to `capacity` tasks go to `tasks` ([`TASK_SIZE`] bytes each).
     pub type ParseRange = unsafe extern "C" fn(

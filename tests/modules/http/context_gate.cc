@@ -52,7 +52,7 @@ static Snapshot selected_file(size_t size,const std::string &url,const char *ran
  // Replace this field after construction to verify the selected facade retained
  // the typed field view, rather than an early shared_ptr/configuration snapshot.
  Snapshot out;
- {StaticHandlerV2 handler(&server,url.data(),url.size(),&server.rewrite_rules);
+ {StaticHandler handler(&server,url.data(),url.size());
  configure_rules(server,rewrite);
  check(handler.try_serve(),"selected normal file selection");
  check(handler.try_serve(),"selected repeated normal file selection");
@@ -101,7 +101,7 @@ int main(){try{
   upstream_context::directory_name=candidate_context::directory_name="/root"+path;
   upstream_context::Server a;candidate_context::Server b;a.http_autoindex=b.http_autoindex=mode!=5;
   if(mode){const auto configured=mode==4?std::vector<std::string>{}:mode==1||mode==5?std::vector<std::string>{"missing"}:mode==2?std::vector<std::string>{"README.md","index.html","a.txt"}:std::vector<std::string>{"a.txt","index.html","README.md"};configure_indexes(a,configured);configure_indexes(b,configured);}
-  upstream_context::StaticHandler old(&a,path.data(),path.size());candidate_context::StaticHandlerV2 selected(&b,path.data(),path.size(),&b.rewrite_rules);
+  upstream_context::StaticHandler old(&a,path.data(),path.size());candidate_context::StaticHandler selected(&b,path.data(),path.size());
   check(old.try_serve()==selected.try_serve(),"directory context selection");
   check(old.try_serve_index_file()==selected.try_serve_index_file(),"real index path selection");
   check(old.get_dir_files()==selected.get_dir_files(),"directory context scan");
