@@ -23,7 +23,7 @@ def main():
     if args.rust_asan and not args.sanitize:
         p.error('--rust-asan requires --sanitize')
     if not sys.platform.startswith('linux'):
-        p.error('Rust implements only the futex path; other platforms run upstream\'s wait registry')
+        p.error('Rust implements only the futex path; other platforms poll the Rust wait registry')
     archive = args.archive.resolve(strict=True)
     original = subprocess.check_output(['git', '-C', str(args.source), 'show', f'{PIN}:src/core/misc.cc'], text=True)
     patch = ROOT/'migration/patches/utilities/0001-misc.patch'

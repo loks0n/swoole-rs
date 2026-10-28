@@ -1,0 +1,512 @@
+// SPDX-License-Identifier: Apache-2.0
+// Compatibility derived from Swoole v6.2.4 src/core/base.cc (Swoole contributors).
+//! Whole host operations from base.cc. Rust makes the system calls; native code
+//! keeps only the warnings, whose formats must stay literals in the log macros.
+
+use std::cell::Cell;
+use std::ffi::{CStr, c_char, c_int, c_long, c_uint, c_void};
+use std::ptr;
+use std::sync::atomic::{AtomicI32, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+unsafe extern "C" {
+    fn printf(format: *const c_char, ...) -> c_int;
+    fn snprintf(buffer: *mut c_char, size: usize, format: *const c_char, ...) -> c_int;
+    fn exit(status: c_int) -> !;
+}
+
+#[cfg(any(all(target_os = "linux", target_env = "gnu"), target_vendor = "apple"))]
+unsafe extern "C" {
+    fn backtrace(frames: *mut *mut c_void, size: c_int) -> c_int;
+    fn backtrace_symbols(frames: *const *mut c_void, size: c_int) -> *mut *mut c_char;
+}
+
+fn errno() -> c_int {
+    std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
+}
+
+fn set_errno(value: c_int) {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    // SAFETY: returns this thread's errno slot, live for the thread.
+    let slot = unsafe { libc::__errno_location() };
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    // SAFETY: returns this thread's errno slot, live for the thread.
+    let slot = unsafe { libc::__error() };
+    // SAFETY: `slot` is this thread's errno.
+    unsafe { slot.write(value) };
+}
+
+fn close(fd: c_int) {
+    // SAFETY: close(2) has no memory preconditions.
+    unsafe { libc::close(fd) };
+}
+
+fn dup2(from: c_int, to: c_int) -> c_int {
+    // SAFETY: dup2(2) has no memory preconditions.
+    unsafe { libc::dup2(from, to) }
+}
+
+/// `swoole_shell_exec`: run `command` under `/bin/sh -c` with its stdout (and
+/// stderr when `get_error_stream`) on a pipe. Returns the read end, -1 when
+/// `pipe` fails, or -2 when `fork` fails (errno kept for the native warning).
+/// # Safety
+/// `command` is a NUL-terminated string and `pid` is writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_corebase_shell_exec(
+    command: *const c_char,
+    pid: *mut libc::pid_t,
+    get_error_stream: bool,
+) -> c_int {
+    let mut fds = [0 as c_int; 2];
+    // SAFETY: `fds` holds the two descriptors pipe(2) writes.
+    if unsafe { libc::pipe(fds.as_mut_ptr()) } < 0 {
+        return -1;
+    }
+    let [read, write] = fds;
+    // SAFETY: fork(2) has no memory preconditions; the child only makes
+    // async-signal-safe calls before exec, as upstream's did.
+    let child = unsafe { libc::fork() };
+    if child == -1 {
+        let error = errno();
+        close(read);
+        close(write);
+        set_errno(error);
+        return -2;
+    }
+    if child == 0 {
+        close(read);
+        if get_error_stream {
+            if write == libc::STDOUT_FILENO {
+                dup2(write, libc::STDERR_FILENO);
+            } else if write == libc::STDERR_FILENO {
+                dup2(write, libc::STDOUT_FILENO);
+            } else {
+                dup2(write, libc::STDOUT_FILENO);
+                dup2(write, libc::STDERR_FILENO);
+                close(write);
+            }
+        } else if write != libc::STDOUT_FILENO {
+            dup2(write, libc::STDOUT_FILENO);
+            close(write);
+        }
+        let end = ptr::null::<c_char>();
+        // SAFETY: the path and argument strings are NUL-terminated and the list ends in null.
+        unsafe {
+            libc::execl(
+                c"/bin/sh".as_ptr(),
+                c"sh".as_ptr(),
+                c"-c".as_ptr(),
+                command,
+                end,
+            )
+        };
+        // SAFETY: exit(3) runs the process's exit handlers, as upstream's child did.
+        unsafe { exit(127) };
+    }
+    // SAFETY: the caller lends a writable `pid`.
+    unsafe { pid.write(child) };
+    close(write);
+    read
+}
+
+/// `sw_wait_for`: poll `ready` with doubling sleeps until it holds or
+/// `timeout_ms` is spent, the last sleep trimmed to the remaining time.
+/// # Safety
+/// `ready` may be called with `context` repeatedly and must not unwind.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_corebase_wait_for(
+    ready: unsafe extern "C" fn(*mut c_void) -> bool,
+    context: *mut c_void,
+    mut timeout_ms: c_int,
+) -> bool {
+    let mut sleep_msec: c_int = 1;
+    while timeout_ms >= 0 {
+        // SAFETY: the caller's predicate over its own context.
+        if unsafe { ready(context) } {
+            return true;
+        }
+        // SAFETY: usleep(3) has no memory preconditions.
+        unsafe { libc::usleep(sleep_msec.wrapping_mul(1000).cast_unsigned()) };
+        sleep_msec = sleep_msec.wrapping_mul(2);
+        if timeout_ms > 0 && timeout_ms - sleep_msec < 0 {
+            sleep_msec = timeout_ms;
+            timeout_ms = 0;
+        } else {
+            timeout_ms -= sleep_msec;
+        }
+    }
+    false
+}
+
+fn put(format: &CStr, value: c_uint) {
+    // SAFETY: `format` takes exactly one unsigned argument.
+    unsafe { printf(format.as_ptr(), value) };
+}
+
+fn newline() {
+    // SAFETY: a literal format without conversions.
+    unsafe { printf(c"\n".as_ptr()) };
+}
+
+/// `swoole_dump_ascii`: each byte as its native `(unsigned) char` value.
+/// # Safety
+/// `data` is readable for `size` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_corebase_dump_ascii(data: *const c_char, size: usize) {
+    for index in 0..size {
+        // SAFETY: `index < size`, inside the caller's readable extent.
+        let byte = unsafe { data.wrapping_add(index).read() };
+        put(c"%u ", c_int::from(byte).cast_unsigned());
+    }
+    newline();
+}
+
+/// `swoole_dump_hex`: sixteen bytes per row, each row led by its offset.
+/// # Safety
+/// `data` is readable for `size` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_corebase_dump_hex(data: *const u8, size: usize) {
+    for index in 0..size {
+        if index % 16 == 0 {
+            // SAFETY: `%08zX` takes one size_t.
+            unsafe { printf(c"%08zX: ".as_ptr(), index) };
+        }
+        // SAFETY: `index < size`, inside the caller's readable extent.
+        put(
+            c"%02X ",
+            c_uint::from(unsafe { data.wrapping_add(index).read() }),
+        );
+        if (index + 1) % 16 == 0 {
+            newline();
+        }
+    }
+    newline();
+}
+
+/// `swoole_print_backtrace` without Boost: up to 16 frames, one symbol per line.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_corebase_print_backtrace() {
+    #[cfg(any(all(target_os = "linux", target_env = "gnu"), target_vendor = "apple"))]
+    {
+        let mut frames = [ptr::null_mut::<c_void>(); 16];
+        // SAFETY: `frames` holds the 16 entries backtrace(3) may write.
+        let count = unsafe { backtrace(frames.as_mut_ptr(), 16) };
+        // SAFETY: the first `count` frames were just filled.
+        let symbols = unsafe { backtrace_symbols(frames.as_ptr(), count) };
+        if symbols.is_null() {
+            return;
+        }
+        for index in 0..usize::try_from(count).unwrap_or(0) {
+            // SAFETY: backtrace_symbols returns `count` strings.
+            let symbol = unsafe { symbols.wrapping_add(index).read() };
+            // SAFETY: `%s` takes one NUL-terminated string.
+            unsafe { printf(c"%s\n".as_ptr(), symbol) };
+        }
+        // SAFETY: backtrace_symbols' array is one malloc'd block.
+        unsafe { libc::free(symbols.cast()) };
+    }
+}
+
+/// `swoole::microtime`: wall-clock seconds, as libstdc++'s
+/// `duration<double>` of the nanosecond `system_clock` count.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_corebase_microtime() -> f64 {
+    let since = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    #[expect(
+        clippy::cast_possible_wrap,
+        clippy::cast_precision_loss,
+        reason = "system_clock's signed nanosecond count, converted as libstdc++ does"
+    )]
+    let nanos = (since.as_secs() as i64)
+        .wrapping_mul(1_000_000_000)
+        .wrapping_add(i64::from(since.subsec_nanos())) as f64;
+    nanos / 1e9
+}
+
+/// `DataHead`'s layout (include/swoole.h), checked by a native static assertion.
+#[repr(C)]
+pub struct DataHead {
+    fd: c_long,
+    msg_id: u64,
+    len: u32,
+    reactor_id: i16,
+    kind: u8,
+    flags: u8,
+    server_fd: u16,
+    ext_flags: u16,
+    reserved: u32,
+    time: f64,
+}
+
+/// `DataHead::dump`: the fields in upstream's format, with `sw_snprintf`'s
+/// result: at most `size - 1` bytes written, always NUL-terminated.
+/// # Safety
+/// `head` is a live `DataHead` and `buffer` is writable for `size` bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_corebase_datahead_dump(
+    head: *const DataHead,
+    buffer: *mut c_char,
+    size: usize,
+) -> usize {
+    // SAFETY: the caller lends a live `DataHead`.
+    let h = unsafe { &*head };
+    // SAFETY: the format's conversions match the promoted arguments one for one.
+    let written = unsafe {
+        snprintf(
+            buffer,
+            size,
+            c"DataHead[%p]\n{\n    long fd = %ld;\n    uint64_t msg_id = %llu;\n    uint32_t len = %d;\n    int16_t reactor_id = %d;\n    uint8_t type = %d;\n    uint8_t flags = %d;\n    uint16_t server_fd = %d;\n    uint16_t ext_flags = %d;\n    double time = %f;\n}\n".as_ptr(),
+            head,
+            h.fd,
+            h.msg_id,
+            h.len,
+            c_int::from(h.reactor_id),
+            c_int::from(h.kind),
+            c_int::from(h.flags),
+            c_int::from(h.server_fd),
+            c_int::from(h.ext_flags),
+            h.time,
+        )
+    };
+    if size == 0 {
+        return usize::try_from(written).unwrap_or(usize::MAX);
+    }
+    let Ok(written) = usize::try_from(written) else {
+        // SAFETY: `size > 0`, so the first byte is writable.
+        unsafe { buffer.write(0) };
+        return 0;
+    };
+    written.min(size - 1)
+}
+
+thread_local! {
+    static GENERATOR: Cell<Option<[u64; 4]>> = const { Cell::new(None) };
+}
+
+fn seed() -> [u64; 4] {
+    let mut state = [0u64; 4];
+    // SAFETY: `state` is 32 writable bytes, within getentropy(3)'s 256.
+    if unsafe { libc::getentropy(state.as_mut_ptr().cast(), size_of_val(&state)) } != 0 {
+        state[0] = swr_v1_corebase_microtime().to_bits();
+    }
+    if state == [0; 4] {
+        state[0] = 0x9e37_79b9_7f4a_7c15;
+    }
+    state
+}
+
+/// One xoshiro256** step on this thread's generator, seeded from the OS.
+fn next() -> u64 {
+    GENERATOR.with(|cell| {
+        let mut s = cell.get().unwrap_or_else(seed);
+        let result = s[1].wrapping_mul(5).rotate_left(7).wrapping_mul(9);
+        let t = s[1] << 17;
+        s[2] ^= s[0];
+        s[3] ^= s[1];
+        s[1] ^= s[2];
+        s[0] ^= s[3];
+        s[2] ^= t;
+        s[3] = s[3].rotate_left(45);
+        cell.set(Some(s));
+        result
+    })
+}
+
+/// `swoole_random_int`: a uniform 64-bit value.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_corebase_random_u64() -> u64 {
+    next()
+}
+
+/// `swoole_rand(min, max)`: uniform over the closed range; `min` when it is empty.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_corebase_rand(min: c_int, max: c_int) -> c_int {
+    let Some(span) = u64::try_from(i64::from(max) - i64::from(min) + 1)
+        .ok()
+        .filter(|span| *span > 0)
+    else {
+        return min;
+    };
+    let limit = u64::MAX - u64::MAX % span;
+    loop {
+        let value = next();
+        if value < limit {
+            let offset = i64::try_from(value % span).unwrap_or_default();
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "min + offset lies in min..=max"
+            )]
+            return (i64::from(min) + offset) as c_int;
+        }
+    }
+}
+
+static DEV_RANDOM: AtomicI32 = AtomicI32::new(-1);
+
+/// `swoole_system_random`: four bytes from a cached `/dev/urandom` descriptor
+/// mapped onto `min..=max`; [`swr_v1_corebase_rand`] when it can't be opened.
+/// A short read sets `read_failed` (errno kept) and returns -1.
+/// # Safety
+/// `read_failed` is writable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_corebase_system_random(
+    min: c_int,
+    max: c_int,
+    read_failed: *mut bool,
+) -> c_int {
+    let mut fd = DEV_RANDOM.load(Ordering::Relaxed);
+    if fd == -1 {
+        // SAFETY: a NUL-terminated path.
+        fd = unsafe { libc::open(c"/dev/urandom".as_ptr(), libc::O_RDONLY) };
+        DEV_RANDOM.store(fd, Ordering::Relaxed);
+        if fd < 0 {
+            return swr_v1_corebase_rand(min, max);
+        }
+    }
+    let mut value = [0u8; 4];
+    // SAFETY: `value` is four writable bytes.
+    let read = unsafe { libc::read(fd, value.as_mut_ptr().cast(), 4) };
+    if read < 4 {
+        // SAFETY: the caller lends a writable flag.
+        unsafe { read_failed.write(true) };
+        return -1;
+    }
+    // Upstream's `min + (random % (max - min + 1))` in unsigned arithmetic.
+    let width = max.wrapping_sub(min).wrapping_add(1).cast_unsigned();
+    let value = u32::from_ne_bytes(value);
+    let offset = value.checked_rem(width).unwrap_or(value);
+    min.cast_unsigned().wrapping_add(offset).cast_signed()
+}
+
+/// `swoole_redirect_stdout(int)`: `dup2` onto stdout then stderr; `errors`
+/// receives each call's errno, 0 when it succeeded.
+/// # Safety
+/// `errors` is writable for two ints.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_corebase_redirect_stdout(new_fd: c_int, errors: *mut c_int) {
+    for (slot, target) in [libc::STDOUT_FILENO, libc::STDERR_FILENO]
+        .into_iter()
+        .enumerate()
+    {
+        let error = if dup2(new_fd, target) < 0 { errno() } else { 0 };
+        // SAFETY: `slot < 2`, inside the caller's two ints.
+        unsafe { errors.wrapping_add(slot).write(error) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rand_covers_the_closed_range_only() {
+        let mut seen = [false; 7];
+        for _ in 0..2000 {
+            let value = swr_v1_corebase_rand(-3, 3);
+            assert!((-3..=3).contains(&value), "{value} out of range");
+            seen[usize::try_from(value + 3).unwrap()] = true;
+        }
+        assert!(seen.iter().all(|hit| *hit), "every value drawn");
+        assert_eq!(swr_v1_corebase_rand(5, 5), 5);
+        assert_eq!(swr_v1_corebase_rand(5, 4), 5, "empty range");
+        let full = swr_v1_corebase_rand(c_int::MIN, c_int::MAX);
+        assert!((c_int::MIN..=c_int::MAX).contains(&full), "full range");
+        assert_ne!(swr_v1_corebase_random_u64(), swr_v1_corebase_random_u64());
+    }
+
+    #[test]
+    fn system_random_reads_urandom_into_the_range() {
+        let mut failed = false;
+        for _ in 0..100 {
+            let value = unsafe { swr_v1_corebase_system_random(10, 20, &raw mut failed) };
+            assert!((10..=20).contains(&value), "{value} out of range");
+        }
+        assert!(!failed, "no short read");
+    }
+
+    #[test]
+    fn microtime_is_wall_clock_seconds() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+        assert!(
+            (swr_v1_corebase_microtime() - now).abs() < 1.0,
+            "within a second"
+        );
+    }
+
+    #[test]
+    fn wait_for_polls_until_ready_or_timeout() {
+        unsafe extern "C" fn countdown(context: *mut c_void) -> bool {
+            let left = unsafe { &mut *context.cast::<u32>() };
+            *left = left.saturating_sub(1);
+            *left == 0
+        }
+        let mut left = 3u32;
+        assert!(unsafe { swr_v1_corebase_wait_for(countdown, (&raw mut left).cast(), 100) });
+        let mut never = u32::MAX;
+        assert!(!unsafe { swr_v1_corebase_wait_for(countdown, (&raw mut never).cast(), 5) });
+        // Sleeps of 1 and 2 ms, then the trimmed last 3 ms: three polls in all.
+        assert_eq!(u32::MAX - never, 3);
+    }
+
+    #[test]
+    fn datahead_dump_formats_and_truncates_like_sw_snprintf() {
+        let head = DataHead {
+            fd: -7,
+            msg_id: u64::MAX,
+            len: 12,
+            reactor_id: -1,
+            kind: 3,
+            flags: 255,
+            server_fd: 9,
+            ext_flags: 65535,
+            reserved: 0,
+            time: 1.5,
+        };
+        let mut buffer = [0 as c_char; 512];
+        let n = unsafe { swr_v1_corebase_datahead_dump(&raw const head, buffer.as_mut_ptr(), 512) };
+        let text = unsafe { CStr::from_ptr(buffer.as_ptr()) }.to_str().unwrap();
+        assert_eq!(text.len(), n);
+        let body = &text[text.find(']').unwrap() + 1..];
+        assert_eq!(
+            body,
+            "\n{\n    long fd = -7;\n    uint64_t msg_id = 18446744073709551615;\n    uint32_t len = 12;\n    int16_t reactor_id = -1;\n    uint8_t type = 3;\n    uint8_t flags = 255;\n    uint16_t server_fd = 9;\n    uint16_t ext_flags = 65535;\n    double time = 1.500000;\n}\n"
+        );
+        let mut short = [0x55 as c_char; 8];
+        let n = unsafe { swr_v1_corebase_datahead_dump(&raw const head, short.as_mut_ptr(), 8) };
+        assert_eq!((n, short[7]), (7, 0));
+    }
+
+    #[test]
+    fn shell_exec_pipes_the_command_output() {
+        let mut pid = 0;
+        let fd = unsafe {
+            swr_v1_corebase_shell_exec(c"echo out; echo err >&2".as_ptr(), &raw mut pid, true)
+        };
+        assert!(fd >= 0 && pid > 0, "spawned");
+        let mut output = Vec::new();
+        let mut chunk = [0u8; 64];
+        loop {
+            let n = unsafe { libc::read(fd, chunk.as_mut_ptr().cast(), chunk.len()) };
+            if n <= 0 {
+                break;
+            }
+            output.extend_from_slice(&chunk[..usize::try_from(n).unwrap()]);
+        }
+        close(fd);
+        let mut status = 0;
+        unsafe { libc::waitpid(pid, &raw mut status, 0) };
+        assert_eq!(output, b"out\nerr\n");
+    }
+
+    #[test]
+    fn redirect_reports_each_dup2_errno() {
+        let mut errors = [-1; 2];
+        unsafe { swr_v1_corebase_redirect_stdout(-1, errors.as_mut_ptr()) };
+        assert_eq!(errors, [libc::EBADF, libc::EBADF]);
+    }
+}

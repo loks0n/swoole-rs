@@ -345,6 +345,7 @@ name = "swoole-rs-corebase"
 version = "0.1.0"
 dependencies = [
  "itoa",
+ "libc",
 ]
 
 [[package]]
@@ -521,6 +522,7 @@ dependencies = [
 name = "swoole-rs-utilities"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "memchr",
  "swoole-rs-locks",
 ]

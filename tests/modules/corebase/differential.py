@@ -105,7 +105,7 @@ def main():
             if args.archive:
                 archive = args.archive.resolve()
             else:
-                (work / 'Cargo.toml').write_text('[workspace]\n[package]\nname="corebase-gate"\nversion="0.1.0"\nedition="2024"\n[dependencies]\nitoa="=1.0.18"\n[lib]\nname="swoole_rs_corebase"\ncrate-type=["staticlib"]\npath=' + json.dumps(str(ROOT / 'crates/corebase/src/lib.rs')) + '\n')
+                (work / 'Cargo.toml').write_text('[workspace]\n[package]\nname="corebase-gate"\nversion="0.1.0"\nedition="2024"\n[dependencies]\nitoa="=1.0.18"\nlibc="=0.2.191"\n[lib]\nname="swoole_rs_corebase"\ncrate-type=["staticlib"]\npath=' + json.dumps(str(ROOT / 'crates/corebase/src/lib.rs')) + '\n')
                 run(['cargo', 'build', '--offline', '--release', '--manifest-path', work / 'Cargo.toml'])
                 archive = work / 'target/release/libswoole_rs_corebase.a'
             flags = ['-std=c++17', '-O2', '-ffunction-sections', '-fdata-sections', '-DHAVE_CONFIG_H', '-I' + str(source), '-I' + str(source / 'include')]

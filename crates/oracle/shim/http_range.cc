@@ -1,8 +1,7 @@
-// StaticHandler::parse_range from static_handler.cc behind a C entry point, once per
-// engine: build.rs copies the pinned body (upstream) or the bodies with the http
-// static-ranges patch applied (candidate, which calls the Rust exports) into
-// SWR_RANGE_INC unchanged. The facade gives them upstream's StaticHandler fields, with
-// the file size, MIME type, boundary and If-Range verdict chosen by the caller.
+// Upstream's StaticHandler::parse_range behind a C entry point: build.rs copies the
+// pinned body into SWR_RANGE_INC unchanged. The facade gives it upstream's
+// StaticHandler fields, with the file size, MIME type, boundary and If-Range verdict
+// chosen by the caller. shim/http_range_context.cc is the candidate.
 #include <cerrno>
 #include <cstdarg>
 #include <cstdint>

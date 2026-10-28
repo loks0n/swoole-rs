@@ -1,4 +1,4 @@
-//! Sole persistent `StaticHandlerV2` task storage. Native owns one local immutable
+//! Sole persistent `StaticHandler` task storage. Native owns one local immutable
 //! send snapshot and executes RNG/MIME/date/allocation/IO effects after return.
 use crate::INVALID;
 use crate::range_response::{HttpRangeFormat, swr_v1_http_range_format};

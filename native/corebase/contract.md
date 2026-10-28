@@ -98,5 +98,12 @@ Native shims perform exactly one requested effect per step.
 branch: native runs the first query, reports only `< 1`, then either assigns 1 or
 runs the second query and assigns.
 
-Still native: varargs, globals, C++ containers/objects, entropy, filesystem IO,
-hook traversal, clocks and other runtime operations.
+Whole operations in Rust (`host.rs`), with native code keeping only their
+warnings: `swoole_shell_exec`, `sw_wait_for` (through a non-throwing predicate
+trampoline), `swoole_dump_ascii`/`_hex`, `swoole_print_backtrace` without Boost,
+`microtime`, `DataHead::dump`, `swoole_rand`/`swoole_random_int` (a per-thread
+xoshiro256** seeded by getentropy), `swoole_system_random` and
+`swoole_redirect_stdout(int)` (each dup2's errno is handed back for its warning).
+
+Still native: varargs, globals, C++ containers/objects, filesystem IO, hook
+traversal and other runtime operations.

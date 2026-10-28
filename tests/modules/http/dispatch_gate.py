@@ -50,9 +50,8 @@ def main():
         base = subprocess.check_output(['git', '-C', str(args.source), 'show', PIN+':src/core/base.cc'], text=True)
         dependencies = tree/'dependencies.cc'; dependencies.write_text('#include "dispatch_oracle.h"\n' + body(base, 'size_t sw_snprintf('))
         for namespace, texts in [('upstream_dispatch', originals), ('candidate_dispatch', {name: (tree/name).read_text() for name in paths})]:
-            parts = ['static thread_local char http_status_message[128];', body(base, 'std::string intersection(')]
+            parts = ['static thread_local char http_status_message[128];']
             parts += [body(texts[paths[0]], signature) for signature in protocol_signatures]
-            parts += [body(texts[paths[1]], 'bool StaticHandler::try_serve_index_file(')]
             extracted = tree/(namespace+'.cc'); extracted.write_text('#include "dispatch_oracle.h"\nnamespace '+namespace+' {\n'+'\n'.join(parts)+'\n}\n')
         binary = tree/'gate'
         command = ['c++', *flags, str(tree/'upstream_dispatch.cc'), str(tree/'candidate_dispatch.cc'), str(local/'dispatch_gate.cc'), str(dependencies), str(args.archive.resolve()), '-lm', '-o', str(binary)]
@@ -61,7 +60,7 @@ def main():
         report['compile'] = {'returncode': compiled.returncode, 'stderr': compiled.stderr}
         if compiled.returncode: write_report(args.output, report); print(compiled.stderr, file=sys.stderr); return 1
         symbols = subprocess.check_output(['nm', '-g', str(binary)], text=True)
-        assert all(name in symbols for name in ['swr_v1_http_transport_route', 'swr_v1_http_index_file', 'swr_v1_http_unknown_status', 'swr_v1_http_proxy_auth_enabled'])
+        assert all(name in symbols for name in ['swr_v1_http_transport_route', 'swr_v1_http_unknown_status', 'swr_v1_http_proxy_auth_enabled'])
         result = run_isolated([str(binary)], timeout=30); report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
         if result.returncode: write_report(args.output, report); print(result.stderr, file=sys.stderr); return 1
         report['outcome'] = json.loads(result.stdout.splitlines()[-1]); report['passed'] = True

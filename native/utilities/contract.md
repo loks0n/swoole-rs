@@ -72,7 +72,9 @@ All public utility signatures are unchanged; v1 is frozen.
   checked. Null/unaligned pointers return immediately.
 - `swr_v1_utils_wait(u32 *, timeout)` / `swr_v1_utils_wakeup(u32 *, n)`:
   the locks module's futex wait, called from `misc.cc` only when `HAVE_FUTEX` is
-  set. Other builds keep upstream's C++ wait registry. Caller owns aligned process-shared storage and its lifetime. errno is
+  set. Other builds use `swr_v1_utils_registry_wait`/`_wakeup` over a Rust registry
+  that `sw_atomic_wait_init` adopts from the shared memory pool before any fork.
+  Caller owns aligned process-shared storage and its lifetime. errno is
   preserved. Timeouts outside the positive `time_t` range are undefined upstream.
 
 ## Logger

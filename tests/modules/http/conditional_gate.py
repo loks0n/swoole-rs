@@ -44,7 +44,8 @@ def main():
             # Keep the actual generic declaration used by legacy and V2 callers.
             prefix = 'template<typename Handler>\n' if 'template<typename Handler>\nstatic bool conditional_file_date(' in text else ''
             parts = ([prefix + body(text, 'static bool conditional_file_date(')] if namespace == 'candidate_conditional' else []) + [body(text, 'bool StaticHandler::is_modified('), body(text, 'bool StaticHandler::is_modified_range(')]
-            extracted.write_text('#include "conditional_oracle.h"\nnamespace '+namespace+' {\n'+'\n'.join(parts)+'\n}\n')
+            # The selected handler names its server serv_; the facade's is serv.
+            extracted.write_text('#include "conditional_oracle.h"\nnamespace '+namespace+' {\n'+'\n'.join(parts).replace('serv_,','serv,')+'\n}\n')
         binary = tree/'gate'
         command = ['c++', *flags, str(tree/'upstream_conditional.cc'), str(tree/'candidate_conditional.cc'), str(local/'conditional_gate.cc'), str(args.archive.resolve()), '-lm', '-o', str(binary)]
         if sys.platform.startswith('linux'): command += ['-ldl', '-lpthread', '-lrt', '-lutil']

@@ -32,37 +32,24 @@ the rest require `--archive PATH`. All take `--source PINNED_GIT --output REPORT
 | --- | --- |
 | `gate.py` | URL encode/decode, boundary, method, status helpers; five unchanged original core-test bodies |
 | `framing_gate.py` | Request framing and buffer metadata; original `get_protocol`, `has_expect_header`, `all_method` bodies |
-| `range_gate.py` [A\|R] | `parse_range`, including allocation-failure injection and the pinned `sw_snprintf` |
 | `headers_gate.py` | FormData/header callbacks, errno, reentrancy |
 | `proxy_gate.py` [A\|R] | Proxy auth packing/handshake with actual base64 |
 | `static_gate.py` [A\|R] | Static response method, send order, HEAD/keep-alive changes |
-| `path_gate.py` [A\|R] | `try_serve`/`get_absolute_path`/`set_filename` |
 | `conditional_gate.py` | Date callers with libc `strptime`/`gmtime`/`mktime` |
-| `index_page_gate.py` | `make_index_page` with pinned String `format_impl` |
 | `multipart_gate.py` | Multipart upload accounting callbacks |
 | `multipart_headers_gate.py` [A\|R] | Multipart header field/value and filename callbacks |
 | `multipart_emit_gate.py` [A\|R] | Header-complete/data-end/part-begin/body-end callbacks |
-| `rewrite_gate.py` [A\|R] | `add_rewrite_rule`/`apply_rewrite_rules` |
-| `inline_gate.py` [A\|R] | StaticHandler inline content-type/boundary/path/error bodies |
+| `rewrite_gate.py` [A\|R] | `add_rewrite_rule`/`apply_rewrite_rules`, rewriting the Rust static context |
 | `dispatch_gate.py` [A\|R] | Route/index/proxy-init/status bodies, TLS status buffer |
 | `locale_gate.py` | Case-insensitive helpers against libc `strncasecmp` across available locales |
 | `cookie_flow_gate.py` [A\|R] (`--status-only`, `--codes-only`) | Cookie callback flow; status fallback buffer; public `int[128]` status-code array export |
 | `request_lifecycle_gate.py` [A\|R] | Request multipart init/destroy/destructor |
-| `context_gate.py` [A\|R] | Static context/serve-path controls |
+| `context_gate.py` [A\|R] | The whole `StaticHandler` (paths, locations, rewrites, index files and pages, ranges, content types, dates) against the pinned class |
 | `boundary_rng_gate.py --export DIR` | Random-boundary overloads against a production corebase export; verifies the export's archive/header/source checksums first |
 
 Locale semantic runs must be unsanitized: under ASan the macOS interceptor
 compares `C0`/`E0` with ASCII rules where libc in `en_US.ISO8859-1` treats them
 as equal. Unavailable locales are reported as unsupported.
-
-## SDK/layout compile checks
-
-These compile the real pinned and patched headers/translation units (no
-`--archive`) and fail on layout, trait or syntax changes:
-
-- `directory_compat.py`: legacy StaticHandler data declarations, layout and
-  copy/reference traits; V2 composition, under C++14 and C++17. C++20 fails on
-  the pinned process-pool volatile increment under `-Werror`.
 
 ## PHP checks
 
@@ -92,17 +79,22 @@ Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` j
 
 ## Gate audit (#482)
 
-Kept (23). Each differential gate compares pinned and patched native bodies
+Kept (23, now 18). Each differential gate compares pinned and patched native bodies
 under ASan/UBSan, most with allocation-failure or errno injection that no PHPT,
 Rust unit test or fuzz target reaches:
-`http-native` (also the five original core-test bodies), `-ranges`, `-framing`,
-`-headers`, `-proxy`, `-static`, `-paths`, `-index-pages`, `-conditionals`,
-`-multipart`, `-multipart-headers`, `-multipart-emit`, `-rewrites`, `-inline`,
+`http-native` (also the five original core-test bodies), `-framing`,
+`-headers`, `-proxy`, `-static`, `-conditionals`,
+`-multipart`, `-multipart-headers`, `-multipart-emit`, `-rewrites`,
 `-dispatch`, `-locales` (libc locales), `-context`, `-request-lifecycle`,
 `-boundary-rng` (production corebase export) and `-cookie-flow-positive`.
 `-status-buffer-positive` covers the TLS status buffer across threads.
 `-status-codes-positive` covers the public `int[128]` ABI.
-`-directory-compatibility` covers legacy StaticHandler layout under C++14 and C++17.
+
+#752 made the Rust-context handler (formerly `StaticHandlerV2`) the only
+`StaticHandler`, HTTP/2 included, and deleted the gates whose subject was the
+legacy class: `-ranges`, `-paths`, `-index-pages`, `-inline` and
+`-directory-compatibility`. `-context` compares the whole selected class with the
+pinned one, and the `http_range` fuzz target now runs the selected `parse_range`.
 
 Deleted (6 duplicates and one ported phase):
 
