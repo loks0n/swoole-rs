@@ -2,6 +2,7 @@
 //! handle (#439), and `Socket::shutdown` over it: admission, the TLS close, the
 //! `shutdown(2)` call and the half-close flags. Native code keeps `set_err` and
 //! the TLS session.
+use crate::vector::Barrier;
 use core::ffi::c_void;
 
 /// Whether the socket is connected and which directions are shut.
@@ -14,8 +15,8 @@ pub struct SocketFlags {
 }
 
 /// `SW_EVENT_READ` and `SW_EVENT_WRITE` (pinned by a `static_assert` in socket.cc).
-const READ: u32 = 1 << 9;
-const WRITE: u32 = 1 << 10;
+pub(crate) const READ: u32 = 1 << 9;
+pub(crate) const WRITE: u32 = 1 << 10;
 
 /// One coroutine socket's state; native code holds it only as a pointer.
 pub struct SocketState {
@@ -23,6 +24,10 @@ pub struct SocketState {
     /// The native `Coroutine` waiting to read and to write, or null.
     read_co: *mut c_void,
     write_co: *mut c_void,
+    /// `want_event`: the direction a TLS wait added instead of its own, or 0.
+    pub(crate) want: u32,
+    /// The barriers installed for the read and the write wait, with their state.
+    pub(crate) barriers: [Option<(Barrier, *mut c_void)>; 2],
 }
 
 /// A new socket's state: not connected, nothing shut, no coroutine bound.
@@ -32,6 +37,8 @@ pub extern "C" fn swr_v1_hook_socket_state_new() -> *mut SocketState {
         flags: SocketFlags::default(),
         read_co: core::ptr::null_mut(),
         write_co: core::ptr::null_mut(),
+        want: 0,
+        barriers: [None; 2],
     }))
 }
 

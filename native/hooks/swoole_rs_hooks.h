@@ -190,6 +190,46 @@ bool swr_v1_hook_close(const swr_v1_hook_socket_ops *ops);
    ssl_shutdown (null without TLS) closes the session first, with context; syscall is shutdown(2). */
 int32_t swr_v1_hook_shutdown(int (*syscall)(int, int), int32_t fd, int32_t how, bool closed, swr_v1_hook_socket_state *state,
                              void (*ssl_shutdown)(void *), void *context);
+/* Socket::wait_event for the current coroutine co, and the readable/writable callbacks' choice of
+   coroutine to resume (null for none). barrier (when given) stays installed for the wait; buffer,
+   when not null, is a write's buffer slot. status reports close_wait, else has_kernel_nobufs(),
+   then the TLS wants, removed, and events' SW_EVENT_READ/WRITE bits. */
+enum {
+    SWR_V1_HOOK_WAIT_CLOSE_WAIT = 1,
+    SWR_V1_HOOK_WAIT_NOBUFS = 2,
+    SWR_V1_HOOK_WAIT_WANT_READ = 4,
+    SWR_V1_HOOK_WAIT_WANT_WRITE = 8,
+    SWR_V1_HOOK_WAIT_REMOVED = 16,
+};
+typedef struct {
+    void *context;
+    swr_v1_hook_socket_state *state;
+    int32_t close_wait_error;
+    uint32_t (*status)(void *);
+    bool (*closed)(void *);
+    int32_t (*error)(void *);
+    void (*set_err)(void *, int32_t);
+    void (*sleep)(void *);
+    bool (*reactor)(void *, uint32_t events, bool add);
+    void (*suspend)(void *, void *co, uint32_t event);
+    void (*buffer)(void *, char **buffer, size_t length);
+    void (*remove)(void *, uint32_t event);
+} swr_v1_hook_wait_ops;
+bool swr_v1_hook_socket_wait(const swr_v1_hook_wait_ops *ops, void *co, uint32_t event, swr_v1_hook_barrier barrier,
+                             void *barrier_state, char **buffer, size_t length);
+void *swr_v1_hook_socket_ready(swr_v1_hook_socket_state *state, uint32_t event, bool hup);
+/* Socket::recv_with_buffer after the availability check, over the read buffer's fields, and
+   recv_line over recv_with_buffer (read). recv may yield; the fields stay current across it. */
+typedef struct {
+    char *str;
+    size_t size;
+    size_t *length;
+    off_t *offset;
+} swr_v1_hook_buffer_fields;
+typedef ssize_t (*swr_v1_hook_read)(void *, char *buffer, size_t length);
+ssize_t swr_v1_hook_recv_buffered(const swr_v1_hook_buffer_fields *buffer, swr_v1_hook_read recv, void *context, char *out,
+                                  size_t length);
+ssize_t swr_v1_hook_recv_line(swr_v1_hook_read read, void *context, char *out, size_t limit);
 int32_t swr_v1_hook_connect_action(int32_t result, bool interrupted, bool in_progress);
 bool swr_v1_hook_connect_option(int32_t result, int32_t error);
 int32_t swr_v1_hook_liveness_error(bool alive, int32_t error, int32_t reset);

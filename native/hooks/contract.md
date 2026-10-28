@@ -79,6 +79,17 @@ are still never uninstalled.
   length-before-EOF-before-raw dispatch. Native EOF scanning still precedes
   max-length rejection; equality at the limit and the minimum-EOF early-continue
   are unchanged. Buffers, protocol callbacks and syscalls stay native.
+- Socket wait: `Socket::wait_event` is one Rust call over the socket's state,
+  which holds `want_event` and the transfer barriers. Close-wait comes first, then
+  the kernel no-buffers sleep (its flag is read only when not close-waiting),
+  then the TLS-wanted or own event added to the reactor, the write buffer's copy,
+  the bind/yield/unbind, and the event's removal unless another coroutine still
+  waits under TLS. The readable/writable callbacks ask Rust which coroutine to
+  resume: the other direction's under a TLS wait, none while an installed barrier
+  keeps waiting (unless the peer hung up), else the bound one.
+- Buffered reads: `recv_with_buffer` and `recv_line` run in Rust over the read
+  buffer's fields, kept current across the one `recv` that may yield. `recv_line`
+  checks its limit before reading the next byte.
 
 ## Poll, events and timers
 
