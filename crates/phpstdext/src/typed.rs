@@ -319,7 +319,7 @@ fn type_name(kind: u32) -> *const c_char {
     unsafe { zend_get_type_by_const(kind.cast_signed()) }
 }
 
-/// `get_array_type_def`: `<[string,|int,]value>`.
+/// `get_array_type_def`: `<string,value>`, `<int,value>` or, for a list, `value>`.
 /// # Safety
 /// `info` is a parsed definition.
 unsafe fn definition_of(info: *mut TypeInfo) -> *mut zend_string {
@@ -328,7 +328,8 @@ unsafe fn definition_of(info: *mut TypeInfo) -> *mut zend_string {
     let prefix: &[u8] = match key {
         IS_STRING => b"<string,",
         IS_LONG => b"<int,",
-        _ => b"<",
+        // Upstream writes the `<` but only steps past it for a keyed type.
+        _ => b"",
     };
     // SAFETY: per the caller.
     let value = unsafe { value_bytes(info) };
