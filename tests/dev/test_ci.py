@@ -20,7 +20,25 @@ with open(os.environ['FAKE_GH_LOG'], 'a') as log:
     log.write(' '.join(args) + '\\n')
 def save():
     state.write_text(json.dumps(data))
-if args[0] == 'api' and '-X' in args:
+call = ' '.join(args)
+for prefix, count in data.get('flaky', {}).items():
+    if call.startswith(prefix) and count > 0:
+        data['flaky'][prefix] = count - 1
+        save()
+        sys.stderr.write('HTTP 502: Bad Gateway\\n')
+        sys.exit(1)
+deleted = [branch for branch in data.get('deleted', []) if call.startswith('api repos/{owner}/{repo}/commits/' + branch)]
+if deleted:
+    sys.stderr.write('HTTP 422: No commit found for SHA\\n')
+    sys.exit(1)
+elif args[:2] == ['pr', 'list']:
+    print(json.dumps([{'headRefOid': 'e' * 40}]))
+elif args[:2] == ['pr', 'view']:
+    queue = data['pulls'][args[2]]
+    pull = queue.pop(0) if len(queue) > 1 else queue[0]
+    save()
+    print(json.dumps({'url': 'p', **pull}))
+elif args[0] == 'api' and '-X' in args:
     pass
 elif args[0] == 'api' and '/compare/' in args[1]:
     print(data.get('compare', 'ahead'))
@@ -155,6 +173,29 @@ class Ci(unittest.TestCase):
                       '--limit 500 --json number,title,labels,createdAt', self.gh_calls)
         code, result, _ = self.ci('next', runs={}, flags=('--json',), issues=[])
         self.assertEqual((code, result), (2, []))
+
+    def test_transient_gh_failures_are_retried(self):
+        code, result, stderr = self.ci('wait', runs={'c' * 40: ['success']}, flaky={'run list': 2, 'api': 1})
+        self.assertEqual((code, result['state']), (0, 'passed'))
+        self.assertEqual(stderr.count('HTTP 502: Bad Gateway; retrying'), 3)
+
+    def test_a_deleted_branch_resolves_through_its_pull_request(self):
+        code, result, _ = self.ci('wait', '--workflow', 'pr.yml', '--commit', 'merged-branch',
+                                  runs={'e' * 40: ['success']}, deleted=['merged-branch'])
+        self.assertEqual((code, result['commit'], result['state']), (0, 'e' * 40, 'passed'))
+        self.assertIn('pr list --head merged-branch --state all --limit 1 --json headRefOid', self.gh_calls)
+        # The 422 for the deleted branch is permanent: resolved once, not retried.
+        self.assertNotIn('retrying', _)
+
+    def test_wait_pr_waits_for_the_merge_then_its_merge_tier(self):
+        pulls = {'9': [{'state': 'OPEN'}, {'state': 'OPEN'}, {'state': 'MERGED', 'mergeCommit': {'oid': 'c' * 40}}]}
+        code, result, stderr = self.ci('wait', '--pr', '9', runs={'c' * 40: ['running', 'success']}, pulls=pulls)
+        self.assertEqual((code, result['pr'], result['pr_state'], result['commit'], result['state']),
+                         (0, 9, 'merged', 'c' * 40, 'passed'))
+        self.assertIn('PR #9: open', stderr)
+        self.assertIn('PR #9: merged', stderr)
+        code, result, _ = self.ci('wait', '--pr', '9', runs={}, pulls={'9': [{'state': 'CLOSED', 'mergeCommit': None}]})
+        self.assertEqual((code, result['pr_state'], result['state']), (1, 'closed', 'closed'))
 
     def test_status_without_a_run_is_none(self):
         code, result, _ = self.ci('status', '--commit', 'abc1234', runs={})

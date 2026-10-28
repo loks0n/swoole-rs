@@ -6,7 +6,10 @@
   ci.py status [--commit SHA]  the same, without waiting
   ci.py next                 the claimable issues in claim order (exit 2 when there are none)
 
-For a pull request: `ci.py wait --workflow pr.yml --commit BRANCH`.
+For a pull request: `ci.py wait --workflow pr.yml --commit BRANCH` for its PR tier (a branch
+auto-merge deleted resolves through its PR), or `ci.py wait --pr N` to wait for it to merge and
+then for the merge tier on its merge commit. Transient gh failures (5xx, network) are retried
+until the deadline.
 
 For the merge tier, failed phases come from its `phases` artifact, with new and fixed ones
 against the previous completed run on main; other failures show each failed job's log tail.
@@ -24,7 +27,7 @@ import sys
 import tempfile
 import time
 
-EXIT = {'passed': 0, 'failed': 1, 'none': 2, 'running': 2, 'cancelled': 3}
+EXIT = {'passed': 0, 'failed': 1, 'closed': 1, 'none': 2, 'running': 2, 'cancelled': 3}
 LOG_LINES = 40
 GATE_JOB = 'phpt-gate'
 # The merge-tier jobs (full-gates, or its shards "full-gates (N)") whose dev.py phases the
@@ -32,8 +35,25 @@ GATE_JOB = 'phpt-gate'
 PHASES_JOB = 'full-gates'
 
 
+# Seconds between retries of a transient gh failure, doubling up to RETRY_CAP, until
+# RETRY_DEADLINE (time.monotonic()); main() sets both from --timeout and --poll.
+RETRY_DEADLINE, RETRY_BASE, RETRY_CAP = 0.0, 2.0, 60.0
+TRANSIENT = ('HTTP 5', 'connection reset', 'timeout', 'timed out', 'EOF', 'TLS handshake',
+             'connection refused', 'no such host', 'temporary failure')
+
+
 def gh(*args):
-    return subprocess.run(['gh', *args], capture_output=True, text=True, check=True).stdout
+    delay = RETRY_BASE
+    while True:
+        result = subprocess.run(['gh', *args], capture_output=True, text=True)
+        if result.returncode == 0:
+            return result.stdout
+        transient = any(text.lower() in result.stderr.lower() for text in TRANSIENT)
+        if not transient or time.monotonic() + delay > RETRY_DEADLINE:
+            raise subprocess.CalledProcessError(result.returncode, ['gh', *args], result.stdout, result.stderr)
+        say(f"gh {args[0]} {args[1] if len(args) > 1 else ''}: {result.stderr.strip()[:80]}; retrying in {delay:g}s")
+        time.sleep(delay)
+        delay = min(delay * 2, RETRY_CAP)
 
 
 def say(message):
@@ -41,7 +61,35 @@ def say(message):
 
 
 def resolve(commit):
-    return gh('api', 'repos/{owner}/{repo}/commits/' + (commit or 'main'), '-q', '.sha').strip()
+    try:
+        return gh('api', 'repos/{owner}/{repo}/commits/' + (commit or 'main'), '-q', '.sha').strip()
+    except subprocess.CalledProcessError:
+        # Auto-merge deletes a PR's branch: resolve it through that PR's head.
+        heads = json.loads(gh('pr', 'list', '--head', commit or 'main', '--state', 'all', '--limit', '1',
+                              '--json', 'headRefOid'))
+        if not heads:
+            raise
+        return heads[0]['headRefOid']
+
+
+def wait_pr(number, deadline, poll):
+    """Wait for PR `number` to merge or close; a merged PR then waits for the merge tier on its
+    merge commit. Returns that run's result with the PR's state, or the closed PR's."""
+    announced = None
+    while True:
+        pr = json.loads(gh('pr', 'view', str(number), '--json', 'state,mergeCommit,url'))
+        if pr['state'] != announced:
+            announced = pr['state']
+            say(f"PR #{number}: {pr['state'].lower()}")
+        if pr['state'] == 'MERGED':
+            sha = pr['mergeCommit']['oid']
+            return {**wait('merge.yml', sha, deadline, poll), 'pr': number, 'pr_state': 'merged'}
+        if pr['state'] == 'CLOSED':
+            return {'workflow': 'merge.yml', 'commit': '', 'state': 'closed', 'pr': number, 'pr_state': 'closed'}
+        if time.monotonic() > deadline:
+            return {'workflow': 'merge.yml', 'commit': '', 'state': 'running', 'timed_out': True, 'pr': number,
+                    'pr_state': 'open'}
+        time.sleep(poll)
 
 
 def seconds(job):
@@ -186,6 +234,8 @@ def report(result, as_json):
     if as_json:
         print(json.dumps(result, indent=1))
         return
+    if 'pr' in result:
+        print(f"PR #{result['pr']}: {result['pr_state']}")
     line = f"{result['workflow']} {result['commit'][:7]}: {result['state']}"
     print(line + (' (timed out)' if result.get('timed_out') else '') + (f"  {result['url']}" if 'url' in result else ''))
     for job in result.get('jobs', []):
@@ -223,6 +273,8 @@ def main(argv=None):
     for name in ['status', 'wait']:
         command = commands.add_parser(name)
         command.add_argument('--commit', help='sha or branch (default: main)')
+        if name == 'wait':
+            command.add_argument('--pr', type=int, help='wait for this PR to merge, then for the merge tier on its merge commit')
         command.add_argument('--workflow', default='merge.yml')
         command.add_argument('--timeout', type=int, default=3600, help='seconds (default 3600)')
         command.add_argument('--poll', type=float, default=15, help=argparse.SUPPRESS)
@@ -239,9 +291,14 @@ def main(argv=None):
               '\n'.join(f"#{issue['number']} {issue['priority']} {issue['title']}" for issue in queue))
         return 0 if queue else 2
     deadline = time.monotonic() + args.timeout
+    global RETRY_DEADLINE, RETRY_BASE
+    RETRY_DEADLINE, RETRY_BASE = deadline, min(RETRY_BASE, args.poll) if args.poll else 0.0
     try:
-        sha = resolve(args.commit)
-        result = status(args.workflow, sha) if args.command == 'status' else wait(args.workflow, sha, deadline, args.poll)
+        if getattr(args, 'pr', None):
+            result = wait_pr(args.pr, deadline, args.poll)
+        else:
+            sha = resolve(args.commit)
+            result = status(args.workflow, sha) if args.command == 'status' else wait(args.workflow, sha, deadline, args.poll)
         if result['state'] in ('passed', 'failed'):
             result = failure_logs(phase_changes(result))
         if 'failed_phases' in result:
