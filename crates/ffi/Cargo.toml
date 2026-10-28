@@ -33,7 +33,7 @@ ossupport = ["dep:swoole-rs-ossupport"]
 tls = ["dep:swoole-rs-tls"]
 process = ["dep:swoole-rs-process"]
 clients = ["dep:swoole-rs-clients", "dep:swoole-rs-inflate", "dep:swoole-rs-phpclients", "swoole-rs-phpclients/php"]
-httpbindings = ["dep:swoole-rs-httpbindings", "swoole-rs-httpbindings/php"]
+httpbindings = ["dep:swoole-rs-httpbindings", "dep:swoole-rs-phphttp", "swoole-rs-phphttp/php"]
 http2 = ["dep:swoole-rs-http2"]
 ports = ["dep:swoole-rs-ports"]
 phphelpers = ["dep:swoole-rs-phphelpers"]
@@ -69,6 +69,7 @@ swoole-rs-clients = { path = "../clients", optional = true }
 swoole-rs-phpclients = { path = "../phpclients", optional = true }
 swoole-rs-inflate = { path = "../inflate", optional = true }
 swoole-rs-httpbindings = { path = "../httpbindings", optional = true }
+swoole-rs-phphttp = { path = "../phphttp", optional = true }
 swoole-rs-http2 = { path = "../http2", optional = true }
 swoole-rs-ports = { path = "../ports", optional = true }
 swoole-rs-phphelpers = { path = "../phphelpers", optional = true }

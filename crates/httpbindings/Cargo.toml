@@ -9,12 +9,5 @@ license = "Apache-2.0"
 name = "swoole_rs_httpbindings"
 crate-type = ["rlib"]
 
-[features]
-# Swoole\Http\Cookie needs PHP headers (swoole-rs-zend-sys).
-php = ["dep:swoole-rs-zend", "swoole-rs-zend/php"]
-
-[dependencies]
-swoole-rs-zend = { path = "../zend", optional = true }
-
 [lints]
 workspace = true
