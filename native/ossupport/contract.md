@@ -63,6 +63,9 @@ Module tests use a private queue and remove it.
 order and errno), parent-death signal, process CPU affinity (`getpid()`, as
 upstream), native thread id and thread names.
 
-Still native: `swoole_daemon`, the resolver request types and handlers,
-`swoole_thread_id_to_str`, `swoole_tmpfile`, File storage and UnixSocket
-construction.
+`swr_v1_os_daemon_detach` runs Darwin `swoole_daemon`'s `chdir`/`/dev/null`
+steps; `swr_v1_os_file_open`/`close` and `swr_v1_os_tmpfile` back `File::open`,
+`File::close` and `swoole_tmpfile`.
+
+Still native: the fork and setsid in `swoole_daemon`, the resolver request types
+and handlers, `swoole_thread_id_to_str`, File storage and UnixSocket construction.

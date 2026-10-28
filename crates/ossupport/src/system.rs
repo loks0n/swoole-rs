@@ -9,6 +9,30 @@ pub extern "C" fn swr_v1_os_is_root_user() -> bool {
     unsafe { libc::geteuid() == 0 }
 }
 
+/// `swoole_daemon`'s Darwin steps before the fork: `chdir("/")` unless `nochdir`,
+/// then stdin/stdout/stderr onto `/dev/null` unless `noclose`. 0 done, or the
+/// failed step for native's warning: 1 chdir, 2 open, 3 dup2.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_os_daemon_detach(nochdir: bool, noclose: bool) -> c_int {
+    // SAFETY: a static C string.
+    if !nochdir && unsafe { libc::chdir(c"/".as_ptr()) } != 0 {
+        return 1;
+    }
+    if noclose {
+        return 0;
+    }
+    // SAFETY: a static C string.
+    let fd = unsafe { libc::open(c"/dev/null".as_ptr(), libc::O_RDWR) };
+    if fd < 0 {
+        return 2;
+    }
+    // SAFETY: dup2 onto the standard descriptors, as upstream.
+    let redirected = (0..3).all(|target| unsafe { libc::dup2(fd, target) } >= 0);
+    // SAFETY: the descriptor opened above.
+    unsafe { libc::close(fd) };
+    if redirected { 0 } else { 3 }
+}
+
 /// A failed `swoole_set_isolation` step, reported as it happens (errno intact):
 /// 1 group lookup, 2 user lookup, 3 setgid, 4 setuid, 5 `chdir("/")`, 6 chroot.
 pub type IsolationWarn = extern "C" fn(step: u32, context: *mut c_void);

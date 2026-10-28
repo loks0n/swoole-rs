@@ -30,6 +30,9 @@ void swr_v1_os_pool_notify_one(const swr_v1_os_pool *pool);
 /* File IO. Each call returns right after a failing syscall, errno intact, so
  * native logs the upstream warning. */
 typedef struct { size_t done; bool failed; } swr_v1_os_file_io;
+int swr_v1_os_file_open(int fd, const char *path, int flags, int mode);
+bool swr_v1_os_file_close(int fd);
+int swr_v1_os_tmpfile(char *filename);
 swr_v1_os_file_io swr_v1_os_file_write_all(int fd, bool append, const void *data, size_t length);
 swr_v1_os_file_io swr_v1_os_file_read_all(int fd, void *buf, size_t length);
 ssize_t swr_v1_os_file_read_line(int fd, void *buf, size_t n);
@@ -46,6 +49,8 @@ size_t swr_v1_os_random_bytes(void *buf, size_t size);
 /* src/os/base.cc process and thread identity. Isolation reports each failed step
  * as it happens (errno intact): 1 group lookup, 2 user lookup, 3 setgid,
  * 4 setuid, 5 chdir("/"), 6 chroot. Thread names return the pthread error. */
+/* Darwin daemon steps before fork: 0 done, 1 chdir, 2 open, 3 dup2 failed. */
+int swr_v1_os_daemon_detach(bool nochdir, bool noclose);
 bool swr_v1_os_is_root_user(void);
 void swr_v1_os_set_isolation(const char *group, const char *user, const char *root,
                              void (*warn)(uint32_t step, void *context), void *context);
