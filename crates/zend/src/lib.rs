@@ -13,6 +13,7 @@
     )
 )]
 
+mod access;
 pub mod bailout;
 mod call;
 mod callable;
@@ -25,6 +26,7 @@ mod object;
 pub mod string;
 pub mod value;
 
+pub use access::{declare_null, push_string, set_key, string_of, to_long, value_of};
 pub use call::{Call, Invalid, type_of};
 pub use callable::Callable;
 pub use class::{
@@ -39,7 +41,7 @@ pub use helpers::{
     add_assoc_long, add_next_index_long, declare_property_null, each_value, long_zval, object_of,
     update_property, update_property_long,
 };
-pub use object::{Object, set_object};
+pub use object::{Object, init_object, set_object};
 pub use swoole_rs_zend_sys as sys;
 
 /// Export Zend handlers under Zend's own names (`zim_<class>_<method>` for

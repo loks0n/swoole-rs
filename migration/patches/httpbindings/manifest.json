@@ -35,6 +35,14 @@
       "upstream_paths": [
         "ext-src/php_swoole_http.h"
       ]
+    },
+    {
+      "path": "0007-php-request-response.patch",
+      "sha256": "f48717b5483fceafa5455015688b06b925d271be29566124874e942c4e938ef8",
+      "upstream_paths": [
+        "ext-src/swoole_http_request.cc",
+        "ext-src/swoole_http_response.cc"
+      ]
     }
   ]
 }

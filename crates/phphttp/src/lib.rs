@@ -1,6 +1,9 @@
-//! PHP `Swoole\Http` classes over the zend crates and the httpbindings policy.
-//! A crate of its own so the native gates that link `libswoole_rs_ffi.a` into
-//! executables never pull in objects with Zend imports (docs/zend.md).
+//! PHP `Swoole\Http` classes over the zend crates and the httpbindings policy:
+//! `Cookie`, `Request` and `Response`. C++ keeps the method tables built from
+//! the stubs' arginfo and, until it moves to Rust, the `swoole::http::Context`
+//! Request and Response point at; `host` declares what their methods ask of
+//! it. A crate of its own so the native gates that link `libswoole_rs_ffi.a`
+//! into executables never pull in objects with Zend imports (docs/zend.md).
 //!
 //! Without the `php` feature the crate is empty.
 #![cfg(feature = "php")]
@@ -12,6 +15,13 @@
     )
 )]
 
+mod context;
 mod cookie;
+mod host;
+mod request;
+mod response;
 
+pub use context::{swr_v1_phphttp_context, swr_v1_phphttp_set_context};
 pub use cookie::*;
+pub use request::*;
+pub use response::*;

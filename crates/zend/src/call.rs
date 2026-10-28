@@ -1,4 +1,6 @@
 //! The frame of an internal function call, parsed as Zend's fast ZPP macros do.
+mod ext;
+
 use crate::{
     Class,
     string::bytes,
