@@ -28,6 +28,8 @@ MODULES = {'websocket': ('M02', 1), 'buffer': ('M01', 2), 'timer': ('M03', 4),
 # no --module or configure switch, and no cargo feature.
 GRADUATED = ('base64', 'buffer', 'crc32', 'error', 'framing', 'http', 'protocols', 'websocket', 'timer')
 SELECTABLE = sorted(set(MODULES) - set(GRADUATED))
+# Modules a module cannot build without: PHP Table stores rows in memory's TableV2.
+REQUIRES = {'phpcollections': ('memory',)}
 
 
 def profile_suffix(args):
@@ -322,8 +324,10 @@ def main():
         parser.error('--export requires an immutable build, without --dev')
     if args.export and args.export.exists():
         parser.error('Export already exists: ' + str(args.export))
-    if 'phpcollections' in args.module and 'memory' not in args.module:
-        parser.error('Rust PHP collections require --module memory for TableV2 storage')
+    for module in args.module:
+        missing = set(REQUIRES.get(module, ())) - set(args.module)
+        if missing:
+            parser.error(f'--module {module} requires ' + ' '.join('--module ' + name for name in sorted(missing)))
     with exclusive(ROOT / 'target/hybrid/.builder.lock'):
         return build(args, parser)
 

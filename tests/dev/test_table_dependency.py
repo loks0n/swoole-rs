@@ -14,7 +14,7 @@ class TableDependency(unittest.TestCase):
              redirect_stderr(stderr), self.assertRaises(SystemExit) as error:
             build_hybrid.main()
         self.assertEqual(error.exception.code, 2)
-        self.assertIn('require --module memory', stderr.getvalue())
+        self.assertIn('requires --module memory', stderr.getvalue())
         lock.assert_not_called()
         build.assert_not_called()
 
