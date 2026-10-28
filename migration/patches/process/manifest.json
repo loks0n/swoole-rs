@@ -66,6 +66,22 @@
         "src/server/thread.cc",
         "src/server/worker.cc"
       ]
+    },
+    {
+      "path": "0008-worker-pid-field.patch",
+      "sha256": "82a50e1db2757b2f09d6c81fb91551d74a56c529fba22cb1a0355364948507d1",
+      "upstream_paths": [
+        "ext-src/swoole_process.cc",
+        "ext-src/swoole_process_pool.cc",
+        "ext-src/swoole_server.cc",
+        "include/swoole_process_pool.h",
+        "include/swoole_server.h",
+        "src/os/process_pool.cc",
+        "src/server/manager.cc",
+        "src/server/master.cc",
+        "src/server/process.cc",
+        "src/server/thread.cc"
+      ]
     }
   ]
 }

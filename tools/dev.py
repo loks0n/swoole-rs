@@ -670,14 +670,10 @@ def plan(args, reports):
         pytest('buffer-native', 'tests/modules/buffer/test_native.py', '--manifest', manifest, '--sanitize')
         pytest('buffer-callbacks', 'tests/modules/buffer/test_callbacks.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a')
         pytest('buffer-posix-iovec', 'tests/modules/buffer/test_iovec.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize')
-        for phase, profile in [('string-originals', '--original-only'), ('string-split', '--split-only'),
-                               ('string-integer', '--integer-only'), ('string-ownership', '--ownership-only'),
-                               ('string-allocation', '--allocation-only'), ('string-format', '--format-only'),
-                               ('string-random', '--random-only'), ('string-copy', '--copy-only'),
-                               ('string-transitions', '--transition-only')]:
-            script(phase, 'tests/modules/buffer/string/gate.py', '--source', ROOT / 'target/upstream/src',
-                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', profile,
-                   *report(phase))
+        for profile in ['originals', 'split', 'integer', 'ownership', 'allocation', 'format', 'random', 'copy',
+                        'transitions']:
+            pytest('string-' + profile, f'tests/modules/buffer/string/test_gate.py::test_profile[{profile}]',
+                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize')
         if integrate:
             pytest('buffer-model', 'tests/modules/buffer/test_model.py', '--manifest', manifest, '--sanitize')
         pytest('buffer-network', 'tests/modules/buffer/test_network.py', *php, *engines)

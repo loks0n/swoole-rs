@@ -120,6 +120,8 @@ uint8_t swr_v1_worker_status(const swr_v1_worker_record *);
 void swr_v1_worker_set_status(swr_v1_worker_record *, uint8_t status);
 uint8_t swr_v1_worker_type(const swr_v1_worker_record *);
 void swr_v1_worker_set_type(swr_v1_worker_record *, uint8_t kind);
+int swr_v1_worker_pid(const swr_v1_worker_record *);
+void swr_v1_worker_set_pid(swr_v1_worker_record *, int pid);
 #ifdef __cplusplus
 }
 #endif

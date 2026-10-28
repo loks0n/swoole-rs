@@ -259,7 +259,10 @@
         "include/swoole_process_pool.h",
         "src/server/thread.cc",
         "ext-src/swoole_server.cc",
-        "src/server/master.cc"
+        "src/server/master.cc",
+        "ext-src/swoole_process_pool.cc",
+        "include/swoole_server.h",
+        "ext-src/swoole_process.cc"
       ],
       "abi_contract": "docs/process-abi-v1.md",
       "feature_bit_reserved": 524288

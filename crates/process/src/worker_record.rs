@@ -83,6 +83,27 @@ pub unsafe extern "C" fn swr_v1_worker_set_type(worker: *mut WorkerRecord, kind:
     unsafe { (*worker).kind = kind };
 }
 
+/// The worker's process id.
+///
+/// # Safety
+/// `worker` points to a live `Worker`/`WorkerRecord` in its backing memory.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_worker_pid(worker: *const WorkerRecord) -> c_int {
+    // SAFETY: the caller lends a live worker record; only the field is read, with no
+    // reference to the whole record (other processes write it in shared memory).
+    unsafe { (*worker).pid }
+}
+
+/// Set the worker's process id.
+///
+/// # Safety
+/// `worker` points to a live, writable `Worker`/`WorkerRecord`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_worker_set_pid(worker: *mut WorkerRecord, pid: c_int) {
+    // SAFETY: the caller lends a live, writable worker record; only the field is written.
+    unsafe { (*worker).pid = pid };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -115,6 +136,19 @@ mod tests {
             // independent of status
             swr_v1_worker_set_status(&raw mut record, 1);
             assert_eq!(swr_v1_worker_type(&raw const record), 3);
+        }
+    }
+
+    #[test]
+    fn pid_accessors_round_trip() {
+        let mut record: WorkerRecord = unsafe { std::mem::zeroed() };
+        unsafe {
+            swr_v1_worker_set_pid(&raw mut record, 4242);
+            assert_eq!(swr_v1_worker_pid(&raw const record), 4242);
+            // independent of the one-byte fields that follow it
+            swr_v1_worker_set_type(&raw mut record, 2);
+            swr_v1_worker_set_status(&raw mut record, 1);
+            assert_eq!(swr_v1_worker_pid(&raw const record), 4242);
         }
     }
 }

@@ -50,7 +50,7 @@ adds a previous hybrid build to the comparison.
 
 ## Rust ASan
 
-`test_native.py` and `string/gate.py` accept `--rust-asan` with
+`test_native.py` and `string/test_gate.py` accept `--rust-asan` with
 `--sanitize` for an archive built with Rust ASan. They refuse archives without
 `__asan_report_` imports. Build such an archive on Linux with
 `RUSTC_BOOTSTRAP=1 RUSTFLAGS='-Zsanitizer=address -Zexternal-clangrt=yes' cargo build --locked --offline -p swoole-rs-buffer --release --target=aarch64-unknown-linux-gnu`;
