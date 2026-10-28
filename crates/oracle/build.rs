@@ -397,6 +397,38 @@ fn framing_stream() {
     fs::write(out("framing_stream_string.inc"), parts.join("\n") + "\n").unwrap();
 }
 
+/// `redis::recv_packet` and its `Request` from the pinned redis.cc (upstream) and
+/// from it with the protocols overlay patch applied (candidate, calling Rust),
+/// copied unchanged for `shim/resp_stream.cc`.
+fn resp_stream() {
+    let patch = "../../migration/patches/protocols/0001-rust-packet-protocols.patch";
+    let redis = fs::read_to_string("upstream/src/protocol/redis.cc").expect("vendored redis.cc");
+    let candidate = apply(
+        &redis,
+        section(
+            &fs::read_to_string(patch).expect("protocols patch"),
+            "src/protocol/redis.cc",
+        ),
+    );
+    for (name, text) in [("upstream", &redis), ("candidate", &candidate)] {
+        let request = if text.contains("struct Request {") {
+            slice(text, "struct Request {", "\n};") + "\n};"
+        } else {
+            slice(text, "using Request = ", "\n")
+        };
+        let mut parts = vec![request];
+        if text.contains("const char *get_number(") {
+            parts.push(definition(text, "const char *get_number("));
+        }
+        parts.push(definition(text, "int recv_packet("));
+        fs::write(
+            out(&format!("resp_stream_{name}.inc")),
+            parts.join("\n") + "\n",
+        )
+        .unwrap();
+    }
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=upstream");
     println!("cargo:rerun-if-changed=shim");
@@ -410,6 +442,7 @@ fn main() {
     http_frame();
     http_range();
     protocols();
+    resp_stream();
     clients();
     cpp()
         .define("SWR_URL_ENGINE", "upstream")
@@ -501,6 +534,20 @@ fn main() {
             .include(env::var("OUT_DIR").unwrap())
             .file("shim/framing_stream.cc")
             .compile(&format!("swoole_{engine}_framing_stream"));
+    }
+    for engine in ["upstream", "candidate"] {
+        cpp()
+            .define("SWR_RESP_ENGINE", engine)
+            .define(
+                "SWR_RESP_INC",
+                format!("\"resp_stream_{engine}.inc\"").as_str(),
+            )
+            .flag_if_supported("-Wno-unused-parameter")
+            .flag_if_supported("-Wno-unused-label")
+            .include("../../native/protocols")
+            .include(env::var("OUT_DIR").unwrap())
+            .file("shim/resp_stream.cc")
+            .compile(&format!("swoole_{engine}_resp_stream"));
     }
     // The candidate framing bodies call the Rust exports, resolved by the binary.
     cpp()

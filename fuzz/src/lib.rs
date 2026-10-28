@@ -14,7 +14,7 @@ use swoole_rs_oracle::{
     base64 as upstream, clients, framing as upstream_framing, framing_stream,
     http as upstream_http,
     http_frame::{self, CANDIDATE, Engine, UPSTREAM},
-    http_range, protocols, websocket as upstream_ws,
+    http_range, protocols, resp_stream, websocket as upstream_ws,
 };
 use swoole_rs_protocols as _;
 use swoole_rs_websocket::{DecodedFrame, swr_v1_ws_decode, swr_v1_ws_frame_length, swr_v1_ws_mask};
@@ -741,8 +741,12 @@ pub fn http_range(bytes: &[u8]) {
     assert_eq!(got, want, "range for {bytes:?}");
 }
 
-/// One engine's receive-loop log for a stream case (see `framing_stream::Run`).
-fn stream_log(run: framing_stream::Run, stream: &framing_stream::Stream) -> Vec<u8> {
+/// One engine's receive-loop log for a stream case (see `framing_stream::Run`
+/// and `resp_stream::Run`).
+fn stream_log<S>(
+    run: unsafe extern "C" fn(*const S, *mut u8, usize) -> usize,
+    stream: &S,
+) -> Vec<u8> {
     let mut out = vec![0_u8; 1 << 16];
     // SAFETY: the case's pointers outlive the call; `out` has its capacity.
     let length = unsafe { run(stream, out.as_mut_ptr(), out.len()) };
@@ -805,5 +809,38 @@ pub fn framing_stream(bytes: &[u8]) {
         String::from_utf8_lossy(&want),
         String::from_utf8_lossy(&got),
         "mode {mode} for {bytes:?}"
+    );
+}
+
+/// `redis::recv_packet` from upstream and from the candidate (a loop over the Rust
+/// RESP receive state machine), over the same stream in the same chunks: every
+/// call's result and request state, every package and the final buffer must match.
+pub fn resp_stream(bytes: &[u8]) {
+    let Some((&[flags, size, max, chunk_count], rest)) = bytes.split_first_chunk::<4>() else {
+        return;
+    };
+    let chunk_count = usize::from(chunk_count % 16);
+    let Some((sizes, data)) = rest.split_at_checked(chunk_count) else {
+        return;
+    };
+    // Chunk sizes 1..=64, a starting buffer of 1..=64 bytes and a package limit of
+    // 1..=256 bytes at least that size, so growth and the limit are both reached.
+    let chunks: Vec<u16> = sizes.iter().map(|&size| u16::from(size % 64) + 1).collect();
+    let buffer_size = u32::from(size % 64) + 1;
+    let stream = resp_stream::Stream {
+        data: data.as_ptr(),
+        length: data.len(),
+        chunks: chunks.as_ptr(),
+        chunk_count: chunks.len(),
+        buffer_size,
+        max_length: buffer_size.max(u32::from(max) + 1),
+        close_at_end: flags & 1,
+    };
+    let want = stream_log(resp_stream::UPSTREAM, &stream);
+    let got = stream_log(resp_stream::CANDIDATE, &stream);
+    assert_eq!(
+        String::from_utf8_lossy(&want),
+        String::from_utf8_lossy(&got),
+        "resp stream for {bytes:?}"
     );
 }
