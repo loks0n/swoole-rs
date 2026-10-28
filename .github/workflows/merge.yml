@@ -36,8 +36,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: release
-      # rust-cache restores all of target/; hybrid build trees must start clean.
-      - run: rm -rf target/hybrid
+      # rust-cache restores all of target/, git checkouts without a usable .git; those trees
+      # come from their own caches or a fresh clone instead.
+      - run: rm -rf target/hybrid target/upstream target/thirdparty
       - uses: ./.github/actions/install
       # Caches are saved as soon as they are built, so a failing gate later does not discard
       # them; PR branches can only restore caches saved on main.
