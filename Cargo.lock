@@ -397,6 +397,7 @@ dependencies = [
  "swoole-rs-phpevents",
  "swoole-rs-phphelpers",
  "swoole-rs-phphttp",
+ "swoole-rs-phphttp2",
  "swoole-rs-phplocks",
  "swoole-rs-phpprocess",
  "swoole-rs-phptimer",
@@ -482,6 +483,7 @@ dependencies = [
  "swoole-rs-clients",
  "swoole-rs-error",
  "swoole-rs-inflate",
+ "swoole-rs-phptable",
  "swoole-rs-zend",
 ]
 
@@ -520,6 +522,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "swoole-rs-phphttp2"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "swoole-rs-http2",
+ "swoole-rs-inflate",
+ "swoole-rs-phptable",
+ "swoole-rs-zend",
+]
+
+[[package]]
 name = "swoole-rs-phplocks"
 version = "0.1.0"
 dependencies = [
@@ -532,6 +545,13 @@ name = "swoole-rs-phpprocess"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "swoole-rs-zend",
+]
+
+[[package]]
+name = "swoole-rs-phptable"
+version = "0.1.0"
+dependencies = [
  "swoole-rs-zend",
 ]
 
