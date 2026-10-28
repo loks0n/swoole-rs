@@ -5,9 +5,9 @@
 use crate::swr_v1_hook_wait_revents;
 
 /// `SW_EVENT_READ`, `SW_EVENT_WRITE` and `SW_EVENT_ERROR`.
-const READ: i32 = 1 << 9;
-const WRITE: i32 = 1 << 10;
-const ERROR: i32 = 1 << 11;
+pub(crate) const READ: i32 = 1 << 9;
+pub(crate) const WRITE: i32 = 1 << 10;
+pub(crate) const ERROR: i32 = 1 << 11;
 
 /// Parks the current coroutine until `events` fire on `fd` or `timeout` passes,
 /// storing the fired events; returns the error, or 0.
@@ -34,7 +34,7 @@ const fn failed(last_error: i32, error: i32) -> WaitEvent {
 }
 
 /// `translate_events_to_poll`.
-fn to_poll(events: i32) -> i16 {
+pub(crate) fn to_poll(events: i32) -> i16 {
     let mut poll = 0;
     if events & READ != 0 {
         poll |= libc::POLLIN;
@@ -46,7 +46,7 @@ fn to_poll(events: i32) -> i16 {
 }
 
 /// `translate_events_from_poll`: error and hang-up count only without IN/OUT.
-fn from_poll(revents: i16) -> i32 {
+pub(crate) fn from_poll(revents: i16) -> i32 {
     let mut events = 0;
     if revents & libc::POLLIN != 0 {
         events |= READ;
