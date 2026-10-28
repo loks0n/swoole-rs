@@ -481,7 +481,7 @@ fn recvfrom(call: &Call) {
     // SAFETY: an unshared buffer string `used` bytes of which were filled.
     unsafe { string::truncate(buffer, used) };
     // SAFETY: the return value takes the buffer's only reference.
-    unsafe { call.set_str(buffer) };
+    unsafe { call.set_string(buffer) };
 }
 
 /// `sendfile(string $filename, int $offset = 0, int $length = 0): bool`.
@@ -580,7 +580,7 @@ fn recv(call: &Call) {
             // SAFETY: an unshared string at least `used` bytes long.
             unsafe { string::truncate(result, used) };
             // SAFETY: the return value takes its only reference.
-            unsafe { call.set_str(result) };
+            unsafe { call.set_string(result) };
         }
     }
 }
@@ -614,7 +614,7 @@ fn peek(call: &Call) {
     // SAFETY: an unshared buffer string `used` bytes of which were filled.
     unsafe { string::truncate(buffer, used) };
     // SAFETY: the return value takes the buffer's only reference.
-    unsafe { call.set_str(buffer) };
+    unsafe { call.set_string(buffer) };
 }
 
 /// `isConnected(): bool`.
@@ -753,7 +753,7 @@ fn peer_cert(call: &Call) {
         return call.set_bool(false);
     }
     // SAFETY: the return value takes the new string's only reference.
-    unsafe { call.set_str(cert) };
+    unsafe { call.set_string(cert) };
 }
 
 /// `verifyPeerCert(bool $allow_self_signed = false): bool`; the socket is

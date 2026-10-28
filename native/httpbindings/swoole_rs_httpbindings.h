@@ -22,6 +22,22 @@ enum {
     SWR_HTTPBINDINGS_DONE = 11
 };
 int32_t swr_v1_httpbindings_cookie(const swr_v1_httpbindings_cookie_input *, uint32_t *, swr_v1_httpbindings_action *);
+/* Swoole\Http\Cookie (Rust): MINIT passes upstream's method table, built from
+ * the stub's arginfo; the methods are Rust's zim_swoole_http_cookie_* exports.
+ * `warning` is php_swoole_error(E_WARNING, "%s", message); `unavailable` sets
+ * SW_ERROR_HTTP_COOKIE_UNAVAILABLE. */
+struct _zend_function_entry;
+struct _zend_string;
+struct _zval_struct;
+void swr_v1_httpbindings_cookie_minit(const struct _zend_function_entry *methods,
+                                      void (*warning)(const char *message), void (*unavailable)(void));
+/* Response::cookie()'s Set-Cookie line from its arguments, or from a Cookie
+ * object (reset when it cannot be sent); null after a warning. */
+struct _zend_string *swr_v1_httpbindings_cookie_line(uint8_t encode, struct _zend_string *name,
+    struct _zend_string *value, int64_t expires, struct _zend_string *path, struct _zend_string *domain,
+    uint8_t secure, uint8_t http_only, struct _zend_string *same_site, struct _zend_string *priority,
+    uint8_t partitioned);
+struct _zend_string *swr_v1_httpbindings_cookie_object_line(const struct _zval_struct *object);
 enum {
     SWR_HTTPBINDINGS_HEADER_APPEND = 0, SWR_HTTPBINDINGS_HEADER_COOKIE = 1,
     SWR_HTTPBINDINGS_HEADER_UPGRADE = 2, SWR_HTTPBINDINGS_HEADER_FORM = 3,

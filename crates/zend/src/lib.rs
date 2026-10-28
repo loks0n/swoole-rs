@@ -13,6 +13,7 @@
     )
 )]
 
+pub mod bailout;
 mod call;
 mod class;
 mod error;

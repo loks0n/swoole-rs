@@ -1,5 +1,5 @@
-"""Pinned buffer.cc, string.cc and the original core-test Buffer assertions with the
-Buffer patches and the selected Rust archive (--manifest), or a supplied --archive."""
+"""The hybrid build's buffer.cc and string.cc with the original core-test Buffer assertions
+and the selected Rust archive (--manifest), or a supplied --archive."""
 import hashlib
 import json
 import os
@@ -10,7 +10,7 @@ import sys
 
 import pytest
 
-from native import INCLUDES, SOURCE, build_and_run, patch
+from native import SOURCE, build_and_run, untyped_hybrid
 from tools.build_upstream import COMMIT
 
 
@@ -28,23 +28,20 @@ def selected_archive(pytestconfig):
     pytest.skip('needs --manifest or --archive')
 
 
-def test_native(pinned, pytestconfig):
+def test_native(tmp_path, pytestconfig):
     archive = selected_archive(pytestconfig)
     sanitize = pytestconfig.getoption('sanitize')
     if pytestconfig.getoption('rust_asan'):
         assert sanitize, 'Rust ASan archive requires the native sanitizer runtime'
         assert '__asan_report_' in subprocess.run(['nm', '-u', str(archive)], capture_output=True, text=True).stdout, \
             'Selected archive lacks Rust ASan report imports'
-    tree = pinned('include', 'src/core/buffer.cc', 'src/core/string.cc')
-    original = tree / 'core-tests/src/memory/buffer.cpp'
-    original.parent.mkdir(parents=True)
+    hybrid, flags = untyped_hybrid(archive)
+    original = tmp_path / 'buffer.cpp'
     original.write_bytes(subprocess.check_output(['git', '-C', str(SOURCE), 'show', f'{COMMIT}:core-tests/src/memory/buffer.cpp']))
-    patch(tree, 2)
     local = Path(__file__).resolve().parent
     command = shlex.split(os.environ.get('CXX', 'c++')) + [
-        '-std=c++17', '-O1', '-g', '-ffunction-sections', '-fdata-sections', '-DSWOOLE_RS_BUFFER',
-        '-I' + str(local), '-I' + str(tree / 'include'), *INCLUDES,
-        str(tree / 'src/core/buffer.cc'), str(tree / 'src/core/string.cc'), str(original), str(local / 'hybrid.cc'), str(archive),
+        '-std=c++17', '-O1', '-g', '-ffunction-sections', '-fdata-sections', '-I' + str(local), *flags,
+        str(hybrid / 'src/core/buffer.cc'), str(hybrid / 'src/core/string.cc'), str(original), str(local / 'hybrid.cc'), str(archive),
         '-Wl,-dead_strip' if sys.platform == 'darwin' else '-Wl,--gc-sections', '-lc', '-lm']
     command += ['-Dswr_v1_buffer_' + name + '=swr_test_buffer_' + name
                 for name in ['append', 'stats', 'front', 'pop', 'front_plan', 'advance']]
@@ -52,6 +49,6 @@ def test_native(pinned, pytestconfig):
         command += ['-ldl', '-lpthread', '-lrt', '-lutil']
     if sanitize:
         command.append('-fsanitize=address,undefined')
-    result = build_and_run(command, tree / 'hybrid', timeout=20)
+    result = build_and_run(command, tmp_path / 'hybrid', timeout=20)
     assert result.returncode == 0, result.stderr
     json.loads(result.stdout)
