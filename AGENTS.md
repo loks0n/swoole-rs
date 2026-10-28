@@ -12,6 +12,10 @@ Run original PHPT tests with PHP's official runner through corpus/upstream/run.p
 not upstream's tests/start.sh: its cleanup can kill unrelated processes.
 Keep module tests under tests/modules/<module>/.
 
+A new dependency needs a sentence in the PR on why the standard library or an existing
+dependency won't do. The PR tier checks dependencies with `cargo deny` (`deny.toml`:
+advisories, licences, duplicate versions, no async runtime) and `cargo machete` (unused).
+
 Rust lint levels live only in the root `Cargo.toml` (`[workspace.lints]`) and
 `clippy.toml`. Never lower one in a PR that also changes code; lowering one needs
 `needs:decision`. Suppress with `#[expect(lint, reason = "...")]`, never `#[allow]`,
