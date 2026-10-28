@@ -9,14 +9,8 @@ pub struct RandomState {
     pub index: usize,
 }
 
-const SYSTEM: u32 = 0;
 const BUFFER: u32 = 1;
 const APPEND: u32 = 2;
-const OPEN: u32 = 1;
-const READ: u32 = 2;
-const FALLBACK: u32 = 3;
-const WARN: u32 = 4;
-const RETURN: u32 = 5;
 const DRAW: u32 = 6;
 const STORE_DRAW: u32 = 7;
 const STORE_NUL: u32 = 10;
@@ -32,10 +26,8 @@ const ALPHABET: &[u8; 62] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwx
 /// `state` is an exclusive zeroed cursor, mode/length/range remain fixed, and
 /// each returned effect completes before reentry. Stop at RETURN/FALLBACK/NUL/
 /// `DONE/STORE_NUL/STORE_DONE/INVALID`. `STORE_DRAW` completes store before draw.
-/// SYSTEM flags copy cached-fd-ready (1) and full-native-read (2); string
-/// modes may set `FIRST_DRAW_READY` (4) when the native caller already drew.
-/// SYSTEM requires the original defined range domain (max>min, no signed
-/// overflow in max-min+1); string draws are native integers in 0..=61.
+/// Flags may set `FIRST_DRAW_READY` (4) when the native caller already drew;
+/// draws are native integers in 0..=61. `min`/`max` are unused.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_corebase_random_next(
     state: *mut RandomState,
@@ -43,53 +35,13 @@ pub unsafe extern "C" fn swr_v1_corebase_random_next(
     flags: u32,
     length: usize,
     random: u32,
-    min: i32,
-    max: i32,
+    _min: i32,
+    _max: i32,
 ) -> u32 {
     // SAFETY: the caller passes null or exclusively writable, initialized state.
     let Some(state) = (unsafe { state.as_mut() }) else {
         return INVALID;
     };
-    if mode == SYSTEM {
-        let action = match state.phase {
-            0 | 1 if flags & 1 != 0 => {
-                state.phase = 2;
-                READ
-            }
-            0 => {
-                state.phase = 1;
-                OPEN
-            }
-            1 => {
-                state.phase = 4;
-                FALLBACK
-            }
-            2 if flags & 2 != 0 => {
-                // Preserve native unsigned addition and range-width rules.
-                let width = max.wrapping_sub(min).wrapping_add(1).cast_unsigned();
-                if width == 0 {
-                    return INVALID;
-                }
-                state.value = min
-                    .cast_unsigned()
-                    .wrapping_add(random % width)
-                    .cast_signed();
-                state.phase = 4;
-                RETURN
-            }
-            2 => {
-                state.phase = 3;
-                WARN
-            }
-            3 => {
-                state.value = -1;
-                state.phase = 4;
-                RETURN
-            }
-            _ => INVALID,
-        };
-        return action;
-    }
     if !matches!(mode, BUFFER | APPEND) || state.index > length {
         return INVALID;
     }
@@ -139,39 +91,6 @@ mod tests {
         max: i32,
     ) -> u32 {
         unsafe { swr_v1_corebase_random_next(s, mode, flags, len, draw, min, max) }
-    }
-
-    #[test]
-    fn system_open_fallback_retry_and_read_warning_prefixes() {
-        let mut s = RandomState::default();
-        assert_eq!(step(&mut s, 0, 0, 0, 0, 4, 9), 1); // open
-        assert_eq!(step(&mut s, 0, 0, 0, 0, 4, 9), 3); // fallback, stop
-        // A later invocation gets a fresh cursor and retries the native cached -1.
-        let mut s = RandomState::default();
-        assert_eq!(step(&mut s, 0, 0, 0, 0, 4, 9), 1);
-        assert_eq!(step(&mut s, 0, 1, 0, 0, 4, 9), 2); // read
-        assert_eq!(step(&mut s, 0, 1, 0, 0, 4, 9), 4); // warning, no fallback/reopen
-        assert_eq!(step(&mut s, 0, 1, 0, 0, 4, 9), 5);
-        assert_eq!(s.value, -1);
-    }
-
-    #[test]
-    fn complete_native_unsigned_read_maps_defined_ranges() {
-        for (min, max) in [
-            (0, 61),
-            (-100, 100),
-            (i32::MIN, i32::MIN + 10),
-            (i32::MAX - 20, i32::MAX),
-        ] {
-            for draw in [0, 1, 61, 62, i32::MAX as u32, u32::MAX] {
-                let mut s = RandomState::default();
-                assert_eq!(step(&mut s, 0, 1, 0, 0, min, max), 2); // cached descriptor
-                assert_eq!(step(&mut s, 0, 3, 0, draw, min, max), 5);
-                let expected =
-                    i64::from(min) + i64::from(draw) % (i64::from(max) - i64::from(min) + 1);
-                assert_eq!(i64::from(s.value), expected);
-            }
-        }
     }
 
     #[test]

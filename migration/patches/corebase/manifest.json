@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-rust-core-helpers.patch",
-      "sha256": "c45636aab36d148f9d5f7e817aaf87811b6c25ebab04abcf97543b49d5751945",
+      "sha256": "189270a5b7677387ace264d941b14fee3c80a9de39ed7e6b8dab8a5aef9132b4",
       "upstream_paths": [
         "src/core/base.cc"
       ]
