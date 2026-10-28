@@ -26,6 +26,8 @@ elif args[0] == 'api' and '/compare/' in args[1]:
     print(data.get('compare', 'ahead'))
 elif args[0] == 'api':
     print('c' * 40)
+elif args[:2] == ['issue', 'list']:
+    print(json.dumps(data.get('issues', [])))
 elif args[:2] == ['run', 'list'] and '--commit' not in args:
     print(json.dumps(data.get('history', [])))
 elif args[:2] == ['run', 'download']:
@@ -61,7 +63,7 @@ elif args[:2] == ['run', 'view']:
 
 
 class Ci(unittest.TestCase):
-    def ci(self, *args, runs, **extra):
+    def ci(self, *args, runs, flags=('--poll', '0', '--json'), **extra):
         with tempfile.TemporaryDirectory() as temp:
             gh = Path(temp) / 'gh'
             gh.write_text(FAKE_GH)
@@ -70,7 +72,7 @@ class Ci(unittest.TestCase):
             state.write_text(json.dumps({'runs': runs, **extra}))
             env = {**os.environ, 'PATH': temp + os.pathsep + os.environ['PATH'],
                    'FAKE_STATE': str(state), 'FAKE_GH_LOG': str(log)}
-            result = subprocess.run([sys.executable, ROOT / 'tools/ci.py', *args, '--poll', '0', '--json'],
+            result = subprocess.run([sys.executable, ROOT / 'tools/ci.py', *args, *flags],
                                     env=env, capture_output=True, text=True)
             self.gh_calls = log.read_text().splitlines() if log.exists() else []
         return result.returncode, json.loads(result.stdout or '{}'), result.stderr
@@ -139,6 +141,20 @@ class Ci(unittest.TestCase):
         code, result, _ = self.ci('status', runs={'c' * 40: ['failure']})
         self.assertNotIn('failed_phases', result)
         self.assertIn('rust', result['logs'])
+
+    def test_next_orders_claimable_issues_by_priority_then_age(self):
+        def issue(number, created, *labels):
+            return {'number': number, 'title': f't{number}', 'createdAt': created,
+                    'labels': [{'name': name} for name in ('status:ready', *labels)]}
+        issues = [issue(1, '2026-10-01T00:00:00Z', 'p2'), issue(2, '2026-10-05T00:00:00Z', 'p1'),
+                  issue(3, '2026-10-02T00:00:00Z', 'p1'), issue(4, '2026-10-09T00:00:00Z', 'p0'),
+                  issue(5, '2026-09-01T00:00:00Z')]
+        code, result, _ = self.ci('next', runs={}, flags=('--json',), issues=issues)
+        self.assertEqual((code, [row['number'] for row in result]), (0, [4, 3, 2, 1, 5]))
+        self.assertIn('issue list --search is:open label:status:ready -is:blocked -label:needs:decision '
+                      '--limit 500 --json number,title,labels,createdAt', self.gh_calls)
+        code, result, _ = self.ci('next', runs={}, flags=('--json',), issues=[])
+        self.assertEqual((code, result), (2, []))
 
     def test_status_without_a_run_is_none(self):
         code, result, _ = self.ci('status', '--commit', 'abc1234', runs={})

@@ -4,6 +4,7 @@
   ci.py wait [--commit SHA]  wait for a workflow run (default: the merge tier on main); a run
                              replaced by a newer push to main follows the newer run
   ci.py status [--commit SHA]  the same, without waiting
+  ci.py next                 the claimable issues in claim order (exit 2 when there are none)
 
 For a pull request: `ci.py wait --workflow pr.yml --commit BRANCH`.
 
@@ -200,6 +201,22 @@ def report(result, as_json):
         print(f'--- new failure {name} (last {len(lines)} log lines)', *lines, sep='\n')
 
 
+CLAIMABLE = 'is:open label:status:ready -is:blocked -label:needs:decision'
+
+
+def claimable():
+    """Open, ready, unblocked issues without needs:decision: p0, p1, p2, then unprioritised,
+    oldest first within each (AGENTS.md's claim order)."""
+    issues = json.loads(gh('issue', 'list', '--search', CLAIMABLE, '--limit', '500',
+                           '--json', 'number,title,labels,createdAt'))
+    def priority(issue):
+        names = {label['name'] for label in issue['labels']}
+        return next((rank for rank, name in enumerate(('p0', 'p1', 'p2')) if name in names), 3)
+    return [{'number': issue['number'], 'priority': ('p0', 'p1', 'p2', '-')[priority(issue)],
+             'title': issue['title'], 'created': issue['createdAt']}
+            for issue in sorted(issues, key=lambda issue: (priority(issue), issue['createdAt']))]
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -210,7 +227,17 @@ def main(argv=None):
         command.add_argument('--timeout', type=int, default=3600, help='seconds (default 3600)')
         command.add_argument('--poll', type=float, default=15, help=argparse.SUPPRESS)
         command.add_argument('--json', action='store_true')
+    command = commands.add_parser('next')
+    command.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
+    if args.command == 'next':
+        try:
+            queue = claimable()
+        except subprocess.CalledProcessError as failure:
+            sys.exit(f"gh {' '.join(failure.cmd[1:])}: {failure.stderr.strip()}")
+        print(json.dumps(queue, indent=1) if args.json else
+              '\n'.join(f"#{issue['number']} {issue['priority']} {issue['title']}" for issue in queue))
+        return 0 if queue else 2
     deadline = time.monotonic() + args.timeout
     try:
         sha = resolve(args.commit)
