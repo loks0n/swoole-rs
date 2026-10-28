@@ -17,16 +17,17 @@ defaults:
     shell: bash
 
 jobs:
-  # dev.py's phases are CPU-bound (about 77 CPU-minutes), so they run as two slices on two
-  # runners. Each slice builds the all-modules hybrid and runs the builds; the rest is split
-  # by tools/phase_weights.json (dev.py --shard).
+  # dev.py's phases are CPU-bound (about 77 CPU-minutes), so they run as three slices on
+  # three runners: phases that compile with every core slow each other down, so two slices
+  # balanced by weight left one near 20 minutes (#318). Each slice builds the all-modules
+  # hybrid and runs the builds; the rest is split by tools/phase_weights.json (dev.py --shard).
   full-gates:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
         # Gates compare against accepted patch states at older commits (git show <sha>:...).
@@ -63,7 +64,7 @@ jobs:
       - run: python3 corpus/thirdparty/hyperf.py --prepare
       - run: python3 tests/modules/buffer/baseline.py --sanitize
       # Unit, native, ABI, model and PHP gates, every application and original PHPT, upstream as control.
-      - run: python3 tools/dev.py integrate --all-modules --php-extension pdo --php-extension pdo_sqlite --php-extension curl --php-extension sockets --php-extension tokenizer --php-extension ffi --external-network --php-sockets --shard ${{ matrix.shard }}/2
+      - run: python3 tools/dev.py integrate --all-modules --php-extension pdo --php-extension pdo_sqlite --php-extension curl --php-extension sockets --php-extension tokenizer --php-extension ffi --external-network --php-sockets --shard ${{ matrix.shard }}/3
       - if: always()
         run: python3 tools/merge_summary.py >> "$GITHUB_STEP_SUMMARY"
       - if: always() && matrix.shard == 1
