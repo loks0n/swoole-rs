@@ -237,6 +237,10 @@ jobs:
   iouring:
     uses: ./.github/workflows/iouring.yml
 
+  # The thread-safe PHP --enable-swoole-thread build variant and its PHPTs.
+  zts:
+    uses: ./.github/workflows/zts.yml
+
   # The opt-in --fix-halfclose repair (M15) is its own build variant, so its gates run
   # here; full-gates builds without it.
   halfclose:
