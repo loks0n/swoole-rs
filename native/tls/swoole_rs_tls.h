@@ -13,9 +13,9 @@ extern "C" {
  * SSL_CTX and owns its callbacks; native code keeps the configuration fields and
  * the info callback. Strings are a std::string's c_str() and length(), lent for
  * one call. warn logs "<function>(): <message>" at warning level. */
-struct swr_v1_tls_str { const char *data; size_t length; };
+typedef struct swr_v1_tls_str { const char *data; size_t length; } swr_tls_str;
 struct swr_v1_tls_config {
-    struct swr_v1_tls_str ciphers, ecdh_curve, dhparam, cert_file, key_file, passphrase, client_cert_file,
+    swr_tls_str ciphers, ecdh_curve, dhparam, cert_file, key_file, passphrase, client_cert_file,
         cafile, capath;
     uint32_t protocols; /* create writes back the normalized mask */
     uint8_t verify_depth;
@@ -23,7 +23,7 @@ struct swr_v1_tls_config {
     void (*warn)(const char *function, const char *message);
     /* The SSLContext; the password callback reads its current passphrase through passphrase_of. */
     const void *owner;
-    struct swr_v1_tls_str (*passphrase_of)(const void *owner);
+    swr_tls_str (*passphrase_of)(const void *owner);
 };
 /* 0 ok or already, 1 OPENSSL_init_ssl failed, 2 SSL_get_ex_new_index failed. */
 int swr_v1_tls_init(void);

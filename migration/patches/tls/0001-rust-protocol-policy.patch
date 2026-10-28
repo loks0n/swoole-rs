@@ -152,7 +152,7 @@ index 3b8b4af..3f736ed 100644
 +    } else if (plan == 0) {
          int reason = ERR_GET_REASON(ERR_peek_error());
 diff --git a/src/protocol/ssl.cc b/src/protocol/ssl.cc
-index e675693..09ea155 100644
+index e675693..8544791 100644
 --- a/src/protocol/ssl.cc
 +++ b/src/protocol/ssl.cc
 @@ -20,23 +20,12 @@
@@ -293,7 +293,7 @@ index e675693..09ea155 100644
 -        return SSL_TLSEXT_ERR_NOACK;
 -    }
 -    return SSL_TLSEXT_ERR_OK;
-+static swr_v1_tls_str ssl_str(const std::string &value) {
++static swr_tls_str ssl_str(const std::string &value) {
 +    return {value.c_str(), value.length()};
  }
 -#endif
@@ -309,7 +309,7 @@ index e675693..09ea155 100644
 -        }
 -    }
 -    return 0;
-+static swr_v1_tls_str ssl_passphrase(const void *owner) {
++static swr_tls_str ssl_passphrase(const void *owner) {
 +    return ssl_str(static_cast<const SSLContext *>(owner)->passphrase);
  }
  
