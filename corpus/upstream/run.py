@@ -84,7 +84,11 @@ RACY = {'tests/swoole_websocket_server/send_close_frame.phpt':
         'tests/swoole_server/task/task_pack.phpt':
         "the server waits on its SysV message queue for a third task and sometimes never gets "
         'it under CI load, on both engines: hybrid timed out in a shard while upstream passed, '
-        'then upstream timed out on re-run (#438, #664)'}
+        'then upstream timed out on re-run (#438, #664)',
+        'tests/swoole_server/kill_user_process_02.phpt':
+        'it asserts the killed user process was restarted within 10 ms; restarts take ~3-4 ms '
+        'median on both engines, but the tail passes 10 ms on either (hybrid 12/540, upstream '
+        '6/540 over nine aarch64 rounds), more often under CI load (#710)'}
 
 
 def require_free_port(port):
