@@ -1821,9 +1821,9 @@ mod tests {
 
     #[test]
     fn stream_ids_hash_apart() {
-        let mut streams = Streams::<()>::default();
+        let mut streams = Streams::<u32>::default();
         for id in (1..200).step_by(2) {
-            streams.insert(id, ());
+            streams.insert(id, id);
         }
         assert_eq!(streams.len(), 100, "distinct ids");
         assert!(streams.contains_key(&199), "lookup");
