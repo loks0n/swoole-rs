@@ -134,11 +134,11 @@ def export_build(manifest, source, destination, source_ref):
     return receipt
 
 
-def rust_sources(modules):
+def rust_sources(modules, extra=()):
     """Hash selected first-party Cargo manifests/source trees, including path dependencies."""
     command = ['cargo', 'metadata', '--locked', '--offline', '--format-version', '1',
                '--manifest-path', str(ROOT / 'crates/ffi/Cargo.toml'), '--no-default-features']
-    if features := [module for module in modules if module not in GRADUATED]:
+    if features := [module for module in modules if module not in GRADUATED] + list(extra):
         command += ['--features', ','.join(features)]
     metadata = json.loads(subprocess.check_output(command, cwd=ROOT, text=True))
     packages = {package['id']: package for package in metadata['packages']}
@@ -165,12 +165,12 @@ def rust_sources(modules):
     return {str(path.relative_to(ROOT)): digest(path) for path in sorted(files)}
 
 
-def rust_archive(modules, php_config='php-config'):
+def rust_archive(modules, php_config='php-config', extra=()):
     """Use Cargo's actual static-library output, including configured target directories.
     zend-sys binds the headers of the PHP the extension is built for (PHP_CONFIG)."""
     command = ['cargo', 'build', '--locked', '--release', '--no-default-features', '-p', 'swoole-rs-ffi',
                '--message-format=json-render-diagnostics']
-    if features := [module for module in modules if module not in GRADUATED]:
+    if features := [module for module in modules if module not in GRADUATED] + list(extra):
         command += ['--features', ','.join(features)]
     result = subprocess.run(command, cwd=ROOT, stdout=subprocess.PIPE, text=True,
                             env={**os.environ, 'PHP_CONFIG': php_config})
@@ -359,11 +359,13 @@ def build(args, parser):
         selected.add('M15')
     patches = patches_for([module for module in plan['modules'] if module['id'] in selected])
     archive, rust_inputs, rust_compilation = None, None, None
+    # The Rust io_uring engine replaces upstream's when the build enables io_uring.
+    cargo_extra = ['iouring'] if 'hooks' in args.module and '--enable-iouring' in args.configure else []
     if args.backend == 'rust':
-        rust_inputs = rust_sources(args.module)
+        rust_inputs = rust_sources(args.module, cargo_extra)
         cargo_started = time.monotonic()
-        archive, rust_compilation = rust_archive(args.module, args.php_config)
-        if rust_sources(args.module) != rust_inputs:
+        archive, rust_compilation = rust_archive(args.module, args.php_config, cargo_extra)
+        if rust_sources(args.module, cargo_extra) != rust_inputs:
             raise ValueError('Rust sources changed during compilation; refusing to attest the archive')
         timings['cargo'] = round(time.monotonic() - cargo_started, 4)
     switches = ['--with-swoole-rs={BUILD_PREFIX}'] if args.backend == 'rust' else ['--without-swoole-rs']

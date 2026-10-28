@@ -7,8 +7,13 @@ publish = false
 [lib]
 crate-type = ["rlib", "staticlib"]
 
+[features]
+# The io_uring engine (upstream's --enable-iouring), over the system liburing.
+iouring = ["dep:swoole-rs-uring-sys", "swoole-rs-uring-sys/liburing"]
+
 [dependencies]
 libc = "=0.2.191"
+swoole-rs-uring-sys = { path = "../uring-sys", optional = true }
 
 [lints]
 workspace = true

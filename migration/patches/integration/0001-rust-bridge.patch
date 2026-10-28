@@ -1,5 +1,5 @@
 diff --git a/config.m4 b/config.m4
-index 230b1c0..471a4fa 100644
+index 230b1c0..e26466e 100644
 --- a/config.m4
 +++ b/config.m4
 @@ -38,2 +38,102 @@ PHP_ARG_ENABLE([swoole],
@@ -105,7 +105,7 @@ index 230b1c0..471a4fa 100644
 +    [Use Rust PHP Coroutine policy (requires --with-swoole-rs)])], [no], [no])
 +
  PHP_ARG_ENABLE([mysqlnd],
-@@ -1301,2 +1401,153 @@ EOF
+@@ -1301,2 +1401,157 @@ EOF
  
 +    if test "$PHP_SWOOLE_RS_MEMORY" != "no" && test "$PHP_SWOOLE_RS" = "no"; then
 +        AC_MSG_ERROR([Rust memory subsystem requires --with-swoole-rs=DIR])
@@ -255,6 +255,10 @@ index 230b1c0..471a4fa 100644
 +        PHP_ADD_LIBRARY(m, 1, SWOOLE_SHARED_LIBADD)
 +        AS_CASE([$host_os], [linux*], [PHP_ADD_LIBRARY(dl, 1, SWOOLE_SHARED_LIBADD)])
 +        PHP_ADD_LIBRARY_WITH_PATH(swoole_rs_ffi, [$PHP_SWOOLE_RS/lib], SWOOLE_SHARED_LIBADD)
++        dnl The archive's io_uring engine calls liburing: link it after the archive.
++        if test "$HAVE_CONFIG_IOURING_X" = "yes"; then
++            PHP_ADD_LIBRARY(uring, , SWOOLE_SHARED_LIBADD)
++        fi
 +        AC_DEFINE(SWOOLE_RS_BRIDGE, 1, [Link the Rust migration bridge])
 +    fi
 +
