@@ -145,33 +145,6 @@ typedef struct {
     bool (*fail)(void *);
 } swr_v1_clients_async_connect_ops;
 int32_t swr_v1_clients_connect_async(const swr_v1_clients_async_connect_ops *ops);
-enum swr_v1_clients_write_action {
-    SWR_CLIENTS_WRITE_ADVANCE=0, SWR_CLIENTS_WRITE_HANDSHAKE=1,
-    SWR_CLIENTS_WRITE_WRITABLE=2, SWR_CLIENTS_WRITE_GET_OPTION=3,
-    SWR_CLIENTS_WRITE_READ_INTEREST=4, SWR_CLIENTS_WRITE_DRAIN_CALLBACK=5,
-    SWR_CLIENTS_WRITE_MARK_CONNECTED=6, SWR_CLIENTS_WRITE_SOCKS_SEND=7,
-    SWR_CLIENTS_WRITE_HTTP_SEND=8, SWR_CLIENTS_WRITE_CONNECT_CALLBACK=9,
-    SWR_CLIENTS_WRITE_FAIL=10, SWR_CLIENTS_WRITE_FAIL_SSL=11,
-    SWR_CLIENTS_WRITE_WARN_OPTION=12, SWR_CLIENTS_WRITE_SET_SSL_WAIT=13,
-    SWR_CLIENTS_WRITE_SUCCESS=14, SWR_CLIENTS_WRITE_ERROR=15
-};
-struct swr_v1_clients_write_plan { uint32_t action, stage; };
-struct swr_v1_clients_write_plan swr_v1_clients_write_next(uint32_t stage, uint32_t facts);
-enum swr_v1_clients_read_action {
-    SWR_CLIENTS_READ_ADVANCE=0, SWR_CLIENTS_READ_HTTP_RECEIVE=1,
-    SWR_CLIENTS_READ_HTTP_HANDSHAKE=2, SWR_CLIENTS_READ_HTTP_READY=3,
-    SWR_CLIENTS_READ_SOCKS_RECEIVE=4, SWR_CLIENTS_READ_SOCKS_HANDSHAKE=5,
-    SWR_CLIENTS_READ_CLEAR_BUFFER=6, SWR_CLIENTS_READ_SSL_HANDSHAKE=7,
-    SWR_CLIENTS_READ_PROTOCOL_RECEIVE=8, SWR_CLIENTS_READ_PROTOCOL_CLOSE=9,
-    SWR_CLIENTS_READ_SLEEP=10, SWR_CLIENTS_READ_RECEIVE=11,
-    SWR_CLIENTS_READ_CATCH_ERROR=12, SWR_CLIENTS_READ_WARN=13,
-    SWR_CLIENTS_READ_CLOSE=14, SWR_CLIENTS_READ_RECEIVE_CALLBACK=15,
-    SWR_CLIENTS_READ_CONNECT_CALLBACK=16, SWR_CLIENTS_READ_FAIL_HTTP=17,
-    SWR_CLIENTS_READ_FAIL_SOCKS=18, SWR_CLIENTS_READ_FAIL_SSL=19,
-    SWR_CLIENTS_READ_SUCCESS=20
-};
-struct swr_v1_clients_read_plan { uint32_t action, stage; };
-struct swr_v1_clients_read_plan swr_v1_clients_read_next(uint32_t stage, uint32_t facts);
 enum swr_v1_clients_persistent_action {
     SWR_CLIENTS_PERSISTENT_ADVANCE=0, SWR_CLIENTS_PERSISTENT_FIND=1,
     SWR_CLIENTS_PERSISTENT_TAKE=2, SWR_CLIENTS_PERSISTENT_REUSE=3,
@@ -223,6 +196,61 @@ typedef struct {
     int32_t (*ssl_handshake)(void *);
 } swr_v1_clients_udp_connect_ops;
 int32_t swr_v1_clients_udp_connect(const swr_v1_clients_udp_connect_ops *ops);
+/* Client_onStreamRead and Client_onWrite. Every fact is read afresh by its callback; a user
+ * callback ends the handler, so nothing touches the client after one. */
+enum { SWR_CLIENTS_FAIL_HTTP = 0, SWR_CLIENTS_FAIL_SOCKS = 1, SWR_CLIENTS_FAIL_SSL = 2 };
+enum { SWR_CLIENTS_READ_ERROR = 0, SWR_CLIENTS_READ_CLOSE = 1 };
+typedef struct {
+    void *context;
+    swr_v1_clients_state *state;
+    bool ssl_requested;
+    bool (*http_pending)(void *);
+    ssize_t (*receive)(void *);
+    bool (*http_handshake)(void *, ssize_t);
+    void (*http_ready)(void *);
+    bool (*socks_pending)(void *);
+    bool (*socks_handshake)(void *, ssize_t);
+    bool (*socks_ready)(void *);
+    void (*clear_buffer)(void *);
+    bool (*ssl_pending)(void *);
+    ssize_t (*ssl_handshake)(void *);
+    bool (*ssl_ready)(void *);
+    bool (*framed)(void *);
+    ssize_t (*protocol_receive)(void *);
+    bool (*sleep_requested)(void *);
+    void (*sleep)(void *);
+    int32_t (*catch_error)(void *);
+    void (*warn)(void *);
+    int32_t (*close)(void *);
+    void (*on_receive)(void *, ssize_t);
+    void (*on_connect)(void *);
+    void (*fail)(void *, uint32_t);
+} swr_v1_clients_read_ops;
+int32_t swr_v1_clients_on_read(const swr_v1_clients_read_ops *ops);
+typedef struct {
+    void *context;
+    swr_v1_clients_state *state;
+    bool (*ssl_waiting)(void *);
+    int32_t (*ssl_handshake)(void *);
+    bool (*ssl_ready)(void *);
+    bool (*ssl_wants_read)(void *);
+    void (*read_interest)(void *);
+    int32_t (*writable)(void *);
+    bool (*drained)(void *);
+    void (*on_drained)(void *);
+    int32_t (*get_option)(void *);
+    void (*warn_option)(void *);
+    bool (*connected)(void *);
+    bool (*socks_waiting)(void *);
+    int32_t (*socks_send)(void *);
+    bool (*http_waiting)(void *);
+    int32_t (*http_send)(void *);
+    bool (*open_ssl)(void *);
+    void (*ssl_wait)(void *);
+    void (*on_connect)(void *);
+    void (*fail)(void *, bool);
+} swr_v1_clients_write_ops;
+int32_t swr_v1_clients_on_write(const swr_v1_clients_write_ops *ops);
 typedef struct {
     void *context;
     int32_t (*write)(void *);
