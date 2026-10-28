@@ -279,6 +279,213 @@ mod tests {
         assert_eq!(swr_v1_os_queue_error(true, true), 1);
         assert_eq!(swr_v1_os_sendfile_action(-1, true), 1);
     }
+    // Each policy against the native expression it replaces (upstream v6.2.4),
+    // over every combination of boundary values.
+    const SIZES: [usize; 8] = [0, 1, 2, 8, 64, 128, 1024, usize::MAX];
+    const TIMES: [f64; 7] = [-1., -0., 0.0005, 0.5, 1., 100., f64::INFINITY];
+    #[test]
+    fn pool_policy_matches_the_native_expressions() {
+        for cpu in SIZES {
+            for core in SIZES {
+                for workers in SIZES {
+                    for wait in TIMES {
+                        for idle in TIMES {
+                            let pool = swr_v1_os_pool_config(cpu, core, workers, wait, idle);
+                            let expected_core = if core == 0 { cpu } else { core.max(1) };
+                            let expected_workers = if workers == 0 {
+                                cpu.wrapping_mul(8)
+                            } else {
+                                expected_core.max(workers)
+                            };
+                            assert_eq!(
+                                (pool.core, pool.workers),
+                                (expected_core, expected_workers)
+                            );
+                            assert_eq!(
+                                pool.wait.to_bits(),
+                                if wait == 0. { 0.001_f64 } else { wait }.to_bits()
+                            );
+                            assert_eq!(
+                                pool.idle.to_bits(),
+                                if idle == 0. { 1_f64 } else { idle }.to_bits()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        // ThreadPool::schedule.
+        for idle in SIZES {
+            for queued in SIZES {
+                for threads in SIZES {
+                    for workers in SIZES {
+                        for threshold in TIMES {
+                            for age in TIMES {
+                                let mut expected = 0;
+                                if threads < workers && queued != 0 {
+                                    let insufficient = queued > idle;
+                                    if insufficient || (threshold > 0. && age > threshold) {
+                                        expected = if insufficient { queued - idle } else { 1 }
+                                            .min(workers - threads);
+                                    }
+                                }
+                                assert_eq!(
+                                    swr_v1_os_pool_expand(
+                                        idle, queued, threads, workers, threshold, age
+                                    ),
+                                    expected
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn small_policies_match_the_native_expressions() {
+        for perms in -1024..2048 {
+            assert_eq!(
+                swr_v1_os_permissions(perms),
+                if perms <= 0 || perms >= 0o1000 {
+                    0o666
+                } else {
+                    perms
+                }
+            );
+        }
+        for flags in -128..128 {
+            for nowait in [1, 8, 2048] {
+                for block in [false, true] {
+                    let expected = if block {
+                        flags & !nowait
+                    } else {
+                        flags | nowait
+                    };
+                    assert_eq!(swr_v1_os_queue_flags(flags, block, nowait), expected);
+                }
+            }
+        }
+        for result in -2..3 {
+            for a in [false, true] {
+                for b in [false, true] {
+                    assert_eq!(
+                        swr_v1_os_fs_error(result, a),
+                        if result == 0 {
+                            0
+                        } else if a {
+                            1
+                        } else {
+                            2
+                        }
+                    );
+                    assert_eq!(
+                        swr_v1_os_random_error(result, a, b),
+                        result == -1 && (a || b)
+                    );
+                    let sendfile = match result {
+                        -1 => {
+                            if a {
+                                1
+                            } else {
+                                2
+                            }
+                        }
+                        0 => 0,
+                        _ => 3,
+                    };
+                    assert_eq!(swr_v1_os_sendfile_action(result, a), sendfile);
+                }
+            }
+        }
+    }
+    #[test]
+    fn content_event_queue_and_worker_policies_match_the_native_expressions() {
+        for length in SIZES {
+            for maximum in SIZES {
+                let (length, maximum) = (length as u64, maximum as u64);
+                assert_eq!(
+                    swr_v1_os_content(length, maximum),
+                    if length == 0 {
+                        1
+                    } else if length > maximum {
+                        2
+                    } else {
+                        0
+                    }
+                );
+            }
+        }
+        for handler in [false, true] {
+            for canceled in [false, true] {
+                assert_eq!(
+                    swr_v1_os_event_action(handler, canceled),
+                    if !handler {
+                        1
+                    } else if canceled {
+                        2
+                    } else {
+                        0
+                    }
+                );
+                assert_eq!(
+                    swr_v1_os_queue_error(handler, canceled),
+                    if handler {
+                        1
+                    } else if canceled {
+                        2
+                    } else {
+                        3
+                    }
+                );
+                for event in [false, true] {
+                    for timeout in [false, true] {
+                        for closing in [0, 1, 128] {
+                            let expected = if event {
+                                if !handler {
+                                    2
+                                } else if canceled {
+                                    3
+                                } else {
+                                    1
+                                }
+                            } else if timeout && closing == 0 {
+                                4
+                            } else {
+                                0
+                            };
+                            assert_eq!(
+                                swr_v1_os_worker_action(event, handler, canceled, timeout, closing),
+                                expected
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn line_end_is_the_first_nul_or_newline() {
+        for length in 0..256 {
+            let mut data = vec![b'x'; length];
+            for at in 0..=length {
+                if at < length {
+                    data[at] = if at % 2 == 0 { 0 } else { b'\n' };
+                }
+                let expected = data
+                    .iter()
+                    .position(|&b| b == 0 || b == b'\n')
+                    .map_or(0, |i| i + 1);
+                assert_eq!(
+                    unsafe { swr_v1_os_line_end(data.as_ptr(), data.len()) },
+                    expected
+                );
+                if at < length {
+                    data[at] = b'x';
+                }
+            }
+        }
+    }
 }
 
 /// Sole private queue container. Native owns/dereferences/frees all event tokens.
@@ -447,6 +654,50 @@ mod queue_tests {
             swr_v1_os_queue_destroy(queue);
             swr_v1_os_queue_destroy(std::ptr::null_mut());
         }
+    }
+    #[test]
+    fn tokens_leave_in_push_order() {
+        let queue = swr_v1_os_queue_create();
+        let mut model = std::collections::VecDeque::new();
+        let mut state = 0x61b8_a4c3_86f1_5392_u64;
+        for i in 0..200_000_usize {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            unsafe {
+                if model.is_empty() || (state & 1 == 1 && model.len() < 4096) {
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        reason = "a pseudo-random token; 64-bit targets only"
+                    )]
+                    let random = state as usize;
+                    let token = match i {
+                        _ if i % 7 == 0 => 0,
+                        _ if i % 11 == 0 => usize::MAX,
+                        _ => random,
+                    };
+                    assert!(swr_v1_os_queue_push(queue, token));
+                    model.push_back(token);
+                } else {
+                    assert_eq!(
+                        swr_v1_os_queue_pop(queue),
+                        QueueItem {
+                            token: model.pop_front().unwrap(),
+                            present: true
+                        }
+                    );
+                }
+                assert_eq!(swr_v1_os_queue_count(queue), model.len());
+                let front = model
+                    .front()
+                    .map_or(QueueItem::default(), |&token| QueueItem {
+                        token,
+                        present: true,
+                    });
+                assert_eq!(swr_v1_os_queue_front(queue), front);
+            }
+        }
+        unsafe { swr_v1_os_queue_destroy(queue) };
     }
     #[test]
     fn empty_and_zero_token_are_distinct() {

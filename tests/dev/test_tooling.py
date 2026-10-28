@@ -627,7 +627,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('--build-manifest', commands['utilities-php-logger'])
         self.assertIn('--archive', commands['utilities-php-logger'])
         self.assertIn('--source-ref', commands['utilities-php-logger'])
-        self.assertIn('--archive',commands['ossupport-policy'])
         self.assertIn('--archive',commands['httpbindings-cookie'])
         self.assertIn('--archive', commands['httpbindings-server'])
         self.assertNotIn('httpbindings-php', commands)
@@ -747,8 +746,6 @@ class Lanes(unittest.TestCase):
         command = cached_commands['build']
         self.assertEqual(command[command.index('--native-build-root') + 1], '/private-ram/hybrid')
         self.assertNotIn('--dev', command)
-        self.assertIn('--manifest',commands['ossupport-php'])
-        self.assertIn('--output',commands['ossupport-php'])
         self.assertIn('timer-bailout',commands)
         self.assertFalse(any(name.startswith('halfclose-') for name in commands))
 
