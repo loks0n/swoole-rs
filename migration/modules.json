@@ -442,6 +442,7 @@
       ],
       "owned_paths": [
         "crates/locks/",
+        "crates/phplocks/",
         "native/locks/",
         "migration/patches/locks/",
         "tests/modules/locks/"

@@ -15,4 +15,9 @@ void *swr_zend_object_alloc(size_t size, zend_class_entry *ce);
 zend_class_entry *swr_zend_register_class(const char *name, size_t length,
                                           const zend_function_entry *functions,
                                           zend_class_entry *parent);
+
+/* ce->create_object, a member of an anonymous union whose bindgen name
+ * depends on the PHP version. */
+void swr_zend_class_set_create_object(zend_class_entry *ce,
+                                      zend_object *(*create)(zend_class_entry *ce));
 #endif

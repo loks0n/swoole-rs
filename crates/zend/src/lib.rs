@@ -19,7 +19,7 @@ mod error;
 mod object;
 
 pub use call::{Call, Invalid};
-pub use class::{Class, unset_property_deny};
+pub use class::{Class, class_name, unset_property_deny};
 pub use error::{throw_error, throw_exception};
-pub use object::Object;
+pub use object::{Object, set_object};
 pub use swoole_rs_zend_sys as sys;
