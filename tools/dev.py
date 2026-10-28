@@ -850,11 +850,14 @@ def phase_dependencies(commands, reports):
 LOG_TAIL = 30  # lines of a failed phase's log kept in loop.json
 PHASE_WEIGHTS = ROOT / 'tools/phase_weights.json'  # seconds per phase from a merge-tier run
 DEFAULT_WEIGHT = 2
+SHARD_CORES = 4  # a merge-tier runner's vCPUs
 
 
 def shard(commands, reports, index, count):
     """Every barrier (and what barriers read), plus the index-th of count groups of the other
-    phases, balanced by weight. A phase always shares a shard with phases whose report it reads."""
+    phases, balanced by weight. A phase always shares a shard with phases whose report it reads.
+    A group whose phases read each other in sequence weighs at least that chain on every core,
+    since nothing on its shard finishes before the chain does (#318)."""
     weights = json.loads(PHASE_WEIGHTS.read_text())
     owners = {str(reports / (name + suffix)): name for name, _ in commands for suffix in ('.json', '.xml')}
     reads = {name: {owners[str(arg)] for arg in command if str(arg) in owners} - {name} for name, command in commands}
@@ -874,10 +877,18 @@ def shard(commands, reports, index, count):
     for name, needs in reads.items():
         for other in needs - everywhere:
             group[root(other)] = root(name)
-    sizes = {}
+    chains = {}
+    def chain(name):
+        if name not in chains:
+            chains[name] = weights.get(name, DEFAULT_WEIGHT) + max(
+                (chain(other) for other in reads[name] - everywhere), default=0)
+        return chains[name]
+    sizes, longest = {}, {}
     for name, _ in commands:
         if name not in everywhere:
             sizes[root(name)] = sizes.get(root(name), 0) + weights.get(name, DEFAULT_WEIGHT)
+            longest[root(name)] = max(longest.get(root(name), 0), chain(name))
+    sizes = {unit: max(size, SHARD_CORES * longest[unit]) for unit, size in sizes.items()}
     load, slot = [0] * count, {}
     for unit in sorted(sizes, key=lambda unit: (-sizes[unit], unit)):
         slot[unit] = load.index(min(load))
