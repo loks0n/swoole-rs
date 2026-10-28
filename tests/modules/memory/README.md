@@ -163,3 +163,21 @@ python3 -m unittest tests/modules/memory/test_benchmark.py
 
 - `test_benchmark.py`: `benchmark.py` timing-case inventories with mocked runs.
 
+## Gate audit (#488)
+
+All six phases are kept, none deleted:
+
+- `memory-native`: the FFI checksum differential of the pinned and overlaid
+  pools, heap, channel, mapping and table. It also checks that every native
+  `assert` survives the overlays and that headers reject a build without the
+  memory feature.
+- `memory-fixed-native-construction`, `memory-mapping-operation`: the selected
+  C++ bodies under ASan/UBSan at C++14/17, including every mapping backend.
+- `memory-table-v2-compatibility`, `memory-source-compatibility`: the only
+  C++14/17/20 `-Werror` builds of `table.cc`, and `Channel` aggregate
+  initialisation.
+- `memory-table-witnesses`: table fork, grow, clear-batch and odd-width
+  observations that must equal upstream's. No PHPT compares these across engines.
+
+`core.py` and `rust_asan.py` run in no CI lane: #738.
+
