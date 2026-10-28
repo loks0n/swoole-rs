@@ -93,11 +93,15 @@ are still never uninstalled.
 
 ## Poll, events and timers
 
-- Poll readiness takes requested/received/current/read-write/error masks and
-  returns coalesced revents. Explicitly requested error bits stay error bits;
-  otherwise error maps to requested read/write. Native updates its map row before
-  claiming the single deferred wake, clears its timer and defers cleanup/resume
-  once.
+- `System::socket_poll` and the hooked `poll` are one Rust call, `hook_socket_poll`
+  / `hook_poll`: a zero timeout is one `poll(2)`; otherwise Rust owns the task
+  (rows, sockets, timer, wait/success), registers each fd through native `add`
+  (refused fds are released and skipped; none registered fails without parking),
+  arms the timer for a positive timeout and parks. The first readiness
+  (`hook_poll_ready`) coalesces revents (error becomes the requested read/write
+  unless error was requested), deletes the timer and defers one completion; the
+  completion or the timer removes every socket without closing its fd and resumes.
+  The hooked `poll` counts a repeated fd once, through its first entry.
 - `EventWaiter` computes event bits and single-defer selection before native
   defer runs; a deferred terminal resume may delete its owner.
 - `System::wait_event` is one Rust call, `hook_wait_event`: it masks to read/write
@@ -135,7 +139,8 @@ are still never uninstalled.
   cancellation publishes canceled -> retval -> last-error; success publishes
   canceled -> error/errno -> retval. Callback resume may delete the event.
 - DNS async-timeout error mapping is scalar policy in both host/address lookup
-  wrappers; requests, parsing, cache and c-ares/libc stay native.
+  wrappers; requests, parsing and c-ares/libc stay native. The DNS cache
+  (`hook_dns_cache_*`: LRU, expiry, family key, hit/miss counters) is Rust.
 - io_uring: CQ harvesting, SQ admission and task counter decrement stay native
   and precede resume. Rust maps negative CQ results (ECANCELED -> ETIMEDOUT).
   Submit keeps EAGAIN defer, EBUSY sleep, EINTR retry and the native fatal

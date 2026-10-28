@@ -1091,7 +1091,7 @@ index 6a4aacf..58ab349 100644
 +    return outcome.result;
  }
 diff --git a/src/coroutine/hook.cc b/src/coroutine/hook.cc
-index 964a906..64531c7 100644
+index 964a906..18870bd 100644
 --- a/src/coroutine/hook.cc
 +++ b/src/coroutine/hook.cc
 @@ -27,2 +27,7 @@
@@ -1102,7 +1102,22 @@ index 964a906..64531c7 100644
 +#include "swoole_rs_hooks.h"
 +
  #include "swoole_socket_impl.h"
-@@ -56,3 +61,12 @@ static int fdatasync(int fd) {
+@@ -33,3 +38,2 @@ using swoole::Coroutine;
+ using swoole::EventType;
+-using swoole::translate_events_from_poll;
+ using swoole::translate_events_to_poll;
+@@ -37,3 +41,2 @@ using swoole::async::dispatch;
+ using swoole::coroutine::async;
+-using swoole::coroutine::PollSocket;
+ using swoole::coroutine::System;
+@@ -46,2 +49,6 @@ using swoole::Iouring;
+ 
++namespace swoole::coroutine {
++extern const swr_v1_hook_poll_ops poll_ops;  // system.cc
++}
++
+ static std::unordered_map<int, std::shared_ptr<SocketImpl>> socket_map;
+@@ -56,3 +63,12 @@ static int fdatasync(int fd) {
  static sw_inline bool is_no_coro() {
 -    return SwooleTG.reactor == nullptr || !Coroutine::get_current();
 +    return swr_v1_hook_no_coro(SwooleTG.reactor != nullptr,
@@ -1116,7 +1131,31 @@ index 964a906..64531c7 100644
 +static swr_v1_hook_offload hook_offload() {
 +    return is_no_coro() ? nullptr : hook_async;
  }
-@@ -251,9 +265,3 @@ uint8_t swoole_coroutine_socket_exists(int fd) {
+@@ -195,22 +211,3 @@ int swoole_coroutine_poll(struct pollfd *fds, nfds_t nfds, int timeout) {
+ 
+-    std::unordered_map<int, PollSocket> _fds;
+-    for (nfds_t i = 0; i < nfds; i++) {
+-        _fds.emplace(fds[i].fd, PollSocket(translate_events_from_poll(fds[i].events), &fds[i]));
+-    }
+-
+-    if (!System::socket_poll(_fds, (double) timeout / 1000)) {
+-        return -1;
+-    }
+-
+-    int retval = 0;
+-    for (auto &i : _fds) {
+-        int revents = i.second.revents;
+-        auto *_fd = static_cast<struct pollfd *>(i.second.ptr);
+-        _fd->revents = translate_events_to_poll(revents);
+-        if (revents > 0) {
+-            retval++;
+-        }
+-    }
+-
+-    return retval;
++    return swr_v1_hook_poll(fds, nfds, timeout, &swoole::coroutine::poll_ops);
+ }
+@@ -251,9 +248,3 @@ uint8_t swoole_coroutine_socket_exists(int fd) {
  FILE *swoole_coroutine_fopen(const char *pathname, const char *mode) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return fopen(pathname, mode);
@@ -1127,7 +1166,7 @@ index 964a906..64531c7 100644
 -    return retval;
 +    return swr_v1_hook_fopen(pathname, mode, hook_offload());
  }
-@@ -261,9 +269,3 @@ FILE *swoole_coroutine_fopen(const char *pathname, const char *mode) {
+@@ -261,9 +252,3 @@ FILE *swoole_coroutine_fopen(const char *pathname, const char *mode) {
  FILE *swoole_coroutine_fdopen(int fd, const char *mode) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return fdopen(fd, mode);
@@ -1138,7 +1177,7 @@ index 964a906..64531c7 100644
 -    return retval;
 +    return swr_v1_hook_fdopen(fd, mode, hook_offload());
  }
-@@ -271,9 +273,3 @@ FILE *swoole_coroutine_fdopen(int fd, const char *mode) {
+@@ -271,9 +256,3 @@ FILE *swoole_coroutine_fdopen(int fd, const char *mode) {
  FILE *swoole_coroutine_freopen(const char *pathname, const char *mode, FILE *stream) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return freopen(pathname, mode, stream);
@@ -1149,7 +1188,7 @@ index 964a906..64531c7 100644
 -    return retval;
 +    return swr_v1_hook_freopen(pathname, mode, stream, hook_offload());
  }
-@@ -281,9 +277,3 @@ FILE *swoole_coroutine_freopen(const char *pathname, const char *mode, FILE *str
+@@ -281,9 +260,3 @@ FILE *swoole_coroutine_freopen(const char *pathname, const char *mode, FILE *str
  size_t swoole_coroutine_fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return fread(ptr, size, nmemb, stream);
@@ -1160,7 +1199,7 @@ index 964a906..64531c7 100644
 -    return retval;
 +    return swr_v1_hook_fread(ptr, size, nmemb, stream, hook_offload());
  }
-@@ -291,9 +281,3 @@ size_t swoole_coroutine_fread(void *ptr, size_t size, size_t nmemb, FILE *stream
+@@ -291,9 +264,3 @@ size_t swoole_coroutine_fread(void *ptr, size_t size, size_t nmemb, FILE *stream
  size_t swoole_coroutine_fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return fwrite(ptr, size, nmemb, stream);
@@ -1171,7 +1210,7 @@ index 964a906..64531c7 100644
 -    return retval;
 +    return swr_v1_hook_fwrite(ptr, size, nmemb, stream, hook_offload());
  }
-@@ -301,9 +285,3 @@ size_t swoole_coroutine_fwrite(const void *ptr, size_t size, size_t nmemb, FILE
+@@ -301,9 +268,3 @@ size_t swoole_coroutine_fwrite(const void *ptr, size_t size, size_t nmemb, FILE
  char *swoole_coroutine_fgets(char *s, int size, FILE *stream) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return fgets(s, size, stream);
@@ -1182,7 +1221,7 @@ index 964a906..64531c7 100644
 -    return retval;
 +    return swr_v1_hook_fgets(s, size, stream, hook_offload());
  }
-@@ -311,9 +289,3 @@ char *swoole_coroutine_fgets(char *s, int size, FILE *stream) {
+@@ -311,9 +272,3 @@ char *swoole_coroutine_fgets(char *s, int size, FILE *stream) {
  int swoole_coroutine_fputs(const char *s, FILE *stream) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return fputs(s, stream);
@@ -1193,7 +1232,7 @@ index 964a906..64531c7 100644
 -    return retval;
 +    return swr_v1_hook_fputs(s, stream, hook_offload());
  }
-@@ -321,9 +293,3 @@ int swoole_coroutine_fputs(const char *s, FILE *stream) {
+@@ -321,9 +276,3 @@ int swoole_coroutine_fputs(const char *s, FILE *stream) {
  int swoole_coroutine_feof(FILE *stream) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return feof(stream);
@@ -1204,7 +1243,7 @@ index 964a906..64531c7 100644
 -    return retval;
 +    return swr_v1_hook_feof(stream, hook_offload());
  }
-@@ -331,9 +297,3 @@ int swoole_coroutine_feof(FILE *stream) {
+@@ -331,9 +280,3 @@ int swoole_coroutine_feof(FILE *stream) {
  int swoole_coroutine_fflush(FILE *stream) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return fflush(stream);
@@ -1215,7 +1254,7 @@ index 964a906..64531c7 100644
 -    return retval;
 +    return swr_v1_hook_fflush(stream, hook_offload());
  }
-@@ -341,9 +301,3 @@ int swoole_coroutine_fflush(FILE *stream) {
+@@ -341,9 +284,3 @@ int swoole_coroutine_fflush(FILE *stream) {
  int swoole_coroutine_fclose(FILE *stream) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return fclose(stream);
@@ -1226,7 +1265,7 @@ index 964a906..64531c7 100644
 -    return retval;
 +    return swr_v1_hook_fclose(stream, hook_offload());
  }
-@@ -351,9 +305,3 @@ int swoole_coroutine_fclose(FILE *stream) {
+@@ -351,9 +288,3 @@ int swoole_coroutine_fclose(FILE *stream) {
  DIR *swoole_coroutine_opendir(const char *name) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return opendir(name);
@@ -1237,7 +1276,7 @@ index 964a906..64531c7 100644
 -    return retval;
 +    return swr_v1_hook_opendir(name, hook_offload());
  }
-@@ -361,9 +309,3 @@ DIR *swoole_coroutine_opendir(const char *name) {
+@@ -361,9 +292,3 @@ DIR *swoole_coroutine_opendir(const char *name) {
  struct dirent *swoole_coroutine_readdir(DIR *dirp) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return readdir(dirp);
@@ -1248,7 +1287,7 @@ index 964a906..64531c7 100644
 -    return retval;
 +    return swr_v1_hook_readdir(dirp, hook_offload());
  }
-@@ -371,9 +313,3 @@ struct dirent *swoole_coroutine_readdir(DIR *dirp) {
+@@ -371,9 +296,3 @@ struct dirent *swoole_coroutine_readdir(DIR *dirp) {
  int swoole_coroutine_closedir(DIR *dirp) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return closedir(dirp);
@@ -1259,7 +1298,7 @@ index 964a906..64531c7 100644
 -    return retval;
 +    return swr_v1_hook_closedir(dirp, hook_offload());
  }
-@@ -449,13 +385,8 @@ hostent *swoole_coroutine_gethostbyname(const char *name) {
+@@ -449,13 +368,8 @@ hostent *swoole_coroutine_gethostbyname(const char *name) {
  int swoole_coroutine_open(const char *pathname, int flags, mode_t mode) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return open(pathname, flags, mode);
@@ -1277,7 +1316,7 @@ index 964a906..64531c7 100644
  #endif
 +    return swr_v1_hook_open(pathname, flags, mode, hook_offload());
  }
-@@ -533,13 +464,8 @@ ssize_t swoole_coroutine_write(int sockfd, const void *buf, size_t count) {
+@@ -533,13 +447,8 @@ ssize_t swoole_coroutine_write(int sockfd, const void *buf, size_t count) {
  int swoole_coroutine_fstat(int fd, struct stat *statbuf) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return fstat(fd, statbuf);
@@ -1295,7 +1334,7 @@ index 964a906..64531c7 100644
  #endif
 +    return swr_v1_hook_fstat(fd, statbuf, hook_offload());
  }
-@@ -547,13 +473,8 @@ int swoole_coroutine_fstat(int fd, struct stat *statbuf) {
+@@ -547,13 +456,8 @@ int swoole_coroutine_fstat(int fd, struct stat *statbuf) {
  int swoole_coroutine_stat(const char *path, struct stat *statbuf) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return stat(path, statbuf);
@@ -1313,7 +1352,7 @@ index 964a906..64531c7 100644
  #endif
 +    return swr_v1_hook_stat(path, statbuf, hook_offload());
  }
-@@ -561,13 +482,8 @@ int swoole_coroutine_stat(const char *path, struct stat *statbuf) {
+@@ -561,13 +465,8 @@ int swoole_coroutine_stat(const char *path, struct stat *statbuf) {
  int swoole_coroutine_lstat(const char *path, struct stat *statbuf) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return lstat(path, statbuf);
@@ -1331,7 +1370,7 @@ index 964a906..64531c7 100644
  #endif
 +    return swr_v1_hook_lstat(path, statbuf, hook_offload());
  }
-@@ -575,13 +491,8 @@ int swoole_coroutine_lstat(const char *path, struct stat *statbuf) {
+@@ -575,13 +474,8 @@ int swoole_coroutine_lstat(const char *path, struct stat *statbuf) {
  int swoole_coroutine_unlink(const char *pathname) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return unlink(pathname);
@@ -1349,7 +1388,7 @@ index 964a906..64531c7 100644
  #endif
 +    return swr_v1_hook_unlink(pathname, hook_offload());
  }
-@@ -589,13 +500,8 @@ int swoole_coroutine_unlink(const char *pathname) {
+@@ -589,13 +483,8 @@ int swoole_coroutine_unlink(const char *pathname) {
  int swoole_coroutine_mkdir(const char *pathname, mode_t mode) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return mkdir(pathname, mode);
@@ -1367,7 +1406,7 @@ index 964a906..64531c7 100644
  #endif
 +    return swr_v1_hook_mkdir(pathname, mode, hook_offload());
  }
-@@ -603,13 +509,8 @@ int swoole_coroutine_mkdir(const char *pathname, mode_t mode) {
+@@ -603,13 +492,8 @@ int swoole_coroutine_mkdir(const char *pathname, mode_t mode) {
  int swoole_coroutine_rmdir(const char *pathname) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return rmdir(pathname);
@@ -1385,7 +1424,7 @@ index 964a906..64531c7 100644
  #endif
 +    return swr_v1_hook_rmdir(pathname, hook_offload());
  }
-@@ -617,13 +518,8 @@ int swoole_coroutine_rmdir(const char *pathname) {
+@@ -617,13 +501,8 @@ int swoole_coroutine_rmdir(const char *pathname) {
  int swoole_coroutine_rename(const char *oldpath, const char *newpath) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return rename(oldpath, newpath);
@@ -1403,7 +1442,7 @@ index 964a906..64531c7 100644
  #endif
 +    return swr_v1_hook_rename(oldpath, newpath, hook_offload());
  }
-@@ -631,13 +527,8 @@ int swoole_coroutine_rename(const char *oldpath, const char *newpath) {
+@@ -631,13 +510,8 @@ int swoole_coroutine_rename(const char *oldpath, const char *newpath) {
  int swoole_coroutine_fsync(int fd) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return fsync(fd);
@@ -1421,7 +1460,7 @@ index 964a906..64531c7 100644
  #endif
 +    return swr_v1_hook_fsync(fd, hook_offload());
  }
-@@ -645,21 +536,8 @@ int swoole_coroutine_fsync(int fd) {
+@@ -645,21 +519,8 @@ int swoole_coroutine_fsync(int fd) {
  int swoole_coroutine_fdatasync(int fd) {
 -    if (sw_unlikely(is_no_coro())) {
 -#ifdef HAVE_FDATASYNC
@@ -1447,7 +1486,7 @@ index 964a906..64531c7 100644
  #endif
 +    return swr_v1_hook_fdatasync(fd, hook_offload());
  }
-@@ -667,13 +545,8 @@ int swoole_coroutine_fdatasync(int fd) {
+@@ -667,13 +528,8 @@ int swoole_coroutine_fdatasync(int fd) {
  int swoole_coroutine_ftruncate(int fd, off_t length) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return ftruncate(fd, length);
@@ -1465,7 +1504,7 @@ index 964a906..64531c7 100644
  #endif
 +    return swr_v1_hook_ftruncate(fd, length, hook_offload());
  }
-@@ -681,9 +554,3 @@ int swoole_coroutine_ftruncate(int fd, off_t length) {
+@@ -681,9 +537,3 @@ int swoole_coroutine_ftruncate(int fd, off_t length) {
  off_t swoole_coroutine_lseek(int fd, off_t offset, int whence) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return lseek(fd, offset, whence);
@@ -1476,7 +1515,7 @@ index 964a906..64531c7 100644
 -    return ret;
 +    return swr_v1_hook_lseek(fd, offset, whence, hook_offload());
  }
-@@ -691,9 +558,3 @@ off_t swoole_coroutine_lseek(int fd, off_t offset, int whence) {
+@@ -691,9 +541,3 @@ off_t swoole_coroutine_lseek(int fd, off_t offset, int whence) {
  ssize_t swoole_coroutine_readlink(const char *pathname, char *buf, size_t len) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return readlink(pathname, buf, len);
@@ -1487,7 +1526,7 @@ index 964a906..64531c7 100644
 -    return ret;
 +    return swr_v1_hook_readlink(pathname, buf, len, hook_offload());
  }
-@@ -701,9 +562,3 @@ ssize_t swoole_coroutine_readlink(const char *pathname, char *buf, size_t len) {
+@@ -701,9 +545,3 @@ ssize_t swoole_coroutine_readlink(const char *pathname, char *buf, size_t len) {
  int swoole_coroutine_statvfs(const char *path, struct statvfs *buf) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return statvfs(path, buf);
@@ -1498,7 +1537,7 @@ index 964a906..64531c7 100644
 -    return ret;
 +    return swr_v1_hook_statvfs(path, buf, hook_offload());
  }
-@@ -711,9 +566,3 @@ int swoole_coroutine_statvfs(const char *path, struct statvfs *buf) {
+@@ -711,9 +549,3 @@ int swoole_coroutine_statvfs(const char *path, struct statvfs *buf) {
  int swoole_coroutine_access(const char *pathname, int mode) {
 -    if (sw_unlikely(is_no_coro())) {
 -        return access(pathname, mode);
@@ -3053,39 +3092,126 @@ index 5a16f4c..2862827 100644
 +        break;
      }
 diff --git a/src/coroutine/system.cc b/src/coroutine/system.cc
-index e6ef9c2..8eee08d 100644
+index e6ef9c2..32545c3 100644
 --- a/src/coroutine/system.cc
 +++ b/src/coroutine/system.cc
-@@ -17,2 +17,7 @@
+@@ -17,3 +17,7 @@
  #include "swoole_coroutine_system.h"
+-#include "swoole_lru_cache.h"
 +#ifndef SWOOLE_RS_HOOKS
 +#error "Hooks overlay requires --enable-swoole-rs-hooks"
 +#endif
 +#include "swoole_rs_hooks.h"
 +
- #include "swoole_lru_cache.h"
-@@ -71,5 +76,3 @@ int System::sleep(double sec) {
+ #include "swoole_signal.h"
+@@ -25,18 +29,4 @@ namespace coroutine {
+ 
+-static struct {
+-    size_t capacity;
+-    time_t expire;
+-    LRUCache<std::string> *data;
+-    size_t miss_count;
+-    size_t hit_count;
+-} dns_cache = {
+-    1000,
+-    60,
+-    nullptr,
+-    0,
+-    0,
+-};
+-
+ void System::set_dns_cache_expire(time_t expire) {
+-    dns_cache.expire = expire;
++    swr_v1_hook_dns_cache_expire(expire);
+ }
+@@ -44,6 +34,3 @@ void System::set_dns_cache_expire(time_t expire) {
+ void System::set_dns_cache_capacity(size_t capacity) {
+-    dns_cache.capacity = capacity;
+-    clear_dns_cache();
+-    delete dns_cache.data;
+-    dns_cache.data = nullptr;
++    swr_v1_hook_dns_cache_capacity(capacity);
+ }
+@@ -51,7 +38,3 @@ void System::set_dns_cache_capacity(size_t capacity) {
+ void System::clear_dns_cache() {
+-    if (dns_cache.data) {
+-        dns_cache.data->clear();
+-    }
+-    dns_cache.miss_count = 0;
+-    dns_cache.hit_count = 0;
++    swr_v1_hook_dns_cache_clear();
+ }
+@@ -59,7 +42,3 @@ void System::clear_dns_cache() {
+ float System::get_dns_cache_hit_ratio() {
+-    auto total = dns_cache.hit_count + dns_cache.miss_count;
+-    if (total == 0) {
+-        return 0;
+-    }
+-    return (float) dns_cache.hit_count / (float) total;
++    return swr_v1_hook_dns_cache_hit_ratio();
+ }
+@@ -71,5 +50,3 @@ int System::sleep(double sec) {
      Coroutine *co = Coroutine::get_current_safe();
 -    if (sec < SW_TIMER_MIN_SEC) {
 -        sec = SW_TIMER_MIN_SEC;
 -    }
 +    sec = swr_v1_hook_sleep_timeout(sec, SW_TIMER_MIN_SEC);
      co->yield_ex(sec);
-@@ -140,5 +143,3 @@ std::string gethostbyname_impl_with_async(const std::string &hostname, int domai
+@@ -140,5 +117,3 @@ std::string gethostbyname_impl_with_async(const std::string &hostname, int domai
      if (ev.retval == -1) {
 -        if (ev.error == SW_ERROR_AIO_TIMEOUT) {
 -            ev.error = SW_ERROR_DNSLOOKUP_RESOLVE_TIMEOUT;
 -        }
 +        ev.error = swr_v1_hook_dns_error(ev.error, SW_ERROR_AIO_TIMEOUT, SW_ERROR_DNSLOOKUP_RESOLVE_TIMEOUT);
          swoole_set_last_error(ev.error);
-@@ -209,5 +210,3 @@ std::vector<std::string> System::getaddrinfo(
+@@ -150,25 +125,10 @@ std::string gethostbyname_impl_with_async(const std::string &hostname, int domai
+ 
+-std::string System::gethostbyname(const std::string &hostname, int domain, double timeout) {
+-    if (dns_cache.data == nullptr && dns_cache.capacity != 0) {
+-        dns_cache.data = new LRUCache<std::string>(dns_cache.capacity);
+-    }
++static void dns_assign(void *out, const char *address, size_t length) {
++    static_cast<std::string *>(out)->assign(address, length);
++}
+ 
+-    std::string cache_key;
++std::string System::gethostbyname(const std::string &hostname, int domain, double timeout) {
+     std::string result;
+-
+-    if (dns_cache.data) {
+-        /**
+-         * The cache key must end with a prefix that uses a dot.
+-         * The domain name cannot contain the `.` symbol, and other characters are considered unsafe.
+-         */
+-        cache_key.append(domain == AF_INET ? "IPv4." : "IPv6.");
+-        cache_key.append(hostname);
+-        auto cache = dns_cache.data->get(cache_key);
+-
+-        if (cache) {
+-            dns_cache.hit_count++;
+-            return *(std::string *) cache.get();
+-        } else {
+-            dns_cache.miss_count++;
+-        }
++    if (swr_v1_hook_dns_cache_get(domain, hostname.data(), hostname.size(), &result, dns_assign)) {
++        return result;
+     }
+@@ -188,6 +148,3 @@ std::string System::gethostbyname(const std::string &hostname, int domain, doubl
+ 
+-    if (dns_cache.data && !result.empty()) {
+-        dns_cache.data->set(cache_key, std::make_shared<std::string>(result), dns_cache.expire);
+-    }
+-
++    swr_v1_hook_dns_cache_set(domain, hostname.data(), hostname.size(), result.data(), result.size());
+     return result;
+@@ -209,5 +166,3 @@ std::vector<std::string> System::getaddrinfo(
      if (ev.retval == -1 || req->error != 0) {
 -        if (ev.error == SW_ERROR_AIO_TIMEOUT) {
 -            ev.error = SW_ERROR_DNSLOOKUP_RESOLVE_TIMEOUT;
 -        }
 +        ev.error = swr_v1_hook_dns_error(ev.error, SW_ERROR_AIO_TIMEOUT, SW_ERROR_DNSLOOKUP_RESOLVE_TIMEOUT);
          swoole_set_last_error(ev.error);
-@@ -220,58 +219,24 @@ std::vector<std::string> System::getaddrinfo(
+@@ -220,58 +175,32 @@ std::vector<std::string> System::getaddrinfo(
  
 -struct SignalListener {
 -    Coroutine *co;
@@ -3101,7 +3227,7 @@ index e6ef9c2..8eee08d 100644
 -int System::wait_signal(int signal, double timeout) {
 -    std::vector<int> signals = {signal};
 -    return wait_signal(signals, timeout);
-+static void *signal_current() {
++static void *co_current() {
 +    return Coroutine::get_current_safe();
  }
  
@@ -3127,13 +3253,19 @@ index e6ef9c2..8eee08d 100644
 -            listener->co->resume();
 -        }
 -    };
--
++static void co_park(void *co) {
++    static_cast<Coroutine *>(co)->yield();
++}
+ 
 -    for (auto &signo : signals) {
 -        if (signo < 0 || signo >= SW_SIGNO_MAX || signo == SIGCHLD) {
 -            swoole_set_last_error(EINVAL);
 -            return -1;
 -        }
--
++static void co_resume(void *co) {
++    static_cast<Coroutine *>(co)->resume();
++}
+ 
 -        /* resgiter signal */
 -        listeners[signo] = &listener;
 +static bool signal_busy() {
@@ -3159,17 +3291,14 @@ index e6ef9c2..8eee08d 100644
 +        return;
 +    }
      if (!sw_reactor()->isset_exit_condition(Reactor::EXIT_CONDITION_CO_SIGNAL_LISTENER)) {
-@@ -281,19 +246,29 @@ int System::wait_signal(const std::vector<int> &signals, double timeout) {
+@@ -281,85 +210,67 @@ int System::wait_signal(const std::vector<int> &signals, double timeout) {
      }
 -
      SwooleG.signal_async_listener_num++;
 +}
  
 -    bool retval = listener.co->yield_ex(timeout);
-+static bool signal_yield(void *co, double timeout) {
-+    return static_cast<Coroutine *>(co)->yield_ex(timeout);
-+}
- 
+-
 -    for (auto &signo : signals) {
 -#ifdef SW_USE_THREAD_CONTEXT
 -        swoole_event_defer([signo](void *) { swoole_signal_set(signo, nullptr); }, nullptr);
@@ -3178,31 +3307,85 @@ index e6ef9c2..8eee08d 100644
 -#endif
 -        listeners[signo] = nullptr;
 -    }
-+static void signal_resume(void *co) {
-+    static_cast<Coroutine *>(co)->resume();
-+}
- 
+-
 -    SwooleG.signal_async_listener_num--;
-+int System::wait_signal(int signal, double timeout) {
-+    std::vector<int> signals = {signal};
-+    return wait_signal(signals, timeout);
++static bool signal_yield(void *co, double timeout) {
++    return static_cast<Coroutine *>(co)->yield_ex(timeout);
 +}
  
 -    return retval ? listener.signo : -1;
++int System::wait_signal(int signal, double timeout) {
++    std::vector<int> signals = {signal};
++    return wait_signal(signals, timeout);
+ }
+ 
+-struct CoroPollTask {
+-    std::unordered_map<int, PollSocket> *fds = nullptr;
+-    Coroutine *co = nullptr;
+-    TimerNode *timer = nullptr;
+-    bool success = false;
+-    bool wait = true;
+-};
 +/**
 + * @error: swoole_get_last_error()
 + */
 +int System::wait_signal(const std::vector<int> &signals, double timeout) {
 +    static const swr_v1_hook_signal_ops ops = {
-+        signal_current, signal_busy, signal_listen, signal_waiting, signal_yield, signal_resume};
++        co_current, signal_busy, signal_listen, signal_waiting, signal_yield, co_resume};
 +    const auto signalled = swr_v1_hook_wait_signal(signals.data(), signals.size(), timeout, &ops);
 +    if (signalled.last_error != 0) {
 +        swoole_set_last_error(signalled.last_error);
 +    }
 +    return signalled.signo;
++}
+ 
+-static inline void socket_poll_clean(const CoroPollTask *task) {
+-    for (auto &fd : *task->fds) {
+-        network::Socket *socket = fd.second.socket;
+-        if (!socket) {
+-            continue;
+-        }
+-        int retval = swoole_event_del(fd.second.socket);
++static void *poll_add(int fd, int events, void *task) {
++    auto *socket = make_socket(fd, SW_FD_CO_POLL);
++    socket->object = task;
++    if (swoole_event_add(socket, events) < 0) {
++        // socket_poll() is not the owner of the fd: release the socket, not the fd.
+         socket->move_fd();
+         socket->free();
+-        fd.second.socket = nullptr;
+-        if (retval < 0) {
+-            continue;
+-        }
++        return nullptr;
+     }
++    return socket;
  }
-@@ -341,12 +316,4 @@ static inline void socket_poll_trigger_event(Reactor *reactor, CoroPollTask *tas
-     auto i = task->fds->find(fd);
+ 
+-static void socket_poll_timeout(Timer *timer, TimerNode *tnode) {
+-    auto *task = static_cast<CoroPollTask *>(tnode->data);
+-    task->timer = nullptr;
+-    task->success = false;
+-    task->wait = false;
+-    socket_poll_clean(task);
+-    task->co->resume();
++static void poll_remove(void *socket) {
++    auto *_socket = static_cast<network::Socket *>(socket);
++    swoole_event_del(_socket);
++    _socket->move_fd();
++    _socket->free();
+ }
+ 
+-static void socket_poll_completed(void *data) {
+-    auto *task = static_cast<CoroPollTask *>(data);
+-    socket_poll_clean(task);
+-    task->co->resume();
++static void poll_timer_expired(Timer *timer, TimerNode *tnode) {
++    swr_v1_hook_poll_timeout(tnode->data);
+ }
+ 
+-static inline void socket_poll_trigger_event(Reactor *reactor, CoroPollTask *task, int fd, EventType event) {
+-    auto i = task->fds->find(fd);
 -    if (event == SW_EVENT_ERROR && !(i->second.events & SW_EVENT_ERROR)) {
 -        if (i->second.events & SW_EVENT_READ) {
 -            i->second.revents |= SW_EVENT_READ;
@@ -3213,10 +3396,108 @@ index e6ef9c2..8eee08d 100644
 -    } else {
 -        i->second.revents |= event;
 -    }
-+    i->second.revents = swr_v1_hook_poll_revents(i->second.events, i->second.revents,
-+                                               event, SW_EVENT_READ | SW_EVENT_WRITE, SW_EVENT_ERROR);
-     if (task->wait) {
-@@ -462,6 +429,7 @@ struct EventWaiter {
+-    if (task->wait) {
+-        task->wait = false;
+-        task->success = true;
+-        if (task->timer) {
+-            swoole_timer_del(task->timer);
+-            task->timer = nullptr;
+-        }
+-        reactor->defer(socket_poll_completed, task);
+-    }
++static void *poll_timer_add(double timeout, void *task) {
++    return swoole_timer_add(timeout, false, poll_timer_expired, task);
++}
++
++static void poll_timer_del(void *timer) {
++    swoole_timer_del(static_cast<TimerNode *>(timer));
+ }
+ 
++static void poll_defer(void *task) {
++    sw_reactor()->defer(swr_v1_hook_poll_completed, task);
++}
++
++extern const swr_v1_hook_poll_ops poll_ops = {
++    poll_add, poll_remove, poll_timer_add, poll_timer_del, poll_defer, co_current, co_park, co_resume};
++
+ static int socket_poll_read_callback(Reactor *reactor, Event *event) {
+-    socket_poll_trigger_event(reactor, (CoroPollTask *) event->socket->object, event->fd, SW_EVENT_READ);
++    swr_v1_hook_poll_ready(event->socket->object, event->fd, SW_EVENT_READ);
+     return SW_OK;
+@@ -368,3 +279,3 @@ static int socket_poll_read_callback(Reactor *reactor, Event *event) {
+ static int socket_poll_write_callback(Reactor *reactor, Event *event) {
+-    socket_poll_trigger_event(reactor, (CoroPollTask *) event->socket->object, event->fd, SW_EVENT_WRITE);
++    swr_v1_hook_poll_ready(event->socket->object, event->fd, SW_EVENT_WRITE);
+     return SW_OK;
+@@ -373,3 +284,3 @@ static int socket_poll_write_callback(Reactor *reactor, Event *event) {
+ static int socket_poll_error_callback(Reactor *reactor, Event *event) {
+-    socket_poll_trigger_event(reactor, (CoroPollTask *) event->socket->object, event->fd, SW_EVENT_ERROR);
++    swr_v1_hook_poll_ready(event->socket->object, event->fd, SW_EVENT_ERROR);
+     return SW_OK;
+@@ -378,55 +289,12 @@ static int socket_poll_error_callback(Reactor *reactor, Event *event) {
+ bool System::socket_poll(std::unordered_map<int, PollSocket> &fds, double timeout) {
+-    if (timeout == 0) {
+-        auto *event_list = static_cast<struct pollfd *>(sw_calloc(fds.size(), sizeof(struct pollfd)));
+-        if (!event_list) {
+-            swoole_warning("calloc() failed");
+-            return false;
+-        }
+-        int n = 0;
+-        for (auto i = fds.begin(); i != fds.end(); ++i, n++) {
+-            event_list[n].fd = i->first;
+-            event_list[n].events = translate_events_to_poll(i->second.events);
+-            event_list[n].revents = 0;
+-        }
+-        int retval = ::poll(event_list, n, 0);
+-        if (retval > 0) {
+-            int _n = 0;
+-            for (auto i = fds.begin(); i != fds.end(); ++i, _n++) {
+-                i->second.revents = translate_events_from_poll(event_list[_n].revents);
+-            }
+-        }
+-        sw_free(event_list);
+-        return retval > 0;
+-    }
+-
+-    size_t tasked_num = 0;
+-    CoroPollTask task;
+-    task.fds = &fds;
+-    task.co = Coroutine::get_current_safe();
+-
++    std::vector<swr_v1_hook_poll_fd> list;
+     for (auto &fd : fds) {
+-        fd.second.socket = make_socket(fd.first, SW_FD_CO_POLL);
+-        if (swoole_event_add(fd.second.socket, fd.second.events) < 0) {
+-            // socket_poll() is not the owner of the socket,
+-            // so the socket should not be closed upon failure or successful return;
+-            // it is necessary to release control over the fd.
+-            fd.second.socket->move_fd();
+-            fd.second.socket->free();
+-            continue;
+-        }
+-        fd.second.socket->object = &task;
+-        tasked_num++;
++        list.push_back({fd.first, fd.second.events, fd.second.revents});
+     }
+-
+-    if (sw_unlikely(tasked_num == 0)) {
+-        return false;
+-    }
+-
+-    if (timeout > 0) {
+-        task.timer = swoole_timer_add(timeout, false, socket_poll_timeout, &task);
++    bool retval = swr_v1_hook_socket_poll(list.data(), list.size(), timeout, &poll_ops);
++    auto row = list.begin();
++    for (auto &fd : fds) {
++        fd.second.revents = (row++)->revents;
+     }
+-
+-    task.co->yield();
+-
+-    return task.success;
++    return retval;
+ }
+@@ -462,6 +330,7 @@ struct EventWaiter {
  static inline void event_waiter_callback(Reactor *reactor, EventWaiter *waiter, EventType event) {
 -    if (waiter->revents == 0) {
 +    auto plan = swr_v1_hook_event_waiter(waiter->revents, event);
@@ -3226,7 +3507,7 @@ index e6ef9c2..8eee08d 100644
 -    waiter->revents |= event;
 +    waiter->revents = plan.revents;
  }
-@@ -486,45 +454,17 @@ static int event_waiter_error_callback(Reactor *reactor, Event *event) {
+@@ -486,45 +355,17 @@ static int event_waiter_error_callback(Reactor *reactor, Event *event) {
   */
 -int System::wait_event(int fd, int events, double timeout) {
 -    events &= SW_EVENT_READ | SW_EVENT_WRITE;
@@ -3284,27 +3565,27 @@ index e6ef9c2..8eee08d 100644
 +    }
 +    return waited.result;
  }
-@@ -574,3 +514,3 @@ void System::init_reactor(Reactor *reactor) {
+@@ -574,3 +415,3 @@ void System::init_reactor(Reactor *reactor) {
  static void async_task_completed(AsyncEvent *event) {
 -    if (event->canceled) {
 +    if (swr_v1_hook_async_action(2, true, event->canceled) == SWR_HOOK_ASYNC_REJECT) {
          return;
-@@ -592,3 +532,3 @@ bool async(async::Handler handler, AsyncEvent &event, double timeout) {
+@@ -592,3 +433,3 @@ bool async(async::Handler handler, AsyncEvent &event, double timeout) {
      AsyncEvent *_ev = async::dispatch(&event);
 -    if (_ev == nullptr) {
 +    if (swr_v1_hook_async_action(0, true, _ev != nullptr) == SWR_HOOK_ASYNC_REJECT) {
          return false;
-@@ -596,3 +536,3 @@ bool async(async::Handler handler, AsyncEvent &event, double timeout) {
+@@ -596,3 +437,3 @@ bool async(async::Handler handler, AsyncEvent &event, double timeout) {
  
 -    if (!co->yield_ex(timeout)) {
 +    if (swr_v1_hook_async_action(1, true, co->yield_ex(timeout)) == SWR_HOOK_ASYNC_CANCEL) {
          event.canceled = _ev->canceled = true;
-@@ -635,3 +575,3 @@ bool async(const std::function<void()> &fn) {
+@@ -635,3 +476,3 @@ bool async(const std::function<void()> &fn) {
      AsyncEvent *_ev = async::dispatch(&event);
 -    if (_ev == nullptr) {
 +    if (swr_v1_hook_async_action(0, false, _ev != nullptr) == SWR_HOOK_ASYNC_REJECT) {
          return false;
-@@ -645,16 +585,23 @@ bool async(const std::function<void()> &fn) {
+@@ -645,16 +486,23 @@ bool async(const std::function<void()> &fn) {
  bool wait_for(const std::function<bool(void)> &fn) {
 +    uint32_t phase = 0;
      double second = SW_FILE_LOCK_DEFAULT_SECOND;

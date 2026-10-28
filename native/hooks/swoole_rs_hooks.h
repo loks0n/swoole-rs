@@ -10,6 +10,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/statvfs.h>
+#include <poll.h>
 #include <sys/types.h>
 #include <sys/types.h>
 #ifdef __cplusplus
@@ -71,7 +72,6 @@ swr_v1_hook_transfer_plan swr_v1_hook_transfer(int64_t result, uint64_t total, u
 int32_t swr_v1_hook_submit(int32_t result, bool again, bool busy, bool interrupted);
 typedef struct { int64_t result; int32_t error; } swr_v1_hook_completion_plan;
 swr_v1_hook_completion_plan swr_v1_hook_completion(int64_t result, int32_t canceled, int32_t timeout);
-uint32_t swr_v1_hook_poll_revents(uint32_t requested, uint32_t received, uint32_t event, uint32_t read_write, uint32_t error);
 enum swr_hook_timer_action { SWR_HOOK_TIMER_ENABLE = 1, SWR_HOOK_TIMER_ADD = 2, SWR_HOOK_TIMER_SENTINEL = 4, SWR_HOOK_TIMER_DELETE = 8, SWR_HOOK_TIMER_CLEAR = 16 };
 uint32_t swr_v1_hook_timer(uint32_t operation, bool enabled, bool present, bool sentinel, double timeout);
 enum swr_hook_wait_action { SWR_HOOK_WAIT_DONE = 0, SWR_HOOK_WAIT_CALLBACK = 1, SWR_HOOK_WAIT_SLEEP = 2, SWR_HOOK_WAIT_CANCELED = -1, SWR_HOOK_WAIT_INVALID = -2 };
@@ -92,6 +92,28 @@ typedef struct {
 typedef struct { int32_t signo; int32_t last_error; } swr_v1_hook_signalled;
 void swr_v1_hook_signal_wake(int signo);
 swr_v1_hook_signalled swr_v1_hook_wait_signal(const int32_t *signals, size_t count, double timeout, const swr_v1_hook_signal_ops *ops);
+typedef struct { int32_t fd; int32_t events; int32_t revents; } swr_v1_hook_poll_fd;
+typedef struct {
+    void *(*add)(int fd, int events, void *task);
+    void (*remove)(void *socket);
+    void *(*timer_add)(double timeout, void *task);
+    void (*timer_del)(void *timer);
+    void (*defer)(void *task);
+    void *(*current)(void);
+    void (*park)(void *co);
+    void (*resume)(void *co);
+} swr_v1_hook_poll_ops;
+void swr_v1_hook_poll_ready(void *task, int fd, int event);
+void swr_v1_hook_poll_completed(void *task);
+void swr_v1_hook_poll_timeout(void *task);
+bool swr_v1_hook_socket_poll(swr_v1_hook_poll_fd *fds, size_t count, double timeout, const swr_v1_hook_poll_ops *ops);
+int swr_v1_hook_poll(struct pollfd *fds, nfds_t nfds, int timeout, const swr_v1_hook_poll_ops *ops);
+void swr_v1_hook_dns_cache_expire(int64_t expire);
+void swr_v1_hook_dns_cache_capacity(size_t capacity);
+void swr_v1_hook_dns_cache_clear(void);
+float swr_v1_hook_dns_cache_hit_ratio(void);
+bool swr_v1_hook_dns_cache_get(int domain, const char *name, size_t length, void *out, void (*assign)(void *out, const char *address, size_t length));
+void swr_v1_hook_dns_cache_set(int domain, const char *name, size_t length, const char *address, size_t address_length);
 uint32_t swr_v1_hook_socket_status(bool closed, bool close_wait);
 uint32_t swr_v1_hook_check_result(int64_t result, bool has_error);
 double swr_v1_hook_timeval(double seconds, double micros);
