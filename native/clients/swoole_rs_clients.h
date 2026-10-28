@@ -189,23 +189,49 @@ struct swr_v1_clients_resolv_line { uint32_t kind; size_t offset, length; };
 struct swr_v1_clients_resolv_line swr_v1_clients_resolv_line(const uint8_t *, size_t);
 struct swr_v1_clients_dns_endpoint { uint32_t has_port; size_t host_length, port_offset; };
 struct swr_v1_clients_dns_endpoint swr_v1_clients_dns_endpoint(const uint8_t *, size_t);
-enum swr_v1_clients_transport_action {
-    SWR_CLIENTS_TRANSPORT_ADVANCE=0, SWR_CLIENTS_TRANSPORT_SET_TIMEOUT=1,
-    SWR_CLIENTS_TRANSPORT_KERNEL_TIMEOUT=2, SWR_CLIENTS_TRANSPORT_PUBLISH_FLAGS=3,
-    SWR_CLIENTS_TRANSPORT_ADDRESS=4, SWR_CLIENTS_TRANSPORT_WARN_RECEIVE=5,
-    SWR_CLIENTS_TRANSPORT_WARN_ERROR=6, SWR_CLIENTS_TRANSPORT_DNS_LOOKUP=7,
-    SWR_CLIENTS_TRANSPORT_ACTIVATE=8, SWR_CLIENTS_TRANSPORT_SOCKET_TIMEOUT=9,
-    SWR_CLIENTS_TRANSPORT_BIND_UNIX=10, SWR_CLIENTS_TRANSPORT_WARN_BIND=11,
-    SWR_CLIENTS_TRANSPORT_ENABLE_DTLS=12, SWR_CLIENTS_TRANSPORT_CONNECT=13,
-    SWR_CLIENTS_TRANSPORT_CLEAN=14, SWR_CLIENTS_TRANSPORT_ADD_EVENT=15,
-    SWR_CLIENTS_TRANSPORT_CONNECT_CALLBACK=16, SWR_CLIENTS_TRANSPORT_SSL_HANDSHAKE=17,
-    SWR_CLIENTS_TRANSPORT_FAIL_CLOSE=18, SWR_CLIENTS_TRANSPORT_ERROR_CALLBACK=19,
-    SWR_CLIENTS_TRANSPORT_SUCCESS=20, SWR_CLIENTS_TRANSPORT_ERROR=21,
-    SWR_CLIENTS_TRANSPORT_EVENT_WRITE=22, SWR_CLIENTS_TRANSPORT_OVERFLOW=23,
-    SWR_CLIENTS_TRANSPORT_BUFFER_FULL=24, SWR_CLIENTS_TRANSPORT_RETURN_WRITE=25
-};
-struct swr_v1_clients_transport_plan { uint32_t action, stage; };
-struct swr_v1_clients_transport_plan swr_v1_clients_transport_next(uint32_t stage, uint32_t facts);
+/* Client_udp_connect and Client_tcp_send_async over the client's state. Every fact is read
+ * afresh by its callback; a callback that runs user code returns false when it threw (native
+ * rethrows after Rust returns). */
+typedef struct {
+    void *context;
+    swr_v1_clients_state *state;
+    double timeout;
+    int32_t udp_connect;
+    void (*set_timeout)(void *);
+    void (*kernel_timeout)(void *);
+    void (*publish_flags)(void *);
+    int32_t (*address)(void *);
+    bool (*has_on_receive)(void *);
+    void (*warn_receive)(void *);
+    bool (*has_on_error)(void *);
+    void (*warn_error)(void *);
+    int32_t (*dns_lookup)(void *);
+    void (*activate)(void *);
+    void (*socket_timeout)(void *);
+    bool (*is_unix)(void *);
+    int32_t (*bind_unix)(void *);
+    void (*warn_bind)(void *);
+    bool (*open_ssl)(void *);
+    bool (*enable_dtls)(void *);
+    int32_t (*connect)(void *);
+    void (*clean)(void *);
+    void (*fail_close)(void *);
+    bool (*on_error)(void *);
+    bool (*has_on_connect)(void *);
+    int32_t (*add_event)(void *);
+    bool (*on_connect)(void *);
+    int32_t (*ssl_handshake)(void *);
+} swr_v1_clients_udp_connect_ops;
+int32_t swr_v1_clients_udp_connect(const swr_v1_clients_udp_connect_ops *ops);
+typedef struct {
+    void *context;
+    int32_t (*write)(void *);
+    bool (*overflowed)(void *);
+    void (*mark_high)(void *);
+    bool (*full)(void *);
+    bool (*on_buffer_full)(void *);
+} swr_v1_clients_send_ops;
+ssize_t swr_v1_clients_send_async(const swr_v1_clients_send_ops *ops, ssize_t length);
 intptr_t swr_v1_clients_datagram_send(intptr_t result, intptr_t length);
 /* Sole private pool; binary keys, FIFO opaque native tokens. Allocation returns
  * 0 success/1 OOM/2 invalid; caller throws only after return. Never destroys Client.
