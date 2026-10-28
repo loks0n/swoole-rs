@@ -619,6 +619,14 @@ def plan(args, reports):
                        *php, *reference_first, *report('protocols-' + name))
             script('protocols-lifecycle', 'tests/modules/protocols/lifecycle.py',
                    *php, *reference_first, *report('protocols-lifecycle'))
+            # Upstream's own redis/message_bus/mqtt GoogleTests on the reference and the overlay
+            # (Linux trees). mqtt.echo needs Node's mqtt/pino and is reported unsupported without them.
+            if sys.platform.startswith('linux'):
+                script('protocols-native-originals', 'tests/modules/protocols/core.py', '--source', ROOT / 'target/upstream/src',
+                       '--config', manifest.parent / 'src/config.h',
+                       '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
+                       '--build-root', ROOT / 'target/native-originals/protocols', '--jobs', args.jobs,
+                       *report('protocols-native-originals'))
     if 'timer' in modules:
         pytest('timer-fork-active', 'tests/modules/timer/test_fork.py', *php, *engines)
         if integrate:

@@ -130,8 +130,9 @@ def main():
             staged_sources(source, staged)
             inventory = [{'name': f'{group}.{name}', 'path': path, 'sha256': sha(staged / path)}
                 for path in ASSERTIONS for group, name in re.findall(r'TEST\((\w+),\s*(\w+)\)', (staged / path).read_text())]
-            if len(inventory) != 7 or len({case['name'] for case in inventory}) != 7:
-                raise ValueError('Original seven-case inventory differs')
+            # v6.2.4: redis.* (5, with recv_packet_with_partially_filled_buffer), message_bus.* (2), mqtt.echo.
+            if len(inventory) != 8 or len({case['name'] for case in inventory}) != 8:
+                raise ValueError('Original eight-case inventory differs')
             report['inventory'] = inventory
             for engine in ['upstream', 'rust']:
                 if engine == 'rust':
