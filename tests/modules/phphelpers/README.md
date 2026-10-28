@@ -107,8 +107,9 @@ All take `--engine native=DSO --engine selected=DSO`, `--build-manifest`,
   header/local ABI against the SDK, then runs `facade_entrypoint.php`. Header
   variants against one DSO are not separate production feature builds.
 
-The 31 `swoole_stdext` originals run through `corpus/upstream/run.py`
-(`phphelpers-full-originals`). Known result: macOS 31 PASS per engine; Linux 30
+The 31 `swoole_stdext` originals run in the merge tier's `phpt-stdext` job on
+`--stdext` upstream and hybrid builds, which also runs the three loaded checks
+above. Known result: macOS 31 PASS per engine; Linux 30
 PASS / 1 FAIL per engine (`mb_ucfirst` missing on PHP 8.2). The stream original
 uses `/tmp/test.txt`. Do not rerun the earlier method-alias fixture: it was
 stopped by a signal and has no isolated reproduction.
@@ -138,3 +139,21 @@ async callers have no runtime qualification (6 SQLite and 11 ODBC compile on
 macOS; 31 Oracle/Firebird callers are not compiled). Whole caller/lifetime/fatal/
 OOM/DEBUG/ZTS coverage, other architectures, separate production feature builds,
 performance and default activation remain open.
+
+## Gate audit (#493)
+
+All five phases are kept, none deleted:
+
+- `phphelpers-policy`: complete pinned and selected bodies against modeled
+  native effects, with about 200,000 matched cases across the families above,
+  under ASan/UBSan.
+- `phphelpers-async`: the `php_swoole_async` dispatch bodies, the C11 ABI
+  consumer, and C++14/17 builds with and without sanitizers.
+- `phphelpers-sdk`: the only full-file compiles (24 profiles), the class layout
+  witnesses and the Rust import checks. Its report is also the input that
+  `phpevents-sdk`, `phpcoroutines-sdk` and the stdext loaded checks read.
+- `phphelpers-async-sqlite-sdk`, `phphelpers-async-odbc-sdk`: the only builds of
+  the optional SQLite and ODBC consumers with their feature enabled.
+
+None of these is a PHPT, Rust unit test or fuzz target.
+
