@@ -42,7 +42,7 @@ unsafe fn event_data<T>(owner: *mut BackendEvents<T>) -> *mut T {
 
 #[cfg(target_os = "linux")]
 mod epoll {
-    use super::*;
+    use super::{BackendEvents, BackendLayout, event_data, free_events, new_events};
     pub type EpollEvents = BackendEvents<libc::epoll_event>;
 
     #[unsafe(no_mangle)]
