@@ -39,12 +39,11 @@ unsafe extern "C" fn create(ce: *mut zend_class_entry) -> *mut zend_object {
 unsafe extern "C" fn free(std: *mut zend_object) {
     // SAFETY: Zend frees an object this class created.
     let ctx = unsafe { *Holder::data(std) };
-    if !ctx.is_null() {
-        // SAFETY: the context the object holds; C++ ends and releases it.
-        unsafe { swr_http_host_response_free(ctx) };
-    }
+    // SAFETY: the context the object holds; C++ ends and releases it.
+    let bailed = !ctx.is_null() && unsafe { swr_http_host_response_free(ctx) };
     // SAFETY: as above.
     unsafe { Holder::dtor(std) };
+    host::raise(bailed);
 }
 
 /// MINIT: register the class as `php_swoole_http_response_minit` did.
@@ -67,6 +66,7 @@ pub unsafe extern "C" fn swr_v1_phphttp_response_minit(
         // SAFETY: as above.
         unsafe { declare_null(ce, name) };
     }
+    crate::header::minit(ce);
     ce
 }
 
@@ -139,25 +139,31 @@ fn is_writable(call: &Call) {
 }
 
 fn write(call: &Call) {
-    let run = || -> Option<()> {
+    let mut bailed = false;
+    let mut run = || -> Option<()> {
         let data = call.arity(1, 1).and_then(|()| call.str(1)).ok()??;
         let ctx = checked(call)?;
         // SAFETY: a live context, the argument and this call's return slot.
-        unsafe { swr_http_host_write(ctx, data, call.return_value()) };
+        bailed = unsafe { swr_http_host_write(ctx, data, call.return_value()) };
         Some(())
     };
-    or_false(call, run());
+    let done = run();
+    or_false(call, done);
+    host::raise(bailed);
 }
 
 fn end(call: &Call) {
-    let run = || -> Option<()> {
+    let mut bailed = false;
+    let mut run = || -> Option<()> {
         let ctx = checked(call)?;
         let data = call.arity(0, 1).and_then(|()| call.str_or_null(1)).ok()?;
         // SAFETY: a live context, the optional argument and the return slot.
-        unsafe { swr_http_host_end(ctx, nullable(data), call.return_value()) };
+        bailed = unsafe { swr_http_host_end(ctx, nullable(data), call.return_value()) };
         Some(())
     };
-    or_false(call, run());
+    let done = run();
+    or_false(call, done);
+    host::raise(bailed);
 }
 
 /// `stat(2)` of a file name, as `php_swoole_sys_error` reports its failure.
@@ -190,7 +196,8 @@ fn stat(file: *mut zend_string) -> Result<libc::stat, ()> {
 }
 
 fn send_file(call: &Call) {
-    let run = || -> Option<()> {
+    let mut bailed = false;
+    let mut run = || -> Option<()> {
         let ctx = checked(call)?;
         if host::flags(ctx) & SEND_CHUNKED != 0 {
             host::fatal("can't use sendfile when HTTP chunk is enabled");
@@ -237,10 +244,14 @@ fn send_file(call: &Call) {
             _ => return None,
         }
         // SAFETY: a live context and the checked file range.
-        call.set_bool(unsafe { swr_http_host_send_file(ctx, file, offset, length) });
+        let sent = unsafe { swr_http_host_send_file(ctx, file, offset, length) };
+        bailed = sent < 0;
+        call.set_bool(sent > 0);
         Some(())
     };
-    or_false(call, run());
+    let done = run();
+    or_false(call, done);
+    host::raise(bailed);
 }
 
 /// `http_response_set_cookie`: `cookie` encodes the value, `rawcookie` not.
@@ -437,21 +448,27 @@ fn goaway(call: &Call) {
 }
 
 fn upgrade(call: &Call) {
-    let run = || -> Option<()> {
+    let mut bailed = false;
+    let mut run = || -> Option<()> {
         let ctx = checked(call)?;
         if host::flags(ctx) & CO_SOCKET == 0 {
             host::fatal("async server dose not support protocol upgrade");
             return None;
         }
         // SAFETY: a live coroutine-socket context.
-        call.set_bool(unsafe { swr_http_host_upgrade(ctx) });
+        let upgraded = unsafe { swr_http_host_upgrade(ctx) };
+        bailed = upgraded < 0;
+        call.set_bool(upgraded > 0);
         Some(())
     };
-    or_false(call, run());
+    let done = run();
+    or_false(call, done);
+    host::raise(bailed);
 }
 
 fn push(call: &Call) {
-    let run = || -> Option<()> {
+    let mut bailed = false;
+    let mut run = || -> Option<()> {
         let ctx = websocket(call)?;
         let parsed = call.arity(1, 3).and_then(|()| {
             Ok((
@@ -464,18 +481,20 @@ fn push(call: &Call) {
             return None;
         };
         // SAFETY: a live context, this call's arguments and its return slot.
-        unsafe {
+        bailed = unsafe {
             swr_http_host_push(
                 ctx,
                 data,
                 opcode,
                 flags.unwrap_or(ptr::null_mut()),
                 call.return_value(),
-            );
-        }
+            )
+        };
         Some(())
     };
-    or_false(call, run());
+    let done = run();
+    or_false(call, done);
+    host::raise(bailed);
 }
 
 fn close(call: &Call) {
@@ -526,7 +545,8 @@ fn create_response(call: &Call) {
 }
 
 fn redirect(call: &Call) {
-    let run = || -> Option<()> {
+    let mut bailed = false;
+    let mut run = || -> Option<()> {
         let parsed = call
             .arity(1, 2)
             .map(|()| (call.passed(1), call.zval_or_null(2)));
@@ -535,17 +555,19 @@ fn redirect(call: &Call) {
         };
         let ctx = checked(call)?;
         // SAFETY: a live context, this call's arguments and its return slot.
-        unsafe {
+        bailed = unsafe {
             swr_http_host_redirect(
                 ctx,
                 url,
                 code.unwrap_or(ptr::null_mut()),
                 call.return_value(),
-            );
-        }
+            )
+        };
         Some(())
     };
-    or_false(call, run());
+    let done = run();
+    or_false(call, done);
+    host::raise(bailed);
 }
 
 handlers! {
