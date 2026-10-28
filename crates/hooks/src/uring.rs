@@ -875,7 +875,12 @@ fn statx_to_stat(statx: &libc::statx, stat: &mut libc::stat) {
     stat.st_rdev = device(statx.stx_rdev_major, statx.stx_rdev_minor);
     stat.st_ino = statx.stx_ino;
     stat.st_size = statx.stx_size.cast_signed();
-    stat.st_blksize = libc::blksize_t::try_from(statx.stx_blksize).unwrap_or(libc::blksize_t::MAX);
+    // blksize_t is i64 on x86_64 and i32 on aarch64; the value is a block size.
+    #[cfg(target_arch = "x86_64")]
+    let blksize = libc::blksize_t::from(statx.stx_blksize);
+    #[cfg(not(target_arch = "x86_64"))]
+    let blksize = libc::blksize_t::try_from(statx.stx_blksize).unwrap_or(libc::blksize_t::MAX);
+    stat.st_blksize = blksize;
     stat.st_blocks = statx.stx_blocks.cast_signed();
     stat.st_atime = statx.stx_atime.tv_sec;
     stat.st_atime_nsec = statx.stx_atime.tv_nsec.into();
