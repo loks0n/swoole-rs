@@ -41,7 +41,7 @@ mod php {
             .header("src/shim.h")
             .generate_comments(false)
             .clang_args(includes.iter().map(|dir| format!("-I{}", dir.display())))
-            .allowlist_function("(_?zend_|object_properties_init|php_error_docref|swr_zend_|swr_zval_|zval_|add_assoc_|add_next_index_|add_index_).*")
+            .allowlist_function("(_?zend_|object_properties_init|php_error_docref|php_url_encode|php_format_date|php_time|swr_zend_|swr_zval_|zval_|add_assoc_|add_next_index_|add_index_).*")
             .allowlist_type("(_?zend_|_?zval).*")
             .allowlist_var(
                 "(std_object_handlers|zend_ce_.*|ZEND_ACC_.*|IS_.*|_IS_BOOL|E_.*|ZPP_ERROR_.*|CONST_.*)",
