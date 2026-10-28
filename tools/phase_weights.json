@@ -160,7 +160,6 @@
  "memory-unit": 1,
  "ossupport-unit": 1,
  "ownership": 1,
- "phpcollections-policy": 5,
  "phpcollections-runtime": 6,
  "phpcollections-unit": 1,
  "phpcoroutines-configuration": 4,

@@ -10,11 +10,12 @@ name = "swoole_rs_phpcollections"
 crate-type = ["rlib"]
 
 [features]
-# Swoole\Coroutine\Channel needs PHP headers (swoole-rs-zend-sys).
-php = ["dep:swoole-rs-zend", "swoole-rs-zend/php"]
+# Needs PHP headers (swoole-rs-zend-sys); without it the crate is empty.
+php = ["dep:swoole-rs-zend", "swoole-rs-zend/php", "dep:swoole-rs-memory"]
 
 [dependencies]
 swoole-rs-zend = { path = "../zend", optional = true }
+swoole-rs-memory = { path = "../memory", optional = true }
 
 [lints]
 workspace = true
