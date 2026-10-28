@@ -1567,7 +1567,7 @@ index 63ca2f2..f0514c6 100644
 +            break;
          }
 diff --git a/src/coroutine/socket.cc b/src/coroutine/socket.cc
-index 5a16f4c..1f7241f 100644
+index 5a16f4c..e5bb3f7 100644
 --- a/src/coroutine/socket.cc
 +++ b/src/coroutine/socket.cc
 @@ -20,2 +20,7 @@
@@ -2245,7 +2245,7 @@ index 5a16f4c..1f7241f 100644
 +        [](void *c) { static_cast<Context *>(c)->socket->set_err(errno); },
 +        [](void *c, swr_v1_hook_barrier barrier, void *state) -> bool {
 +            auto *ctx = static_cast<Context *>(c);
-+            EventType wait = ctx->write ? SW_EVENT_WRITE : SW_EVENT_READ;
++            auto wait = ctx->write ? SW_EVENT_WRITE : SW_EVENT_READ;
 +            return ctx->timer->start() && ctx->socket->wait_event(wait, barrier, state);
 +        },
 +        [](void *c, ssize_t retval) { static_cast<Context *>(c)->socket->check_return_value(retval); },
