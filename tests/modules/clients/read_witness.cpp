@@ -52,7 +52,7 @@ namespace BODY_NAMESPACE {
 struct Client {
 #ifdef SELECTED_STATE
     // The selected Client's flags are Rust's (#447); scenarios set and read them the same way.
-    std::unique_ptr<swr_v1_clients_state,decltype(&swr_v1_clients_state_free)> state_{swr_v1_clients_state_new(true),swr_v1_clients_state_free};
+    std::unique_ptr<swr_v1_clients_state,decltype(&swr_v1_clients_state_free)> state_{[]{auto *s=swr_v1_clients_state_new(true);swr_v1_clients_set_flag(s,SWR_CLIENTS_ACTIVE,true);return s;}(),swr_v1_clients_state_free};
     bool flag(uint32_t f) const{return swr_v1_clients_flag(state_.get(),f);}
     void set_flag(uint32_t f,bool v){swr_v1_clients_set_flag(state_.get(),f,v);}
 #else
