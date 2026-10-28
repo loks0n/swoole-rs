@@ -244,6 +244,7 @@
       ],
       "owned_paths": [
         "crates/process/",
+        "crates/phpprocess/",
         "native/process/",
         "migration/patches/process/"
       ],

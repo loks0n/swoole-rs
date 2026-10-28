@@ -17,8 +17,8 @@ void swr_zend_class_set_create_object(zend_class_entry *ce,
     ce->create_object = create;
 }
 
-void swr_zval_empty_string(zval *target) {
-    ZVAL_EMPTY_STRING(target);
+void swr_zend_array_init(zval *target) {
+    array_init(target);
 }
 
 void *swr_zend_emalloc(size_t size) {
@@ -35,10 +35,6 @@ void swr_zval_try_addref(zval *value) {
 
 void swr_zval_try_delref(zval *value) {
     Z_TRY_DELREF_P(value);
-}
-
-void swr_zend_array_init(zval *value) {
-    array_init(value);
 }
 
 zend_string *swr_zend_string_init(const char *text, size_t length) {

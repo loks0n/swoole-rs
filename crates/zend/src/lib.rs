@@ -19,7 +19,9 @@ mod call;
 mod callable;
 mod class;
 mod error;
+mod frame;
 mod function;
+mod helpers;
 mod object;
 pub mod string;
 pub mod value;
@@ -31,8 +33,14 @@ pub use class::{
     Class, class_name, declare_bool, declare_long, declare_string, register_double_constant,
     register_long_constant, unset_property_deny,
 };
-pub use error::{throw_constructed_twice, throw_error, throw_exception};
+pub use error::{
+    E_ERROR, E_WARNING, Message, php_error, throw_constructed_twice, throw_error, throw_exception,
+};
 pub use function::create_object_deny;
+pub use helpers::{
+    add_assoc_long, add_next_index_long, declare_property_null, each_value, long_zval, object_of,
+    update_property, update_property_long,
+};
 pub use object::{Object, init_object, set_object};
 pub use swoole_rs_zend_sys as sys;
 

@@ -23,6 +23,8 @@ zend_class_entry *swr_zend_register_class(const char *name, size_t length,
 void swr_zend_class_set_create_object(zend_class_entry *ce,
                                       zend_object *(*create)(zend_class_entry *ce));
 
+#include "shim_values.h"
+
 /* emalloc and efree (macros taking file and line in debug builds). */
 void *swr_zend_emalloc(size_t size);
 void swr_zend_efree(void *ptr);
@@ -30,9 +32,6 @@ void swr_zend_efree(void *ptr);
 /* Z_TRY_ADDREF_P and Z_TRY_DELREF_P. */
 void swr_zval_try_addref(zval *value);
 void swr_zval_try_delref(zval *value);
-
-/* array_init. */
-void swr_zend_array_init(zval *value);
 
 /* zend_string_init (request memory), zend_string_copy (add a reference),
  * zend_string_release and ZVAL_STR (the zval takes over the reference). */

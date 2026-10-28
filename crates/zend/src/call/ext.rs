@@ -5,35 +5,17 @@ use crate::{
     string::bytes,
     sys::{
         _zend_expected_type_Z_EXPECTED_ARRAY, _zend_expected_type_Z_EXPECTED_STRING_OR_NULL,
-        IS_ARRAY, IS_NULL, IS_STRING, swr_zval_copy, swr_zval_stringl, zend_parse_arg_str_slow,
-        zend_string, zval,
+        IS_ARRAY, IS_NULL, IS_STRING, swr_zval_copy, zend_parse_arg_str_slow, zend_string, zval,
     },
 };
 use std::ptr;
 
 impl Call {
-    /// `ZEND_THIS`: the `$this` zval of a non-static method.
-    #[must_use]
-    #[inline]
-    pub fn this_zval(&self) -> *mut zval {
-        // SAFETY: a live frame; only the field's address is taken.
-        unsafe { &raw mut (*self.frame).This }
-    }
-
     /// `Z_PARAM_ZVAL` of argument `n` (1-based); `None` when not passed.
     #[must_use]
     #[inline]
     pub fn passed(&self, n: u32) -> Option<*mut zval> {
         (n <= self.num_args()).then(|| self.arg(n))
-    }
-
-    /// `Z_PARAM_ZVAL_EX(dest, 1, 0)`: as `passed`, but a passed null is `None`.
-    #[must_use]
-    #[inline]
-    pub fn zval_or_null(&self, n: u32) -> Option<*mut zval> {
-        // SAFETY: a passed argument is a live zval.
-        self.passed(n)
-            .filter(|&arg| unsafe { type_of(arg) } != IS_NULL)
     }
 
     /// `Z_PARAM_STR_OR_NULL`: as `str`, but a passed null is `None`.
@@ -99,13 +81,6 @@ impl Call {
             return Ok(Some(arg));
         }
         Err(Self::wrong(n, arg, _zend_expected_type_Z_EXPECTED_ARRAY))
-    }
-
-    /// `RETVAL_STRINGL`: a copy of `bytes`.
-    #[inline]
-    pub fn set_bytes(&self, bytes: &[u8]) {
-        // SAFETY: the return slot is live; Zend copies the bytes.
-        unsafe { swr_zval_stringl(self.value, bytes.as_ptr().cast(), bytes.len()) };
     }
 
     /// `RETVAL_ZVAL(value, 1, 0)`: a new reference to `value`.

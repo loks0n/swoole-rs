@@ -41,7 +41,7 @@ pub struct Invalid;
 /// One call of an internal function or method: what Zend passes a handler
 /// (`INTERNAL_FUNCTION_PARAMETERS`).
 pub struct Call {
-    frame: *mut zend_execute_data,
+    pub(crate) frame: *mut zend_execute_data,
     value: *mut zval,
 }
 
