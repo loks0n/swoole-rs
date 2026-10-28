@@ -99,6 +99,12 @@ measure both engines, read upstream). Only when that can't settle it, add
 another issue. Size is never a reason to skip a ticket or stop the loop. The
 loop ends only when nothing is claimable.
 
+A decision on an issue is final. If what you find doesn't fit it, implement the
+closest version and say how it differs in the PR. Don't ask again. A turn ends
+with a commit pushed, not a plan: write analysis on the issue only when it
+changes the ticket. A turn's closing message is one line of status for the log:
+no options, no offers and no "say so".
+
 Migration moves code into Rust, never back. Restoring upstream C++ in place of
 Rust needs a goal decision on the issue first; to drop a step machine, move the
 whole operation into Rust.
