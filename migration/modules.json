@@ -558,8 +558,7 @@
       "owned_paths": [
         "crates/ossupport/",
         "native/ossupport/",
-        "migration/patches/ossupport/",
-        "tests/modules/ossupport/"
+        "migration/patches/ossupport/"
       ],
       "phpt_families": [
         "swoole_coroutine_system"

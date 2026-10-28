@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Independent copied-policy differential, separate from native/PHP lifecycle gates."""
-import argparse,json,subprocess,sys,time
+import argparse,json,re,subprocess,sys,time
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[3]
-sys.path.insert(0,str(ROOT/'tests/modules/ossupport'))
-from archive_identity import sanitizer_outcome
+def sanitizer_outcome(stderr):
+ if re.search(r'(?:ERROR|SUMMARY): (?:AddressSanitizer|LeakSanitizer)|runtime error:|AddressSanitizer:DEADLYSIGNAL',stderr):return 'failed'
+ if re.search(r'WARNING: (?:ASan|AddressSanitizer|LeakSanitizer)',stderr):return 'warned'
+ return 'passed'
 def main():
  p=argparse.ArgumentParser(description=__doc__);p.add_argument('--archive',type=Path);p.add_argument('--output',type=Path);a=p.parse_args()
  if a.output and a.output.exists():p.error('Refusing existing report')

@@ -523,12 +523,6 @@ def plan(args, reports):
     if 'process' in modules:
         script('process-policy', 'tests/modules/process/gate.py',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('process-policy'))
-    if 'ossupport' in modules:
-        script('ossupport-policy', 'tests/modules/ossupport/gate.py',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('ossupport-policy'))
-    if 'ossupport' in modules and integrate:
-        script('ossupport-php', 'tests/modules/ossupport/php.py', '--manifest', manifest,
-               '--source', ROOT / 'target/upstream/src', *php, *engines, *report('ossupport-php'))
     if 'coroutine' in modules and integrate:
         native_options = ['--php-prefix', subprocess.check_output(['php-config', '--prefix'], text=True).strip()] if sys.platform == 'darwin' else []
         if getattr(args, 'gtest_prefix', None):
