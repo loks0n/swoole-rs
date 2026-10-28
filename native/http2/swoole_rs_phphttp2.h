@@ -26,12 +26,13 @@ void swr_v1_phphttp2_client_minit(const struct _zend_function_entry *methods,
 /* The socket's close hook. */
 void swr_v1_phphttp2_client_socket_dtor(void *conn);
 
-/* A header for the HPACK helpers. */
+/* A header for the HPACK helpers: nghttp2_nv's layout. */
 struct swoole_http2_client_coro_nv {
     const uint8_t *name;
-    size_t namelen;
     const uint8_t *value;
+    size_t namelen;
     size_t valuelen;
+    uint8_t flags;
 };
 
 /* Defined by ext-src/swoole_http2_client_coro.cc: the coroutine socket and
@@ -58,10 +59,14 @@ void *swoole_http2_client_coro_inflater(int *error);
 void *swoole_http2_client_coro_deflater(uint32_t table_size, int *error);
 void swoole_http2_client_coro_hpack_free(void *inflater, void *deflater);
 int swoole_http2_client_coro_deflate_table(void *deflater, uint32_t size);
-struct _zend_string *swoole_http2_client_coro_deflate(void *deflater,
-                                                      const struct swoole_http2_client_coro_nv *headers,
-                                                      size_t count,
-                                                      ssize_t *result);
+size_t swoole_http2_client_coro_deflate_bound(void *deflater,
+                                              const struct swoole_http2_client_coro_nv *headers,
+                                              size_t count);
+ssize_t swoole_http2_client_coro_deflate(void *deflater,
+                                         uint8_t *out,
+                                         size_t capacity,
+                                         const struct swoole_http2_client_coro_nv *headers,
+                                         size_t count);
 ssize_t swoole_http2_client_coro_inflate(void *inflater,
                                          const uint8_t *in,
                                          size_t length,

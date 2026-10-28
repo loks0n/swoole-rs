@@ -76,6 +76,8 @@ const SETTING_HEADER_TABLE_SIZE: u16 = 1;
 const SETTING_MAX_HEADER_LIST_SIZE: u16 = 6;
 /// `NGHTTP2_HD_INFLATE_EMIT`.
 const INFLATE_EMIT: c_int = 2;
+/// `NGHTTP2_NV_FLAG_NO_COPY_NAME | NGHTTP2_NV_FLAG_NO_COPY_VALUE`.
+const NV_NO_COPY: u8 = 0x02 | 0x04;
 /// The `:authority` slot (`HTTP2_CLIENT_HOST_HEADER_INDEX`).
 const AUTHORITY: usize = 3;
 /// `SW_ERROR_*` and `HTTP_ESTATUS_SERVER_RESET`.
@@ -215,15 +217,17 @@ impl Headers {
             .map(|slot| match slot {
                 Some((name, value)) => Header {
                     name: name.as_ptr(),
-                    name_length: name.len(),
                     value: value.as_ptr(),
+                    name_length: name.len(),
                     value_length: value.len(),
+                    flags: NV_NO_COPY,
                 },
                 None => Header {
                     name: ptr::null(),
-                    name_length: 0,
                     value: ptr::null(),
+                    name_length: 0,
                     value_length: 0,
+                    flags: 0,
                 },
             })
             .collect()
@@ -575,7 +579,8 @@ impl Client {
         self.send(&frame)
     }
 
-    /// `build_header`: the request's HPACK block, or None after the error.
+    /// `build_header`: a HEADERS frame whose first nine bytes are left for
+    /// its header, then the request's HPACK block; None after the error.
     fn build_header(&mut self, request: *mut zend_object) -> Option<Vec<u8>> {
         // SAFETY: a live request object, which declares each property.
         let method = unsafe { table::property(request, c"method") };
@@ -651,26 +656,31 @@ impl Client {
             }
         }
         let list = set.list();
-        let mut result = 0;
         // SAFETY: the codec and a list of live headers.
-        let block = unsafe {
+        let bound = unsafe {
+            native::swoole_http2_client_coro_deflate_bound(self.deflater, list.as_ptr(), list.len())
+        };
+        let mut frame = vec![0_u8; FRAME_HEADER + bound];
+        // SAFETY: as above, into the frame's `bound` bytes after its header.
+        let written = unsafe {
             native::swoole_http2_client_coro_deflate(
                 self.deflater,
+                frame.as_mut_ptr().wrapping_add(FRAME_HEADER),
+                bound,
                 list.as_ptr(),
                 list.len(),
-                &raw mut result,
             )
         };
-        if result < 0 || block.is_null() {
+        if written < 0 {
             #[expect(
                 clippy::cast_possible_truncation,
                 reason = "nghttp2 error codes are small ints"
             )]
-            self.nghttp2_error(result as c_int, "nghttp2_hd_deflate_hd() failed");
+            self.nghttp2_error(written as c_int, "nghttp2_hd_deflate_hd() failed");
             return None;
         }
-        // SAFETY: the new string's reference.
-        Some(unsafe { Owned::from_raw(block) }.bytes().to_vec())
+        frame.truncate(FRAME_HEADER + written.unsigned_abs());
+        Some(frame)
     }
 
     /// `send_request`: the new stream's id, or 0.
@@ -708,15 +718,18 @@ impl Client {
                 );
             };
         }
-        let Some(block) = self.build_header(request).filter(|block| !block.is_empty()) else {
+        let Some(mut frame) = self
+            .build_header(request)
+            .filter(|frame| frame.len() > FRAME_HEADER)
+        else {
             return 0;
         };
         let flags = sw_rs_http2_stream_flags(u32::from(pipeline), u32::from(use_pipeline_read));
         let id = self.stream_id;
         self.create_stream(id, flags);
         let header_flags = sw_rs_http2_headers_flags(u32::from(empty), 1, flags);
-        let mut frame = frame_header(TYPE_HEADERS, block.len(), header_flags, id).to_vec();
-        frame.extend_from_slice(&block);
+        let header = frame_header(TYPE_HEADERS, frame.len() - FRAME_HEADER, header_flags, id);
+        frame[..FRAME_HEADER].copy_from_slice(&header);
         if !self.send(&frame) {
             return 0;
         }
@@ -1062,6 +1075,7 @@ impl Client {
                 name_length: 0,
                 value: ptr::null(),
                 value_length: 0,
+                flags: 0,
             };
             // SAFETY: the codec, the block and writable locals.
             let read = unsafe {

@@ -8,14 +8,15 @@ use swoole_rs_zend::sys::{zend_object, zend_string, zval};
 /// A `SocketImpl *`.
 pub(crate) type Socket = *mut c_void;
 
-/// `struct swoole_http2_client_coro_nv`.
+/// `nghttp2_nv`.
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub(crate) struct Header {
     pub(crate) name: *const u8,
-    pub(crate) name_length: size_t,
     pub(crate) value: *const u8,
+    pub(crate) name_length: size_t,
     pub(crate) value_length: size_t,
+    pub(crate) flags: u8,
 }
 
 unsafe extern "C" {
@@ -71,14 +72,20 @@ unsafe extern "C" {
     pub(crate) fn swoole_http2_client_coro_hpack_free(inflater: *mut c_void, deflater: *mut c_void);
     pub(crate) fn swoole_http2_client_coro_deflate_table(deflater: *mut c_void, size: u32)
     -> c_int;
-    /// `nghttp2_hd_deflate_hd` into a new string sized by its bound; `result`
-    /// is its return value (negative on error, with a null string).
-    pub(crate) fn swoole_http2_client_coro_deflate(
+    /// `nghttp2_hd_deflate_bound`.
+    pub(crate) fn swoole_http2_client_coro_deflate_bound(
         deflater: *mut c_void,
         headers: *const Header,
         count: size_t,
-        result: *mut ssize_t,
-    ) -> *mut zend_string;
+    ) -> size_t;
+    /// `nghttp2_hd_deflate_hd` into `out`: the length, or a negative error.
+    pub(crate) fn swoole_http2_client_coro_deflate(
+        deflater: *mut c_void,
+        out: *mut u8,
+        capacity: size_t,
+        headers: *const Header,
+        count: size_t,
+    ) -> ssize_t;
     /// One `nghttp2_hd_inflate_hd` step (`in_final` set).
     pub(crate) fn swoole_http2_client_coro_inflate(
         inflater: *mut c_void,

@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_http2_client_coro.cc b/ext-src/swoole_http2_client_coro.cc
-index d4c873f..9cde22b 100644
+index d4c873f..3858d28 100644
 --- a/ext-src/swoole_http2_client_coro.cc
 +++ b/ext-src/swoole_http2_client_coro.cc
 @@ -22,3 +22,2 @@
@@ -281,7 +281,7 @@ index d4c873f..9cde22b 100644
 +PHP_METHOD(swoole_http2_client_coro, goaway);
 +PHP_METHOD(swoole_http2_client_coro, close);
  SW_EXTERN_C_END
-@@ -307,1181 +75,201 @@ static const zend_function_entry swoole_http2_client_methods[] =
+@@ -307,1002 +75,111 @@ static const zend_function_entry swoole_http2_client_methods[] =
  void php_swoole_http2_client_coro_minit(int module_number) {
 -    SW_INIT_CLASS_ENTRY(
 -        swoole_http2_client_coro, "Swoole\\Coroutine\\Http2\\Client", "Co\\Http2\\Client", swoole_http2_client_methods);
@@ -1241,8 +1241,10 @@ index d4c873f..9cde22b 100644
 -    stream_id += 2;
 -
 -    return stream->stream_id;
--}
--
++const char *swoole_http2_client_coro_read_buffer(void *socket) {
++    return http2_socket(socket)->get_read_buffer()->str;
+ }
+ 
 -/**
 - * called in write channel
 - */
@@ -1294,8 +1296,10 @@ index d4c873f..9cde22b 100644
 -    stream->flags = sw_rs_http2_stream_update(stream->flags, end, 0);
 -
 -    return true;
-+const char *swoole_http2_client_coro_read_buffer(void *socket) {
-+    return http2_socket(socket)->get_read_buffer()->str;
++void *swoole_http2_client_coro_inflater(int *error) {
++    nghttp2_hd_inflater *inflater = nullptr;
++    *error = nghttp2_hd_inflate_new2(&inflater, php_nghttp2_mem());
++    return inflater;
  }
  
 -/**
@@ -1317,10 +1321,10 @@ index d4c873f..9cde22b 100644
 -    bool ret = send(frame, length);
 -    efree(frame);
 -    return ret;
-+void *swoole_http2_client_coro_inflater(int *error) {
-+    nghttp2_hd_inflater *inflater = nullptr;
-+    *error = nghttp2_hd_inflate_new2(&inflater, php_nghttp2_mem());
-+    return inflater;
++void *swoole_http2_client_coro_deflater(uint32_t table_size, int *error) {
++    nghttp2_hd_deflater *deflater = nullptr;
++    *error = nghttp2_hd_deflate_new2(&deflater, table_size, php_nghttp2_mem());
++    return deflater;
  }
  
 -static PHP_METHOD(swoole_http2_client_coro, send) {
@@ -1328,7 +1332,10 @@ index d4c873f..9cde22b 100644
 -
 -    if (!h2c->is_available()) {
 -        RETURN_FALSE;
--    }
++void swoole_http2_client_coro_hpack_free(void *inflater, void *deflater) {
++    if (inflater) {
++        nghttp2_hd_inflate_del(static_cast<nghttp2_hd_inflater *>(inflater));
+     }
 -
 -    zval *zrequest;
 -
@@ -1343,12 +1350,10 @@ index d4c873f..9cde22b 100644
 -        RETURN_FALSE;
 -    } else {
 -        RETURN_LONG(stream_id);
--    }
-+void *swoole_http2_client_coro_deflater(uint32_t table_size, int *error) {
-+    nghttp2_hd_deflater *deflater = nullptr;
-+    *error = nghttp2_hd_deflate_new2(&deflater, table_size, php_nghttp2_mem());
-+    return deflater;
- }
++    if (deflater) {
++        nghttp2_hd_deflate_del(static_cast<nghttp2_hd_deflater *>(deflater));
+     }
+@@ -1310,178 +187,79 @@ static PHP_METHOD(swoole_http2_client_coro, send) {
  
 -static void http2_client_coro_recv(INTERNAL_FUNCTION_PARAMETERS, bool pipeline_read) {
 -    Client *h2c = http2_client_coro_get_client(ZEND_THIS);
@@ -1358,9 +1363,13 @@ index d4c873f..9cde22b 100644
 -    Z_PARAM_OPTIONAL
 -    Z_PARAM_DOUBLE(timeout)
 -    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
--
++int swoole_http2_client_coro_deflate_table(void *deflater, uint32_t size) {
++    return nghttp2_hd_deflate_change_table_size(static_cast<nghttp2_hd_deflater *>(deflater), size);
++}
+ 
 -    SW_CLIENT_PRESERVE_SOCKET(ZEND_THIS);
--
++static_assert(sizeof(swoole_http2_client_coro_nv) == sizeof(nghttp2_nv), "nghttp2_nv layout");
+ 
 -    while (true) {
 -        if (!h2c->is_available()) {
 -            RETURN_FALSE;
@@ -1376,74 +1385,44 @@ index d4c873f..9cde22b 100644
 -        } else {
 -            RETURN_FALSE;
 -        }
-+void swoole_http2_client_coro_hpack_free(void *inflater, void *deflater) {
-+    if (inflater) {
-+        nghttp2_hd_inflate_del(static_cast<nghttp2_hd_inflater *>(inflater));
-     }
-+    if (deflater) {
-+        nghttp2_hd_deflate_del(static_cast<nghttp2_hd_deflater *>(deflater));
-+    }
-+}
-+
-+int swoole_http2_client_coro_deflate_table(void *deflater, uint32_t size) {
-+    return nghttp2_hd_deflate_change_table_size(static_cast<nghttp2_hd_deflater *>(deflater), size);
-+}
-+
-+zend_string *swoole_http2_client_coro_deflate(void *deflater,
-+                                              const swoole_http2_client_coro_nv *headers,
-+                                              size_t count,
-+                                              ssize_t *result) {
-+    auto *codec = static_cast<nghttp2_hd_deflater *>(deflater);
-+    std::vector<nghttp2_nv> nvs(count);
-+    for (size_t i = 0; i < count; i++) {
-+        nvs[i].name = (uint8_t *) headers[i].name;
-+        nvs[i].namelen = headers[i].namelen;
-+        nvs[i].value = (uint8_t *) headers[i].value;
-+        nvs[i].valuelen = headers[i].valuelen;
-+        nvs[i].flags = NGHTTP2_NV_FLAG_NO_COPY_NAME | NGHTTP2_NV_FLAG_NO_COPY_VALUE;
-+    }
-+    size_t bound = nghttp2_hd_deflate_bound(codec, nvs.data(), count);
-+    zend_string *block = zend_string_alloc(bound, 0);
-+    *result = nghttp2_hd_deflate_hd(codec, (uint8_t *) ZSTR_VAL(block), bound, nvs.data(), count);
-+    if (*result < 0) {
-+        zend_string_free(block);
-+        return nullptr;
-+    }
-+    ZSTR_LEN(block) = *result;
-+    ZSTR_VAL(block)[*result] = '\0';
-+    return block;
-+}
-+
-+ssize_t swoole_http2_client_coro_inflate(
-+    void *inflater, const uint8_t *in, size_t length, int *flags, swoole_http2_client_coro_nv *header) {
-+    nghttp2_nv nv = {};
-+    ssize_t rv = nghttp2_hd_inflate_hd(static_cast<nghttp2_hd_inflater *>(inflater), &nv, flags, (uint8_t *) in, length, 1);
-+    header->name = nv.name;
-+    header->namelen = nv.namelen;
-+    header->value = nv.value;
-+    header->valuelen = nv.valuelen;
-+    return rv;
+-    }
++size_t swoole_http2_client_coro_deflate_bound(void *deflater, const swoole_http2_client_coro_nv *headers, size_t count) {
++    return nghttp2_hd_deflate_bound(
++        static_cast<nghttp2_hd_deflater *>(deflater), reinterpret_cast<const nghttp2_nv *>(headers), count);
  }
  
 -static PHP_METHOD(swoole_http2_client_coro, recv) {
 -    http2_client_coro_recv(INTERNAL_FUNCTION_PARAM_PASSTHRU, false);
--}
--
++ssize_t swoole_http2_client_coro_deflate(
++    void *deflater, uint8_t *out, size_t capacity, const swoole_http2_client_coro_nv *headers, size_t count) {
++    return nghttp2_hd_deflate_hd(static_cast<nghttp2_hd_deflater *>(deflater),
++                                 out,
++                                 capacity,
++                                 reinterpret_cast<const nghttp2_nv *>(headers),
++                                 count);
+ }
+ 
 -static PHP_METHOD(swoole_http2_client_coro, __destruct) {}
 -
 -static PHP_METHOD(swoole_http2_client_coro, close) {
 -    Client *h2c = http2_client_coro_get_client(ZEND_THIS);
 -    SW_CLIENT_PRESERVE_SOCKET(&h2c->zsocket);
 -    RETURN_BOOL(h2c->close());
-+void swoole_http2_client_coro_inflate_end(void *inflater) {
-+    nghttp2_hd_inflate_end_headers(static_cast<nghttp2_hd_inflater *>(inflater));
++ssize_t swoole_http2_client_coro_inflate(
++    void *inflater, const uint8_t *in, size_t length, int *flags, swoole_http2_client_coro_nv *header) {
++    return nghttp2_hd_inflate_hd(static_cast<nghttp2_hd_inflater *>(inflater),
++                                 reinterpret_cast<nghttp2_nv *>(header),
++                                 flags,
++                                 (uint8_t *) in,
++                                 length,
++                                 1);
  }
  
 -static PHP_METHOD(swoole_http2_client_coro, connect) {
 -    Client *h2c = http2_client_coro_get_client(ZEND_THIS);
 -    RETURN_BOOL(h2c->connect());
-+const char *swoole_http2_client_coro_strerror(int code) {
-+    return nghttp2_strerror(code);
++void swoole_http2_client_coro_inflate_end(void *inflater) {
++    nghttp2_hd_inflate_end_headers(static_cast<nghttp2_hd_inflater *>(inflater));
  }
  
 -static sw_inline void http2_client_settings_to_array(const Http2::Settings *settings, zval *zarray) {
@@ -1453,8 +1432,8 @@ index d4c873f..9cde22b 100644
 -    add_assoc_long_ex(zarray, ZEND_STRL("max_concurrent_streams"), settings->max_concurrent_streams);
 -    add_assoc_long_ex(zarray, ZEND_STRL("max_frame_size"), settings->max_frame_size);
 -    add_assoc_long_ex(zarray, ZEND_STRL("max_header_list_size"), settings->max_header_list_size);
-+void swoole_http2_client_coro_set_cookies(const char *at, size_t length, zval *cookies, zval *set_cookie_headers) {
-+    php_swoole_http_parse_set_cookies(at, length, cookies, set_cookie_headers);
++const char *swoole_http2_client_coro_strerror(int code) {
++    return nghttp2_strerror(code);
  }
  
 -static PHP_METHOD(swoole_http2_client_coro, stats) {
@@ -1491,8 +1470,8 @@ index d4c873f..9cde22b 100644
 -        add_assoc_zval_ex(return_value, ZEND_STRL("remote_settings"), zarray);
 -        add_assoc_long_ex(return_value, ZEND_STRL("active_stream_num"), h2c->streams.size());
 -    }
-+void swoole_http2_client_coro_unconstructed(void) {
-+    swoole_fatal_error(SW_ERROR_WRONG_OPERATION, "must call constructor first");
++void swoole_http2_client_coro_set_cookies(const char *at, size_t length, zval *cookies, zval *set_cookie_headers) {
++    php_swoole_http_parse_set_cookies(at, length, cookies, set_cookie_headers);
  }
  
 -static PHP_METHOD(swoole_http2_client_coro, isStreamExist) {
@@ -1514,8 +1493,8 @@ index d4c873f..9cde22b 100644
 -    }
 -    Stream *stream = h2c->get_stream(stream_id);
 -    RETURN_BOOL(stream ? 1 : 0);
-+void swoole_http2_client_coro_last_error(int code) {
-+    swoole_set_last_error(code);
++void swoole_http2_client_coro_unconstructed(void) {
++    swoole_fatal_error(SW_ERROR_WRONG_OPERATION, "must call constructor first");
  }
  
 -static PHP_METHOD(swoole_http2_client_coro, write) {
@@ -1539,14 +1518,14 @@ index d4c873f..9cde22b 100644
 -    SW_CLIENT_PRESERVE_SOCKET(&h2c->zsocket);
 -
 -    RETURN_BOOL(h2c->write_data(stream_id, data, end));
-+const char *swoole_http2_client_coro_swoole_strerror(int code) {
-+    return swoole_strerror(code);
++void swoole_http2_client_coro_last_error(int code) {
++    swoole_set_last_error(code);
  }
  
 -static PHP_METHOD(swoole_http2_client_coro, read) {
 -    http2_client_coro_recv(INTERNAL_FUNCTION_PARAM_PASSTHRU, true);
-+void swoole_http2_client_coro_warning(const char *message) {
-+    php_swoole_error(E_WARNING, "%s", message);
++const char *swoole_http2_client_coro_swoole_strerror(int code) {
++    return swoole_strerror(code);
  }
  
 -static PHP_METHOD(swoole_http2_client_coro, ping) {
@@ -1557,8 +1536,10 @@ index d4c873f..9cde22b 100644
 -    }
 -
 -    RETURN_BOOL(h2c->send_ping_frame());
--}
--
++void swoole_http2_client_coro_warning(const char *message) {
++    php_swoole_error(E_WARNING, "%s", message);
+ }
+ 
 -/**
 - * +-+-------------------------------------------------------------+
 - * |R|                  Last-Stream-ID (31)                        |
