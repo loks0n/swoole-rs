@@ -140,6 +140,8 @@ pub use swoole_rs_ports as ports;
 
 #[cfg(feature = "phphelpers")]
 pub use swoole_rs_phphelpers as phphelpers;
+#[cfg(feature = "phphelpers")]
+pub use swoole_rs_phpstdext as phpstdext;
 
 #[cfg(feature = "phpcollections")]
 pub use swoole_rs_phpcollections as phpcollections;
