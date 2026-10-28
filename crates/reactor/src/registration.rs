@@ -134,10 +134,11 @@ pub use kqueue::*;
 mod kqueue {
     use super::{SW_EVENT_READ, SW_EVENT_WRITE, c_int, c_void, reads, writes};
 
-    /// `NOTE_EOF` where the platform defines it (upstream's `#ifdef NOTE_EOF`).
-    #[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
-    const NOTE_EOF: u32 = 0x0002;
-    #[cfg(not(any(target_os = "freebsd", target_os = "openbsd")))]
+    /// `NOTE_EOF` where the platform defines it (upstream's `#ifdef NOTE_EOF`): only
+    /// OpenBSD's headers do; FreeBSD's 0x0002 is `NOTE_FILE_POLL`.
+    #[cfg(target_os = "openbsd")]
+    const NOTE_EOF: u32 = libc::NOTE_EOF;
+    #[cfg(not(target_os = "openbsd"))]
     const NOTE_EOF: u32 = 0;
 
     /// One change for `fd`: `EV_ADD` or `EV_DELETE` on `filter`; whether it took.
