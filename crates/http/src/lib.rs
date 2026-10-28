@@ -117,8 +117,19 @@ unsafe extern "C" {
 /// Preserve the pinned POSIX comparison's current locale and matching-NUL rules.
 /// This libc leaf borrows initialized bytes only; it has no allocator, callback,
 /// IO or Zend boundary. ASCII folding alone differs for configured binary paths.
+/// True when libc's case-insensitive comparison differs at this first byte pair in
+/// every locale, so the call can be skipped: `tolower` keeps ASCII in ASCII except
+/// Turkish `I` (to `ı`), and only Turkish `İ` lowers to an ASCII byte (`i`).
+fn differs_at_first(left: u8, right: u8) -> bool {
+    left.is_ascii()
+        && right.is_ascii()
+        && left | 0x20 != b'i'
+        && right | 0x20 != b'i'
+        && !left.eq_ignore_ascii_case(&right)
+}
 fn case_prefix(input: &[u8], expected: &[u8]) -> bool {
     input.len() >= expected.len()
+        && !matches!((input.first(), expected.first()), (Some(&left), Some(&right)) if differs_at_first(left, right))
         // SAFETY: both slices hold at least `expected.len()` readable bytes.
         && unsafe {
             strncasecmp(
@@ -368,6 +379,40 @@ pub unsafe extern "C" fn swr_v1_http_boundary(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn skipped_first_bytes_differ_under_libc_in_each_locale() {
+        unsafe extern "C" {
+            fn setlocale(category: i32, locale: *const std::ffi::c_char) -> *mut std::ffi::c_char;
+        }
+        const LC_CTYPE: i32 = if cfg!(target_os = "linux") { 0 } else { 2 };
+        let locales = [
+            c"C",
+            c"C.UTF-8",
+            c"en_US.ISO8859-1",
+            c"en_US.UTF-8",
+            c"tr_TR.ISO8859-9",
+            c"tr_TR.UTF-8",
+        ];
+        for locale in locales {
+            // SAFETY: a NUL-terminated name; this test alone changes LC_CTYPE, then restores it.
+            if unsafe { setlocale(LC_CTYPE, locale.as_ptr()) }.is_null() {
+                continue;
+            }
+            for left in 0..=u8::MAX {
+                for right in 0..=u8::MAX {
+                    if differs_at_first(left, right) {
+                        let (a, b) = ([left, 0], [right, 0]);
+                        // SAFETY: both arrays hold the one compared byte.
+                        let result =
+                            unsafe { strncasecmp(a.as_ptr().cast(), b.as_ptr().cast(), 1) };
+                        assert_ne!(result, 0, "{left:#x} {right:#x} in {locale:?}");
+                    }
+                }
+            }
+        }
+        // SAFETY: restores the default locale.
+        unsafe { setlocale(LC_CTYPE, c"C".as_ptr()) };
+    }
     #[test]
     fn positive_url_encoding_capacity_and_bytes_cover_loop_boundaries() {
         for length in [0, 1, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 1024] {
