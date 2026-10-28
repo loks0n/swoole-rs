@@ -958,6 +958,11 @@ class ChangedModules(unittest.TestCase):
         self.assertEqual(self.changed('crates/oracle/build.rs', 'fuzz/src/lib.rs'), [])
         self.assertEqual(self.changed('migration/patches/halfclose/manifest.json'), sorted(dev.MODULES))
 
+    def test_selection_adds_the_modules_a_module_cannot_build_without(self):
+        # build_hybrid.py refuses phpcollections without memory (TableV2 storage).
+        selected = dev.selected_modules(SimpleNamespace(module=['phpcollections'], all_modules=False))
+        self.assertIn('memory', selected)
+
 
 class FocusedPhases(unittest.TestCase):
     def test_explicit_selection_keeps_canonical_order_and_records_omitted_gates(self):

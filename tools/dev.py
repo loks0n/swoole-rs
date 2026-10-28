@@ -18,7 +18,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.harness import ROOT, write_report
-from tools.build_hybrid import GRADUATED, MODULES, SELECTABLE, profile_suffix, build_alias
+from tools.build_hybrid import GRADUATED, MODULES, REQUIRES, SELECTABLE, profile_suffix, build_alias
 from tools.build_upstream import require_build_space
 from tools.dev_report import read_json
 from tools.private_copy import copy_private
@@ -74,7 +74,7 @@ CONTROLS = {'tls': ('coroutine', 'corebase')}
 
 def selected_modules(args):
     chosen = MODULES if getattr(args, 'all_modules', False) else args.module or []
-    chosen = set(chosen) | {control for module in chosen for control in CONTROLS.get(module, ())}
+    chosen = set(chosen) | {extra for module in chosen for extra in CONTROLS.get(module, ()) + REQUIRES.get(module, ())}
     return sorted(chosen | set(GRADUATED))
 
 
