@@ -95,10 +95,8 @@ Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` j
   Rust ASan runs on Linux only.
 - `codec_gate.py` case counts differ by platform because plain `char` is signed
   on macOS and unsigned on Linux.
-- Excluded as native undefined behaviour: out-of-bounds DNS packet writes,
-  resolver 32-byte endpoint / 16-byte token overflows, connect-callback deletion
-  followed by Client read, aborting async dispatch enums. Rust stops at bounds
-  instead.
+- Some inputs are outside the compared domain and are not compared; Rust stops at
+  bounds on them.
 - The Rust pool frees its container buffers at teardown; the original leaks
   residual queues. Neither closes the opaque Client tokens.
 - Removing temporary hosts-parser containers and IP-text string appends changes

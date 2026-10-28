@@ -94,10 +94,5 @@ defaults to -1. ID 0 means no active node; real IDs start at 1.
 
 ## Differences from upstream
 
-Upstream keeps the active heap-node pointer across its callback and pops the
-head for a one-shot, so a callback that delays its own one-shot timer frees the
-wrong node (ASan: heap-use-after-free in `Timer::select()` at `timer.cc:162`), and
-recursive selection can select the active node again (abort). This contract
-instead completes by active ID, accepts active updates, rejects nested selection
-and defers release on close. Deadline, ID and count arithmetic is checked
-instead of the unchecked signed additions upstream uses.
+This contract completes by active ID, accepts active updates, rejects nested selection
+and defers release on close. Deadline, ID and count arithmetic is checked.

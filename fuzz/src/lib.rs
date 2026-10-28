@@ -67,8 +67,7 @@ pub fn ws_frame_length(bytes: &[u8]) {
             swr_v1_ws_frame_length(bytes.as_ptr(), bytes.len(), &mut got_header),
         )
     };
-    // Upstream's result is undefined for some lengths (private advisory);
-    // Rust reports -1 there.
+    // Some lengths are outside the compared domain; Rust reports -1 there.
     assert!(
         want as i64 == got || got == -1 && want < 0,
         "total {want} vs {got} for {bytes:?}"
@@ -271,7 +270,7 @@ pub fn framing_length(bytes: &[u8]) {
     match status {
         0 => assert_eq!((want, header as i64), (0, got), "need more for {bytes:?}"),
         1 => assert_eq!(want as i64, got, "total for {bytes:?}"),
-        // Upstream is undefined for some lengths (private advisory); only an error must match.
+        // Outside the compared domain only an error must match.
         _ => assert!(want < 0, "error {status} vs {want} for {bytes:?}"),
     }
 }
@@ -285,8 +284,7 @@ fn terminated(data: &[u8]) -> Vec<c_char> {
         .collect()
 }
 
-/// Whether upstream's result is undefined for this chunk length (private
-/// advisory), so it isn't compared.
+/// Whether this chunk length is outside the compared domain.
 fn huge_chunk(data: &[u8]) -> bool {
     let mut at = 0;
     while at < data.len() {
@@ -351,13 +349,12 @@ pub fn http_frame(bytes: &[u8]) {
         };
     }
     let got = frame(&CANDIDATE, operation, data, state);
-    // Not comparable: upstream is undefined here (private advisory).
+    // Outside the compared domain.
     if operation == 2 && huge_chunk(&data[state.offset..]) {
         return;
     }
     let want = frame(&UPSTREAM, operation, data, state);
-    // Upstream is undefined for these inputs (private advisory); the candidate
-    // must wait for more data.
+    // Outside the compared domain the candidate must wait for more data.
     if operation == 0 && want.0 == 0 && want.1.offset > data.len() {
         assert_eq!(
             (got.0, got.1.offset),
@@ -426,8 +423,7 @@ pub fn http_header(bytes: &[u8]) {
 }
 
 /// Upstream `mqtt::get_package_length` and the candidate over the same received
-/// bytes. With nothing received upstream is undefined (private advisory), so
-/// only the candidate runs there.
+/// bytes. With nothing received only the candidate runs.
 pub fn mqtt_length(bytes: &[u8]) {
     let data: Vec<c_char> = bytes.iter().map(|&byte| byte as c_char).collect();
     let size = data.len().min(u32::MAX as usize) as u32;
@@ -441,8 +437,8 @@ pub fn mqtt_length(bytes: &[u8]) {
 }
 
 /// Walks upstream `redis::parse` over `data` (and the NUL after it) without
-/// reading it: false where upstream is undefined (private advisory) or where it
-/// meets input `recv_packet` never passes it. Those inputs are not compared.
+/// reading it: false for inputs outside the compared domain, including input
+/// `recv_packet` never passes it. Those inputs are not compared.
 fn resp_parse_in_bounds(data: &[u8]) -> bool {
     let at = |index: usize| data.get(index).copied().unwrap_or(0);
     // get_number: strtol after the type byte, then CRLF; Some((ret, next)).
@@ -598,8 +594,8 @@ pub fn clients_cookie(bytes: &[u8]) {
 }
 
 /// Any bytes as a received DNS name buffer: where Rust decodes in bounds, upstream
-/// decodes to the same bytes. Elsewhere upstream is undefined (private advisory)
-/// and Rust reports 0, so upstream isn't run.
+/// decodes to the same bytes. Other inputs are outside the compared domain: Rust
+/// reports 0 and upstream isn't run.
 pub fn clients_domain_decode(bytes: &[u8]) {
     let (mut theirs, mut ours) = (bytes.to_vec(), bytes.to_vec());
     // SAFETY: Rust stays within `ours`.
@@ -638,7 +634,7 @@ pub fn http_header_info(bytes: &[u8]) {
         info
     };
     let got = info(&CANDIDATE);
-    // Upstream is undefined here (private advisory); the candidate rejects the request.
+    // Outside the compared domain the candidate rejects the request.
     if multipart_nul(bytes, line + 2, end) {
         assert_eq!(got.flags & 32, 32, "excepted for {bytes:?}");
         return;

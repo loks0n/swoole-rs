@@ -189,9 +189,7 @@ Scalar helpers: checked round-up/add/multiply and reallocation-copy plans return
 0/-1 with zeroed outputs on error. Size includes the 8-byte header; multiplication
 validates the rounded mapping size. A zero-byte allocation still reserves a header.
 
-Reallocation copies min(old_total-8, new_total-8). Known upstream bug: the pinned
-code passes old_total to memcpy from the payload pointer, reading past the old
-payload and overrunning a shrinking mapping. This is deliberately not reproduced.
+Reallocation copies min(old_total-8, new_total-8) payload bytes.
 
 Storage functions:
 

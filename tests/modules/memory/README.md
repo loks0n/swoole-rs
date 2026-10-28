@@ -28,8 +28,8 @@ rows. `--sanitize` adds ASan/UBSan to the C++ facades only (not Rust or PHP).
 `--prepare-benchmark DIR` (unsanitized only) stores optimized binaries, a source
 snapshot and a hash manifest for `benchmark.py`.
 
-Known differences: shrinking `realloc` copies `min(old, new)` payload instead of
-upstream's header-inclusive overrun; odd-width native rows use aligned physical
+Known differences: shrinking `realloc` copies `min(old, new)` payload and is
+compared on Rust only; odd-width native rows use aligned physical
 storage with unchanged logical byte accounting.
 
 ## Table witnesses

@@ -787,7 +787,7 @@ pub extern "C" fn swr_v1_clients_persistent_next(stage: u32, facts: u32) -> Pers
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ResolvLine {
-    /// 0: no prefix; 1: defined native token pair; 2: native undefined token/bounds.
+    /// 0: no prefix; 1: defined native token pair; 2: outside the compared domain.
     pub kind: u32,
     pub offset: usize,
     pub length: usize,
