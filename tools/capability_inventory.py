@@ -173,7 +173,7 @@ def compare_api_surfaces(observations):
             differences.append({'path': path, 'native': a, 'selected': b})
     walk(left, right, [])
     return {'passed': not differences, 'differences': differences, 'diagnostic_constants': markers,
-            'scope': 'Loaded reflection facts only; no method execution, default-value evaluation, attributes, complete configuration union or behavior/parity/performance proof.'}
+            'scope': 'Loaded reflection facts only; no method execution, attributes, complete configuration union or behavior/parity/performance proof.'}
 
 
 def socket_availability(api):

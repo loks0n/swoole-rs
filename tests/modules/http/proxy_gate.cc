@@ -3,7 +3,7 @@
 #include <limits>
 #include <vector>
 void check(bool condition, const char *message) { if (!condition) throw std::runtime_error(message); }
-int main(int argc, char **argv) {
+int main() {
     try {
         size_t packed = 0, handshakes = 0, credentials = 0;
         auto pack = [&](const std::string &target, const std::string &host, const std::string &user, const std::string &password, int port) {
@@ -25,21 +25,6 @@ int main(int argc, char **argv) {
                 ++packed;
             }
         };
-        if (argc == 2 && std::string(argv[1]) == "--auth-positive-only") {
-            for (size_t u : {0U, 1U, 3U, 17U, 80U}) for (size_t p : {0U, 1U, 3U, 17U, 80U}) {
-                std::string user(u, 'u'), password(p, 'p');
-                upstream_proxy::HttpProxy before{user, password, "example.org", 443};
-                candidate_proxy::HttpProxy after{user, password, "example.org", 443};
-                errno = EINTR; auto a = before.get_auth_str(); int saved = errno;
-                errno = EINTR; auto b = after.get_auth_str();
-                check(a == b && saved == errno, "ordinary credentials/auth/errno differential");
-                ++credentials;
-                pack("example.org", "proxy.example.org", user, password, 443);
-            }
-            std::cout << "{\"pack_cases\":" << packed << ",\"credential_cases\":" << credentials
-                      << ",\"handshake_cases\":0,\"errors\":0}\n";
-            return 0;
-        }
         std::vector<std::string> text={"", "localhost", "[::1]", std::string("ab\0cd",5), std::string(512,'z'), std::string("x\xffy",3)};
         for (auto &target:text) for(auto &host:text) for(int port:{0,80,-1,65535,std::numeric_limits<int>::min(),std::numeric_limits<int>::max()})
             for(auto &credential:text) pack(target,host,credential,credential,port);

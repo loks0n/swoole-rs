@@ -18,12 +18,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
     add_archive_arguments(parser)
-    parser.add_argument('--auth-positive-only', action='store_true', help='Only 25 bounded credentials and ordinary CONNECT prefix controls; excludes oversized credentials and all handshake profiles')
     parser.add_argument('--output', default='target/reports/http-proxy.json')
     args = parser.parse_args(); local = Path(__file__).resolve().parent
     if Path(args.output).exists(): parser.error('Refusing an existing receipt')
     patch = ROOT/'migration/patches/http/0001-http-helpers.patch'
-    report = {'pin': PIN, 'scope': 'Actual pinned/patched proxy methods with native String/error facades; not full proxy socket/remote-service parity', 'native_sanitizers': True, 'rust_instrumented': args.rust_sanitize, 'rust_std_instrumented': False, 'passed': False, 'full_gate_passed': False, 'profile': 'auth-positive-only' if args.auth_positive_only else 'original-complete', 'minimum_free_bytes': 4*1024**3, 'unrun_profiles': ['Full original proxy corpus, oversized/fault/allocation/lifetime/handshake profiles'] if args.auth_positive_only else []}
+    report = {'pin': PIN, 'scope': 'Actual pinned/patched proxy methods with native String/error facades; not full proxy socket/remote-service parity', 'native_sanitizers': True, 'rust_instrumented': args.rust_sanitize, 'rust_std_instrumented': False, 'passed': False, 'minimum_free_bytes': 4*1024**3}
     with tempfile.TemporaryDirectory(prefix='swr-http-proxy-') as temp:
         tree = Path(temp)
         def guard():
@@ -68,7 +67,7 @@ def main():
         report['compile'] = {'returncode': compiled.returncode, 'stderr': compiled.stderr}
         if compiled.returncode: write_report(args.output, report); print(compiled.stderr, file=sys.stderr); return 1
         assert 'swr_v1_http_proxy_pack' in subprocess.check_output(['nm', '-g', str(binary)], text=True)
-        result = run_isolated([str(binary)] + (['--auth-positive-only'] if args.auth_positive_only else []), timeout=30); report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
+        result = run_isolated([str(binary)], timeout=30); report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
         if result.returncode: write_report(args.output, report); print(result.stderr, file=sys.stderr); return 1
         report['outcome'] = json.loads(result.stdout.splitlines()[-1]); report['passed'] = True
         write_report(args.output, report); print(json.dumps(report['outcome']))

@@ -1,7 +1,7 @@
 #include "index_page_oracle.h"
 static size_t cases=0, failures=0;
-static void compare(const std::string &path,const std::set<std::string> &entries,size_t capacity,unsigned fail=0,bool positive_only=false){
- upstream_index::StaticHandler old_handler;old_handler.dir_path=path;old_handler.dir_files=entries;old_handler.read_ok=positive_only||(cases%2)==0;
+static void compare(const std::string &path,const std::set<std::string> &entries,size_t capacity,unsigned fail=0){
+ upstream_index::StaticHandler old_handler;old_handler.dir_path=path;old_handler.dir_files=entries;old_handler.read_ok=(cases%2)==0;
  candidate_index::StaticHandler new_handler;new_handler.dir_path=path;new_handler.dir_files=entries;new_handler.read_ok=old_handler.read_ok;
  IndexBuffer old_buffer(capacity),new_buffer(capacity);old_buffer.fail=fail;new_buffer.fail=fail;
  bool old_throw=false,new_throw=false;size_t old_result=0,new_result=0;
@@ -14,16 +14,7 @@ static void compare(const std::string &path,const std::set<std::string> &entries
  }
  ++cases;if(old_throw)++failures;
 }
-int main(int argc,char **argv){
- if(argc==2&&std::string(argv[1])=="--positive-only") {
-  const std::vector<std::set<std::string>> entries={{},{"."},{".."},{"a.txt","b.txt","a b"}};
-  for(const char *path:{"/","/dir","/dir/","/a b"})
-   for(const auto &files:entries)for(size_t capacity:{16U,128U,1024U,32768U})compare(path,files,capacity,0,true);
-  std::cout<<"{\"positive_page_cases\":"<<cases<<",\"native_allocation_failure_cases\":"<<failures
-           <<",\"fault_profiles_executed\":false,\"full_gate_passed\":false,\"errors\":"<<failures<<"}\n";
-  return failures!=0;
- }
- if(argc!=1)return 2;
+int main(){
  try{throw std::bad_alloc();}catch(const std::bad_alloc&){}
  std::vector<std::set<std::string>> entries={{},{"."},{".."},{".","..","file.txt"},{"file.txt","other.txt","<script>","a b","a&b",std::string("a\0b",3)}, {std::string(255,'z'),std::string(4096,'x')}};
  std::vector<std::string> paths={"/","/dir","/dir/","/a b&<x>",std::string("/\0hidden",8),std::string(4095,'p')};

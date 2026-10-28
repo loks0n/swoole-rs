@@ -321,6 +321,5 @@ upstream.
 - [static-context-v2.md](static-context-v2.md): `swr_v2_http_context_*`
 - [request-v2.md](request-v2.md): `swr_v2_http_request_*`
 
-Tests: `tests/modules/http/` (for example `gate.py --url-positive-only`,
-`static_gate.py --positive-only`, `proxy_gate.py --auth-positive-only`,
-`multipart_headers_gate.py --positive-only`).
+Tests: `tests/modules/http/` (for example `gate.py`, `static_gate.py`,
+`proxy_gate.py`, `multipart_headers_gate.py`).
