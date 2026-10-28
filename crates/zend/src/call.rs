@@ -1,15 +1,16 @@
 //! The frame of an internal function call, parsed as Zend's fast ZPP macros do.
 use crate::{
+    Class,
     sys::{
         _zend_expected_type_Z_EXPECTED_ARRAY, _zend_expected_type_Z_EXPECTED_BOOL,
         _zend_expected_type_Z_EXPECTED_DOUBLE, _zend_expected_type_Z_EXPECTED_LONG,
         _zend_expected_type_Z_EXPECTED_STRING, _zend_expected_type_Z_EXPECTED_STRING_OR_NULL,
         _zval_struct__bindgen_ty_1, IS_ARRAY, IS_DOUBLE, IS_FALSE, IS_LONG, IS_NULL, IS_STRING,
-        IS_TRUE, ZPP_ERROR_WRONG_ARG, swr_zval_copy, swr_zval_empty_string, swr_zval_stringl,
-        zend_execute_data, zend_expected_type, zend_object, zend_parse_arg_bool_slow,
-        zend_parse_arg_double_slow, zend_parse_arg_long_slow, zend_parse_arg_str_slow, zend_string,
-        zend_update_property_long, zend_value, zend_wrong_parameter_error,
-        zend_wrong_parameters_count_error, zval,
+        IS_TRUE, ZPP_ERROR_WRONG_ARG, add_assoc_long_ex, swr_zend_array_init, swr_zval_copy,
+        swr_zval_empty_string, swr_zval_stringl, zend_execute_data, zend_expected_type,
+        zend_object, zend_parse_arg_bool_slow, zend_parse_arg_double_slow,
+        zend_parse_arg_long_slow, zend_parse_arg_str_slow, zend_string, zend_update_property_long,
+        zend_value, zend_wrong_parameter_error, zend_wrong_parameters_count_error, zval,
     },
     value::{bytes, type_of, value_of},
 };
@@ -68,13 +69,6 @@ impl Call {
         unsafe { &raw mut (*self.frame).This }
     }
 
-    /// `return_value`.
-    #[must_use]
-    #[inline]
-    pub fn return_value(&self) -> *mut zval {
-        self.value
-    }
-
     /// `ZEND_CALL_ARG(execute_data, n)`, 1-based; `n` is at most `num_args()`.
     #[inline]
     fn arg(&self, n: u32) -> *mut zval {
@@ -103,7 +97,7 @@ impl Call {
     /// The argument is not an int under the caller's typing mode; Zend has thrown.
     #[inline]
     pub fn long(&self, n: u32, default: i64) -> Result<i64, Invalid> {
-        let Some(arg) = self.zval(n) else {
+        let Some(arg) = self.passed(n) else {
             return Ok(default);
         };
         // SAFETY: `arg` is a passed, live zval.
@@ -127,7 +121,7 @@ impl Call {
     /// The argument is not a float under the caller's typing mode; Zend has thrown.
     #[inline]
     pub fn double(&self, n: u32, default: f64) -> Result<f64, Invalid> {
-        let Some(arg) = self.zval(n) else {
+        let Some(arg) = self.passed(n) else {
             return Ok(default);
         };
         // SAFETY: `arg` is a passed, live zval.
@@ -148,7 +142,7 @@ impl Call {
     /// `Z_PARAM_ZVAL` of argument `n` (1-based); `None` when not passed.
     #[must_use]
     #[inline]
-    pub fn zval(&self, n: u32) -> Option<*mut zval> {
+    pub fn passed(&self, n: u32) -> Option<*mut zval> {
         (n <= self.num_args()).then(|| self.arg(n))
     }
 
@@ -157,7 +151,7 @@ impl Call {
     #[inline]
     pub fn zval_or_null(&self, n: u32) -> Option<*mut zval> {
         // SAFETY: a passed argument is a live zval.
-        self.zval(n)
+        self.passed(n)
             .filter(|&arg| unsafe { type_of(arg) } != IS_NULL)
     }
 
@@ -168,7 +162,7 @@ impl Call {
         nullable: bool,
         expected: zend_expected_type,
     ) -> Result<Option<*mut zend_string>, Invalid> {
-        let Some(arg) = self.zval(n) else {
+        let Some(arg) = self.passed(n) else {
             return Ok(None);
         };
         // SAFETY: `arg` is a passed, live zval.
@@ -229,7 +223,7 @@ impl Call {
     /// The argument is not a bool under the caller's typing mode; Zend has thrown.
     #[inline]
     pub fn bool(&self, n: u32, default: bool) -> Result<bool, Invalid> {
-        let Some(arg) = self.zval(n) else {
+        let Some(arg) = self.passed(n) else {
             return Ok(default);
         };
         // SAFETY: `arg` is a passed, live zval.
@@ -251,7 +245,7 @@ impl Call {
     /// The argument is not an array; Zend has thrown.
     #[inline]
     pub fn array(&self, n: u32) -> Result<Option<*mut zval>, Invalid> {
-        let Some(arg) = self.zval(n) else {
+        let Some(arg) = self.passed(n) else {
             return Ok(None);
         };
         // SAFETY: `arg` is a passed, live zval.
@@ -295,17 +289,57 @@ impl Call {
         self.set(IS_LONG);
     }
 
-    /// `zend_update_property_long(NULL, Z_OBJ_P(ZEND_THIS), name, value)`.
-    pub fn update_property_long(&self, name: &CStr, value: i64) {
-        // SAFETY: a method's live `$this`; Zend copies the name.
+    /// `Z_PARAM_ZVAL` of argument `n` (1-based), or null when an optional
+    /// argument was not passed.
+    #[must_use]
+    #[inline]
+    pub fn zval(&self, n: u32) -> *mut zval {
+        if n > self.num_args() {
+            return ptr::null_mut();
+        }
+        self.arg(n)
+    }
+
+    /// The return slot (`return_value`).
+    #[must_use]
+    #[inline]
+    pub fn return_value(&self) -> *mut zval {
+        self.value
+    }
+
+    /// `RETVAL_ZVAL(value, 0, 0)`: the return slot takes over `value`.
+    #[inline]
+    pub fn set_value(&self, value: zval) {
+        // SAFETY: the return slot is live for the handler.
+        unsafe { *self.value = value };
+    }
+
+    /// `RETVAL_NULL`.
+    #[inline]
+    pub fn set_null(&self) {
+        self.set(IS_NULL);
+    }
+
+    /// `array_init(return_value)`.
+    pub fn set_array(&self) {
+        // SAFETY: the return slot is live for the handler.
+        unsafe { swr_zend_array_init(self.value) };
+    }
+
+    /// `add_assoc_long_ex(return_value, key, value)`, after `set_array`.
+    pub fn add_assoc_long(&self, key: &CStr, value: i64) {
+        // SAFETY: the return slot holds an array; Zend copies the key.
+        unsafe { add_assoc_long_ex(self.value, key.as_ptr(), key.count_bytes(), value) };
+    }
+
+    /// `zend_update_property_long(scope, Z_OBJ_P(ZEND_THIS), name, value)`;
+    /// `scope` is the class whose view of the property to update (NULL if none).
+    pub fn update_property_long(&self, scope: Option<&Class>, name: &CStr, value: i64) {
+        let scope = scope.map_or(ptr::null_mut(), Class::entry);
+        // SAFETY: a method's live `$this`; a registered class or null; Zend
+        // copies the name.
         unsafe {
-            zend_update_property_long(
-                ptr::null_mut(),
-                self.this(),
-                name.as_ptr(),
-                name.count_bytes(),
-                value,
-            );
+            zend_update_property_long(scope, self.this(), name.as_ptr(), name.count_bytes(), value);
         }
     }
 
@@ -313,12 +347,6 @@ impl Call {
     #[inline]
     pub fn set_bool(&self, value: bool) {
         self.set(if value { IS_TRUE } else { IS_FALSE });
-    }
-
-    /// `RETVAL_NULL`.
-    #[inline]
-    pub fn set_null(&self) {
-        self.set(IS_NULL);
     }
 
     /// `RETVAL_STRINGL`: a copy of `bytes`.

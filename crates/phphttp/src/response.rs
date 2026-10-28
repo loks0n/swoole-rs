@@ -238,7 +238,7 @@ fn set_cookie(call: &Call, encode: bool) {
     // Zend parses in order and stops at the first bad argument.
     let parsed = (|| -> Result<_, Invalid> {
         call.arity(1, 10)?;
-        let name = call.zval(1);
+        let name = call.passed(1);
         let value = call.str(2)?;
         let expires = call.long(3, 0)?;
         let path = call.str(4)?;
@@ -342,7 +342,7 @@ fn header(call: &Call) {
     let run = || -> Option<()> {
         let parsed = call
             .arity(2, 3)
-            .and_then(|()| Ok((call.string(1)?, call.zval(2), call.bool(3, true)?)));
+            .and_then(|()| Ok((call.string(1)?, call.passed(2), call.bool(3, true)?)));
         let (Some(key), Some(value), format) = parsed.ok()? else {
             return None;
         };
@@ -435,7 +435,7 @@ fn push(call: &Call) {
         let ctx = websocket(call)?;
         let parsed = call.arity(1, 3).and_then(|()| {
             Ok((
-                call.zval(1),
+                call.passed(1),
                 call.long(2, OPCODE_TEXT)?,
                 call.zval_or_null(3),
             ))
@@ -494,7 +494,7 @@ fn create_response(call: &Call) {
     let run = || -> Option<()> {
         let parsed = call
             .arity(1, 2)
-            .and_then(|()| Ok((call.zval(1), call.long(2, -1)?)));
+            .and_then(|()| Ok((call.passed(1), call.long(2, -1)?)));
         let (Some(object), fd) = parsed.ok()? else {
             return None;
         };
@@ -509,7 +509,7 @@ fn redirect(call: &Call) {
     let run = || -> Option<()> {
         let parsed = call
             .arity(1, 2)
-            .map(|()| (call.zval(1), call.zval_or_null(2)));
+            .map(|()| (call.passed(1), call.zval_or_null(2)));
         let (Some(url), code) = parsed.ok()? else {
             return None;
         };

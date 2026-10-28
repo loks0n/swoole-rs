@@ -1,7 +1,7 @@
 # Collection facade native remainder
 
-See [body-map.md](body-map.md) for the per-function map. No original function is
-wholly replaced by Rust.
+`Swoole\Coroutine\Channel` is wholly Rust (crates/phpcollections, over the
+coroutine module's C++ queue); this file covers `Swoole\Table`.
 
 | Area | Rust ownership/decisions | Native remainder |
 | --- | --- | --- |
@@ -10,8 +10,6 @@ wholly replaced by Rust.
 | Table incr/decr | Kind and representable integer/double arithmetic | Shared native update dispatcher, row initialization, conversion/defaults, warnings/publication/unlock; undefined overflow/casts remain outside qualified domains |
 | Table read/count | Ordered tokens/count, missing/field/full-row choice, whole materialization/type/error plans and count arithmetic | Row lookup/locks/getters, native dispatch, Zend materialization and explicit cursor-error propagation |
 | Table other methods | No whole-method replacement | Native iterator identity/advance, exists/delete, size/memory/stats and object/class/property lifecycle |
-| Channel constructor/push/pop | Capacity and packed action sequencing | Parse, singular queue custody/suspension, zval/refcount/container effects, fresh error observation/publication |
-| Channel other methods | No whole-method replacement | Close/query/stats, aliases/constants/properties, object lifecycle and destructor draining |
 
 All 27 private Table pointer sites/factory use TableV2. No selected PHP Table
 `column_list` access remains. Returned native Column facts are freshly read after

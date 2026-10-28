@@ -35,7 +35,7 @@ httpbindings = ["dep:swoole-rs-httpbindings", "dep:swoole-rs-phphttp", "swoole-r
 http2 = ["dep:swoole-rs-http2"]
 ports = ["dep:swoole-rs-ports"]
 phphelpers = ["dep:swoole-rs-phphelpers"]
-phpcollections = ["dep:swoole-rs-phpcollections"]
+phpcollections = ["dep:swoole-rs-phpcollections", "swoole-rs-phpcollections/php"]
 phpevents = ["dep:swoole-rs-phpevents"]
 phpcoroutines = ["dep:swoole-rs-phpcoroutines"]
 

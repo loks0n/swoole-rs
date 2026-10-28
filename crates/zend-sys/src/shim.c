@@ -32,3 +32,30 @@ void swr_zval_copy(zval *target, const zval *source) {
 zend_long swr_zval_get_long(const zval *value) {
     return zval_get_long(value);
 }
+
+void *swr_zend_emalloc(size_t size) {
+    return emalloc(size);
+}
+
+void swr_zend_efree(void *ptr) {
+    efree(ptr);
+}
+
+void swr_zval_try_addref(zval *value) {
+    Z_TRY_ADDREF_P(value);
+}
+
+void swr_zval_try_delref(zval *value) {
+    Z_TRY_DELREF_P(value);
+}
+
+void swr_zend_array_init(zval *value) {
+    array_init(value);
+}
+
+int swr_zend_register_class_alias(const char *name, size_t length, zend_class_entry *ce) {
+    zend_string *alias = zend_string_init(name, length, 1);
+    zend_str_tolower(ZSTR_VAL(alias), length);
+    alias = zend_new_interned_string(alias);
+    return zend_register_class_alias_ex(ZSTR_VAL(alias), ZSTR_LEN(alias), ce, 1);
+}

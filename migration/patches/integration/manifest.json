@@ -46,6 +46,14 @@
         "include/swoole_server.h",
         "src/server/master.cc"
       ]
+    },
+    {
+      "path": "0007-server-dispatch.patch",
+      "sha256": "deefbdf7aa6468ce99634d083b562f0f66b2aa49a5a0f05839aa3c010ad94870",
+      "upstream_paths": [
+        "include/swoole_server.h",
+        "src/server/master.cc"
+      ]
     }
   ]
 }
