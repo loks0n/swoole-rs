@@ -68,7 +68,9 @@ Rust.
    merge tier and *Red main* catch anything it breaks, so don't wait for either.
    File follow-ups as `status:ready` sub-issues of the same goal as you find them.
 
-Nobody needs to approve your next step, so keep the loop going on your own. When
+Nobody needs to approve your next step, so keep the loop going on your own. Under
+`/loop`, schedule each wakeup for 60 seconds, whatever the wakeup tool suggests:
+you aren't waiting on anything, because the next issue is ready now. When
 a question comes up, gather the data (read upstream, reproduce, measure) and make
 the call yourself; you're trusted to choose well, and the PR is where you explain
 the choice. `needs:decision` is only for exceptional cases: changing project policy,
