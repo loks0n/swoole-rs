@@ -10,6 +10,7 @@ import argparse
 from datetime import datetime, timezone
 import fnmatch
 import json
+import re
 import subprocess
 from pathlib import Path
 import sys
@@ -21,11 +22,24 @@ from tools.native_core import library_identity, sha, test_outcome, verify_loader
 ROOT = Path(__file__).resolve().parents[3]
 from tools.build_upstream import COMMIT as PIN
 GROUPS = ['coroutine_hook.*', 'coroutine_socket.*', 'coroutine_system.*']
+# The primary original assertion files and their pinned hashes; their TEST() declarations are the cases.
+PRIMARY = {'core-tests/src/coroutine/hook.cpp': 'a978c48c97ddffec2fcd20dcd00dd2d5a4bcfbeac8f84262ba621988d07159a5',
+           'core-tests/src/coroutine/socket.cpp': 'f1d91e2a397d95bcbbe4f97052b5f523684b1e8ffc844a29b5c59e06f0d0078b',
+           'core-tests/src/coroutine/system.cpp': 'ff28661da3ddc800a3d35d8d909f97f0852d2d981496f5d2fc8a185a079de273'}
+
+
+def declarations(source):
+    """suite.name of every TEST() in the pinned primary files (100 at the pin)."""
+    return {suite + '.' + name for path in PRIMARY
+            for suite, name in re.findall(r'^TEST\(\s*(\w+)\s*,\s*(\w+)\s*\)',
+                                          subprocess.check_output(['git', '-C', str(source), 'show', f'{PIN}:{path}'], text=True),
+                                          re.MULTILINE)}
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--receipt', action='append', required=True, help='NAME=immutable native_core.py receipt')
+    p.add_argument('--source', type=Path, default=ROOT / 'target/upstream/src', help='Pinned upstream checkout')
     p.add_argument('--case', action='append', default=[], help='Explicit primary subset; all remaining primary cases stay unmeasured')
     p.add_argument('--timeout', type=int, default=35)
     p.add_argument('--output', type=Path, required=True)
@@ -39,9 +53,8 @@ def main():
     a.output.parent.mkdir(parents=True, exist_ok=True)
     artifacts = a.output.resolve().with_name(a.output.stem+'-artifacts')
     try:
-        native = json.loads((ROOT/'tests/modules/hooks/originals.json').read_text())['native_tests']
-        expected = {row['path']: row['sha256'] for row in native if row['scope'] == 'primary'}
-        declared = {case['suite']+'.'+case['name'] for row in native if row['scope']=='primary' for case in row['declarations']}
+        expected = PRIMARY
+        declared = declarations(a.source)
         artifacts.mkdir(parents=True)
         for entry in a.receipt:
             name, sep, value = entry.partition('=')

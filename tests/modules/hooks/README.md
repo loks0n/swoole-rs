@@ -54,8 +54,8 @@ python3 tests/modules/hooks/core.py --receipt upstream=NATIVE_CORE_RECEIPT --rec
 
 Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
-`core.py` runs the 100 primary native GoogleTest declarations listed in
-`originals.json` (plus the `accept` dependency) against completed
+`core.py` runs the 100 `TEST()` declarations of the pinned
+`core-tests/src/coroutine/{hook,socket,system}.cpp` (plus the `accept` dependency) against completed
 `tools/native_core.py` builds, after verifying the original assertion files,
 executable and loaded library match the receipt. It runs the unchanged
 `base.file_put_contents` test first to create `TEST_TMP_FILE`.
@@ -74,3 +74,21 @@ executable and loaded library match the receipt. It runs the unchanged
 - Not run: enabled io_uring runtime, ZTS/thread mode, the PHP originals after
   the latest wait/poll, retry, datagram and curl/MongoDB policy moves, and
   performance.
+
+## Gate audit (#481)
+
+All six phases are kept. They compile the pinned and patched C++ bodies against
+fakes and inject what a running server can't reliably produce: EAGAIN, EINTR,
+partial IO, timer and dispatch failures, cancel races and destructor reentry, all
+under ASan/UBSan. Neither a PHPT nor the Rust unit tests reach that C++ glue.
+
+- `hooks-ordered`, `hooks-async-policy`, `hooks-packet-policy`,
+  `hooks-socket-policy`, `hooks-lifecycle-policy`: the five fault/order matrices above.
+- `hooks-compile`: the only C++14 build of the eight patched units, and the
+  `SWOOLE_RS_HOOKS` refusal check.
+
+`core.py` is not a phase. No CI lane produces the `tools/native_core.py` receipts
+it needs, and some of its cases need external network. Its 8,150-line
+`originals.json` inventory is replaced by the three pinned hashes above. Only
+those hashes and the test names were ever read, and the names now come from the
+source.
