@@ -239,17 +239,17 @@ mod kqueue {
     /// than EBADF or ENOENT stops there and returns -1, else 0.
     ///
     /// # Safety
-    /// `errors` holds two writable ints.
+    /// `errors` points to two writable ints.
     #[unsafe(no_mangle)]
     pub unsafe extern "C" fn swr_v1_reactor_kqueue_del(
         kq: c_int,
         fd: c_int,
         socket: *mut c_void,
         events: c_int,
-        errors: *mut [c_int; 2],
+        errors: *mut c_int,
     ) -> c_int {
         // SAFETY: as the caller promises.
-        let errors = unsafe { &mut *errors };
+        let errors = unsafe { &mut *errors.cast::<[c_int; 2]>() };
         *errors = [0; 2];
         let filters: [(bool, Filter); 2] = [
             (events & SW_EVENT_READ != 0, read),
@@ -294,7 +294,7 @@ mod kqueue {
                 // The write filter is gone, so deleting it again reports ENOENT and continues.
                 let both = SW_EVENT_READ | SW_EVENT_WRITE;
                 assert_eq!(
-                    swr_v1_reactor_kqueue_del(kq, fds[0], token, both, &raw mut errors),
+                    swr_v1_reactor_kqueue_del(kq, fds[0], token, both, errors.as_mut_ptr()),
                     0
                 );
                 assert_eq!(errors, [0, libc::ENOENT]);

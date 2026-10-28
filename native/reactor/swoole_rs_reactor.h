@@ -142,7 +142,7 @@ swr_v1_reactor_backend_layout swr_v1_reactor_kqueue_layout(void);
  * del: each failed filter's errno in errors (0 if it took); -1 stops at one not EBADF/ENOENT. */
 int swr_v1_reactor_kqueue_add(int kq, int fd, void *socket, int events);
 int swr_v1_reactor_kqueue_set(int kq, int fd, void *socket, int events);
-int swr_v1_reactor_kqueue_del(int kq, int fd, void *socket, int events, int errors[2]);
+int swr_v1_reactor_kqueue_del(int kq, int fd, void *socket, int events, int *errors);
 #endif
 typedef struct swr_v1_reactor_poll_snapshot swr_v1_reactor_poll_snapshot;
 typedef struct { size_t size, alignment, fd, events, revents; } swr_v1_reactor_poll_layout_info;
