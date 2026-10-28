@@ -54,6 +54,13 @@
         "include/swoole_server.h",
         "src/server/master.cc"
       ]
+    },
+    {
+      "path": "0008-phpswoole-host.patch",
+      "sha256": "15a3dff5b872331bfd69caa50e247e8f534aa214c941fd133be1b242d7f26ace",
+      "upstream_paths": [
+        "ext-src/php_swoole.cc"
+      ]
     }
   ]
 }
