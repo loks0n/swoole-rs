@@ -17,9 +17,8 @@ use swoole_rs_zend::{
     Call, Class, Invalid, Object, declare_bool, declare_long, declare_string,
     register_long_constant, set_object, string,
     sys::{
-        E_WARNING, HashPosition, IS_LONG, IS_STRING, SWR_PHP_HAVE_AI_ALL, SWR_PHP_HAVE_AI_IDN,
-        SWR_PHP_HAVE_AI_V4MAPPED, ZEND_ACC_NOT_SERIALIZABLE, ZEND_ACC_PUBLIC, ZEND_ACC_READONLY,
-        module_registry, swr_php_config, zend_class_entry, zend_function_entry,
+        E_WARNING, HashPosition, IS_LONG, IS_STRING, ZEND_ACC_NOT_SERIALIZABLE, ZEND_ACC_PUBLIC,
+        ZEND_ACC_READONLY, module_registry, zend_class_entry, zend_function_entry,
         zend_get_type_by_const, zend_hash_get_current_data_ex, zend_hash_internal_pointer_reset_ex,
         zend_hash_move_forward_ex, zend_hash_str_find, zend_object, zend_object_handlers,
         zend_string, zval, zval_ptr_dtor,
@@ -34,6 +33,10 @@ const BACKLOG: i64 = 512;
 /// `SW_EVENT_READ` and `SW_EVENT_WRITE`.
 const EVENT_READ: i64 = 1 << 9;
 const EVENT_WRITE: i64 = 1 << 10;
+/// `ai` bits: which `AI_*` flags Swoole's configure found (`HAVE_AI_*`).
+const HAVE_AI_V4MAPPED: u32 = 1;
+const HAVE_AI_ALL: u32 = 2;
+const HAVE_AI_IDN: u32 = 4;
 /// `IOV_MAX` on Linux and Apple.
 const IOV_MAX: u32 = 1024;
 
@@ -74,7 +77,8 @@ fn configure(entry: &mut zend_class_entry, handlers: &mut zend_object_handlers) 
 
 /// MINIT, as `php_swoole_socket_coro_minit` did: both classes, their short
 /// names when `shortname`, the properties (with the `ext/sockets` bridge ones
-/// when `sockets`), and the socket constants unless `ext/sockets` is loaded.
+/// when `sockets`), and the socket constants unless `ext/sockets` is loaded
+/// (the `AI_*` ones that configure found, per `ai`).
 /// # Safety
 /// Called once, at MINIT of module `module`, with upstream's static method
 /// table, Swoole's exception class and a writable class-entry slot.
@@ -85,6 +89,7 @@ pub unsafe extern "C" fn swr_v1_phpclients_socket_minit(
     shortname: bool,
     sockets: bool,
     module: c_int,
+    ai: u32,
     socket_class: *mut *mut zend_class_entry,
 ) {
     // SAFETY: MINIT, with the caller's table.
@@ -127,7 +132,7 @@ pub unsafe extern "C" fn swr_v1_phpclients_socket_minit(
     let loaded = unsafe { zend_hash_str_find(&raw const module_registry, c"sockets".as_ptr(), 7) };
     if loaded.is_null() {
         // SAFETY: MINIT of `module`.
-        unsafe { register_constants(module) };
+        unsafe { register_constants(module, ai) };
     }
     for (name, value) in constants::ALWAYS {
         // SAFETY: as above.
@@ -140,15 +145,13 @@ pub unsafe extern "C" fn swr_v1_phpclients_socket_minit(
 /// `socket_coro_register_constants`.
 /// # Safety
 /// MINIT of `module`.
-unsafe fn register_constants(module: c_int) {
-    // SAFETY: a pure query of PHP's configure results.
-    let found = unsafe { swr_php_config() };
+unsafe fn register_constants(module: c_int, found: u32) {
     let ai = [
-        (found & SWR_PHP_HAVE_AI_V4MAPPED != 0).then_some(constants::AI_V4MAPPED),
-        (found & SWR_PHP_HAVE_AI_ALL != 0).then_some(constants::AI_ALL),
+        (found & HAVE_AI_V4MAPPED != 0).then_some(constants::AI_V4MAPPED),
+        (found & HAVE_AI_ALL != 0).then_some(constants::AI_ALL),
         Some(constants::AI_ADDRCONFIG),
     ];
-    let idn = if found & SWR_PHP_HAVE_AI_IDN == 0 {
+    let idn = if found & HAVE_AI_IDN == 0 {
         &[][..]
     } else {
         constants::AI_IDN

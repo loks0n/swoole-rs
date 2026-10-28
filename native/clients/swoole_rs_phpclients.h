@@ -24,6 +24,7 @@ void swr_v1_phpclients_socket_minit(const struct _zend_function_entry *methods,
                                     bool shortname,
                                     bool sockets,
                                     int module,
+                                    uint32_t ai,
                                     struct _zend_class_entry **socket_class);
 
 /* Defined by ext-src/swoole_socket_coro.cc for those methods: the coroutine

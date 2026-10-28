@@ -42,11 +42,11 @@ mod php {
             .generate_comments(false)
             .clang_args(includes.iter().map(|dir| format!("-I{}", dir.display())))
             .allowlist_function(
-                "(_?zend_|object_properties_init|php_error_docref|swr_zend_|swr_zval_|swr_php_|zval_|add_assoc_|add_next_index_|add_index_).*",
+                "(_?zend_|object_properties_init|php_error_docref|swr_zend_|swr_zval_|zval_|add_assoc_|add_next_index_|add_index_).*",
             )
             .allowlist_type("(_?zend_|_?zval).*")
             .allowlist_var(
-                "(std_object_handlers|module_registry|zend_ce_.*|ZEND_ACC_.*|IS_.*|_IS_BOOL|E_.*|ZPP_ERROR_.*|CONST_.*|SWR_PHP_.*)",
+                "(std_object_handlers|module_registry|zend_ce_.*|ZEND_ACC_.*|IS_.*|_IS_BOOL|E_.*|ZPP_ERROR_.*|CONST_.*)",
             )
             // PHP 8.5's tail-call VM types opcode handlers preserve_none, which
             // bindgen cannot express; every VM kind but SWITCH stores a pointer,

@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_socket_coro.cc b/ext-src/swoole_socket_coro.cc
-index 2e80526..8f7ea23 100644
+index 2e80526..896ba95 100644
 --- a/ext-src/swoole_socket_coro.cc
 +++ b/ext-src/swoole_socket_coro.cc
 @@ -35,2 +35,4 @@ END_EXTERN_C()
@@ -104,7 +104,7 @@ index 2e80526..8f7ea23 100644
 -    zend_object_std_dtor(&sock->std);
 +    return reinterpret_cast<SocketObject *>(reinterpret_cast<char *>(obj) - offsetof(SocketObject, std));
  }
-@@ -163,546 +148,3 @@ static void socket_coro_free_object(zend_object *object) {
+@@ -163,588 +148,28 @@ static void socket_coro_free_object(zend_object *object) {
  static zend_object *socket_coro_create_object(zend_class_entry *ce) {
 -    auto *sock = static_cast<SocketObject *>(zend_object_alloc(sizeof(SocketObject), ce));
 -    zend_object_std_init(&sock->std, ce);
@@ -114,8 +114,9 @@ index 2e80526..8f7ea23 100644
 -    object_properties_init(&sock->std, ce);
 -    sock->std.handlers = &swoole_socket_coro_handlers;
 -    return &sock->std;
--}
--
++    return ce->create_object(ce);
+ }
+ 
 -static void socket_coro_register_constants(int module_number) {
 -    REGISTER_LONG_CONSTANT("AF_UNIX", AF_UNIX, CONST_CS | CONST_PERSISTENT);
 -    REGISTER_LONG_CONSTANT("AF_INET", AF_INET, CONST_CS | CONST_PERSISTENT);
@@ -621,7 +622,12 @@ index 2e80526..8f7ea23 100644
 -#ifdef EMEDIUMTYPE
 -    /* Wrong medium type */
 -    REGISTER_LONG_CONSTANT("SOCKET_EMEDIUMTYPE", EMEDIUMTYPE, CONST_CS | CONST_PERSISTENT);
--#endif
++void php_swoole_socket_coro_minit(int module_number) {
++#ifdef SWOOLE_SOCKETS_SUPPORT
++    constexpr bool sockets = true;
++#else
++    constexpr bool sockets = false;
+ #endif
 -
 -    REGISTER_LONG_CONSTANT("IPPROTO_IP", IPPROTO_IP, CONST_CS | CONST_PERSISTENT);
 -    REGISTER_LONG_CONSTANT("IPPROTO_IPV6", IPPROTO_IPV6, CONST_CS | CONST_PERSISTENT);
@@ -634,14 +640,17 @@ index 2e80526..8f7ea23 100644
 -    REGISTER_LONG_CONSTANT("AI_PASSIVE", AI_PASSIVE, CONST_CS | CONST_PERSISTENT);
 -    REGISTER_LONG_CONSTANT("AI_CANONNAME", AI_CANONNAME, CONST_CS | CONST_PERSISTENT);
 -    REGISTER_LONG_CONSTANT("AI_NUMERICHOST", AI_NUMERICHOST, CONST_CS | CONST_PERSISTENT);
--#if HAVE_AI_V4MAPPED
++    uint32_t ai = 0;
+ #if HAVE_AI_V4MAPPED
 -    REGISTER_LONG_CONSTANT("AI_V4MAPPED", AI_V4MAPPED, CONST_CS | CONST_PERSISTENT);
--#endif
--#if HAVE_AI_ALL
++    ai |= 1;
+ #endif
+ #if HAVE_AI_ALL
 -    REGISTER_LONG_CONSTANT("AI_ALL", AI_ALL, CONST_CS | CONST_PERSISTENT);
--#endif
++    ai |= 2;
+ #endif
 -    REGISTER_LONG_CONSTANT("AI_ADDRCONFIG", AI_ADDRCONFIG, CONST_CS | CONST_PERSISTENT);
--#if HAVE_AI_IDN
+ #if HAVE_AI_IDN
 -    REGISTER_LONG_CONSTANT("AI_IDN", AI_IDN, CONST_CS | CONST_PERSISTENT);
 -    REGISTER_LONG_CONSTANT("AI_CANONIDN", AI_CANONIDN, CONST_CS | CONST_PERSISTENT);
 -    // REGISTER_LONG_CONSTANT("AI_IDN_ALLOW_UNASSIGNED", AI_IDN_ALLOW_UNASSIGNED, CONST_CS | CONST_PERSISTENT);
@@ -650,10 +659,9 @@ index 2e80526..8f7ea23 100644
 -#ifdef AI_NUMERICSERV
 -    REGISTER_LONG_CONSTANT("AI_NUMERICSERV", AI_NUMERICSERV, CONST_CS | CONST_PERSISTENT);
 -#endif
-+    return ce->create_object(ce);
- }
-@@ -710,41 +152,13 @@ static void socket_coro_register_constants(int module_number) {
- void php_swoole_socket_coro_minit(int module_number) {
+-}
+-
+-void php_swoole_socket_coro_minit(int module_number) {
 -    SW_INIT_CLASS_ENTRY(swoole_socket_coro, "Swoole\\Coroutine\\Socket", "Co\\Socket", swoole_socket_coro_methods);
 -    SW_SET_CLASS_NOT_SERIALIZABLE(swoole_socket_coro);
 -    SW_SET_CLASS_CLONEABLE(swoole_socket_coro, sw_zend_class_clone_deny);
@@ -668,7 +676,7 @@ index 2e80526..8f7ea23 100644
 -    zend_declare_property_long(swoole_socket_coro_ce, ZEND_STRL("errCode"), 0, ZEND_ACC_PUBLIC);
 -    zend_declare_property_string(swoole_socket_coro_ce, ZEND_STRL("errMsg"), "", ZEND_ACC_PUBLIC);
 -
- #ifdef SWOOLE_SOCKETS_SUPPORT
+-#ifdef SWOOLE_SOCKETS_SUPPORT
 -    zend_declare_property_bool(swoole_socket_coro_ce, ZEND_STRL("__ext_sockets_nonblock"), 0, ZEND_ACC_PUBLIC);
 -    zend_declare_property_long(swoole_socket_coro_ce, ZEND_STRL("__ext_sockets_timeout"), 0, ZEND_ACC_PUBLIC);
 -#endif
@@ -693,18 +701,17 @@ index 2e80526..8f7ea23 100644
 -static sw_inline void socket_coro_sync_properties(const zval *zobject, const SocketObject *sock) {
 -    zend_update_property_long(swoole_socket_coro_ce, SW_Z8_OBJ_P(zobject), ZEND_STRL("errCode"), sock->socket->errCode);
 -    zend_update_property_string(swoole_socket_coro_ce, SW_Z8_OBJ_P(zobject), ZEND_STRL("errMsg"), sock->socket->errMsg);
-+    constexpr bool sockets = true;
-+#else
-+    constexpr bool sockets = false;
++    ai |= 4;
 +#endif
 +    swr_v1_phpclients_socket_minit(swoole_socket_coro_methods,
 +                                   swoole_exception_ce,
 +                                   SWOOLE_G(use_shortname),
 +                                   sockets,
 +                                   module_number,
++                                   ai,
 +                                   &swoole_socket_coro_ce);
  }
-@@ -1229,73 +643,11 @@ PHP_FUNCTION(swoole_coroutine_socketpair) {
+@@ -1229,73 +654,11 @@ PHP_FUNCTION(swoole_coroutine_socketpair) {
  
 -static PHP_METHOD(swoole_socket_coro, __construct) {
 -    zend_long domain, type, protocol = IPPROTO_IP;
@@ -786,7 +793,7 @@ index 2e80526..8f7ea23 100644
 +    Z_PARAM_LONG(level)
 +    Z_PARAM_LONG(optname)
      ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
-@@ -1303,617 +655,47 @@ static PHP_METHOD(swoole_socket_coro, accept) {
+@@ -1303,617 +666,47 @@ static PHP_METHOD(swoole_socket_coro, accept) {
      swoole_get_socket_coro(sock, ZEND_THIS);
 +    auto _socket = sock->socket->get_socket();
  
@@ -1444,7 +1451,7 @@ index 2e80526..8f7ea23 100644
 +                                 level,
 +                                 optname);
              RETURN_FALSE;
-@@ -2135,39 +917,2 @@ static PHP_METHOD(swoole_socket_coro, setOption) {
+@@ -2135,39 +928,2 @@ static PHP_METHOD(swoole_socket_coro, setOption) {
  
 -static PHP_METHOD(swoole_socket_coro, cancel) {
 -    swoole_get_socket_coro(sock, ZEND_THIS);
@@ -1484,7 +1491,7 @@ index 2e80526..8f7ea23 100644
 -}
 -
  static PHP_METHOD(swoole_socket_coro, import) {
-@@ -2231 +976,234 @@ static PHP_METHOD(swoole_socket_coro, import) {
+@@ -2231 +987,234 @@ static PHP_METHOD(swoole_socket_coro, import) {
  }
 +
 +// What crates/phpclients' methods need from the C++ coroutine socket: one call

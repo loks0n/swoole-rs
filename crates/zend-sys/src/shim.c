@@ -67,17 +67,3 @@ int swr_zend_register_class_alias(const char *name, size_t length, zend_class_en
     alias = zend_new_interned_string(alias);
     return zend_register_class_alias_ex(ZSTR_VAL(alias), ZSTR_LEN(alias), ce, 1);
 }
-
-unsigned swr_php_config(void) {
-    unsigned found = 0;
-#if HAVE_AI_V4MAPPED
-    found |= SWR_PHP_HAVE_AI_V4MAPPED;
-#endif
-#if HAVE_AI_ALL
-    found |= SWR_PHP_HAVE_AI_ALL;
-#endif
-#if HAVE_AI_IDN
-    found |= SWR_PHP_HAVE_AI_IDN;
-#endif
-    return found;
-}

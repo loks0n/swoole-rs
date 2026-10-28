@@ -31,12 +31,6 @@ void swr_zval_str(zval *target, zend_string *string);
 void swr_zval_empty_string(zval *target);
 void swr_zval_empty_array(zval *target);
 
-/* What PHP's configure found, as SWR_PHP_HAVE_* bits. */
-#define SWR_PHP_HAVE_AI_V4MAPPED 1
-#define SWR_PHP_HAVE_AI_ALL 2
-#define SWR_PHP_HAVE_AI_IDN 4
-unsigned swr_php_config(void);
-
 /* emalloc and efree (macros taking file and line in debug builds). */
 void *swr_zend_emalloc(size_t size);
 void swr_zend_efree(void *ptr);
