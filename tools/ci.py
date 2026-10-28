@@ -25,6 +25,7 @@ import time
 
 EXIT = {'passed': 0, 'failed': 1, 'none': 2, 'running': 2, 'cancelled': 3}
 LOG_LINES = 40
+GATE_JOB = 'phpt-gate'
 # The merge-tier jobs (full-gates, or its shards "full-gates (N)") whose dev.py phases the
 # `phases*` artifacts list, replacing their log tails.
 PHASES_JOB = 'full-gates'
@@ -133,6 +134,26 @@ def phases(run, tails=None):
         return passed
 
 
+def job_conclusions(run):
+    return {job['name']: job['conclusion'] for job in json.loads(gh('run', 'view', str(run), '--json', 'jobs'))['jobs']}
+
+
+def gate_regressions(run):
+    """The PHPTs phpt-gate's summary lists as regressions (pass on upstream, fail here)."""
+    tests, listing = [], False
+    for line in gh('run', 'view', str(run), '--log-failed').splitlines():
+        job, _, text = line.partition('\t')
+        if job != GATE_JOB:
+            continue
+        text = text.partition('\t')[2] or text
+        text = text.split(' ', 1)[1] if text[:4].isdigit() and ' ' in text else text
+        if '<summary>' in text:
+            listing = 'regressions' in text
+        elif listing and text.startswith('- `'):
+            tests.append(text[3:].split('`')[0])
+    return tests
+
+
 def phase_changes(result):
     """Failed phases, plus those new or fixed since the previous completed run on main that has phases."""
     tails = {}
@@ -147,6 +168,13 @@ def phase_changes(result):
         if previous:
             # A phase the previous run didn't have is new too: it was added and fails on its first run.
             new = [name for name in result['failed_phases'] if previous.get(name) is not False]
+            # A job with no phases of its own (phpt-gate) fails without any failed phase:
+            # it's new when it succeeded in the previous run.
+            before = job_conclusions(run['databaseId'])
+            for job in sorted(job['name'] for job in result.get('jobs', []) if job['state'] == 'failure'):
+                if before.get(job) == 'success':
+                    regressed = gate_regressions(result['run']) if job == GATE_JOB else []
+                    new.append(f"{job} job" + (f" ({', '.join(regressed)})" if regressed else ''))
             return {**result, 'previous_run': run['url'], 'new_failures': new,
                     'fixed': sorted(name for name, passed in current.items() if passed and previous.get(name) is False),
                     'phase_logs': {name: tails[name] for name in new if name in tails}}
