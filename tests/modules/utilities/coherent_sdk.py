@@ -26,7 +26,15 @@ def stage(work, export, source, reference, root):
     sdk = work / 'include'
     sdk.mkdir(parents=True)
     paths = subprocess.check_output(['git', '-C', str(source), 'ls-tree', '-r', '--name-only', inputs['upstream_commit'], 'include'], text=True).splitlines()
-    patches = [row for row in inputs['patches'] if any(p.startswith('include/') for p in row['upstream_paths'])]
+    # Header patches, plus every patch that also edits a file they edit (until none is
+    # added), in build order: a later patch can rely on an earlier one's lines.
+    touched = {p for row in inputs['patches'] for p in row['upstream_paths'] if p.startswith('include/')}
+    while True:
+        patches = [row for row in inputs['patches'] if touched & set(row['upstream_paths'])]
+        grown = touched | {p for row in patches for p in row['upstream_paths']}
+        if grown == touched:
+            break
+        touched = grown
     paths = sorted(set(paths + [p for row in patches for p in row['upstream_paths']]))
     for path in paths:
         destination = work / path

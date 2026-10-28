@@ -236,7 +236,7 @@ def main():
                         raise ValueError('Status owner leaked into Native fallback')
                     if profile == 'native' and imports:
                         raise ValueError('Rust leaked into Native source')
-                    if profile != 'native' and unit == 'src/coroutine/channel.cc' and 'swr_v1_channel_owned_step' not in imports:
+                    if profile != 'native' and unit == 'src/coroutine/channel.cc' and not {'swr_v1_channel_pop', 'swr_v1_channel_push', 'swr_v1_channel_close'}.issubset(imports):
                         raise ValueError('Actual core missed coupled Rust caller')
                     if profile != 'native' and unit == 'src/coroutine/channel.cc' and 'swr_v1_channel_waiter' not in imports:
                         raise ValueError('Actual core missed whole waiter caller')

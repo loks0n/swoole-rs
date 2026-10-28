@@ -51,10 +51,12 @@ elif args[:2] == ['run', 'list']:
     else:
         print('[]')
 elif args[:2] == ['run', 'view'] and '--log-failed' in args:
-    print('rust\\tcargo test\\t2026-10-25T21:00:01Z error: boom')
+    print(data.get('failed_log', 'rust\\tcargo test\\t2026-10-25T21:00:01Z error: boom'))
 elif args[:2] == ['run', 'view']:
-    print(json.dumps({'jobs': [{'name': 'rust', 'status': 'completed', 'conclusion': 'success',
-                                'startedAt': '2026-10-25T21:00:00Z', 'completedAt': '2026-10-25T21:00:31Z'}]}))
+    jobs = data.get('jobs', {}).get(args[2], [['rust', 'success']])
+    print(json.dumps({'jobs': [{'name': name, 'status': 'completed', 'conclusion': conclusion,
+                                'startedAt': '2026-10-25T21:00:00Z', 'completedAt': '2026-10-25T21:00:31Z'}
+                               for name, conclusion in jobs]}))
 '''
 
 
@@ -117,6 +119,21 @@ class Ci(unittest.TestCase):
         code, result, _ = self.ci('status', runs={'c' * 40: ['failure']}, history=history, phases=phases)
         self.assertEqual(result['new_failures'], ['new'])
         self.assertEqual(result['phase_logs'], {'new': ['first line', 'why it broke']})
+
+    def test_a_job_failing_without_failed_phases_is_new_when_it_passed_before(self):
+        history = [{'databaseId': 7, 'conclusion': 'failure', 'url': 'u7'}, {'databaseId': 4, 'conclusion': 'failure', 'url': 'u4'}]
+        phases = {'7': [['old', False]], '4': [['old', False]]}
+        jobs = {'7': [['full-gates (1)', 'failure'], ['phpt-gate', 'failure'], ['tooling', 'failure']],
+                '4': [['full-gates (1)', 'failure'], ['phpt-gate', 'success'], ['tooling', 'failure']]}
+        gate = 'phpt-gate\tRun gate\t2026-10-27T16:02:38.6Z '
+        failed_log = '\n'.join(gate + line for line in [
+            '<details><summary>2 regressions: pass on upstream, fail on a re-run here</summary>',
+            '- `tests/a/one.phpt`', '- `tests/b/two.phpt`',
+            '<details><summary>1 flaky on upstream</summary>', '- `tests/c/flaky.phpt`: hybrid passed'])
+        code, result, _ = self.ci('status', runs={'c' * 40: ['failure']}, history=history, phases=phases,
+                                  jobs=jobs, failed_log=failed_log)
+        # full-gates and tooling were already failing; phpt-gate passed in run 4.
+        self.assertEqual(result['new_failures'], ['phpt-gate job (tests/a/one.phpt, tests/b/two.phpt)'])
 
     def test_runs_without_phases_keep_the_log_tail(self):
         code, result, _ = self.ci('status', runs={'c' * 40: ['failure']})
