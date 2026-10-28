@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-rust-http2-policy.patch",
-      "sha256": "8cdc48aa4586f6d3d63352e0e2ffc055f97c16be20c3e99e33d779f5a075d26c",
+      "sha256": "a6dcb3312e51c189e7e97955554dd331bcf99884c04af79b6d97ca94af28af73",
       "upstream_paths": [
         "ext-src/swoole_http2_client_coro.cc",
         "ext-src/swoole_http2_server.cc",
