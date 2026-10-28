@@ -9,9 +9,19 @@
 mod bytes;
 mod frontdoor;
 pub use frontdoor::*;
+mod helpers;
+pub use helpers::{
+    Bitmap, swr_v1_utils_bitmap_clear, swr_v1_utils_bitmap_create, swr_v1_utils_bitmap_destroy,
+    swr_v1_utils_bitmap_get, swr_v1_utils_bitmap_set, swr_v1_utils_strlchr, swr_v1_utils_timezone,
+};
 mod logger_state;
+mod wait_registry;
 pub use bytes::*;
 pub use logger_state::*;
+pub use wait_registry::{
+    Registry, swr_v1_utils_registry_wait, swr_v1_utils_registry_wakeup,
+    swr_v1_utils_wait_registry_init, swr_v1_utils_wait_registry_size,
+};
 
 use std::mem::MaybeUninit;
 use std::sync::atomic::{AtomicU32, Ordering};

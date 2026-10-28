@@ -10,6 +10,7 @@ name = "swoole_rs_utilities"
 crate-type = ["rlib", "staticlib"]
 
 [dependencies]
+libc = "=0.2.191"
 memchr = "2.8.3"
 swoole-rs-locks = { path = "../locks" }
 

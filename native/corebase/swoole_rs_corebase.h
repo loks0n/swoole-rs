@@ -3,6 +3,8 @@
 #define SWOOLE_RS_COREBASE_H
 #include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <sys/types.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -117,28 +119,41 @@ enum swr_v1_corebase_hook_add_action_kind {
 };
 /* Native owns list allocation/publication and Callback copy/insertion effects. */
 uint32_t swr_v1_corebase_hook_add_action(uint8_t list_present, int32_t push_back);
-/* Random policy: exclusive zeroed per-call cursor, no RNG/fd/object ownership.
- * Run returned effects after Rust returns. Preserve mode/length/range; SYSTEM
- * flags freshly copy cached-fd-ready(1) and full-read(2); BUFFER/APPEND may
- * set FIRST_DRAW_READY(4) when the first native draw already occurred.
- * RETURN reads value; DRAW uses the fixed alphabet bound below. STORE_DRAW stores index/value BEFORE
- * the next draw. STORE_NUL/STORE_DONE store the final byte then terminate.
- * Stop on RETURN/FALLBACK/NUL/DONE/STORE_NUL/STORE_DONE/UINT32_MAX. Native exceptions never cross Rust.
- * Original defined SYSTEM range is max>min with no signed range-width overflow. */
+/* Random string policy: exclusive zeroed per-call cursor. Run returned effects
+ * after Rust returns. BUFFER/APPEND may set FIRST_DRAW_READY(4) when the first
+ * native draw already occurred; DRAW uses the fixed alphabet bound below.
+ * STORE_DRAW stores index/value BEFORE the next draw. STORE_NUL/STORE_DONE
+ * store the final byte then terminate. Stop on NUL/DONE/STORE_NUL/STORE_DONE/
+ * UINT32_MAX. Native exceptions never cross Rust. min/max are unused. */
 struct swr_v1_corebase_random_state { uint32_t phase; int32_t value; size_t index; };
 enum { SWR_COREBASE_RANDOM_DRAW_MAX = 61, SWR_COREBASE_RANDOM_FIRST_DRAW_READY = 4 };
-enum swr_v1_corebase_random_mode {
-    SWR_COREBASE_RANDOM_SYSTEM = 0, SWR_COREBASE_RANDOM_BUFFER = 1, SWR_COREBASE_RANDOM_APPEND = 2
-};
+enum swr_v1_corebase_random_mode { SWR_COREBASE_RANDOM_BUFFER = 1, SWR_COREBASE_RANDOM_APPEND = 2 };
 enum swr_v1_corebase_random_action {
-    SWR_COREBASE_RANDOM_OPEN = 1, SWR_COREBASE_RANDOM_READ = 2,
-    SWR_COREBASE_RANDOM_FALLBACK = 3, SWR_COREBASE_RANDOM_WARN = 4,
-    SWR_COREBASE_RANDOM_RETURN = 5, SWR_COREBASE_RANDOM_DRAW = 6,
-    SWR_COREBASE_RANDOM_STORE_DRAW = 7, SWR_COREBASE_RANDOM_NUL = 8, SWR_COREBASE_RANDOM_DONE = 9,
+    SWR_COREBASE_RANDOM_DRAW = 6, SWR_COREBASE_RANDOM_STORE_DRAW = 7,
+    SWR_COREBASE_RANDOM_NUL = 8, SWR_COREBASE_RANDOM_DONE = 9,
     SWR_COREBASE_RANDOM_STORE_NUL = 10, SWR_COREBASE_RANDOM_STORE_DONE = 11
 };
 uint32_t swr_v1_corebase_random_next(struct swr_v1_corebase_random_state *state,
     uint32_t mode, uint32_t flags, size_t length, uint32_t random, int32_t min, int32_t max);
+/* Whole host operations; native code keeps only the warnings. */
+/* Read end of the command's pipe; -1 when pipe() fails, -2 when fork() fails
+ * (errno kept). */
+int swr_v1_corebase_shell_exec(const char *command, pid_t *pid, bool get_error_stream);
+/* Polls ready(context) with doubling sleeps; ready must not throw. */
+bool swr_v1_corebase_wait_for(bool (*ready)(void *), void *context, int timeout_ms);
+void swr_v1_corebase_dump_ascii(const char *data, size_t size);
+void swr_v1_corebase_dump_hex(const unsigned char *data, size_t size);
+void swr_v1_corebase_print_backtrace(void);
+double swr_v1_corebase_microtime(void);
+/* sw_snprintf's result: at most size - 1 bytes, NUL-terminated. head is a
+ * swoole::DataHead, whose layout the caller asserts. */
+size_t swr_v1_corebase_datahead_dump(const void *head, char *buffer, size_t size);
+uint64_t swr_v1_corebase_random_u64(void);
+int swr_v1_corebase_rand(int min, int max);
+/* Sets *read_failed (errno kept) and returns -1 on a short read. */
+int swr_v1_corebase_system_random(int min, int max, bool *read_failed);
+/* errors[0], errors[1]: errno of dup2 onto stdout, stderr; 0 on success. */
+void swr_v1_corebase_redirect_stdout(int new_fd, int errors[2]);
 #ifdef __cplusplus
 }
 #endif
