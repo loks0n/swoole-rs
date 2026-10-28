@@ -3,14 +3,15 @@ use crate::{
     Class,
     string::bytes,
     sys::{
-        _zend_expected_type_Z_EXPECTED_ARRAY, _zend_expected_type_Z_EXPECTED_DOUBLE,
-        _zend_expected_type_Z_EXPECTED_LONG, _zend_expected_type_Z_EXPECTED_STRING,
-        _zval_struct__bindgen_ty_1, IS_ARRAY, IS_DOUBLE, IS_FALSE, IS_LONG, IS_NULL, IS_REFERENCE,
-        IS_STRING, IS_TRUE, ZPP_ERROR_WRONG_ARG, add_assoc_long_ex, swr_zend_array_init,
-        swr_zval_empty_array, swr_zval_empty_string, swr_zval_str, zend_execute_data,
-        zend_expected_type, zend_object, zend_parse_arg_double_slow, zend_parse_arg_long_slow,
-        zend_parse_arg_str_slow, zend_string, zend_update_property_long, zend_value,
-        zend_wrong_parameter_error, zend_wrong_parameters_count_error, zval,
+        _zend_expected_type_Z_EXPECTED_ARRAY, _zend_expected_type_Z_EXPECTED_BOOL,
+        _zend_expected_type_Z_EXPECTED_DOUBLE, _zend_expected_type_Z_EXPECTED_LONG,
+        _zend_expected_type_Z_EXPECTED_STRING, _zval_struct__bindgen_ty_1, IS_ARRAY, IS_DOUBLE,
+        IS_FALSE, IS_LONG, IS_NULL, IS_REFERENCE, IS_STRING, IS_TRUE, ZPP_ERROR_WRONG_ARG,
+        add_assoc_long_ex, swr_zend_array_init, swr_zval_empty_array, swr_zval_empty_string,
+        swr_zval_str, zend_execute_data, zend_expected_type, zend_object, zend_parse_arg_bool_slow,
+        zend_parse_arg_double_slow, zend_parse_arg_long_slow, zend_parse_arg_str_slow, zend_string,
+        zend_update_property_long, zend_value, zend_wrong_parameter_error,
+        zend_wrong_parameters_count_error, zval,
     },
 };
 use std::{ffi::CStr, ptr};
@@ -117,6 +118,30 @@ impl Call {
             return Ok(out);
         }
         Err(Self::wrong(n, arg, _zend_expected_type_Z_EXPECTED_LONG))
+    }
+
+    /// `Z_PARAM_BOOL` of argument `n` (1-based), or `default` when an optional
+    /// argument was not passed.
+    /// # Errors
+    /// The argument is not a bool under the caller's typing mode; Zend has thrown.
+    #[inline]
+    pub fn bool(&self, n: u32, default: bool) -> Result<bool, Invalid> {
+        if n > self.num_args() {
+            return Ok(default);
+        }
+        let arg = self.arg(n);
+        // SAFETY: `n` is a passed argument, so `arg` is its live zval.
+        match unsafe { type_of(arg) } {
+            IS_TRUE => return Ok(true),
+            IS_FALSE => return Ok(false),
+            _ => {}
+        }
+        let mut out = false;
+        // SAFETY: `arg` is live and `out` is a writable local.
+        if unsafe { zend_parse_arg_bool_slow(arg, &raw mut out, n) } {
+            return Ok(out);
+        }
+        Err(Self::wrong(n, arg, _zend_expected_type_Z_EXPECTED_BOOL))
     }
 
     /// `Z_PARAM_DOUBLE` of argument `n` (1-based), or `default` when an optional

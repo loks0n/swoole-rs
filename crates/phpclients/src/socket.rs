@@ -170,6 +170,14 @@ unsafe fn register_constants(module: c_int, found: u32) {
     }
 }
 
+/// `php_swoole_get_socket`: the C++ socket of a `Coroutine\Socket` object.
+/// # Safety
+/// `object` is a live `Coroutine\Socket` object.
+pub(crate) unsafe fn socket_of(object: *mut zend_object) -> Socket {
+    // SAFETY: per the caller.
+    unsafe { SocketObject::data(object) }.socket
+}
+
 /// `$this`'s data.
 fn this<'a>(call: &Call) -> &'a mut Data {
     // SAFETY: socket methods are non-static, so `$this` is a socket object, and
@@ -197,7 +205,7 @@ fn open(call: &Call) -> Option<Socket> {
 }
 
 /// `strerror(code)`.
-fn strerror<'a>(code: c_int) -> &'a CStr {
+pub(crate) fn strerror<'a>(code: c_int) -> &'a CStr {
     // SAFETY: a pure query; the text stays valid until the next call.
     let text = unsafe { libc::strerror(code) };
     // SAFETY: strerror returns a NUL-terminated string.
@@ -228,7 +236,7 @@ fn sync(call: &Call, socket: Socket) {
 }
 
 /// `php_swoole_error(E_WARNING, ...)`, or with `fatal` `php_swoole_fatal_error`.
-fn warn(fatal: bool, message: &str) {
+pub(crate) fn warn(fatal: bool, message: &str) {
     let message = CString::new(message).unwrap_or_default();
     #[expect(clippy::cast_possible_wrap, reason = "E_WARNING is 2")]
     // SAFETY: a NUL-terminated message, reported from a handler.
@@ -511,7 +519,7 @@ fn recv_packet(call: &Call) {
     };
     let Some(socket) = open(call) else { return };
     // SAFETY: an open socket.
-    let bytes = unsafe { native::swoole_socket_coro_recv_packet(socket, timeout) };
+    let bytes = unsafe { native::swoole_socket_coro_recv_packet(socket, timeout, true) };
     sync(call, socket);
     let Ok(length) = usize::try_from(bytes) else {
         return call.set_bool(false);
@@ -873,7 +881,7 @@ fn recvfrom(call: &Call) {
 }
 
 /// `address` and `port` of the socket's last address into `array`.
-fn add_address(array: *mut zval, socket: Socket) {
+pub(crate) fn add_address(array: *mut zval, socket: Socket) {
     let mut port = 0;
     // SAFETY: an open socket and a writable local.
     let address = unsafe { native::swoole_socket_coro_address(socket, &raw mut port) };
