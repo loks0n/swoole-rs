@@ -17,7 +17,6 @@ unless built that way and declared with `--rust-asan` (see below).
 | `baseline.py --sanitize` | Pinned upstream only: original `core-tests/src/memory/buffer.cpp` assertions (64 seeded runs) plus a scatter/gather matrix that records upstream defects. |
 | `test_native.py --manifest M --sanitize` (or `--archive A`) | Same originals against the patched facade and Rust queue; the matrix must have zero byte/accounting mismatches. Also C ABI validation, native-token ownership, cached front identity, DATA callbacks on live bytes and quiescent fork. |
 | `test_model.py --manifest M --sanitize` (or `--archive A`) | Six seeded 64-step sequences against an independent C++ reference queue, six facade sequences, and a fixture that replays each sequence once per allocation ordinal with that allocation failing. Failed operations must leave queue state unchanged. Details: [model.md](model.md). |
-| `test_facade.py --archive A [--sanitize] [--rust-asan]` | Six seeded facade lifecycles (binary data, CLOSE tokens, partial offsets, mixed teardown); native and selected outcomes must match. |
 | `test_iovec.py --archive A [--sanitize]` | Twelve positive POSIX iovec append cases; native and selected layout and observation counts must match. |
 | `test_callbacks.py --archive A` | A throwing destroy callback must reach `std::terminate` (exit 77) for DATA pop, native-token pop and teardown in both engines. |
 | `test_typed.py --archive A [--sanitize]` | Typed queue facade compiled and run under C++14/17/20. |
@@ -51,7 +50,7 @@ adds a previous hybrid build to the comparison.
 
 ## Rust ASan
 
-`test_native.py`, `test_facade.py` and `string/gate.py` accept `--rust-asan` with
+`test_native.py` and `string/gate.py` accept `--rust-asan` with
 `--sanitize` for an archive built with Rust ASan. They refuse archives without
 `__asan_report_` imports. Build such an archive on Linux with
 `RUSTC_BOOTSTRAP=1 RUSTFLAGS='-Zsanitizer=address -Zexternal-clangrt=yes' cargo build --locked --offline -p swoole-rs-buffer --release --target=aarch64-unknown-linux-gnu`;
@@ -92,3 +91,41 @@ instrumented archive fails to link because Apple's runtime lacks
 
 The ltrim/rtrim/strnpos/strnstr original String tests exercise native helpers in
 `include/swoole_util.h` and `include/swoole.h`, not Rust code.
+
+## Gate audit (#473)
+
+Kept, each with what nothing else reaches:
+
+- `buffer-native` and `string-originals` run upstream's own
+  `core-tests/src/memory/buffer.cpp` and `core-tests/src/core/string.cpp`, which
+  no other phase builds.
+- `buffer-model`: allocation-failure replay at every allocation ordinal, plus the
+  legacy facade sequences (DATA callbacks on live bytes), under ASan/UBSan.
+- `buffer-typed-layout`: ABI layout of `Buffer`/`BufferChunk` under each macro value.
+- `buffer-typed`: the typed facade's only C++14/17/20 builds, under sanitizers.
+- `buffer-callbacks`: a throwing destroy callback must reach `std::terminate`
+  across the Rust boundary; no PHPT throws from a native destructor.
+- `buffer-posix-iovec`: the C++ iovec adapter (stack/heap descriptor copy) against
+  upstream under sanitizers; the Rust unit tests start after that adapter.
+- `buffer-string-compatibility`: C11 layout asserts and C++14/17/20 whole-TU builds.
+- `string-{split,integer,ownership,allocation,format,random,copy,transitions}`:
+  custom-allocator custody, caught OOM and callback continuations through the
+  C++ facade under ASan/UBSan; PHPTs only use the default allocator.
+- `buffer-network`: `Http\Response::sendfile` with an offset and a length behind
+  4 MiB of queued output; no original PHPT passes a length.
+
+Deleted:
+
+- `buffer-facade`: `buffer-model` runs the same six seeded `facade_sequence`s of
+  `model.cc` against the Rust facade, with DATA callbacks checked as well.
+- `string-production-{random,compatibility,format,allocation,ownership,integer,split,copy}`:
+  each replayed the matching `gate.py` profile (or `test_compatibility.py`)
+  body, check for check, from an addon loaded beside the built extension. The
+  profiles compile the same patched `string.cc` and Rust archive under
+  sanitizers, and every hybrid PHPT in the PHPT gate runs the loaded extension's
+  String and Buffer methods.
+- `string-production-{storage,metadata,facade}` and `buffer-legacy-build`, which
+  built a second extension only for the storage and facade consumers: their
+  String edits, transitions and legacy facade lifecycles are the
+  `string-format`/`string-split`/`string-copy`, `string-transitions` and
+  `buffer-model` cases.

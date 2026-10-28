@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Separately named supported positive Reactor/Socket consumer; no fault/lifetime/performance claim."""
 import argparse
-import importlib.util
 import json
 import re
 from pathlib import Path
@@ -11,16 +10,12 @@ import sys
 import uuid
 sys.path.insert(0,str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT,Engine,parse_engines,run_isolated,write_report
+from tools import hybrid_identity as shared
 from tools.hybrid_identity import attest,sha
 from tools.build_upstream import require_build_space
 import owned_iov_identity as owned_iov
 import buffer_typed_identity as typed_buffer
 
-# Reuse the already-qualified exact source/config mirror and immutable-export
-# binding. No duplicate source reconstruction or second DSO copy/cache policy.
-helper=ROOT/'tests/modules/buffer/string/production.py'
-spec=importlib.util.spec_from_file_location('swr_production_headers',helper)
-shared=importlib.util.module_from_spec(spec);spec.loader.exec_module(shared)
 p=argparse.ArgumentParser(description=__doc__)
 p.add_argument('--source',type=Path,required=True)
 p.add_argument('--source-ref',required=True)

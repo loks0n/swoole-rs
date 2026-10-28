@@ -680,45 +680,17 @@ def plan(args, reports):
                    '--source', manifest.parent / 'src', '--manifest', ROOT / 'tests/modules/buffer/originals.json',
                    '--case', 'tests/swoole_server/sendfile_02.phpt', *php_for('curl', 'sockets'),
                    *engines, '--require-all', '--isolate-cases', *report('php-sockets-sendfile-original'))
-        pytest('buffer-facade', 'tests/modules/buffer/test_facade.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize')
         pytest('buffer-native', 'tests/modules/buffer/test_native.py', '--manifest', manifest, '--sanitize')
         pytest('buffer-callbacks', 'tests/modules/buffer/test_callbacks.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a')
         pytest('buffer-posix-iovec', 'tests/modules/buffer/test_iovec.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize')
-        if integrate:
-            # Typed Buffer refuses the mutable legacy front that the facade and storage consumers
-            # use, so they run on a build without the Rust reactor, where the legacy facade still applies (#207).
-            legacy_export = artifact_reports / 'legacy-buffer-export'
-            if typed_buffer(args):
-                script('buffer-legacy-build', 'tools/build_hybrid.py',
-                       *(['--php-sockets'] if getattr(args, 'php_sockets', False) else []),
-                       '--export', legacy_export, '--jobs', args.jobs,
-                       *(['--native-build-root', args.native_build_root] if getattr(args, 'native_build_root', None) else []),
-                       *(['--ccache', args.ccache] if getattr(args, 'ccache', None) else ['--no-ccache']))
-            for consumer in ['random', 'storage', 'metadata', 'facade', 'copy', 'split', 'integer', 'ownership', 'allocation', 'format', 'compatibility']:
-                name = 'string-production-' + consumer
-                legacy = typed_buffer(args) and consumer in ('facade', 'storage')
-                export = legacy_export if legacy else selected_export
-                build = (['--build-manifest', export / 'build-manifest.json', '--archive', export / 'libswoole_rs_ffi.a'] if legacy else
-                         ['--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a'])
-                script(name, 'tests/modules/buffer/string/production.py', '--source', ROOT / 'target/upstream/src',
-                       *php, '--engine', f'hybrid={export / "swoole.so"}',
-                       '--engine', f'upstream={native_export / "swoole.so"}',
-                       '--borrow-immutable-exports', *build, '--source-ref', 'HEAD',
-                       '--selected-export', export / 'export.json',
-                       '--native-export', native_export / 'export.json', '--consumer', consumer, *report(name))
         for phase, profile in [('string-originals', '--original-only'), ('string-split', '--split-only'),
                                ('string-integer', '--integer-only'), ('string-ownership', '--ownership-only'),
                                ('string-allocation', '--allocation-only'), ('string-format', '--format-only'),
-                               ('string-random', '--random-only')]:
+                               ('string-random', '--random-only'), ('string-copy', '--copy-only'),
+                               ('string-transitions', '--transition-only')]:
             script(phase, 'tests/modules/buffer/string/gate.py', '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', profile,
                    *report(phase))
-        script('string-copy', 'tests/modules/buffer/string/gate.py', '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', '--copy-only',
-               *report('string-copy'))
-        script('string-transitions', 'tests/modules/buffer/string/gate.py', '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', '--transition-only',
-               *report('string-transitions'))
         if integrate:
             pytest('buffer-model', 'tests/modules/buffer/test_model.py', '--manifest', manifest, '--sanitize')
         pytest('buffer-network', 'tests/modules/buffer/test_network.py', *php, *engines)
@@ -821,7 +793,7 @@ def retain_build_manifest(build, reports):
 
 # Phases that build artifacts later phases consume, or that later phases need to have
 # passed. Each runs alone, after everything before it and before everything after it.
-BARRIER_PHASES = {'ownership', 'build', 'reference-build', 'stdext-reference-build', 'buffer-legacy-build'}
+BARRIER_PHASES = {'ownership', 'build', 'reference-build', 'stdext-reference-build'}
 
 
 # Phases that run original PHPTs under another name (their servers race for ports under load).
@@ -1146,7 +1118,7 @@ def main():
     if args.shard and (args.lane != 'integrate' or args.phase):
         parser.error('--shard splits the full integrate plan; it cannot be combined with --phase')
     if args.artifacts_from:
-        if args.lane != 'integrate' or not args.phase or set(args.phase) & {'build', 'reference-build', 'stdext-reference-build', 'buffer-legacy-build'}:
+        if args.lane != 'integrate' or not args.phase or set(args.phase) & BARRIER_PHASES - {'ownership'}:
             parser.error('--artifacts-from requires explicit integration phases without builds')
         try:
             args.artifacts_from = args.artifacts_from.resolve()

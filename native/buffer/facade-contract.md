@@ -45,4 +45,4 @@ exception, destructor or Zend escape crosses Rust.
 Known difference: this path calls the destroy callback while DATA is still live,
 so a callback may read DATA during destruction. That case is not compared.
 
-Test: `tests/modules/buffer/test_facade.py`.
+Test: `tests/modules/buffer/test_model.py` (the facade sequences).
