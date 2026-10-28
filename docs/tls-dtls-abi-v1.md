@@ -1,33 +1,28 @@
-# TLS/DTLS policy boundary (M21)
+# TLS/DTLS boundary (M21)
 
 Feature value 262144 (`--module tls`). Upstream targets: `src/protocol/ssl.cc`,
-`src/protocol/dtls.cc`. OpenSSL (or a compatible library) keeps all
-cryptography and the TLS/DTLS engine. Follows the
-[policy/effect split](abi-v1.md#policyeffect-split).
+`src/protocol/dtls.cc`. OpenSSL 3 keeps all cryptography and the TLS/DTLS
+engine; Rust binds it through `openssl-sys`.
 
-Rust decides protocol/option/setup/failure policy and BIO read/peek/consume/
-control. Native code makes every OpenSSL call, logs, allocates, frees and
-registers callbacks. OpenSSL can call password/info/ALPN/cookie/BIO callbacks
-synchronously, so no Rust frame surrounds a native call that might throw, bail
-out, switch context or tear down its owner. Callback bodies may call Rust leaf
-policy separately.
+Rust creates and configures `SSL_CTX` (every OpenSSL call in `SSLContext::create`
+and its `set_*` methods), registers and implements the password, ALPN, verify and
+DTLS cookie callbacks, initializes OpenSSL and owns the ex_data indexes and the
+error text. Native code keeps `SSLContext`'s fields and lends Rust a view of them
+per call; the password callback reads the live passphrase through a native
+accessor. Warnings go through a native logger callback with upstream's text and
+method name. The info callback, the DTLS Session queue, BIO method table and
+socket writes stay native; the DTLS BIO read/control/listen decisions are Rust
+scalar plans.
 
-Native code keeps global initialization, ex_data indexes, context/session and
-`BIO_METHOD` ownership (destroy/re-init is not `OnceLock`), SSLContext storage,
-the Session deque/Buffer, `BIO_data` and the lazy BIO method. `SSL_free` happens
-before session/map erase so BIO callbacks work during free. Returned strings and
-ALPN output keep native lifetime. Error-queue popping and errno order are exact.
+No panic crosses the ABI. Returned strings: `swr_v1_tls_error` is valid until the
+thread's next call.
 
 Upstream behavior kept:
 
-- `SSLContext::create` returns true when the certificate file fails to load, but
-  false for other key/chain/check failures.
-- Protocol method is chosen before zero normalization.
+- `SSLContext::create` fails and frees the context on any certificate, key, CA
+  (with `verify_peer`), ALPN, client CA or cipher failure.
+- Protocol method is chosen before zero normalization; DTLS keeps TLS 1.2.
 - The verify callback returns 1; verification happens later in callers.
-- TLS 1.2 cipher list and TLS 1.3 ciphersuites are handled separately.
-- Option values follow the linked library version; OpenSSL 3 is not assumed.
 - DTLS: non-peek short reads drop the whole datagram; empty reads retry;
   `PENDING` is the queue total; DTLS listen return values are library-specific
   (0 pending/true, negative/false, positive listened/true).
-
-Cookie-secret cases are compared only where the secret is aligned and initialized.

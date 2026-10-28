@@ -5,8 +5,8 @@ decisions, body chunking, window actions, frame header and control payload
 integers, the private client send queue container, and next-effect selection for
 several client/server methods. Native code keeps the settings/window/stream
 stores and all PHP, HPACK, socket, compression, coroutine and destructor effects.
-Public headers are unchanged. The overlay keeps a native fallback behind
-`SW_USE_RUST_HTTP2`.
+Rust also owns the process-wide default settings. Public headers are unchanged.
+The overlay has no native fallback: patched builds define `SW_USE_RUST_HTTP2`.
 
 ## Running
 
@@ -36,8 +36,7 @@ Each gate extracts the actual pinned and patched function bodies, compiles both
 against recording doubles for native effects, and compares effect order, emitted
 bytes, return values and published state.
 
-- `gate.py`: compiles the original and patched `src/protocol/http2.cc` (and the
-  disabled overlay), runs Rust unit tests, and compares the core codec calls
+- `gate.py`: compiles the original and patched `src/protocol/http2.cc`, runs Rust unit tests, and compares the core codec calls
   (`core_calls.cpp`) with a recording `Socket::send`.
 - `settings_calls.py`: server SETTINGS loop and client lambda, with HPACK/trace
   doubles.

@@ -11,9 +11,11 @@
 
 pub mod address;
 pub mod buffered;
+pub mod dns_cache;
 pub mod flock;
 pub mod lifecycle;
 pub mod packet;
+pub mod poll;
 pub mod resolve;
 pub mod sendfile;
 pub mod setup;
@@ -144,24 +146,6 @@ pub extern "C" fn swr_v1_hook_completion(result: i64, canceled: i32, timeout: i3
     } else {
         Completion { result, error: 0 }
     }
-}
-
-/// Coalesce native poll readiness. Error readiness becomes requested read/write
-/// only when the caller did not request the explicit error bit.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_hook_poll_revents(
-    requested: u32,
-    received: u32,
-    event: u32,
-    read_write: u32,
-    error: u32,
-) -> u32 {
-    received
-        | if event == error && requested & error == 0 {
-            requested & read_write
-        } else {
-            event
-        }
 }
 
 /// Timer-controller actions: 1 enable, 2 add native timer, 4 install negative

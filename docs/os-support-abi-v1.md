@@ -6,10 +6,10 @@ Feature value 131072 (`--module ossupport`). Upstream targets:
 [policy/effect split](abi-v1.md#policyeffect-split).
 
 Rust owns the async thread pool: the process-wide pool, its queue, worker
-threads, scheduling and idle retirement (`crates/ossupport/src/pool.rs`). File,
-message queue and sendfile code follows the
-[policy/effect split](abi-v1.md#policyeffect-split): native code runs every
-syscall, allocation, log and callback.
+threads, scheduling and idle retirement (`crates/ossupport/src/pool.rs`), and runs
+the file IO, sendfile, entropy, message queue and process/thread identity
+syscalls (`file.rs`, `msg_queue.rs`, `system.rs`). Native code keeps descriptors,
+allocation and logging.
 
 ## Async thread pool
 
@@ -39,4 +39,4 @@ proven synchronization.
   `EINTR` retry only on push. Tests use a private IPC namespace or a reserved key.
 - Sendfile keeps separate Linux, Darwin/BSD and fallback offset/result/retry
   rules, including progress reported before `EINTR`.
-- Entropy, daemon, identity and resolver hooks run natively.
+- Daemon and resolver hooks run natively.

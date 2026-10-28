@@ -8,10 +8,10 @@ Rust owns protocol priority/labels, integer normalization, event lookup,
 listener option sequencing, socket-creation decisions, the init_protocol plan,
 `get_connection_num` summation, EOF/length/stream setter normalization,
 constructor defaults, callback getter/hook selection, flag/buffer/packet/option
-plans, TLS/SNI frontend metadata and class-property declarations. Native code
-keeps allocation, Zend storage and conversions, syscalls, callbacks, warnings,
-cleanup, crypto and the receive/parser/HTTP/request-destruction bodies. No Rust
-frame or borrow crosses those effects.
+plans, TLS/SNI frontend metadata, class-property declarations and the receive
+callbacks (`read.rs`, unit-tested with `cargo test -p swoole-rs-ports`). Native
+code keeps allocation, Zend storage and conversions, syscalls, callbacks,
+warnings, cleanup, crypto, the HTTP request parser and request destruction.
 
 ## Running checks
 

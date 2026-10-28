@@ -13,6 +13,8 @@
 use std::ffi::{CStr, c_char, c_int};
 use std::slice;
 
+pub mod read;
+
 const _: () = {
     assert!(
         std::mem::size_of::<std::sync::atomic::AtomicU32>() == std::mem::size_of::<u32>(),
