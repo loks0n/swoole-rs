@@ -17,34 +17,37 @@ cargo build --locked -p swoole-rs-ffi --no-default-features --features http --re
 
 ## Native differential gates
 
-Each gate extracts the pinned (v6.2.4, `c7e514509451`) and patched native method
-bodies into separate namespaces, applies the owned overlay through
-`apply_patch_verified` in a temporary tree, compiles the whole selected native
-translation unit as C++14, and compares outcomes, effect traces, errno and
-partial publication through deterministic native facades. Native code runs under
-ASan/UBSan; the Rust archive is uninstrumented unless `--rust-sanitize` is used
-(Linux; builds a private ASan HTTP archive, precompiled std stays
-uninstrumented). Gates marked `[A|R]` take `--archive PATH` or `--rust-sanitize`;
-the rest require `--archive PATH`. All take `--source PINNED_GIT --output REPORT`.
-`tools/dev.py` registers each as an `http-*` phase.
+Each gate extracts the pinned (v6.2.4, `c7e514509451`) and the hybrid native
+method bodies into separate namespaces and compares outcomes, effect traces,
+errno and partial publication through deterministic native facades. The two
+sides compile apart (`Sides` in `gate.py`): upstream fragments against the pin's
+headers only, hybrid fragments and the driver against the fully patched tree of
+the hybrid build `--archive` comes from (`hybrid_tree`), whose whole native
+translation units also compile as C++14. Drivers that `#include` each engine's
+bodies build one TU per engine (`SWR_ENGINE`). Native code runs under ASan/UBSan;
+the Rust archive is uninstrumented unless `--rust-sanitize` is used (Linux;
+links a private ASan HTTP archive instead, precompiled std stays uninstrumented).
+All take `--source PINNED_GIT --archive HYBRID_ARCHIVE --output REPORT`; gates
+marked `[R]` also take `--rust-sanitize`. `tools/dev.py` registers each as an
+`http-*` phase.
 
 | Script | Checks |
 | --- | --- |
 | `gate.py` | URL encode/decode, boundary, method, status helpers; five unchanged original core-test bodies |
 | `framing_gate.py` | Request framing and buffer metadata; original `get_protocol`, `has_expect_header`, `all_method` bodies |
 | `headers_gate.py` | FormData/header callbacks, errno, reentrancy |
-| `proxy_gate.py` [A\|R] | Proxy auth packing/handshake with actual base64 |
-| `static_gate.py` [A\|R] | Static response method, send order, HEAD/keep-alive changes |
+| `proxy_gate.py` [R] | Proxy auth packing/handshake with actual base64 |
+| `static_gate.py` [R] | Static response method, send order, HEAD/keep-alive changes |
 | `conditional_gate.py` | Date callers with libc `strptime`/`gmtime`/`mktime` |
 | `multipart_gate.py` | Multipart upload accounting callbacks |
-| `multipart_headers_gate.py` [A\|R] | Multipart header field/value and filename callbacks |
-| `multipart_emit_gate.py` [A\|R] | Header-complete/data-end/part-begin/body-end callbacks |
-| `rewrite_gate.py` [A\|R] | `add_rewrite_rule`/`apply_rewrite_rules`, rewriting the Rust static context |
-| `dispatch_gate.py` [A\|R] | Route/index/proxy-init/status bodies, TLS status buffer |
+| `multipart_headers_gate.py` [R] | Multipart header field/value and filename callbacks |
+| `multipart_emit_gate.py` [R] | Header-complete/data-end/part-begin/body-end callbacks |
+| `rewrite_gate.py` [R] | `add_rewrite_rule`/`apply_rewrite_rules`, rewriting the Rust static context |
+| `dispatch_gate.py` [R] | Route/index/proxy-init/status bodies, TLS status buffer |
 | `locale_gate.py` | Case-insensitive helpers against libc `strncasecmp` across available locales |
-| `cookie_flow_gate.py` [A\|R] (`--status-only`, `--codes-only`) | Cookie callback flow; status fallback buffer; public `int[128]` status-code array export |
-| `request_lifecycle_gate.py` [A\|R] | Request multipart init/destroy/destructor |
-| `context_gate.py` [A\|R] | The whole `StaticHandler` (paths, locations, rewrites, index files and pages, ranges, content types, dates) against the pinned class |
+| `cookie_flow_gate.py` [R] (`--status-only`, `--codes-only`) | Cookie callback flow; status fallback buffer; public `int[128]` status-code array export |
+| `request_lifecycle_gate.py` [R] | Request multipart init/destroy/destructor |
+| `context_gate.py` [R] | The whole `StaticHandler` (paths, locations, rewrites, index files and pages, ranges, content types, dates) against the pinned class |
 | `boundary_rng_gate.py --export DIR` | Random-boundary overloads against a production corebase export; verifies the export's archive/header/source checksums first |
 
 Locale semantic runs must be unsanitized: under ASan the macOS interceptor
