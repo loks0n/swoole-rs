@@ -119,7 +119,7 @@ pub unsafe extern "C" fn swr_v2_memory_mapping_step(
                 finish(state, output, payload, 0)
             }
         }
-        (ALLOCATE, 3 | 4) => finish(state, output, ptr::null_mut(), -1),
+        (ALLOCATE, 3 | 4) | (PROTECT | REALLOCATE, 2) => finish(state, output, ptr::null_mut(), -1),
         (RELEASE | PROTECT, 0) => {
             // SAFETY: `source` is the caller's live mapping payload.
             let Some(value) = (unsafe { extent(state.source) }) else {
@@ -147,7 +147,6 @@ pub unsafe extern "C" fn swr_v2_memory_mapping_step(
             let result = state.result;
             finish(state, output, ptr::null_mut(), result)
         }
-        (PROTECT, 2) => finish(state, output, ptr::null_mut(), -1),
         (REALLOCATE, 0) => {
             state.phase = 1;
             state.total = state.requested;
@@ -168,7 +167,6 @@ pub unsafe extern "C" fn swr_v2_memory_mapping_step(
                 1
             }
         }
-        (REALLOCATE, 2) => finish(state, output, ptr::null_mut(), -1),
         (REALLOCATE, 3) => {
             let memory = state.memory;
             finish(state, output, memory, 0)

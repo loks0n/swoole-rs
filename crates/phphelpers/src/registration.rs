@@ -78,12 +78,10 @@ pub unsafe extern "C" fn swr_v1_phphelpers_wrapper(index: u32, output: *mut SwrP
         2 => (b"implode\0", 1),
         3 => (b"array_key_exists\0", 1),
         4 => (b"array_map\0", 1),
-        5 => (b"str_replace\0", 2),
-        6 => (b"str_ireplace\0", 2),
+        5 | 9 => (b"str_replace\0", 2),
+        6 | 10 => (b"str_ireplace\0", 2),
         7 => (b"explode\0", 1),
         8 => (b"hash\0", 1),
-        9 => (b"str_replace\0", 2),
-        10 => (b"str_ireplace\0", 2),
         _ => return 0,
     };
     // SAFETY: non-null (checked above), aligned, writable native storage.

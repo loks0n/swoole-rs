@@ -95,8 +95,7 @@ pub extern "C" fn swr_v1_http_status(code: i32) -> *const c_char {
         508 => c"508 Loop Detected".as_ptr(),
         510 => c"510 Not Extended".as_ptr(),
         511 => c"511 Network Authentication Required".as_ptr(),
-        0 => c"200 OK".as_ptr(),
-        200 => c"200 OK".as_ptr(),
+        0 | 200 => c"200 OK".as_ptr(),
         _ => std::ptr::null(),
     }
 }
