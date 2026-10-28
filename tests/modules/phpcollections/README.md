@@ -1,19 +1,18 @@
 # PHP collection facades (M27)
 
-M27 covers the `Swoole\Table` and coroutine `Channel` PHP facades. Rust takes
-copied metadata and returns before any native effect. Zend, storage, row/iterator
-identity, locks and scheduler custody stay native; no retained Rust frame spans an
-effect. See [remaining-native.md](remaining-native.md) and
-[body-map.md](body-map.md) for every original function and its native remainder.
+M27 covers the `Swoole\Table` and coroutine `Channel` PHP classes.
+`Swoole\Coroutine\Channel` is Rust over the zend crates (docs/zend.md): C++ keeps
+its arginfo method table and lends the coroutine module's queue as a table of
+operations. For Table, Rust takes copied metadata and returns before any native
+effect. Zend, storage, row/iterator identity and locks stay native; no retained
+Rust frame spans an effect. See [remaining-native.md](remaining-native.md).
 
-The header declares 13 exports. PHP Table uses the M12 TableV2 composition API and
+The header declares the Table policy exports. PHP Table uses the M12 TableV2 composition API and
 its Rust column store ([table-columns-contract.md](../../../native/phpcollections/table-columns-contract.md));
 the legacy public Table ABI is untouched. `value_plan` chooses complete per-value
 read/materialize and write/convert/store/release sequences for shared native
 dispatchers ([value-pipeline.md](../../../native/phpcollections/value-pipeline.md)).
-Channel uses packed action plans, low byte first: phase 0 ends at native
-push/pop, phase 1 uses the fresh result. `clear_cell`, `channel_next` and
-`write_action` have no selected-facade callers.
+`clear_cell` and `write_action` have no selected-facade callers.
 
 Edit both overlays in `migration/patches/phpcollections/` with `tools/patches.py`
 (see [hybrid build](../../../docs/hybrid-build.md#editing-patches)); selected sources
@@ -26,8 +25,8 @@ python3 tests/modules/phpcollections/gate.py --source /absolute/pinned/source \
   --library-kind cdylib --sanitizers --output target/policy.json
 ```
 
-Extracts the pinned and selected capacity/count, push/pop, incr/decr/read and set
-bodies, compiles them into `gate.cc`, `effects.cc`, `arithmetic.cc` and
+Extracts the pinned and selected Table count, incr/decr/read and set
+bodies, compiles them into `gate.cc`, `arithmetic.cc` and
 `write.cc` with scripted native effect doubles, and compares native and selected
 traces. `--archive FILE` uses an existing combined archive instead of building
 the crate. `--sanitizers` applies ASan/UBSan to the C++ witness frames only.

@@ -10,7 +10,7 @@
     },
     {
       "path": "0002-swoole_channel_coro.patch",
-      "sha256": "509505715787634ddc302a536a1f6a82e376f5bf22af34c3350ffdbd3ed8fbfa",
+      "sha256": "03f070b98b55dbd4a1b789e58cba30c681b213bfe223fba9525c58a01f20765b",
       "upstream_paths": [
         "ext-src/swoole_channel_coro.cc"
       ]
