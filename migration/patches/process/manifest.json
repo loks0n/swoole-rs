@@ -12,6 +12,14 @@
         "src/server/task_worker.cc",
         "src/server/worker.cc"
       ]
+    },
+    {
+      "path": "0002-worker-registry.patch",
+      "sha256": "4ff9de896a9298a91dcc4ba4f7e66d76535d22ff69a5f1d4407ff7097c6e5bb9",
+      "upstream_paths": [
+        "src/server/manager.cc",
+        "src/server/process.cc"
+      ]
     }
   ]
 }

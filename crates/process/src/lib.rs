@@ -12,6 +12,7 @@ pub mod signal;
 pub mod signalfd;
 pub mod task_file;
 pub mod wait;
+pub mod worker_registry;
 use std::ffi::c_int;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

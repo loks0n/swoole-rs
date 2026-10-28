@@ -65,6 +65,15 @@ void swr_v1_signalfd_close(void);
 bool swr_v1_signalfd_clear(void);
 swr_v1_signalfd_received swr_v1_signalfd_receive(int fd);
 #endif
+/* Rust-owned worker lookup: pid -> native Worker*. Replaces
+ * Server::get_worker_by_pid's event-worker scan and user-map branch. The handle
+ * lives on Server; native registers a worker at spawn, unregisters at reap/detach. */
+typedef struct swr_v1_process_worker_registry swr_v1_process_worker_registry;
+swr_v1_process_worker_registry *swr_v1_process_worker_registry_new(void);
+void swr_v1_process_worker_registry_free(swr_v1_process_worker_registry *);
+void swr_v1_process_worker_registry_register(swr_v1_process_worker_registry *, int pid, void *worker);
+bool swr_v1_process_worker_registry_unregister(swr_v1_process_worker_registry *, int pid);
+void *swr_v1_process_worker_registry_lookup(const swr_v1_process_worker_registry *, int pid);
 #ifdef __cplusplus
 }
 #endif
