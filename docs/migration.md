@@ -57,6 +57,9 @@ job fails if one rises more than 1% (noise) above its record.
 - A PR that moves work into Rust may raise a record by up to 3% of its value,
   stating the before/after numbers in the PR. Migration may be slow before it
   is fast; the ratchet keeps that visible and bounded.
+- A record may also rise when an A/B of the same base with and without the
+  change shows the extra instructions outside the code it changed (code layout,
+  allocator): the PR states the A/B (#686).
 - Speed work keeps or grows Rust's share. The default fix moves the whole
   operation, decision and effect, into Rust (#366). Handing code back to
   upstream is only for glue in which Rust decided nothing, and the PR says so.
