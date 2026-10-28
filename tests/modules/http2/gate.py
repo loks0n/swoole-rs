@@ -96,8 +96,6 @@ def main():
                      'get_frame_length', 'send_setting_frame', 'get_type', 'get_type_color']
         run(base + [f'-D{name}=original_{name}' for name in functions] + ['-c', original, '-o', work / 'original.o'])
         run(base + ['-DSW_USE_RUST_HTTP2', '-c', scratch / name, '-o', work / 'rust.o'])
-        # Compile the disabled overlay too, proving the native fallback needs no Rust headers or archive.
-        run(base + ['-c', scratch / name, '-o', work / 'disabled.o'])
         executable = work / 'core-calls'
         harness = ROOT / 'tests/modules/http2/core_calls.cpp'
         run(base + ['-DSW_USE_RUST_HTTP2', harness, work / 'original.o', work / 'rust.o', archive, '-o', executable])

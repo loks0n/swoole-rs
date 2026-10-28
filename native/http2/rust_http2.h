@@ -1,4 +1,5 @@
 #pragma once
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
@@ -110,6 +111,10 @@ void sw_rs_http2_pack_frame_header(uint8_t *, uint32_t, uint32_t, uint32_t, uint
 uint32_t sw_rs_http2_read_u32(const uint8_t *);
 void sw_rs_http2_write_u32(uint8_t *, uint32_t);
 int32_t sw_rs_http2_setting_index(uint32_t id);
+/* Process-wide default settings, owned by Rust. put returns false for an unknown id. */
+bool sw_rs_http2_put_default_setting(uint32_t id, uint32_t value);
+uint32_t sw_rs_http2_get_default_setting(uint32_t id);
+struct SwRsHttp2Settings sw_rs_http2_default_settings(void);
 size_t sw_rs_http2_pack_settings(uint8_t *, size_t, const struct SwRsHttp2Settings *, uint32_t);
 void sw_rs_http2_unpack_setting(const uint8_t *, uint16_t *, uint32_t *);
 int32_t sw_rs_http2_decode_frame(const uint8_t *, size_t, uint32_t, uint32_t, struct SwRsHttp2Frame *);
