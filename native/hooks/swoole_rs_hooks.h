@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <sys/types.h>
 #include <stdio.h>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -177,6 +178,14 @@ typedef struct {
 bool swr_v1_hook_bind(const swr_v1_hook_setup_ops *ops, bool host);
 bool swr_v1_hook_listen(const swr_v1_hook_setup_ops *ops, int backlog, int *stored);
 bool swr_v1_hook_accept(const swr_v1_hook_setup_ops *ops);
+/* Coroutine Socket::sendfile's loop over [*offset, end): 0 all sent, 1 a send
+ * returned zero, 2 one failed (errno set), 3 the wait failed. */
+typedef struct {
+    void *context;
+    ssize_t (*send)(void *, off_t *offset, size_t length);
+    bool (*wait)(void *);
+} swr_v1_hook_sendfile_ops;
+int swr_v1_hook_sendfile(const swr_v1_hook_sendfile_ops *ops, off_t *offset, size_t end);
 /* The coroutine bound for reading or writing (event SW_EVENT_READ/WRITE; bind accepts both bits).
    bound_co follows get_bound_co; event_name returns 0 reading, 1 writing, 2 reading or writing. */
 void *swr_v1_hook_socket_co(const swr_v1_hook_socket_state *state, uint32_t event);
