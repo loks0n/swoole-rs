@@ -162,6 +162,21 @@ void swr_v1_hook_socket_state_free(swr_v1_hook_socket_state *state);
 swr_v1_hook_socket_flags_t swr_v1_hook_socket_flags(const swr_v1_hook_socket_state *state);
 void swr_v1_hook_socket_set_flags(swr_v1_hook_socket_state *state, swr_v1_hook_socket_flags_t flags);
 void swr_v1_hook_socket_connect(swr_v1_hook_socket_state *state);
+/* Server setup (crates/hooks/src/setup.rs): bind (host: availability first, then
+ * record the name), listen (SW_BACKLOG for a non-positive backlog, stored in
+ * *stored) and accept (wait and accept again when it would block). fail(-1) is
+ * set_err(); call is the operation's network::Socket call. */
+typedef struct {
+    void *context;
+    bool (*available)(void *, int event);
+    void (*fail)(void *, int error);
+    bool (*wait)(void *, int event);
+    int (*name)(void *);
+    int (*call)(void *, int argument);
+} swr_v1_hook_setup_ops;
+bool swr_v1_hook_bind(const swr_v1_hook_setup_ops *ops, bool host);
+bool swr_v1_hook_listen(const swr_v1_hook_setup_ops *ops, int backlog, int *stored);
+bool swr_v1_hook_accept(const swr_v1_hook_setup_ops *ops);
 /* The coroutine bound for reading or writing (event SW_EVENT_READ/WRITE; bind accepts both bits).
    bound_co follows get_bound_co; event_name returns 0 reading, 1 writing, 2 reading or writing. */
 void *swr_v1_hook_socket_co(const swr_v1_hook_socket_state *state, uint32_t event);

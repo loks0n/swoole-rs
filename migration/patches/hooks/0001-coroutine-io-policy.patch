@@ -861,7 +861,7 @@ index 0f7b169..36caf7b 100644
 -    }
      RETURN_TRUE;
 diff --git a/include/swoole_coroutine_socket.h b/include/swoole_coroutine_socket.h
-index cffe31a..4495d78 100644
+index cffe31a..803879e 100644
 --- a/include/swoole_coroutine_socket.h
 +++ b/include/swoole_coroutine_socket.h
 @@ -20,2 +20,7 @@
@@ -965,12 +965,14 @@ index cffe31a..4495d78 100644
 +        if (sw_unlikely(status != 0)) {
 +            set_err(status == 1 ? EBADF : SW_ERROR_CO_SOCKET_CLOSE_WAIT);
              return false;
-@@ -530,2 +517,8 @@ class Socket {
+@@ -530,2 +517,10 @@ class Socket {
  
 +    ssize_t vector_all(network::IOVector *io_vector, TimerController *timer, bool write);
 +    enum { TRANSFER_ALL = 1, TRANSFER_EINTR = 2, TRANSFER_CHECKED = 4 };
 +    template <class Call>
 +    ssize_t transfer(EventType event, const void *buf, size_t n, int flags, Call call);
++    template <class Call>
++    struct Setup;
 +    swr_v1_hook_socket_ops lifecycle_ops();
 +
    public:
@@ -1567,7 +1569,7 @@ index 63ca2f2..f0514c6 100644
 +            break;
          }
 diff --git a/src/coroutine/socket.cc b/src/coroutine/socket.cc
-index 5a16f4c..e5bb3f7 100644
+index 5a16f4c..b6d8e98 100644
 --- a/src/coroutine/socket.cc
 +++ b/src/coroutine/socket.cc
 @@ -20,2 +20,7 @@
@@ -2348,11 +2350,44 @@ index 5a16f4c..e5bb3f7 100644
 -    return retval;
 +    return transfer(SW_EVENT_READ, nullptr, 0, 0, [this, msg, flags](char *, size_t) { return ::recvmsg(sock_fd, msg, flags); });
  }
-@@ -1021,12 +823,3 @@ ssize_t Socket::recvmsg(struct msghdr *msg, int flags) {
+@@ -1021,20 +823,43 @@ ssize_t Socket::recvmsg(struct msghdr *msg, int flags) {
  ssize_t Socket::sendmsg(const struct msghdr *msg, int flags) {
 -    if (sw_unlikely(!is_available(SW_EVENT_WRITE))) {
 -        return -1;
--    }
++    return transfer(SW_EVENT_WRITE, nullptr, 0, 0, [this, msg, flags](char *, size_t) { return ::sendmsg(sock_fd, msg, flags); });
++}
++
++// Server setup's sequences, waits and error classification are Rust's
++// (crates/hooks/src/setup.rs). These are the socket's effects; `call` is the
++// operation's network::Socket call.
++template <class Call>
++struct Socket::Setup {
++    Socket *socket;
++    Call *call;
++    TimerNode **timer;
++    double timeout;
++
++    swr_v1_hook_setup_ops ops() {
++        return {
++            this,
++            [](void *c, int event) { return static_cast<Setup *>(c)->socket->is_available(static_cast<EventType>(event)); },
++            [](void *c, int error) {
++                auto *socket = static_cast<Setup *>(c)->socket;
++                if (error < 0) {
++                    socket->set_err();
++                } else {
++                    socket->set_err(error);
++                }
++            },
++            [](void *c, int event) {
++                auto *setup = static_cast<Setup *>(c);
++                TimerController timer(setup->timer, setup->timeout, setup->socket, timer_callback);
++                return timer.start() && setup->socket->wait_event(static_cast<EventType>(event));
++            },
++            [](void *c) { return static_cast<Setup *>(c)->socket->socket->get_name(); },
++            [](void *c, int argument) { return (*static_cast<Setup *>(c)->call)(argument); },
++        };
+     }
 -    ssize_t retval;
 -    TimerController timer(&write_timer, socket->write_timeout, this, timer_callback);
 -    do {
@@ -2360,13 +2395,92 @@ index 5a16f4c..e5bb3f7 100644
 -    } while (retval < 0 && socket->catch_write_error(errno) == SW_WAIT && timer.start() && wait_event(SW_EVENT_WRITE));
 -    check_return_value(retval);
 -    return retval;
-+    return transfer(SW_EVENT_WRITE, nullptr, 0, 0, [this, msg, flags](char *, size_t) { return ::sendmsg(sock_fd, msg, flags); });
+-}
++};
+ 
+ bool Socket::bind(const sockaddr *sa, socklen_t len) {
+-    if (socket->bind(sa, len) < 0) {
+-        set_err();
+-        return false;
+-    }
+-    return true;
++    auto call = [this, sa, len](int) { return socket->bind(sa, len); };
++    Setup<decltype(call)> setup{this, &call, nullptr, 0};
++    auto ops = setup.ops();
++    return swr_v1_hook_bind(&ops, false);
  }
-@@ -1281,3 +1074,2 @@ ssize_t Socket::sendto(const std::string &host, int port, const void *_buf, size
+@@ -1042,23 +867,12 @@ bool Socket::bind(const sockaddr *sa, socklen_t len) {
+ bool Socket::bind(const std::string &address, const int port) {
+-    if (sw_unlikely(!is_available(SW_EVENT_NULL))) {
+-        return false;
+-    }
+-
+-    swoole_clear_last_error();
+-
+-    if (socket->set_reuse_addr() < 0) {
+-        swoole_sys_warning("setsockopt(%d, SO_REUSEADDR) failed", get_fd());
+-    }
+-
+-    if (socket->bind(address, port) < 0) {
+-        set_err();
+-        return false;
+-    }
+-
+-    if (socket->get_name() < 0) {
+-        set_err();
+-        return false;
+-    }
+-
+-    return true;
++    auto call = [this, &address, port](int) {
++        swoole_clear_last_error();
++        if (socket->set_reuse_addr() < 0) {
++            swoole_sys_warning("setsockopt(%d, SO_REUSEADDR) failed", get_fd());
++        }
++        return socket->bind(address, port);
++    };
++    Setup<decltype(call)> setup{this, &call, nullptr, 0};
++    auto ops = setup.ops();
++    return swr_v1_hook_bind(&ops, true);
+ }
+@@ -1066,8 +880,6 @@ bool Socket::bind(const std::string &address, const int port) {
+ bool Socket::listen(int backlog) {
+-    if (sw_unlikely(!is_available(SW_EVENT_NULL))) {
+-        return false;
+-    }
+-    this->backlog = backlog <= 0 ? SW_BACKLOG : backlog;
+-    if (socket->listen(this->backlog) < 0) {
+-        set_err(errno);
++    auto call = [this](int backlog) { return socket->listen(backlog); };
++    Setup<decltype(call)> setup{this, &call, nullptr, 0};
++    auto ops = setup.ops();
++    if (!swr_v1_hook_listen(&ops, backlog, &this->backlog)) {
+         return false;
+@@ -1085,12 +897,10 @@ Socket *Socket::accept(double timeout) {
+     }
+-    network::Socket *conn = socket->accept();
+-    if (conn == nullptr && errno == EAGAIN) {
+-        TimerController timer(&read_timer, timeout == 0 ? socket->read_timeout : timeout, this, timer_callback);
+-        if (!timer.start() || !wait_event(SW_EVENT_READ)) {
+-            return nullptr;
+-        }
++    network::Socket *conn = nullptr;
++    auto call = [this, &conn](int) {
+         conn = socket->accept();
+-    }
+-    if (conn == nullptr) {
+-        set_err(errno);
++        return conn ? 0 : -1;
++    };
++    Setup<decltype(call)> setup{this, &call, &read_timer, timeout == 0 ? socket->read_timeout : timeout};
++    auto ops = setup.ops();
++    if (!swr_v1_hook_accept(&ops)) {
+         return nullptr;
+@@ -1281,3 +1091,2 @@ ssize_t Socket::sendto(const std::string &host, int port, const void *_buf, size
  
 -    ssize_t retval = 0;
      network::Address addr;
-@@ -1305,11 +1097,7 @@ ssize_t Socket::sendto(const std::string &host, int port, const void *_buf, size
+@@ -1305,11 +1114,7 @@ ssize_t Socket::sendto(const std::string &host, int port, const void *_buf, size
  
 -    TimerController timer(&write_timer, socket->write_timeout, this, timer_callback);
 -    do {
@@ -2383,7 +2497,7 @@ index 5a16f4c..e5bb3f7 100644
 +        return result;
 +    });
  }
-@@ -1329,138 +1117,7 @@ ssize_t Socket::recvfrom(void *_buf, size_t _n) {
+@@ -1329,138 +1134,7 @@ ssize_t Socket::recvfrom(void *_buf, size_t _n) {
  ssize_t Socket::recvfrom(void *_buf, size_t _n, sockaddr *_addr, socklen_t *_socklen) {
 -    if (sw_unlikely(!is_available(SW_EVENT_READ))) {
 -        return -1;
@@ -2527,7 +2641,7 @@ index 5a16f4c..e5bb3f7 100644
 +        return result;
 +    });
  }
-@@ -1490,24 +1147,78 @@ ssize_t Socket::recv_packet(double timeout) {
+@@ -1490,24 +1164,78 @@ ssize_t Socket::recv_packet(double timeout) {
      get_read_buffer();
 -
 -    // unprocessed data
@@ -2627,7 +2741,7 @@ index 5a16f4c..e5bb3f7 100644
 +    ssize_t recv_bytes = swr_v1_hook_recv_packet(&ops);
 +    context.store();
      return recv_bytes;
-@@ -1517,33 +1228,12 @@ bool Socket::shutdown(int _how) {
+@@ -1517,33 +1245,12 @@ bool Socket::shutdown(int _how) {
      set_err(0);
 -    int error = 0;
 -    if (!is_connected() || (_how == SHUT_RD && shutdown_read) || (_how == SHUT_WR && shutdown_write)) {
@@ -2671,7 +2785,7 @@ index 5a16f4c..e5bb3f7 100644
 +    if (error == 0) {
 +        return true;
      }
-@@ -1557,18 +1247,36 @@ void Socket::ssl_close() const {
+@@ -1557,18 +1264,36 @@ void Socket::ssl_close() const {
  
 +// Rust decides the cancel and close; these are the socket's effects.
 +swr_v1_hook_socket_ops Socket::lifecycle_ops() {
@@ -2723,7 +2837,7 @@ index 5a16f4c..e5bb3f7 100644
 +    const swr_v1_hook_socket_ops ops = lifecycle_ops();
 +    return swr_v1_hook_cancel(&ops, event);
  }
-@@ -1583,24 +1291,4 @@ bool Socket::cancel(const EventType event) {
+@@ -1583,24 +1308,4 @@ bool Socket::cancel(const EventType event) {
  bool Socket::close() {
 -    if (is_closed()) {
 -        set_err(EBADF);
@@ -2750,11 +2864,11 @@ index 5a16f4c..e5bb3f7 100644
 +    const swr_v1_hook_socket_ops ops = lifecycle_ops();
 +    return swr_v1_hook_close(&ops);
  }
-@@ -1625,2 +1313,3 @@ Socket::~Socket() {
+@@ -1625,2 +1330,3 @@ Socket::~Socket() {
      delete write_buffer;
 +    swr_v1_hook_socket_state_free(state_);
      if (socket == nullptr) {
-@@ -1636,8 +1325,11 @@ Socket::~Socket() {
+@@ -1636,8 +1342,11 @@ Socket::~Socket() {
  bool Socket::TimerController::start() {
 -    if (timeout != 0 && !*timer_pp) {
 +    auto actions = swr_v1_hook_timer(0, enabled, timeout != 0 && *timer_pp != nullptr, false, timeout);
@@ -2771,7 +2885,7 @@ index 5a16f4c..e5bb3f7 100644
 +    }
 +    if (actions & SWR_HOOK_TIMER_SENTINEL) {
          *timer_pp = reinterpret_cast<TimerNode *>(-1);
-@@ -1648,6 +1340,9 @@ bool Socket::TimerController::start() {
+@@ -1648,6 +1357,9 @@ bool Socket::TimerController::start() {
  Socket::TimerController::~TimerController() {
 -    if (enabled && *timer_pp) {
 -        if (*timer_pp != reinterpret_cast<TimerNode *>(-1)) {
@@ -2785,7 +2899,7 @@ index 5a16f4c..e5bb3f7 100644
 +    }
 +    if (actions & SWR_HOOK_TIMER_CLEAR) {
          *timer_pp = nullptr;
-@@ -1686,13 +1381,17 @@ bool Socket::TimeoutController::has_timedout(TimeoutType _type) {
+@@ -1686,13 +1398,17 @@ bool Socket::TimeoutController::has_timedout(TimeoutType _type) {
      SW_ASSERT_1BYTE(_type);
 -    if (timeout > 0) {
 -        if (sw_unlikely(startup_time == 0)) {
