@@ -19,7 +19,7 @@ struct Entry {
 }
 
 #[repr(C)]
-pub struct Registry {
+pub(crate) struct Registry {
     lock: AtomicU32,
     entries: [Entry; ENTRIES],
 }
