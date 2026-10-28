@@ -320,6 +320,43 @@ pub mod resp_stream {
     pub const CANDIDATE: Run = swr_oracle_resp_stream_candidate;
 }
 
+pub mod socks5 {
+    /// One fuzz case for `Socks5Proxy`: its settings (`socket_type` as upstream's
+    /// `SocketType`) and the server's replies, `reply_sizes[i]` bytes each, back to
+    /// back in `replies`. With `send_short` every send writes one byte too few.
+    #[repr(C)]
+    pub struct Case {
+        pub user: *const u8,
+        pub user_length: usize,
+        pub password: *const u8,
+        pub password_length: usize,
+        pub target_host: *const u8,
+        pub target_host_length: usize,
+        pub target_port: u16,
+        pub dns_tunnel: u8,
+        pub socket_type: u8,
+        pub send_short: u8,
+        pub replies: *const u8,
+        pub reply_sizes: *const u16,
+        pub reply_count: usize,
+    }
+
+    /// Runs one engine's `Socks5Proxy` from `create` through the replies, writing
+    /// every byte sent, each handshake result, state and method, and each reply
+    /// code's `strerror` to `out`. Returns the log's full length. `upstream` is the
+    /// pinned socks5.cc, `candidate` the one with the protocols overlay patch,
+    /// which calls the Rust exports (the caller's binary must link them).
+    pub type Run = unsafe extern "C" fn(case: *const Case, out: *mut u8, capacity: usize) -> usize;
+
+    unsafe extern "C" {
+        fn swr_oracle_socks5_upstream(case: *const Case, out: *mut u8, capacity: usize) -> usize;
+        fn swr_oracle_socks5_candidate(case: *const Case, out: *mut u8, capacity: usize) -> usize;
+    }
+
+    pub const UPSTREAM: Run = swr_oracle_socks5_upstream;
+    pub const CANDIDATE: Run = swr_oracle_socks5_candidate;
+}
+
 pub mod http_range {
     use std::ffi::c_char;
 

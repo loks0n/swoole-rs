@@ -429,6 +429,34 @@ fn resp_stream() {
     }
 }
 
+/// socks5.cc as pinned (upstream) and with the protocols overlay patch applied
+/// (candidate, calling Rust), each with `swoole` renamed to its engine, compiled
+/// with `shim/socks5.cc` over the facade in `shim/socks5`.
+fn socks5() {
+    let socks5 = fs::read_to_string("upstream/src/protocol/socks5.cc").expect("vendored socks5.cc");
+    let patch =
+        fs::read_to_string("../../migration/patches/protocols/0001-rust-packet-protocols.patch")
+            .expect("protocols patch");
+    fs::write(
+        out("socks5_candidate.cc"),
+        apply(&socks5, section(&patch, "src/protocol/socks5.cc")),
+    )
+    .unwrap();
+    for (engine, source) in [
+        ("upstream", PathBuf::from("upstream/src/protocol/socks5.cc")),
+        ("candidate", out("socks5_candidate.cc")),
+    ] {
+        cpp()
+            .define("swoole", engine)
+            .include("shim/socks5")
+            .include("upstream/include")
+            .include("../../native/protocols")
+            .file(source)
+            .file("shim/socks5.cc")
+            .compile(&format!("swoole_{engine}_socks5"));
+    }
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=upstream");
     println!("cargo:rerun-if-changed=shim");
@@ -549,6 +577,7 @@ fn main() {
             .file("shim/resp_stream.cc")
             .compile(&format!("swoole_{engine}_resp_stream"));
     }
+    socks5();
     // The candidate framing bodies call the Rust exports, resolved by the binary.
     cpp()
         .define("SWR_FRAME_ENGINE", "candidate")
