@@ -16,10 +16,10 @@ use swoole_rs_zend::{
     each_value, handlers, message, object_of, register_long_constant, set_object,
     sys::{
         _zend_bailout, IS_NULL, ZEND_ACC_NOT_SERIALIZABLE, ZEND_ACC_PRIVATE, swr_zend_emalloc,
-        swr_zend_module_loaded, swr_zend_object_addref, swr_zend_object_release,
+        swr_zend_is_true, swr_zend_module_loaded, swr_zend_object_addref, swr_zend_object_release,
         swr_zend_string_alloc, swr_zend_string_free, zend_class_entry, zend_function_entry,
-        zend_get_executed_filename, zend_hash_str_find, zend_is_true, zend_object,
-        zend_object_handlers, zend_read_property, zend_string, zval, zval_get_string_func,
+        zend_get_executed_filename, zend_hash_str_find, zend_object, zend_object_handlers,
+        zend_read_property, zend_string, zval, zval_get_string_func,
     },
     throw_constructed_twice, throw_error, throw_exception, type_of, unset_property_deny,
     update_property, update_property_long,
@@ -973,7 +973,7 @@ fn set(call: &Call) {
     // SAFETY: a live element.
     if !value.is_null() && unsafe { type_of(value) } != IS_NULL {
         // SAFETY: as above.
-        process.enable_coroutine = unsafe { zend_is_true(value) };
+        process.enable_coroutine = unsafe { swr_zend_is_true(value) };
     }
 }
 

@@ -42,6 +42,9 @@ bool swr_zend_module_loaded(const char *name, size_t length);
 /* zval_get_long, whose slow path's signature depends on the PHP version. */
 zend_long swr_zval_get_long(const zval *value);
 
+/* zend_is_true, whose return type depends on the PHP version. */
+bool swr_zend_is_true(const zval *value);
+
 /* efree of a string never shared (zend_string_efree). */
 void swr_zend_string_free(zend_string *string);
 

@@ -38,9 +38,10 @@ pub unsafe extern "C" fn swr_v1_phpprocess_array_to_cpu_set(
         fatal(E_WARNING, &message!("More than the number of CPU"));
         return false;
     }
-    let set = set.cast::<libc::cpu_set_t>();
-    // SAFETY: per the caller.
-    unsafe { libc::CPU_ZERO(&mut *set) };
+    // SAFETY: per the caller, a writable cpu set.
+    let set = unsafe { &mut *set.cast::<libc::cpu_set_t>() };
+    // SAFETY: as above.
+    unsafe { libc::CPU_ZERO(set) };
     let mut valid = true;
     let each = |value: *mut zval| {
         // SAFETY: a live element.
@@ -52,7 +53,7 @@ pub unsafe extern "C" fn swr_v1_phpprocess_array_to_cpu_set(
             return false;
         }
         // SAFETY: per the caller.
-        unsafe { libc::CPU_SET(index, &mut *set) };
+        unsafe { libc::CPU_SET(index, set) };
         true
     };
     // SAFETY: a live table the loop does not modify.
@@ -71,9 +72,10 @@ pub unsafe extern "C" fn swr_v1_phpprocess_cpu_set_to_array(array: *mut zval, se
     let set = unsafe { &*set.cast::<libc::cpu_set_t>() };
     let count = cpu_num().min(libc::CPU_SETSIZE as usize);
     for cpu in 0..count {
-        if libc::CPU_ISSET(cpu, set) {
+        // SAFETY: a valid set and an index below CPU_SETSIZE.
+        if unsafe { libc::CPU_ISSET(cpu, set) } {
             // SAFETY: the array initialised above.
-            unsafe { add_next_index_long(array, cpu as i64) };
+            unsafe { add_next_index_long(array, i64::try_from(cpu).unwrap_or(i64::MAX)) };
         }
     }
 }
@@ -90,11 +92,10 @@ fn set_affinity(call: &Call) {
         call.set_bool(false);
         return;
     }
-    // SAFETY: getpid has no preconditions; `set` is a valid cpu set.
-    if unsafe {
-        libc::sched_setaffinity(libc::getpid(), size_of::<libc::cpu_set_t>(), &raw const set)
-    } < 0
-    {
+    // SAFETY: getpid has no preconditions.
+    let pid = unsafe { libc::getpid() };
+    // SAFETY: `set` is a valid cpu set.
+    if unsafe { libc::sched_setaffinity(pid, size_of::<libc::cpu_set_t>(), &raw const set) } < 0 {
         sys(E_WARNING, &message!("sched_setaffinity() failed"));
         call.set_bool(false);
         return;
@@ -105,11 +106,10 @@ fn set_affinity(call: &Call) {
 fn get_affinity(call: &Call) {
     // SAFETY: an all-zero cpu set is empty.
     let mut set: libc::cpu_set_t = unsafe { std::mem::zeroed() };
-    // SAFETY: getpid has no preconditions; `set` is writable.
-    if unsafe {
-        libc::sched_getaffinity(libc::getpid(), size_of::<libc::cpu_set_t>(), &raw mut set)
-    } < 0
-    {
+    // SAFETY: getpid has no preconditions.
+    let pid = unsafe { libc::getpid() };
+    // SAFETY: `set` is writable.
+    if unsafe { libc::sched_getaffinity(pid, size_of::<libc::cpu_set_t>(), &raw mut set) } < 0 {
         sys(E_WARNING, &message!("sched_getaffinity() failed"));
         call.set_bool(false);
         return;

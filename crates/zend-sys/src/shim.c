@@ -58,7 +58,7 @@ bool swr_zend_parse_arg_func(zval *arg, uint32_t num) {
 
 void swr_zend_hash_foreach(const HashTable *table, bool (*each)(zval *value, void *context), void *context) {
     zval *value;
-    ZEND_HASH_FOREACH_VAL(table, value) {
+    ZEND_HASH_FOREACH_VAL((HashTable *) table, value) {
         if (!each(value, context)) {
             break;
         }
@@ -99,4 +99,8 @@ int swr_zend_register_class_alias(const char *name, size_t length, zend_class_en
     zend_str_tolower(ZSTR_VAL(alias), length);
     alias = zend_new_interned_string(alias);
     return zend_register_class_alias_ex(ZSTR_VAL(alias), ZSTR_LEN(alias), ce, 1);
+}
+
+bool swr_zend_is_true(const zval *value) {
+    return zend_is_true((zval *) value);
 }
