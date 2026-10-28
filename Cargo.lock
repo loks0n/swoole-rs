@@ -471,7 +471,10 @@ name = "swoole-rs-phpclients"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "swoole-rs-base64",
+ "swoole-rs-clients",
  "swoole-rs-error",
+ "swoole-rs-inflate",
  "swoole-rs-zend",
 ]
 
