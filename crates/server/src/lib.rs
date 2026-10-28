@@ -15,6 +15,7 @@ mod connection;
 mod control;
 pub mod local_addr;
 pub mod ops;
+mod startup;
 
 pub use local_addr::{
     swr_v1_server_local_addr, swr_v1_server_local_addr_index, swr_v1_server_local_addrs_free,
@@ -79,10 +80,11 @@ pub unsafe extern "C" fn swr_v1_server_run(
 
 fn run<H: Host>(h: &mut H, operation: u32, arg: u64) -> i64 {
     use ops::{
-        RUN_ACCEPT, RUN_ADD_CONNECTION, RUN_CHILD_EXIT, RUN_DISABLE_ACCEPT, RUN_ENABLE_ACCEPT,
-        RUN_HEALTHY, RUN_IDLE_TIMEOUT, RUN_INCOMING, RUN_INIT_SIGNALS, RUN_MASTER_TIMER,
-        RUN_SET_MAX_CONNECTION, RUN_SHUTDOWN, RUN_SIGNAL, RUN_SIGNAL_SHUTDOWN,
-        RUN_STOP_MASTER_THREAD,
+        RUN_ACCEPT, RUN_ADD_CONNECTION, RUN_CHILD_EXIT, RUN_CREATE, RUN_DESTROY,
+        RUN_DISABLE_ACCEPT, RUN_ENABLE_ACCEPT, RUN_HEALTHY, RUN_IDLE_TIMEOUT, RUN_INCOMING,
+        RUN_INIT_SIGNALS, RUN_MASTER_TIMER, RUN_SET_MAX_CONNECTION, RUN_SHUTDOWN, RUN_SIGNAL,
+        RUN_SIGNAL_SHUTDOWN, RUN_START_CHECK, RUN_START_MASTER_THREAD, RUN_STOP_MASTER_THREAD,
+        RUN_STORE_LISTEN_SOCKET,
     };
     match operation {
         RUN_ACCEPT => connection::accept(h),
@@ -122,6 +124,17 @@ fn run<H: Host>(h: &mut H, operation: u32, arg: u64) -> i64 {
         }
         RUN_INIT_SIGNALS => {
             control::init_signals(h);
+            SW_OK
+        }
+        RUN_CREATE => startup::create(h),
+        RUN_START_CHECK => startup::start_check(h),
+        RUN_START_MASTER_THREAD => startup::start_master_thread(h),
+        RUN_STORE_LISTEN_SOCKET => {
+            startup::store_listen_socket(h);
+            SW_OK
+        }
+        RUN_DESTROY => {
+            startup::destroy(h);
             SW_OK
         }
         _ => SW_ERR,
