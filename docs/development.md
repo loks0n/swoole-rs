@@ -133,6 +133,10 @@ It warns when the disk has less than 20 GB free. `dev.py prune` also removes
 `target/worktrees/*` older than its window and dev images other than the current
 one, so nothing needs `rm -rf` outside `target/`.
 
+Any other image a tool or README builds gets one fixed name per purpose (for
+example `swoole-protocols-core`), never a hash or `:local` tag, so a rebuild
+replaces it instead of adding one; `docker image prune` clears the dangling one.
+
 ## Cloud executors
 
 Executor agents (AGENTS.md) run in a cloud environment by default, not on a shared
