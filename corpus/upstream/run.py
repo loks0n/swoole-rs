@@ -76,7 +76,11 @@ RACY = {'tests/swoole_websocket_server/send_close_frame.phpt':
         'tests/swoole_websocket_server/compression_incompressible.phpt':
         "disconnect() pushes the close frame, then closes the session; the client closes on "
         "receiving it, and when the reactor thread handles that first the session is gone and "
-        'disconnect() returns false (#321)'}
+        'disconnect() returns false (#321)',
+        'tests/swoole_server/task/task_pack.phpt':
+        "the server waits on its SysV message queue for a third task and sometimes never gets "
+        'it under CI load, on both engines: hybrid timed out in a shard while upstream passed, '
+        'then upstream timed out on re-run (#438, #664)'}
 
 
 def require_free_port(port):
