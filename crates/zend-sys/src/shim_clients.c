@@ -1,4 +1,4 @@
-#include "shim.h"
+#include "shim_clients.h"
 
 zend_string *swr_zend_string_alloc(size_t length) {
     return zend_string_alloc(length, 0);
