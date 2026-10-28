@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
 """Actual original/selected cookie bodies: ordinary callbacks, no fault/reentry/alias profiles."""
 import argparse
-import io
 import json
 from pathlib import Path
-import shlex
+import re
 import shutil
 import subprocess
 import sys
-import tarfile
 import tempfile
-from gate import PIN, body, apply_http_patch, add_archive_arguments, prepare_archive
-sys.path.insert(0,str(Path(__file__).resolve().parents[3]))
-from tools.harness import ROOT, run_isolated, write_report
+from gate import PIN, body, add_archive_arguments, prepare_archive, Sides
+from tools.harness import run_isolated, write_report
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
@@ -31,56 +28,45 @@ def main():
             'rust_instrumented':args.rust_sanitize,'precompiled_std_instrumented':False,'minimum_free_bytes':4*1024**3,
             'unrun_profiles':['Original complete headers corpus','Fault/exception/reentry/mutation/alias/extreme inputs','PHP/server/platform/allocation/lifetime/performance/default activation']}
     with tempfile.TemporaryDirectory(prefix='swr-cookie-flow-') as temp:
-        tree=Path(temp)
+        tree=Path(temp);path='src/protocol/http.cc'
         def guard():
             free=shutil.disk_usage(tree).free
             if free<report['minimum_free_bytes']:
                 report['blocked']={'free_bytes':free};write_report(args.output,report);return False
             return True
         if not guard():return 1
-        if not prepare_archive(args,tree,report):write_report(args.output,report);return 1
-        data=subprocess.check_output(['git','-C',str(args.source),'archive',PIN,'include','thirdparty/multipart_parser.h','src/protocol/http.cc'])
-        with tarfile.open(fileobj=io.BytesIO(data)) as archive:
-            for member in archive:
-                if member.isfile():
-                    path=tree/member.name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(archive.extractfile(member).read())
-        source=tree/'src/protocol/http.cc';original=source.read_text()
-        apply_http_patch(tree,ROOT/'migration/patches/http/0001-http-helpers.patch',report)
-        flags=['-O1','-g','-fsanitize=address,undefined','-fno-sanitize-recover=all','-I'+str(tree/'include'),'-I'+str(tree),'-I'+str(ROOT/'native/http'),'-I'+str(local)]
-        if args.codes_only:flags.append('-DSWR_HTTP_STATUS_CODES')
-        flags+=shlex.split(subprocess.check_output(['pkg-config','--cflags','openssl'],text=True))
+        archive=prepare_archive(args,tree,report)
+        if not archive:write_report(args.output,report);return 1
+        sides=Sides(args.source,args.archive,tree,'thirdparty/multipart_parser.h',path,'src/core/base.cc')
+        if args.codes_only:
+            for flags in sides.flags.values():flags.append('-DSWR_HTTP_STATUS_CODES')
         if not guard():return 1
-        command=['c++','-std=c++14',*flags,'-c',str(source),'-o',str(tree/'protocol.o')]
-        compiled=run_isolated(command,timeout=60)
-        report['actual_native_tu']={'command':command,'returncode':compiled.returncode,'stdout':compiled.stdout,'stderr':compiled.stderr}
+        compiled=sides.native(report,path)
         write_report(args.output,report)
-        if compiled.returncode:print(compiled.stderr,file=sys.stderr);return 1
-        dependencies=[]
+        if not compiled:return 1
+        original=sides.original(path);selected=sides.selected(path)
+        units=[]
         if args.status_only:
-            base=subprocess.check_output(['git','-C',str(args.source),'show',PIN+':src/core/base.cc'],text=True)
-            path=tree/'dependencies.cc';path.write_text('#include "headers_oracle.h"\n'+body(base,'size_t sw_snprintf('));dependencies.append(str(path))
-        for namespace,text in [('upstream_headers',original),('candidate_headers',source.read_text())]:
+            dependencies=tree/'dependencies.cc';dependencies.write_text('#include "headers_oracle.h"\n'+body(sides.original('src/core/base.cc'),'size_t sw_snprintf('));units.append(('upstream',dependencies))
+        for side,namespace,text in [('upstream','upstream_headers',original),('candidate','candidate_headers',selected)]:
             parts=body(text,'const char *get_status_message(' if args.status_only else 'void parse_cookie(')
             if args.codes_only and namespace=='upstream_headers':
-                import re
                 parts=re.search(r'int list_of_status_code\[128\] = \{.*?\};',original,re.S).group(0)+'\n'+parts
             if args.status_only and 'static thread_local char http_status_message[128];' in text:
                 parts='static thread_local char http_status_message[128];\n'+parts
-            path=tree/(namespace+'.cc');path.write_text('#include "headers_oracle.h"\nnamespace '+namespace+' {\n'+parts+'\n}\n')
+            unit=tree/(namespace+'.cc');unit.write_text('#include "headers_oracle.h"\nnamespace '+namespace+' {\n'+parts+'\n}\n');units.append((side,unit))
         if not guard():return 1
-        binary=tree/'gate';command=['c++','-std=c++17',*flags,str(tree/'upstream_headers.cc'),str(tree/'candidate_headers.cc'),str(control),*dependencies,str(args.archive.resolve()),'-lm','-o',str(binary)]
-        if sys.platform.startswith('linux'):command+=['-ldl','-lpthread','-lrt','-lutil']
-        compiled=run_isolated(command,timeout=60)
-        report['compile']={'command':command,'returncode':compiled.returncode,'stdout':compiled.stdout,'stderr':compiled.stderr}
+        binary=tree/'gate'
+        built=sides.build(binary,[*units,('candidate',control)],archive,report)
         write_report(args.output,report)
-        if compiled.returncode:print(compiled.stderr,file=sys.stderr);return 1
+        if not built:return 1
         if args.codes_only:
             # No data reference or artificial force-load: only the actual status
             # forwarding body pulls its Rust member. Inspect, never load the DSO.
-            selected=tree/'selected-export.cc'
-            selected.write_text('#include "headers_oracle.h"\nnamespace swoole { namespace http_server {\n'+body(source.read_text(),'const char *get_status_message(')+'\n}}\n')
+            export=tree/'selected-export.cc'
+            export.write_text('#include "headers_oracle.h"\nnamespace swoole { namespace http_server {\n'+body(selected,'const char *get_status_message(')+'\n}}\n')
             shared=tree/'status-export.so'
-            command=['c++','-std=c++14','-fPIC',*flags,str(selected),str(args.archive.resolve()),'-lm','-o',str(shared)]
+            command=['c++','-std=c++14','-fPIC',*[flag for flag in sides.flags['candidate'] if flag!='-std=c++17'],str(export),str(archive),'-lm','-o',str(shared)]
             command.insert(1,'-dynamiclib' if sys.platform=='darwin' else '-shared')
             if sys.platform.startswith('linux'):command+=['-ldl','-lpthread','-lrt','-lutil']
             if not guard():return 1
