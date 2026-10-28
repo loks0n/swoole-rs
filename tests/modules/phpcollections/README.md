@@ -1,36 +1,14 @@
 # PHP collection facades (M27)
 
-M27 covers the `Swoole\Table` and coroutine `Channel` PHP classes.
-`Swoole\Coroutine\Channel` is Rust over the zend crates (docs/zend.md): C++ keeps
-its arginfo method table and lends the coroutine module's queue as a table of
-operations. For Table, Rust takes copied metadata and returns before any native
-effect. Zend, storage, row/iterator identity and locks stay native; no retained
-Rust frame spans an effect. See [remaining-native.md](remaining-native.md).
-
-The header declares the Table policy exports. PHP Table uses the M12 TableV2 composition API and
-its Rust column store ([table-columns-contract.md](../../../native/phpcollections/table-columns-contract.md));
-the legacy public Table ABI is untouched. `value_plan` chooses complete per-value
-read/materialize and write/convert/store/release sequences for shared native
-dispatchers ([value-pipeline.md](../../../native/phpcollections/value-pipeline.md)).
-`clear_cell` and `write_action` have no selected-facade callers.
+M27 covers the `Swoole\Table` and coroutine `Channel` PHP classes. Both are Rust
+over the zend crates (docs/zend.md, `crates/phpcollections`): C++ keeps their
+arginfo method tables and lends the coroutine module's queue and the memory
+module's `TableV2` (rows, locks, shared memory) as tables of operations. Table's
+column records and row values are the memory crate's, called from Rust.
 
 Edit both overlays in `migration/patches/phpcollections/` with `tools/patches.py`
 (see [hybrid build](../../../docs/hybrid-build.md#editing-patches)); selected sources
 require `--enable-swoole-rs-phpcollections`.
-
-## Body and policy gate (`gate.py`)
-
-```sh
-python3 tests/modules/phpcollections/gate.py --source /absolute/pinned/source \
-  --library-kind cdylib --sanitizers --output target/policy.json
-```
-
-Extracts the pinned and selected Table count, incr/decr/read and set
-bodies, compiles them into `gate.cc`, `arithmetic.cc` and
-`write.cc` with scripted native effect doubles, and compares native and selected
-traces. `--archive FILE` uses an existing combined archive instead of building
-the crate. `--sanitizers` applies ASan/UBSan to the C++ witness frames only.
-Registered in `tools/dev.py` as `phpcollections-policy`.
 
 ## Loaded PHP runtime (`php_runtime.py`)
 
@@ -72,24 +50,22 @@ read-only and reports remaining eligibility blockers. No measurement mode has ru
 for t in tests/modules/phpcollections/test_*.py; do python3 -m unittest "$t"; done
 ```
 
-## Open gates
-
-Fresh loaded production, originals, lifetime and performance runs for the current
-TableV2/`value_plan` source; the 324/16-check runtime results so far come from the
-earlier vector-backed production build.
-
 ## Gate audit (#490)
 
-Kept (3):
+Kept (2):
 
-- `phpcollections-policy`: native-versus-selected traces of the extracted
-  capacity, push/pop, arithmetic and set bodies, against scripted effect doubles.
 - `phpcollections-runtime` and `phpcollections-column-bytes`: 324 and 16 loaded-PHP
   checks whose summaries must match upstream exactly. They cover COW isolation,
   object and resource custody, suspended FIFO transfer and binary column names,
   which the PHPTs only pass or fail.
 
-Deleted (2), each a duplicate:
+Deleted (3):
+
+- `phpcollections-policy` traced the extracted Table bodies against scripted
+  effect doubles; the bodies are Rust now and the runtime checks and PHPTs
+  cover what PHP sees.
+
+Each a duplicate:
 
 - `phpcollections-global-handlers` reran `phpcollections-runtime`, then three
   `swoole_global` PHPTs that the PHPT gate already runs on both engines.

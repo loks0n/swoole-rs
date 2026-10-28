@@ -68,7 +68,8 @@ def main():
    compress=[]
    if name=='candidate_payload':compress.append(definition(source,'static uint32_t http_request_compression_capabilities('))
    compress.extend(definition(source,sig)for sig in ['void HttpContext::set_compression_method(','const char *HttpContext::get_content_encoding() const'])
-   create=definition(source,'static PHP_METHOD(swoole_http_request, create) {');a=create.index('SW_HASHTABLE_FOREACH_START2(');a=create.index('{',a)+1;b=create.index('            (void) keytype;',a)
+   # Request::create's option loop: upstream's method body; the hybrid's C++ half of the Rust method.
+   create=definition(source,'static PHP_METHOD(swoole_http_request, create) {'if name=='upstream_payload'else'void swr_http_host_request_create(');a=create.index('SW_HASHTABLE_FOREACH_START2(');a=create.index('{',a)+1;b=create.index('            (void) keytype;',a)
    parts.append('static void apply_option(HttpContext*ctx,const char*key,size_t keylen,zval*zvalue){\n'+create[a:b]+'\n}')
    out=tree/(name+'.cc');out.write_text('#include "payload_oracle.h"\n#include "'+name+'_helpers.h"\nnamespace '+name+' {\n#include "payload_wrappers.h"\n'+ '\n'.join(parts)+'\n#ifdef SW_HAVE_COMPRESSION\n'+'\n'.join(compress)+'\n#endif\n'+WRAPPERS+'\n}\n')
   binary=tree/'gate';cmd=['c++','-std=c++14','-O1','-g','-fsanitize=address,undefined','-fno-sanitize-recover=all','-DPAYLOAD_CAPABILITIES='+str(args.capabilities),'-I'+str(local),'-I'+str(tree),'-I'+str(ROOT/'native/httpbindings'),*hybrid_flags,str(tree/'upstream_payload.cc'),str(tree/'candidate_payload.cc'),str(local/'payload_gate.cc'),str(args.archive.resolve()),'-lm','-o',str(binary)]

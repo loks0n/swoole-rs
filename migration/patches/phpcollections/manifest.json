@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-swoole_table.patch",
-      "sha256": "f5062f2d3b3d69182d9213fffeb2b3b09ce762de9756e2b2264e06e5a8239a6a",
+      "sha256": "8dae5e8b8dcdea6d359e82d0250275070eb10ed168aecfca80036ba682e71bd1",
       "upstream_paths": [
         "ext-src/swoole_table.cc"
       ]
