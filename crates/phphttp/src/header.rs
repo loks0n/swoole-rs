@@ -46,8 +46,8 @@ const METHOD_DEFLATE: i32 = 2;
 /// `sw_tg_buffer()`'s size, which bounds one trailer line.
 const TRAILER_LINE: usize = 65536;
 /// `HASH_KEY_IS_STRING`, `HASH_KEY_IS_LONG`.
-const KEY_STRING: u32 = 1;
-const KEY_LONG: u32 = 2;
+const KEY_STRING: i64 = 1;
+const KEY_LONG: i64 = 2;
 
 /// `Swoole\Http\Response`'s `header`, `cookie` and `trailer` slots.
 static OFFSETS: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
@@ -141,15 +141,15 @@ fn each<E>(
         let mut index = 0;
         // SAFETY: as above.
         let kind = unsafe {
-            zend_hash_get_current_key_ex(table, &raw mut name, &raw mut index, &raw const position)
+            zend_hash_get_current_key_ex(table, &raw mut name, &raw mut index, &raw mut position)
         };
-        let key = match kind {
+        let key = match i64::from(kind) {
             KEY_STRING => Ok(name),
             KEY_LONG => Err(i64::from_ne_bytes(index.to_ne_bytes())),
             _ => return Ok(()),
         };
         // SAFETY: as above.
-        let data = unsafe { zend_hash_get_current_data_ex(table, &raw const position) };
+        let data = unsafe { zend_hash_get_current_data_ex(table, &raw mut position) };
         body(key, data)?;
         // SAFETY: as above.
         unsafe { zend_hash_move_forward_ex(table, &raw mut position) };
