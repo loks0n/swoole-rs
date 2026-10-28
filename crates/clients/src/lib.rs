@@ -9,6 +9,7 @@
 
 pub mod address;
 pub mod async_client;
+pub mod connect;
 pub mod coro_client;
 pub mod dns;
 pub mod http_connection;

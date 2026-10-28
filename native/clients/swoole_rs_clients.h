@@ -71,6 +71,9 @@ enum {
     SWR_CLIENTS_ASYNC = 2,
     SWR_CLIENTS_SHUTDOWN_READ = 3,
     SWR_CLIENTS_SHUTDOWN_WRITE = 4,
+    SWR_CLIENTS_ASYNC_CONNECT = 5,
+    SWR_CLIENTS_WAIT_DNS = 6,
+    SWR_CLIENTS_ONERROR_CALLED = 7,
 };
 swr_v1_clients_state *swr_v1_clients_state_new(bool is_async);
 void swr_v1_clients_state_free(swr_v1_clients_state *state);
@@ -94,6 +97,53 @@ typedef struct {
     int32_t (*close_fd)(void *);
 } swr_v1_clients_close_ops;
 int32_t swr_v1_clients_close(const swr_v1_clients_close_ops *ops);
+/* Client_tcp_connect_sync: every fact is read afresh by its callback. connect_nonblocking
+ * returns SWR_CLIENTS_CONNECT_READY or SWR_CLIENTS_CONNECT_WAIT (native SW_READY/SW_WAIT), or
+ * anything else on failure. Rust sets active and async_connect itself. */
+enum { SWR_CLIENTS_CONNECT_READY = 1, SWR_CLIENTS_CONNECT_WAIT = 2 };
+typedef struct {
+    void *context;
+    swr_v1_clients_state *state;
+    double timeout;
+    bool nonblock;
+    void (*set_timeout)(void *);
+    void (*kernel_timeout)(void *);
+    int32_t (*address)(void *);
+    int32_t (*connect_nonblocking)(void *);
+    int32_t (*connect_blocking)(void *);
+    void (*activate)(void *);
+    bool (*has_socks)(void *);
+    ssize_t (*socks_send)(void *);
+    void (*socks_publish)(void *);
+    ssize_t (*receive)(void *);
+    bool (*socks_handshake)(void *, ssize_t);
+    bool (*socks_ready)(void *);
+    bool (*has_http)(void *);
+    ssize_t (*http_send)(void *);
+    bool (*http_handshake)(void *, ssize_t);
+    bool (*open_ssl)(void *);
+    int32_t (*ssl_handshake)(void *);
+} swr_v1_clients_connect_ops;
+int32_t swr_v1_clients_connect(const swr_v1_clients_connect_ops *ops);
+/* Client_tcp_connect_async. connect sets errno when it fails; fail may destroy the client and
+ * returns false when onError threw (native rethrows after Rust returns). */
+typedef struct {
+    void *context;
+    swr_v1_clients_state *state;
+    double timeout;
+    bool (*callbacks_set)(void *);
+    void (*warn_callbacks)(void *);
+    void (*set_timeout)(void *);
+    void (*buffer)(void *);
+    void (*watermark)(void *);
+    int32_t (*address)(void *);
+    int32_t (*dns_lookup)(void *);
+    int32_t (*connect)(void *);
+    bool (*add_timer)(void *);
+    int32_t (*add_event)(void *);
+    bool (*fail)(void *);
+} swr_v1_clients_async_connect_ops;
+int32_t swr_v1_clients_connect_async(const swr_v1_clients_async_connect_ops *ops);
 enum swr_v1_clients_write_action {
     SWR_CLIENTS_WRITE_ADVANCE=0, SWR_CLIENTS_WRITE_HANDSHAKE=1,
     SWR_CLIENTS_WRITE_WRITABLE=2, SWR_CLIENTS_WRITE_GET_OPTION=3,

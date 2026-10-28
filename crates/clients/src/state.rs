@@ -4,13 +4,15 @@
 //! callback, and passes them in `CloseOps`.
 use core::ffi::c_void;
 
-/// `Client::active`, `closed`, `async`, `shutdown_read` and `shutdown_write`, for
-/// `swr_v1_clients_flag`.
+/// The `Client` flags Rust owns, for `swr_v1_clients_flag`.
 pub const ACTIVE: u32 = 0;
 pub const CLOSED: u32 = 1;
 pub const ASYNC: u32 = 2;
 pub const SHUTDOWN_READ: u32 = 3;
 pub const SHUTDOWN_WRITE: u32 = 4;
+pub const ASYNC_CONNECT: u32 = 5;
+pub const WAIT_DNS: u32 = 6;
+pub const ONERROR_CALLED: u32 = 7;
 
 /// One client's state; native code holds it only as a pointer.
 #[derive(Default)]
@@ -20,6 +22,9 @@ pub struct ClientState {
     is_async: bool,
     shutdown_read: bool,
     shutdown_write: bool,
+    async_connect: bool,
+    wait_dns: bool,
+    onerror_called: bool,
 }
 
 /// A new client's state: inactive, open, and async as constructed.
@@ -55,6 +60,9 @@ pub unsafe extern "C" fn swr_v1_clients_flag(state: *const ClientState, flag: u3
         ASYNC => state.is_async,
         SHUTDOWN_READ => state.shutdown_read,
         SHUTDOWN_WRITE => state.shutdown_write,
+        ASYNC_CONNECT => state.async_connect,
+        WAIT_DNS => state.wait_dns,
+        ONERROR_CALLED => state.onerror_called,
         _ => false,
     }
 }
@@ -71,6 +79,9 @@ pub unsafe extern "C" fn swr_v1_clients_set_flag(state: *mut ClientState, flag: 
         ASYNC => state.is_async = value,
         SHUTDOWN_READ => state.shutdown_read = value,
         SHUTDOWN_WRITE => state.shutdown_write = value,
+        ASYNC_CONNECT => state.async_connect = value,
+        WAIT_DNS => state.wait_dns = value,
+        ONERROR_CALLED => state.onerror_called = value,
         _ => {}
     }
 }
