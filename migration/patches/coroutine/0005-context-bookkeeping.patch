@@ -1,10 +1,10 @@
 diff --git a/include/swoole_coroutine_channel.h b/include/swoole_coroutine_channel.h
-index a777bdc..c6de55e 100644
+index a777bdc..379e414 100644
 --- a/include/swoole_coroutine_channel.h
 +++ b/include/swoole_coroutine_channel.h
-@@ -188,3 +188,10 @@ class Channel {
+@@ -188,3 +188,14 @@ class Channel {
  
--    void yield(Opcode type);
++#ifdef SWOOLE_RS_COROUTINE
 +    // Native effects a whole pop/push/close calls back into (see channel.cc). The
 +    // step machine owns the queues and decides; these suspend, resume and drive
 +    // the timer. `context` is the operation's ChannelCall.
@@ -13,6 +13,9 @@ index a777bdc..c6de55e 100644
 +    static void rs_delete_timer(void *context);
 +    static int32_t rs_suspend(void *context);
 +    static void rs_resume(void *context, void *co);
++#else
+     void yield(Opcode type);
++#endif
  
 diff --git a/include/swoole_coroutine_context.h b/include/swoole_coroutine_context.h
 index 25df2c1..41120fa 100644
