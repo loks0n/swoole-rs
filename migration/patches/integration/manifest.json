@@ -38,6 +38,14 @@
         "include/swoole_server.h",
         "src/server/master.cc"
       ]
+    },
+    {
+      "path": "0006-server-startup.patch",
+      "sha256": "5bd65a2e76f0407992158655a138d71970a4e9cb390e6cd1b8c19caa36b8190d",
+      "upstream_paths": [
+        "include/swoole_server.h",
+        "src/server/master.cc"
+      ]
     }
   ]
 }

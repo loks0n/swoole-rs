@@ -28,6 +28,13 @@ pub const RUN_STOP_MASTER_THREAD: u32 = 12;
 /// `Server::timer_callback`, once a second in the master.
 pub const RUN_MASTER_TIMER: u32 = 13;
 pub const RUN_INIT_SIGNALS: u32 = 14;
+pub const RUN_CREATE: u32 = 15;
+pub const RUN_START_CHECK: u32 = 16;
+/// `Server::start_master_thread`: context reactor.
+pub const RUN_START_MASTER_THREAD: u32 = 17;
+pub const RUN_STORE_LISTEN_SOCKET: u32 = 18;
+/// `Server::destroy` once there is a factory.
+pub const RUN_DESTROY: u32 = 19;
 
 // Server facts.
 pub const OP_MODE: u32 = 0;
@@ -211,6 +218,141 @@ pub const TRACE_TIMEOUT: u32 = 141;
 pub const TRACE_SIGNAL: u32 = 142;
 pub const TRACE_SHUTDOWN_BEGIN: u32 = 143;
 pub const TRACE_SHUTDOWN_END: u32 = 144;
+
+// Startup and teardown (`RUN_CREATE`, `RUN_START_CHECK`, `RUN_START_MASTER_THREAD`,
+// `RUN_STORE_LISTEN_SOCKET`, `RUN_DESTROY`).
+/// A numeric server field (`FIELD_*`).
+pub const OP_FIELD: u32 = 150;
+/// Sets field `arg & 0xff` to `arg >> 8`.
+pub const OP_SET_FIELD: u32 = 151;
+/// `init_network_interface_addr_map()`.
+pub const OP_INIT_LOCAL_ADDRS: u32 = 152;
+/// The shared session list, port statistics (also given to each port) and workers.
+pub const OP_ALLOC_SESSIONS: u32 = 153;
+pub const OP_ALLOC_PORT_GS: u32 = 154;
+pub const OP_ALLOC_WORKERS: u32 = 155;
+/// The static handler's locations and the compression flag when types are set.
+pub const OP_HTTP_DEFAULTS: u32 = 156;
+/// The fd of the last listen port.
+pub const OP_LAST_PORT_FD: u32 = 157;
+/// The base, thread or process factory for the mode; whether there is one.
+pub const OP_CREATE_FACTORY: u32 = 158;
+/// `SW_GLOBAL_HOOK_AFTER_SERVER_CREATE`, when set.
+pub const OP_AFTER_CREATE: u32 = 159;
+/// Creates the task pool with `swIPCMode` arg; whether it succeeded.
+pub const OP_TASK_POOL_CREATE: u32 = 160;
+/// Its max request, start id and type.
+pub const OP_TASK_POOL_SETUP: u32 = 161;
+/// Listens on the NUL-terminated path at address arg; the `listen` result.
+pub const OP_TASK_POOL_LISTEN: u32 = 162;
+pub const OP_ALLOC_TASK_RESULTS: u32 = 163;
+/// One task notify pipe; whether it is ready (when not, the task results are freed).
+pub const OP_TASK_PIPE: u32 = 164;
+pub const OP_INIT_TASK_WORKERS: u32 = 165;
+/// Whether callback `CB_*` arg is set; clears it.
+pub const OP_CALLBACK: u32 = 166;
+pub const OP_CLEAR_CALLBACK: u32 = 167;
+/// `disable_notify = true`, `send_yield = false`, `max_queued_bytes = 0`.
+pub const OP_SET_DISABLE_NOTIFY: u32 = 168;
+pub const OP_CLEAR_SEND_YIELD: u32 = 169;
+pub const OP_CLEAR_MAX_QUEUED: u32 = 170;
+/// `send_timeout`, a `double`; raising it to `SW_TIMER_MIN_SEC`.
+pub const OP_SEND_TIMEOUT: u32 = 171;
+pub const OP_SEND_TIMEOUT_MIN: u32 = 172;
+/// Port arg: `heartbeat_idle_time`; set to twice the check interval.
+pub const OP_PORT_IDLE: u32 = 173;
+pub const OP_PORT_DEFAULT_IDLE: u32 = 174;
+/// Port arg: `protocol.package_max_length`; raise to `SW_BUFFER_MIN_SIZE`.
+pub const OP_PORT_MAX_LENGTH: u32 = 175;
+pub const OP_PORT_MIN_LENGTH: u32 = 176;
+pub const OP_PORT_STREAM: u32 = 177;
+pub const OP_PORT_SSL_AT: u32 = 178;
+pub const OP_PORT_WEBSOCKET: u32 = 179;
+/// The port's WebSocket compression from the server's.
+pub const OP_PORT_WS_COMPRESSION: u32 = 180;
+/// `swoole_set_thread_type(THREAD_MASTER)`, `swoole_set_thread_id(arg)`.
+pub const OP_MASTER_THREAD: u32 = 181;
+/// The thread's timer has no reactor; `reinit()` it.
+pub const OP_TIMER_DETACHED: u32 = 182;
+pub const OP_TIMER_REINIT: u32 = 183;
+/// `swoole_set_worker_type(SW_MASTER)` and the worker pid for mode arg.
+pub const OP_MASTER_WORKER: u32 = 184;
+/// `reactor->ptr` and the accept handler.
+pub const OP_MASTER_REACTOR: u32 = 185;
+pub const OP_HAS_PIPE_COMMAND: u32 = 186;
+/// The command-result handler, and the command pipe added for reading.
+pub const OP_COMMAND_HANDLER: u32 = 187;
+pub const OP_PIPE_COMMAND_ADD: u32 = 188;
+/// Arms the 1s master timer; whether it was armed.
+pub const OP_MASTER_TIMER: u32 = 189;
+pub const OP_EVENT_FREE: u32 = 190;
+pub const OP_REACTOR_BARRIER: u32 = 191;
+pub const OP_MANAGER_BARRIER: u32 = 192;
+/// `gs->master_pid = getpid()`.
+pub const OP_SET_MASTER_PID: u32 = 193;
+/// `HOOK_MASTER_START` then `onStart`, each when set.
+pub const OP_MASTER_START: u32 = 194;
+/// `swoole_event_wait()`.
+pub const OP_EVENT_WAIT: u32 = 195;
+/// Port arg into `connection_list` at its fd; returns the fd.
+pub const OP_STORE_LISTEN: u32 = 196;
+/// `SW_GLOBAL_HOOK_AFTER_SERVER_SHUTDOWN`, when set.
+pub const OP_AFTER_SHUTDOWN: u32 = 197;
+pub const OP_JOIN_REACTOR_THREADS: u32 = 198;
+pub const OP_FACTORY_SHUTDOWN: u32 = 199;
+/// `destroy_worker(&workers[arg])`.
+pub const OP_DESTROY_WORKER: u32 = 200;
+pub const OP_RELEASE_PIPE_BUFFERS: u32 = 201;
+pub const OP_PORT_CLOSE: u32 = 202;
+pub const OP_FREE_USER_WORKERS: u32 = 203;
+/// `swoole_signal_clear()`, then `gs->start = 0` and `gs->shutdown = 1`.
+pub const OP_MARK_SHUTDOWN: u32 = 204;
+/// `onShutdown`, when set.
+pub const OP_ON_SHUTDOWN: u32 = 205;
+pub const OP_FREE_HOOKS: u32 = 206;
+/// The base, thread or process factory's teardown for mode arg.
+pub const OP_DESTROY_FACTORY: u32 = 207;
+pub const OP_DESTROY_TASK_WORKERS: u32 = 208;
+/// Frees the session list, port statistics and workers, then the factory, and
+/// clears `SwooleG.server`.
+pub const OP_FREE_SERVER: u32 = 209;
+
+pub const LOG_ALLOC_SESSIONS: u32 = 220;
+pub const LOG_ALLOC_PORT_GS: u32 = 221;
+pub const LOG_ALLOC_WORKERS: u32 = 222;
+/// arg the minimum in the high 32 bits and the new value in the low.
+pub const LOG_MAX_CONNECTION_MINIMUM: u32 = 223;
+pub const LOG_REACTOR_NUM: u32 = 224;
+pub const LOG_WORKER_NUM: u32 = 225;
+pub const LOG_TASK_WORKER_NUM: u32 = 226;
+pub const LOG_TASK_POOL: u32 = 227;
+pub const LOG_ALLOC_TASK_RESULTS: u32 = 228;
+/// arg the `CB_*` that `dispatch_mode` does not allow.
+pub const LOG_CALLBACK_DISPATCH: u32 = 229;
+/// arg the `CB_*` the server requires.
+pub const LOG_CALLBACK_REQUIRED: u32 = 230;
+pub const TRACE_RELEASE: u32 = 231;
+pub const TRACE_REACTOR_THREADS: u32 = 232;
+pub const TRACE_TASK_WORKERS: u32 = 233;
+
+// Numeric server fields for `OP_FIELD`/`OP_SET_FIELD`; `CPU_NUM` is `SwooleG.cpu_num`.
+pub const FIELD_REACTOR_NUM: u32 = 0;
+pub const FIELD_WORKER_NUM: u32 = 1;
+pub const FIELD_TASK_WORKER_NUM: u32 = 2;
+pub const FIELD_HEARTBEAT_INTERVAL: u32 = 3;
+pub const FIELD_DISPATCH_MODE: u32 = 4;
+pub const FIELD_UNSAFE_EVENT: u32 = 5;
+pub const FIELD_TASK_IPC_MODE: u32 = 6;
+pub const FIELD_CPU_NUM: u32 = 7;
+
+// Server callbacks for `OP_CALLBACK` and its logs.
+pub const CB_CONNECT: u32 = 0;
+pub const CB_CLOSE: u32 = 1;
+pub const CB_BUFFER_FULL: u32 = 2;
+pub const CB_BUFFER_EMPTY: u32 = 3;
+pub const CB_TASK: u32 = 4;
+pub const CB_RECEIVE: u32 = 5;
+pub const CB_PACKET: u32 = 6;
 
 #[cfg(test)]
 mod tests {
