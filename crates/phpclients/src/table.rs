@@ -17,7 +17,7 @@ use swoole_rs_zend::{
 };
 
 /// `HASH_KEY_IS_STRING`.
-const KEY_IS_STRING: u32 = 1;
+const KEY_IS_STRING: i64 = 1;
 
 /// A string reference the holder owns (`zend::String`): released on drop.
 pub(crate) struct Owned(*mut zend_string);
@@ -216,7 +216,7 @@ impl<'a> Iterator for Entries<'a> {
         };
         // SAFETY: as above.
         unsafe { zend_hash_move_forward_ex(self.table, &raw mut self.position) };
-        let key = if kind == KEY_IS_STRING && !key.is_null() {
+        let key = if i64::from(kind) == KEY_IS_STRING && !key.is_null() {
             // SAFETY: the table keeps its key strings alive.
             Some(unsafe { bytes(key) })
         } else {
