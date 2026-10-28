@@ -98,6 +98,7 @@ jobs:
       - id: install
         uses: ./.github/actions/install
         with:
+          packages: unixodbc-dev
           php: latest
       - id: upstream
         uses: actions/cache@v4
@@ -114,7 +115,7 @@ jobs:
       - run: cargo fetch --locked
       - run: |
           # Database hooks as upstream's own CI builds them (scripts/docker-compile.sh).
-          services="--configure=--enable-swoole-pgsql --configure=--enable-mysqlnd"
+          services="--configure=--enable-swoole-pgsql --configure=--enable-mysqlnd --configure=--with-swoole-odbc=unixODBC,/usr"
           python3 tools/build_hybrid.py --backend upstream --php-sockets $services | tee upstream.log
           python3 tools/build_hybrid.py --php-sockets $services $(python3 -c 'from tools.build_hybrid import SELECTABLE; print(*(f"--module {m}" for m in SELECTABLE))') | tee hybrid.log
           mkdir -p target/phpt
@@ -268,14 +269,26 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/install
         with:
-          packages: php-gmp php-bcmath php-mysql php-pgsql
+          packages: php-gmp php-bcmath php-mysql php-pgsql unixodbc odbc-mariadb
           php: ${{ needs.phpt-build.outputs.php }}
       - run: echo '127.0.0.1 httpbin pgsql mysql redis' | sudo tee -a /etc/hosts
+      # The ODBC driver and the mysql-test DSN, as upstream's tests/init writes them, with the
+      # driver's full path (Ubuntu installs it outside the loader's default directories).
+      - run: |
+          printf '[mysql]\nDriver=%s\nDescription=MariaDB Connector/ODBC(Unicode)\nUsageCount=1\n' \
+            "$(dpkg -L odbc-mariadb | grep '/libmaodbc.so$' | head -1)" | sudo tee /etc/odbcinst.ini
+          printf '[mysql-test]\nDescription = MySQL test database\nDriver = mysql\nSERVER = mysql\nUSER = root\nPASSWORD = root\nPORT = 3306\nDATABASE = test\n' \
+            | sudo tee /etc/odbc.ini
       - uses: actions/cache/restore@v4
         with:
           path: target/upstream
           key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
           fail-on-cache-miss: true
+      # Upstream's test tables, which its tests/init --mysql loads from tests/test.sql.
+      - run: >
+          php -r '$m = new mysqli("mysql", "root", "root", "test");
+          $m->multi_query(file_get_contents("target/upstream/src/tests/test.sql")) or exit($m->error . "\n");
+          do { if ($m->errno) exit($m->error . "\n"); } while ($m->more_results() && $m->next_result());'
       - uses: actions/download-artifact@v4
         with:
           name: phpt-engines
