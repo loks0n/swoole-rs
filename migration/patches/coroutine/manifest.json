@@ -32,7 +32,7 @@
     },
     {
       "path": "0005-context-bookkeeping.patch",
-      "sha256": "f7681eddff8551aa761046444ef1ea156f1f6c41a3706ec4b46afdc52d5d7ee2",
+      "sha256": "5b8f56b94195bfd552cdd58112899b2421dfa904a141d18cd20bf1535437ab50",
       "upstream_paths": [
         "include/swoole_coroutine_channel.h",
         "include/swoole_coroutine_context.h",
