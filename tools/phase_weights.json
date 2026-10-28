@@ -208,6 +208,7 @@
  "protocols-handlers": 1,
  "protocols-lifecycle": 3,
  "protocols-native": 24,
+ "protocols-native-originals": 79,
  "protocols-network": 7,
  "protocols-reply": 1,
  "protocols-request": 4,

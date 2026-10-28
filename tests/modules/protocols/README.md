@@ -99,7 +99,8 @@ Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` j
 
 ## Original core GTests (Linux)
 
-Runs the seven unchanged `redis.*`, `message_bus.*` and `mqtt.echo` GTests against
+Runs the eight unchanged `redis.*`, `message_bus.*` and `mqtt.echo` GTests (dev.py phase
+`protocols-native-originals`, Linux) against
 upstream and Rust-overlay builds. Build `core.Dockerfile` on the repo dev image
 (`dev.py docker` builds it the first time), under one fixed tag so a rebuild replaces it:
 
