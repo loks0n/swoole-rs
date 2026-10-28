@@ -1,15 +1,16 @@
 //! The frame of an internal function call, parsed as Zend's fast ZPP macros do.
 use crate::{
+    Class,
     string::bytes,
     sys::{
         _zend_expected_type_Z_EXPECTED_ARRAY, _zend_expected_type_Z_EXPECTED_DOUBLE,
         _zend_expected_type_Z_EXPECTED_LONG, _zend_expected_type_Z_EXPECTED_STRING,
         _zval_struct__bindgen_ty_1, IS_ARRAY, IS_DOUBLE, IS_FALSE, IS_LONG, IS_NULL, IS_REFERENCE,
-        IS_STRING, IS_TRUE, ZPP_ERROR_WRONG_ARG, swr_zval_empty_array, swr_zval_empty_string,
-        swr_zval_str, zend_execute_data, zend_expected_type, zend_object,
-        zend_parse_arg_double_slow, zend_parse_arg_long_slow, zend_parse_arg_str_slow, zend_string,
-        zend_update_property_long, zend_value, zend_wrong_parameter_error,
-        zend_wrong_parameters_count_error, zval,
+        IS_STRING, IS_TRUE, ZPP_ERROR_WRONG_ARG, add_assoc_long_ex, swr_zend_array_init,
+        swr_zval_empty_array, swr_zval_empty_string, swr_zval_str, zend_execute_data,
+        zend_expected_type, zend_object, zend_parse_arg_double_slow, zend_parse_arg_long_slow,
+        zend_parse_arg_str_slow, zend_string, zend_update_property_long, zend_value,
+        zend_wrong_parameter_error, zend_wrong_parameters_count_error, zval,
     },
 };
 use std::{ffi::CStr, ptr};
@@ -185,14 +186,14 @@ impl Call {
         Err(Self::wrong(n, arg, _zend_expected_type_Z_EXPECTED_ARRAY))
     }
 
-    /// `Z_PARAM_ZVAL` of argument `n` (1-based), which must be passed; with
-    /// `deref`, a reference yields the value it refers to (`Z_PARAM_ZVAL_EX(.., 1)`).
+    /// `Z_PARAM_ZVAL_EX(.., 0, 1)` of argument `n` (1-based), which must be
+    /// passed: a reference yields the value it refers to.
     #[must_use]
     #[inline]
-    pub fn zval(&self, n: u32, deref: bool) -> *mut zval {
+    pub fn zval_deref(&self, n: u32) -> *mut zval {
         let arg = self.arg(n);
         // SAFETY: `n` is a passed argument, so `arg` is its live zval.
-        if deref && unsafe { type_of(arg) } == IS_REFERENCE {
+        if unsafe { type_of(arg) } == IS_REFERENCE {
             // SAFETY: `arg` is live.
             let value = unsafe { (*arg).value };
             // SAFETY: an IS_REFERENCE zval holds `ref`.
@@ -201,13 +202,6 @@ impl Call {
             return unsafe { &raw mut (*reference).val };
         }
         arg
-    }
-
-    /// The return slot (`return_value`).
-    #[must_use]
-    #[inline]
-    pub fn value(&self) -> *mut zval {
-        self.value
     }
 
     /// `ZEND_PARSE_PARAMETERS_END`'s report of a wrong argument.
@@ -244,17 +238,51 @@ impl Call {
         self.set(IS_LONG);
     }
 
-    /// `zend_update_property_long(NULL, Z_OBJ_P(ZEND_THIS), name, value)`.
-    pub fn update_property_long(&self, name: &CStr, value: i64) {
-        // SAFETY: a method's live `$this`; Zend copies the name.
+    /// `Z_PARAM_ZVAL` of argument `n` (1-based), or null when an optional
+    /// argument was not passed.
+    #[must_use]
+    #[inline]
+    pub fn zval(&self, n: u32) -> *mut zval {
+        if n > self.num_args() {
+            return ptr::null_mut();
+        }
+        self.arg(n)
+    }
+
+    /// The return slot (`return_value`).
+    #[must_use]
+    #[inline]
+    pub fn return_value(&self) -> *mut zval {
+        self.value
+    }
+
+    /// `RETVAL_ZVAL(value, 0, 0)`: the return slot takes over `value`.
+    #[inline]
+    pub fn set_value(&self, value: zval) {
+        // SAFETY: the return slot is live for the handler.
+        unsafe { *self.value = value };
+    }
+
+    /// `array_init(return_value)`.
+    pub fn set_array(&self) {
+        // SAFETY: the return slot is live for the handler.
+        unsafe { swr_zend_array_init(self.value) };
+    }
+
+    /// `add_assoc_long_ex(return_value, key, value)`, after `set_array`.
+    pub fn add_assoc_long(&self, key: &CStr, value: i64) {
+        // SAFETY: the return slot holds an array; Zend copies the key.
+        unsafe { add_assoc_long_ex(self.value, key.as_ptr(), key.count_bytes(), value) };
+    }
+
+    /// `zend_update_property_long(scope, Z_OBJ_P(ZEND_THIS), name, value)`;
+    /// `scope` is the class whose view of the property to update (NULL if none).
+    pub fn update_property_long(&self, scope: Option<&Class>, name: &CStr, value: i64) {
+        let scope = scope.map_or(ptr::null_mut(), Class::entry);
+        // SAFETY: a method's live `$this`; a registered class or null; Zend
+        // copies the name.
         unsafe {
-            zend_update_property_long(
-                ptr::null_mut(),
-                self.this(),
-                name.as_ptr(),
-                name.count_bytes(),
-                value,
-            );
+            zend_update_property_long(scope, self.this(), name.as_ptr(), name.count_bytes(), value);
         }
     }
 

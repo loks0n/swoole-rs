@@ -26,18 +26,29 @@ zend_string *swr_zend_string_alloc(size_t length);
 zend_string *swr_zend_string_realloc(zend_string *string, size_t length);
 void swr_zend_string_free(zend_string *string);
 
-/* ZVAL_STR, ZVAL_EMPTY_STRING, array_init and ZVAL_EMPTY_ARRAY. */
+/* ZVAL_STR, ZVAL_EMPTY_STRING and ZVAL_EMPTY_ARRAY. */
 void swr_zval_str(zval *target, zend_string *string);
 void swr_zval_empty_string(zval *target);
-void swr_zval_array_init(zval *target);
 void swr_zval_empty_array(zval *target);
-
-/* Swoole's sw_zend_register_class_alias: a lowercased, interned alias. */
-int swr_zend_register_class_alias(const char *name, size_t length, zend_class_entry *ce);
 
 /* What PHP's configure found, as SWR_PHP_HAVE_* bits. */
 #define SWR_PHP_HAVE_AI_V4MAPPED 1
 #define SWR_PHP_HAVE_AI_ALL 2
 #define SWR_PHP_HAVE_AI_IDN 4
 unsigned swr_php_config(void);
+
+/* emalloc and efree (macros taking file and line in debug builds). */
+void *swr_zend_emalloc(size_t size);
+void swr_zend_efree(void *ptr);
+
+/* Z_TRY_ADDREF_P and Z_TRY_DELREF_P. */
+void swr_zval_try_addref(zval *value);
+void swr_zval_try_delref(zval *value);
+
+/* array_init. */
+void swr_zend_array_init(zval *value);
+
+/* Swoole's sw_zend_register_class_alias for a name without a leading
+ * backslash: a lowercased, interned, persistent alias. */
+int swr_zend_register_class_alias(const char *name, size_t length, zend_class_entry *ce);
 #endif

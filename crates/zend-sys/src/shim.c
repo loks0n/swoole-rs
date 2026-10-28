@@ -37,21 +37,33 @@ void swr_zval_empty_string(zval *target) {
     ZVAL_EMPTY_STRING(target);
 }
 
-void swr_zval_array_init(zval *target) {
-    array_init(target);
-}
-
 void swr_zval_empty_array(zval *target) {
     ZVAL_EMPTY_ARRAY(target);
 }
 
+void *swr_zend_emalloc(size_t size) {
+    return emalloc(size);
+}
+
+void swr_zend_efree(void *ptr) {
+    efree(ptr);
+}
+
+void swr_zval_try_addref(zval *value) {
+    Z_TRY_ADDREF_P(value);
+}
+
+void swr_zval_try_delref(zval *value) {
+    Z_TRY_DELREF_P(value);
+}
+
+void swr_zend_array_init(zval *value) {
+    array_init(value);
+}
+
 int swr_zend_register_class_alias(const char *name, size_t length, zend_class_entry *ce) {
     zend_string *alias = zend_string_init(name, length, 1);
-    if (name[0] == '\\') {
-        zend_str_tolower_copy(ZSTR_VAL(alias), name + 1, length - 1);
-    } else {
-        zend_str_tolower_copy(ZSTR_VAL(alias), name, length);
-    }
+    zend_str_tolower(ZSTR_VAL(alias), length);
     alias = zend_new_interned_string(alias);
     return zend_register_class_alias_ex(ZSTR_VAL(alias), ZSTR_LEN(alias), ce, 1);
 }

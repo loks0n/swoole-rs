@@ -22,7 +22,7 @@ pub mod value;
 
 pub use call::{Call, Invalid, type_of};
 pub use class::{
-    Class, alias, class_name, declare_bool, declare_long, declare_string, register_double_constant,
+    Class, class_name, declare_bool, declare_long, declare_string, register_double_constant,
     register_long_constant, unset_property_deny,
 };
 pub use error::{throw_constructed_twice, throw_error, throw_exception};

@@ -1,6 +1,6 @@
 //! Object properties and arrays, through Zend's own update and add functions.
 use crate::sys::{
-    HashTable, add_assoc_long_ex, add_assoc_string_ex, add_next_index_str, swr_zval_array_init,
+    HashTable, add_assoc_long_ex, add_assoc_string_ex, add_next_index_str, swr_zend_array_init,
     zend_array_count, zend_class_entry, zend_long, zend_object, zend_string,
     zend_update_property_long, zend_update_property_string, zval,
 };
@@ -96,7 +96,7 @@ pub unsafe fn update_string(
 #[inline]
 pub unsafe fn array_init(target: *mut zval) {
     // SAFETY: per the caller.
-    unsafe { swr_zval_array_init(target) };
+    unsafe { swr_zend_array_init(target) };
 }
 
 /// `add_assoc_long(array, key, value)`.

@@ -14,7 +14,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 use swoole_rs_zend::{
-    Call, Class, Invalid, Object, alias, declare_bool, declare_long, declare_string,
+    Call, Class, Invalid, Object, declare_bool, declare_long, declare_string,
     register_long_constant, set_object, string,
     sys::{
         E_WARNING, HashPosition, IS_LONG, IS_STRING, SWR_PHP_HAVE_AI_ALL, SWR_PHP_HAVE_AI_IDN,
@@ -92,7 +92,7 @@ pub unsafe extern "C" fn swr_v1_phpclients_socket_minit(
     let ce = SOCKET.entry();
     if shortname {
         // SAFETY: MINIT, with the class just registered.
-        unsafe { alias(c"Co\\Socket", ce) };
+        unsafe { SOCKET.alias(c"Co\\Socket") };
     }
     let readonly = ZEND_ACC_PUBLIC | ZEND_ACC_READONLY;
     for name in [c"fd", c"domain", c"type", c"protocol"] {
@@ -121,7 +121,7 @@ pub unsafe extern "C" fn swr_v1_phpclients_socket_minit(
     }
     if shortname {
         // SAFETY: as above.
-        unsafe { alias(c"Co\\Socket\\Exception", EXCEPTION.entry()) };
+        unsafe { EXCEPTION.alias(c"Co\\Socket\\Exception") };
     }
     // SAFETY: the module registry is complete before any MINIT runs.
     let loaded = unsafe { zend_hash_str_find(&raw const module_registry, c"sockets".as_ptr(), 7) };
@@ -378,7 +378,7 @@ fn accept(call: &Call) {
     // SAFETY: the object just created, not yet shared.
     unsafe { SocketObject::data(client) }.socket = connection;
     // SAFETY: the return slot takes the new object's only reference.
-    unsafe { set_object(call.value(), client) };
+    unsafe { set_object(call.return_value(), client) };
     // SAFETY: the object holds its socket.
     unsafe { native::swoole_socket_coro_init(client) };
 }
@@ -772,7 +772,7 @@ fn read_vector(call: &Call, socket: Socket, op: c_int, array: *mut zval, timeout
         Ok(read) => read,
     };
     // SAFETY: the return slot is writable and holds nothing yet.
-    unsafe { value::array_init(call.value()) };
+    unsafe { value::array_init(call.return_value()) };
     let mut filled = vectors.len();
     if read < total {
         // The read stopped `offset` bytes into vector `stopped`: keep that
@@ -797,7 +797,7 @@ fn read_vector(call: &Call, socket: Socket, op: c_int, array: *mut zval, timeout
         // SAFETY: an unshared buffer string of at least `iov_len` bytes.
         unsafe { string::truncate(buffer, vector.iov_len) };
         // SAFETY: the array takes the buffer's only reference.
-        unsafe { value::push_str(call.value(), buffer) };
+        unsafe { value::push_str(call.return_value(), buffer) };
     }
 }
 
@@ -836,7 +836,7 @@ fn send_file(call: &Call) {
 fn recvfrom(call: &Call) {
     let parsed = call
         .arity(1, 2)
-        .and_then(|()| Ok((call.zval(1, true), call.double(2, 0.0)?)));
+        .and_then(|()| Ok((call.zval_deref(1), call.double(2, 0.0)?)));
     let Ok((peer, timeout)) = parsed else {
         return call.set_bool(false);
     };
@@ -951,8 +951,8 @@ fn getsockname(call: &Call) {
         return call.set_bool(false);
     }
     // SAFETY: the return slot is writable and holds nothing yet.
-    unsafe { value::array_init(call.value()) };
-    add_address(call.value(), socket);
+    unsafe { value::array_init(call.return_value()) };
+    add_address(call.return_value(), socket);
 }
 
 /// `getpeername(): array|false`.
@@ -976,7 +976,7 @@ fn getpeername(call: &Call) {
     }
     // SAFETY: the hook NUL-terminates what it writes.
     let address = unsafe { CStr::from_ptr(address.as_ptr()) };
-    let array = call.value();
+    let array = call.return_value();
     // SAFETY: the return slot is writable and holds nothing yet.
     unsafe { value::array_init(array) };
     // SAFETY: a live array.

@@ -130,19 +130,19 @@ impl Class {
         }
     }
 
+    /// Swoole's `SW_CLASS_ALIAS`: `name` (no leading backslash) names this class too.
+    /// # Safety
+    /// At MINIT, after `register`.
+    pub unsafe fn alias(&self, name: &CStr) {
+        // SAFETY: per the caller; Zend copies the name.
+        unsafe { swr_zend_register_class_alias(name.as_ptr(), name.count_bytes(), self.entry()) };
+    }
+
     /// The handlers this class's objects use (null before MINIT).
     #[must_use]
     pub fn handlers(&self) -> *const zend_object_handlers {
         self.handlers.get().map_or(ptr::null(), ptr::from_ref)
     }
-}
-
-/// Swoole's `SW_CLASS_ALIAS`: register the lowercased `name` for `ce`.
-/// # Safety
-/// MINIT, with a registered class.
-pub unsafe fn alias(name: &CStr, ce: *mut zend_class_entry) {
-    // SAFETY: per the caller; Zend interns its own copy of the name.
-    unsafe { swr_zend_register_class_alias(name.as_ptr(), name.count_bytes(), ce) };
 }
 
 /// `ZEND_ACC_*` flags as the `int` the declare functions take.
