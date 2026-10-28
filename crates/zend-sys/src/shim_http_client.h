@@ -20,9 +20,8 @@ void swr_zend_property_merge(zend_class_entry *ce, zend_object *object, const ch
  * or turn an existing value into a list and append to it. */
 void swr_zend_array_add_or_merge(zval *array, const char *key, size_t length, zval *element);
 
-/* zval_get_long, zval_get_double, zend_is_true and zval_get_string (a new
+/* zval_get_double, zend_is_true and zval_get_string (a new
  * reference), whose fast paths are inline. */
-zend_long swr_zval_get_long(const zval *value);
 double swr_zval_get_double(const zval *value);
 bool swr_zval_is_true(const zval *value);
 zend_string *swr_zval_get_string(zval *value);

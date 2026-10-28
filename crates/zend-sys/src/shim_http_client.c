@@ -69,10 +69,6 @@ void swr_zend_array_add_or_merge(zval *array, const char *key, size_t length, zv
     }
 }
 
-zend_long swr_zval_get_long(const zval *value) {
-    return zval_get_long(value);
-}
-
 double swr_zval_get_double(const zval *value) {
     return zval_get_double(value);
 }
