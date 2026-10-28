@@ -23,15 +23,6 @@ zend_class_entry *swr_zend_register_class(const char *name, size_t length,
 void swr_zend_class_set_create_object(zend_class_entry *ce,
                                       zend_object *(*create)(zend_class_entry *ce));
 
-/* zend_string_alloc, zend_string_realloc and zend_string_free, non-persistent. */
-zend_string *swr_zend_string_alloc(size_t length);
-zend_string *swr_zend_string_realloc(zend_string *string, size_t length);
-void swr_zend_string_free(zend_string *string);
-
-/* ZVAL_EMPTY_STRING and ZVAL_EMPTY_ARRAY. */
-void swr_zval_empty_string(zval *target);
-void swr_zval_empty_array(zval *target);
-
 /* emalloc and efree (macros taking file and line in debug builds). */
 void *swr_zend_emalloc(size_t size);
 void swr_zend_efree(void *ptr);
@@ -64,4 +55,5 @@ int swr_zend_try_call(zend_fcall_info *fci, zend_fcall_info_cache *fcc, int *res
 /* Z_PARAM_FUNC of argument `number` (not nullable): 1, or 0 after raising
  * Zend's own parameter error. */
 int swr_zend_parse_func(zval *arg, uint32_t number, zend_fcall_info *fci, zend_fcall_info_cache *fcc);
+#include "shim_clients.h"
 #endif
