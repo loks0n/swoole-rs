@@ -84,6 +84,40 @@ void swr_v1_process_worker_registry_terminate(const swr_v1_process_worker_regist
                                               int (*kill_fn)(int pid, int signo),
                                               int (*wait_fn)(int pid, int *status, int options),
                                               void (*warn_fn)(int pid));
+/* Byte-exact mirror of swoole::Worker (include/swoole_process_pool.h), whose layout
+ * Rust owns (crates/process/src/worker_record.rs). A static_assert in the process
+ * patch locks sizeof/offsetof of swoole::Worker to this mirror, so a layout drift
+ * fails the build rather than corrupting shared memory. The scalar process fields
+ * (pid/status/type/id) migrate behind the accessors; pointer/atomic fields stay
+ * C++-owned storage. See #629. */
+typedef struct {
+    int pid;
+    uint32_t id;
+    void *pool;
+    void *queue;
+    bool shared;
+    bool redirect_stdout;
+    bool redirect_stdin;
+    bool redirect_stderr;
+    uint8_t status;
+    uint8_t kind;
+    uint8_t msgqueue_mode;
+    uint8_t child_process;
+    uint32_t concurrency;
+    int64_t start_time;
+    int64_t dispatch_count;
+    int64_t request_count;
+    int64_t response_count;
+    size_t coroutine_num;
+    void *lock;
+    void *pipe_object;
+    void *pipe_master;
+    void *pipe_worker;
+    void *pipe_current;
+    void *ptr;
+} swr_v1_worker_record;
+uint8_t swr_v1_worker_status(const swr_v1_worker_record *);
+void swr_v1_worker_set_status(swr_v1_worker_record *, uint8_t status);
 #ifdef __cplusplus
 }
 #endif
