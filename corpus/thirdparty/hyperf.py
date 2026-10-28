@@ -33,13 +33,21 @@ def git(*args):
     return subprocess.check_output(['git', '-C', str(SOURCE), *args])
 
 
+def cloned():
+    # A cache restoring target/ can bring the tree back with no or a partial .git; git
+    # would then resolve the enclosing checkout, so only a tree that is its own top counts.
+    result = subprocess.run(['git', '-C', str(SOURCE), 'rev-parse', '--show-toplevel'],
+                            capture_output=True, text=True)
+    return result.returncode == 0 and Path(result.stdout.strip()).resolve() == SOURCE.resolve()
+
+
 def require_equal(actual, expected):
     if actual != expected:
         raise AssertionError(f'expected {expected!r}, got {actual!r}')
 
 
 def archive():
-    if not (SOURCE / '.git').exists():
+    if not cloned():
         raise RuntimeError('Pinned Hyperf missing; run corpus/thirdparty/hyperf.py --prepare')
     require_equal(git('rev-parse', 'HEAD').decode().strip(), MANIFEST['commit'])
     require_equal(git('diff', '--binary', 'HEAD'), b'')
@@ -56,9 +64,7 @@ def archive():
 
 def prepare(composer):
     SOURCE.parent.mkdir(parents=True, exist_ok=True)
-    # A cache restoring target/ can bring the tree back without its .git; git would then
-    # resolve the enclosing checkout, so start over from a clone.
-    if SOURCE.exists() and not (SOURCE / '.git').exists():
+    if SOURCE.exists() and not cloned():
         shutil.rmtree(SOURCE)
     if not SOURCE.exists():
         subprocess.run(['git', 'clone', '--no-checkout', MANIFEST['repository'], str(SOURCE)], check=True)
