@@ -60,6 +60,16 @@ python3 tests/modules/phpevents/descriptor_runtime.py \
   --sdk-report COMPLETED_PHPHELPERS_SDK --prepare-only --output FILE
 ```
 
+Builds a private native ABI consumer (`descriptor_entrypoint.cc/.php`) using
+`tests/modules/phphelpers/entrypoint.py`. With native and selected
+`--engine NAME=DSO`, `--source-ref`, `--build-manifest`, `--archive` and
+optional `--php-extension`, it loads both engines, verifies the selected build,
+requires the Rust catalogue/descriptor/stream/query callers in the Event overlay
+(refusing older same-bit artifacts), and compares the startup catalogue, four
+scalar values, conversion of a private plain file and one idle `isset`. No Event
+operations, reactor, callbacks, sockets or IPC. Registered as
+`phpevents-descriptors`.
+
 ## Unit tests
 
 ```sh
