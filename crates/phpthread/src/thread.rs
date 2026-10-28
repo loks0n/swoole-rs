@@ -303,7 +303,7 @@ fn warn(message: &Message) {
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 /// `setAffinity`/`getAffinity` (`HAVE_CPU_AFFINITY`: Linux here).
-pub mod affinity {
+pub mod thread_affinity {
     use super::{Call, message, warn};
     use swoole_rs_phpprocess::{
         swr_v1_phpprocess_array_to_cpu_set, swr_v1_phpprocess_cpu_set_to_array,
