@@ -9,8 +9,8 @@ code keeps the public `Context` containers, C++ resource lifetimes, callbacks,
 transport, llhttp/multipart parsers, FILE/tmpfile handling and warnings. See
 [native/wrappers/contract.md](../../../native/wrappers/contract.md).
 
-`overlay.py` generates the patched `event.cc`/`http.cc` from the pinned
-upstream sources; run it directly to rewrite `migration/patches/wrappers/`.
+`overlay.py` applies `migration/patches/wrappers/` to the pinned `event.cc`/`http.cc`
+for the gates; edit the patches with `tools/patches.py`.
 
 ## Registered gates
 
