@@ -48,8 +48,9 @@ environments by default (`.devcontainer/` provides everything, `gh` included; se
 docs/development.md); a local machine runs the goal agent and at most one reviewer,
 so no laptop fills its disk with many agents' builds. Each executor loops:
 
-1. Claim the highest-priority, oldest unblocked `status:ready` issue without
-   `needs:decision` (see Tickets). Check again before each new PR: a ticket that
+1. Claim the first issue `python3 tools/ci.py next` prints: the highest-priority,
+   oldest unblocked `status:ready` issue without `needs:decision` (see Tickets).
+   Check again before each new PR: a ticket that
    takes several PRs doesn't outrank higher-priority work filed since.
 2. Branch from `main`, commit. The pre-commit hook runs quick checks (~5s warm);
    enable the hooks with `git config core.hooksPath .githooks`. Never pass
@@ -141,8 +142,8 @@ Use GitHub's own relationships, not comments or labels:
 - **Blocked:** mark the blocking issue in the issue's *Relationships* (`gh api -X
   POST repos/{owner}/{repo}/issues/<n>/dependencies/blocked_by -F issue_id=<id
   of the blocker>`). An issue is blocked while any blocker is open and is
-  unblocked by GitHub the moment the last one closes. Claimable issues:
-  `gh issue list --search "is:open label:status:ready -is:blocked -label:needs:decision sort:created-asc"`.
+  unblocked by GitHub the moment the last one closes. Claimable issues, in claim
+  order: `python3 tools/ci.py next`.
 - **Waiting on a decision:** add `needs:decision` and comment the question (a
   policy change, an open design choice), after trying to settle it with data.
   Whoever decides, the goal agent or a person, answers on the issue and removes
