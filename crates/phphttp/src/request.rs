@@ -2,12 +2,13 @@
 use crate::{
     context::{self, Holder},
     host::{
-        self, COMPLETED, Context, HTTP_CONTEXT_UNAVAILABLE, HTTP2, swr_http_host_request_body,
-        swr_http_host_request_create, swr_http_host_request_data, swr_http_host_request_free,
-        swr_http_host_request_method, swr_http_host_request_parse,
+        self, COMPLETED, Context, HTTP_CONTEXT_UNAVAILABLE, HTTP2, swr_http_host_request_create,
+        swr_http_host_request_free,
     },
+    parse::{self, body, method_name},
+    state::State,
 };
-use std::{ptr, slice};
+use std::ptr;
 use swoole_rs_zend::{
     Call, Class, declare_long, declare_null, handlers,
     sys::{IS_STRING, ZEND_ACC_PUBLIC, zend_class_entry, zend_function_entry, zend_object},
@@ -15,6 +16,11 @@ use swoole_rs_zend::{
 };
 
 static REQUEST: Class = Class::new();
+
+/// The registered class entry.
+pub(crate) fn entry() -> *mut zend_class_entry {
+    REQUEST.entry()
+}
 
 unsafe extern "C" fn create(ce: *mut zend_class_entry) -> *mut zend_object {
     // SAFETY: Zend calls `create_object` with this class or a subclass of it.
@@ -78,14 +84,10 @@ fn checked(call: &Call) -> Option<*mut Context> {
 
 fn get_content(call: &Call) {
     let Some(ctx) = checked(call) else { return };
-    let mut length = 0;
-    // SAFETY: a live context and a writable length.
-    let body = unsafe { swr_http_host_request_body(ctx, &raw mut length) };
-    if body.is_null() {
-        return call.set_empty_string();
+    match body(ctx.cast()) {
+        Some(bytes) => call.set_bytes(bytes),
+        None => call.set_empty_string(),
     }
-    // SAFETY: the context's body holds `length` bytes for this call.
-    call.set_bytes(unsafe { slice::from_raw_parts(body.cast(), length) });
 }
 
 fn get_data(call: &Call) {
@@ -94,8 +96,8 @@ fn get_data(call: &Call) {
         host::fatal("unable to get data from HTTP2 request");
         return call.set_bool(false);
     }
-    // SAFETY: a live context.
-    let data = unsafe { swr_http_host_request_data(ctx) };
+    // SAFETY: a live context; only the field's address is taken.
+    let data = unsafe { &raw mut (*ctx.cast::<State>()).request.zdata };
     // SAFETY: the context's request data is a live zval.
     if unsafe { type_of(data) } == IS_STRING {
         // SAFETY: as above.
@@ -126,14 +128,23 @@ fn parse(call: &Call) {
     let Ok(Some(data)) = call.arity(1, 1).and_then(|()| call.string_opt(1)) else {
         return call.set_bool(false);
     };
-    // SAFETY: a live context and the argument's bytes.
-    call.set_long(unsafe { swr_http_host_request_parse(ctx, data.as_ptr().cast(), data.len()) });
+    let parsed = parse::parse_piece(ctx.cast(), data);
+    call.set_long(i64::try_from(parsed).unwrap_or(i64::MAX));
 }
 
 fn get_method(call: &Call) {
     let Some(ctx) = checked(call) else { return };
-    // SAFETY: a live context and this call's return slot.
-    unsafe { swr_http_host_request_method(ctx, call.return_value()) };
+    if host::flags(ctx) & HTTP2 != 0 {
+        // SAFETY: a live context; its `server` array is live while the request is.
+        let server = unsafe { (*ctx.cast::<State>()).request.zserver.ptr };
+        let method = parse::find(server, b"request_method");
+        if method.is_null() {
+            return call.set_null();
+        }
+        // SAFETY: a live zval from that array.
+        return unsafe { call.set_copy(method) };
+    }
+    call.set_bytes(method_name(ctx.cast()).to_bytes());
 }
 
 fn is_completed(call: &Call) {

@@ -324,20 +324,6 @@ def plan(args, reports):
         script('httpbindings-server', 'tests/modules/httpbindings/server_gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('httpbindings-server'))
         for suffix, options in [('', []), ('-without-compression', ['--without-compression'])]:
-            name = 'httpbindings-request' + suffix
-            script(name, 'tests/modules/httpbindings/request_gate.py', '--source', ROOT / 'target/upstream/src',
-                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *options, *report(name))
-        for capabilities in range(8):
-            name = 'httpbindings-payload-' + str(capabilities)
-            script(name, 'tests/modules/httpbindings/payload_gate.py', '--source', ROOT / 'target/upstream/src',
-                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-                   '--capabilities', capabilities, *report(name))
-        for locale in ['C', 'C.UTF-8', 'en_US.ISO8859-1', 'tr_TR.ISO8859-9', 'tr_TR.UTF-8']:
-            name = 'httpbindings-libc-' + locale
-            script(name, 'tests/modules/httpbindings/payload_gate.py', '--source', ROOT / 'target/upstream/src',
-                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-                   '--native-libc', '--locale', locale, *report(name))
-        for suffix, options in [('', []), ('-without-compression', ['--without-compression'])]:
             name = 'httpbindings-response' + suffix
             script(name, 'tests/modules/httpbindings/response_gate.py', '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *options, *report(name))

@@ -43,6 +43,15 @@
         "ext-src/swoole_http_request.cc",
         "ext-src/swoole_http_response.cc"
       ]
+    },
+    {
+      "path": "0008-http-request-parser.patch",
+      "sha256": "a6bcecd72a82fe91a03878fa1c15efff1f865b701a4f0320d664efc6298e06eb",
+      "upstream_paths": [
+        "ext-src/php_swoole_http.h",
+        "ext-src/swoole_http_request.cc",
+        "ext-src/swoole_http_server.cc"
+      ]
     }
   ]
 }

@@ -115,11 +115,29 @@ uint32_t swr_http_host_flags(const void *context);
 int64_t swr_http_host_fd(const void *context);
 void swr_http_host_mark(void *context, uint32_t flag);
 void swr_http_host_request_free(void *context);
-const char *swr_http_host_request_body(void *context, size_t *length);
-struct _zval_struct *swr_http_host_request_data(void *context);
 void swr_http_host_request_create(struct _zval_struct *return_value, struct _zval_struct *options);
-int64_t swr_http_host_request_parse(void *context, const char *data, size_t length);
-void swr_http_host_request_method(void *context, struct _zval_struct *return_value);
+
+/* The request parser (crates/phphttp/src/parse.rs): llhttp and multipart
+ * callbacks over swoole::http::ContextState, whose layout state.rs mirrors.
+ * `context` is a swoole::http::Context. MINIT passes the codecs built in
+ * (1 zlib, 2 brotli, 4 zstd, 8 any). */
+enum { SWR_PHPHTTP_PARSE_SIZE = 144, SWR_PHPHTTP_STATE_SIZE = 544 };
+void swr_v1_phphttp_parse_minit(uint32_t compression);
+size_t swr_v1_phphttp_parse(void *context, const char *data, size_t length);
+void swr_v1_phphttp_parse_free(void *context);
+bool swr_v1_phphttp_multipart_boundary(void *context, const char *at, size_t length, size_t offset,
+    char **boundary, int *boundary_length);
+bool swr_v1_phphttp_multipart_init(void *context, const char *boundary, int boundary_length);
+bool swr_v1_phphttp_multipart_parse(void *context, const char *at, size_t length);
+void swr_v1_phphttp_compression_method(void *context, const char *accept_encoding, size_t length);
+/* What the parser asks of Swoole. `swr_http_host_log` is swoole_error_log
+ * (error > 0), swoole_warning (0) or swoole_sys_warning (-errno) from `func`. */
+void swr_http_host_log(int level, int error, const char *func, const char *message);
+void swr_http_host_treat_data(int arg, char *str, struct _zval_struct *array);
+int swr_http_host_websocket_connection(void *context);
+const char *swr_http_host_upload_tmp_dir(const void *context);
+int swr_http_host_tmpfile(char *path);
+const char *swr_http_host_http2_data(void *context, size_t *length);
 void swr_http_host_response_free(void *context);
 void swr_http_host_response_create(struct _zval_struct *object, int64_t fd, struct _zval_struct *return_value);
 struct _zval_struct *swr_http_host_response_property(void *context, int which);
