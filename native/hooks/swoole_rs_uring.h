@@ -4,6 +4,8 @@
  * coroutine switches, the thread's engine and the log lines. */
 #ifndef SWOOLE_RS_URING_H
 #define SWOOLE_RS_URING_H
+/* The archive exports these only when the build enables io_uring. */
+#ifdef SW_USE_IOURING
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -81,5 +83,6 @@ pid_t swr_v1_uring_waitpid(const swr_v1_uring_host *host, pid_t pid, int *stat_l
 int swr_v1_uring_poll(const swr_v1_uring_host *host, struct pollfd *fd, int timeout);
 #ifdef __cplusplus
 }
+#endif
 #endif
 #endif
