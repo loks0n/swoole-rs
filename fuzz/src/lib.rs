@@ -14,7 +14,7 @@ use swoole_rs_oracle::{
     base64 as upstream, clients, framing as upstream_framing, framing_stream,
     http as upstream_http,
     http_frame::{self, CANDIDATE, Engine, UPSTREAM},
-    http_range, protocols, resp_stream, websocket as upstream_ws,
+    http_range, protocols, resp_stream, socks5, websocket as upstream_ws,
 };
 use swoole_rs_protocols as _;
 use swoole_rs_websocket::{DecodedFrame, swr_v1_ws_decode, swr_v1_ws_frame_length, swr_v1_ws_mask};
@@ -741,8 +741,8 @@ pub fn http_range(bytes: &[u8]) {
     assert_eq!(got, want, "range for {bytes:?}");
 }
 
-/// One engine's receive-loop log for a stream case (see `framing_stream::Run`
-/// and `resp_stream::Run`).
+/// One engine's log for a stream case (see `framing_stream::Run`,
+/// `resp_stream::Run` and `socks5::Run`).
 fn stream_log<S>(
     run: unsafe extern "C" fn(*const S, *mut u8, usize) -> usize,
     stream: &S,
@@ -842,5 +842,63 @@ pub fn resp_stream(bytes: &[u8]) {
         String::from_utf8_lossy(&want),
         String::from_utf8_lossy(&got),
         "resp stream for {bytes:?}"
+    );
+}
+
+/// `Socks5Proxy` from upstream and from the candidate (over the Rust SOCKS5
+/// exports), from `create` through arbitrary server replies: every byte sent,
+/// each handshake result and state, and each reply code's message must match.
+pub fn socks5(bytes: &[u8]) {
+    let Some((&[flags, user, password, host, host_extra, port_high, port_low, replies], rest)) =
+        bytes.split_first_chunk::<8>()
+    else {
+        return;
+    };
+    // Credentials of up to 255 bytes and hosts of up to 319, so both length limits
+    // are crossed; socket types 1..=5 (5 is neither inet4 nor inet6).
+    let Some((user, rest)) = rest.split_at_checked(usize::from(user)) else {
+        return;
+    };
+    let Some((password, rest)) = rest.split_at_checked(usize::from(password)) else {
+        return;
+    };
+    let host_length = usize::from(u16::from_be_bytes([host_extra, host]) % 320);
+    let Some((host, rest)) = rest.split_at_checked(host_length) else {
+        return;
+    };
+    let Some((sizes, replies)) = rest.split_at_checked(usize::from(replies % 8)) else {
+        return;
+    };
+    // Replies of up to 15 bytes each, cut short where the input ends.
+    let mut left = replies.len();
+    let sizes: Vec<u16> = sizes
+        .iter()
+        .map(|&size| {
+            let size = usize::from(size % 16).min(left);
+            left -= size;
+            size as u16
+        })
+        .collect();
+    let case = socks5::Case {
+        user: user.as_ptr(),
+        user_length: user.len(),
+        password: password.as_ptr(),
+        password_length: password.len(),
+        target_host: host.as_ptr(),
+        target_host_length: host.len(),
+        target_port: u16::from_be_bytes([port_high, port_low]),
+        dns_tunnel: flags & 1,
+        socket_type: (flags >> 1) % 5 + 1,
+        send_short: (flags >> 4) & 1,
+        replies: replies.as_ptr(),
+        reply_sizes: sizes.as_ptr(),
+        reply_count: sizes.len(),
+    };
+    let want = stream_log(socks5::UPSTREAM, &case);
+    let got = stream_log(socks5::CANDIDATE, &case);
+    assert_eq!(
+        String::from_utf8_lossy(&want),
+        String::from_utf8_lossy(&got),
+        "socks5 for {bytes:?}"
     );
 }
