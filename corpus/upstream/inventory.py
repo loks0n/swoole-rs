@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Write a run.py manifest for every pinned upstream PHPT, or one shard of them.
 
-Every other file under tests/ (fixtures, helpers) becomes a support file, so
-tests run with their original surroundings. Tests and expectations are unchanged.
+Every other file under tests/ (fixtures, helpers) becomes a support file, as do
+the fixtures tests/include/config.php points outside tests/ (TEST_IMAGE,
+TEST_IMAGE2, DOCUMENT_ROOT), so tests run with their original surroundings.
+Tests and expectations are unchanged.
 """
 import argparse
 import hashlib
@@ -21,8 +23,13 @@ def shard(paths, index, count):
     return [path for position, path in enumerate(sorted(paths)) if position % count == index - 1]
 
 
+# Outside tests/, but named by tests/include/config.php.
+FIXTURES = ['examples/test.jpg', 'docs/swoole-logo.svg', 'examples/www']
+
+
 def blobs(source):
-    listing = subprocess.check_output(['git', '-C', str(source), 'ls-tree', '-r', COMMIT, 'tests'], text=True)
+    listing = subprocess.check_output(['git', '-C', str(source), 'ls-tree', '-r', COMMIT, 'tests', *FIXTURES],
+                                      text=True)
     for line in listing.splitlines():
         meta, path = line.split('\t', 1)
         if meta.split()[1] == 'blob':
