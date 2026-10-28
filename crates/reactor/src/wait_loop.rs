@@ -29,23 +29,41 @@ pub struct WaitOps {
     pub interrupted: Option<unsafe extern "C" fn(*mut c_void) -> c_int>,
     pub interrupt: Option<unsafe extern "C" fn(*mut c_void)>,
     pub wait_failed: unsafe extern "C" fn(*mut c_void),
-    /// Fill the native `Event` for `socket`; `fd` is poll's entry fd (-1: the socket's own),
-    /// and a nonzero `hup` marks `event_hup`.
-    /// Fill the event for a socket; returns its fd type.
-    pub prepare: unsafe extern "C" fn(*mut c_void, *mut c_void, c_int, c_int) -> c_int,
-    /// `socket->removed`, and `socket->events & SW_EVENT_ONCE`.
-    pub removed: unsafe extern "C" fn(*mut c_void) -> c_int,
-    pub oneshot: unsafe extern "C" fn(*mut c_void) -> c_int,
+    /// The native `Socket` fields the loop reads and writes.
+    pub fields: *const SocketFields,
+    pub reactor_id: i16,
     /// The reactor's handler tables; each handler runs as `handler(reactor, event)`.
     pub handlers: *const Handlers,
     pub reactor: *mut c_void,
-    pub event: *mut c_void,
+    pub event: *mut Event,
     pub handler_failed: unsafe extern "C" fn(*mut c_void, u32),
     pub remove: unsafe extern "C" fn(*mut c_void, *mut c_void),
     /// kqueue only: dispatch a signal entry, and warn about an unknown filter.
     pub signal: Option<unsafe extern "C" fn(*mut c_void)>,
     pub unknown: Option<unsafe extern "C" fn(*mut c_void, c_int)>,
 }
+
+/// Upstream's `swoole::Event`.
+#[repr(C)]
+pub struct Event {
+    pub fd: c_int,
+    pub reactor_id: i16,
+    pub fd_type: c_int,
+    pub socket: *mut c_void,
+}
+
+/// Accessors for the native `network::Socket` fields the loop uses; `removed` and
+/// `event_hup` are bitfields.
+#[repr(C)]
+pub struct SocketFields {
+    pub fd: unsafe extern "C" fn(*mut c_void) -> c_int,
+    pub fd_type: unsafe extern "C" fn(*mut c_void) -> c_int,
+    pub events: unsafe extern "C" fn(*mut c_void) -> c_int,
+    pub removed: unsafe extern "C" fn(*mut c_void) -> bool,
+    pub set_hangup: unsafe extern "C" fn(*mut c_void),
+}
+
+const SW_EVENT_ONCE: c_int = 1 << 12;
 
 const READ: u32 = 1;
 const WRITE: u32 = 2;
@@ -188,10 +206,8 @@ unsafe fn entry(ops: &WaitOps, index: usize) {
 /// poll and epoll: read, write, error (unless read or write already ran), then a oneshot removal.
 fn ready(ops: &WaitOps, socket: *mut c_void, fd: c_int, mask: u32) {
     let context = ops.context;
-    // SAFETY: `socket` is the registered native socket; the effect accepts it.
-    let fd_type = unsafe { (ops.prepare)(context, socket, fd, c_int::from(mask & HANGUP != 0)) };
-    // SAFETY: `socket` stays live while its handlers run.
-    let live = || unsafe { (ops.removed)(socket) } == 0;
+    let fd_type = prepare(ops, socket, fd, mask & HANGUP != 0);
+    let live = || registered(ops, socket);
     for (kind, bit) in [(0, READ), (1, WRITE)] {
         if mask & bit != 0 && live() && handle(ops, kind, fd_type) < 0 {
             // SAFETY: the native effect accepts `context` and the prepared event.
@@ -225,10 +241,8 @@ fn kqueue(ops: &WaitOps, udata: *mut c_void, filter: c_int) {
         return;
     }
     if filter == c_int::from(libc::EVFILT_READ) || filter == c_int::from(libc::EVFILT_WRITE) {
-        // SAFETY: `udata` is the registered native socket; the effect accepts it.
-        let fd_type = unsafe { (ops.prepare)(context, udata, -1, 0) };
-        // SAFETY: `udata` stays live while its handler runs.
-        let live = || unsafe { (ops.removed)(udata) } == 0;
+        let fd_type = prepare(ops, udata, -1, false);
+        let live = || registered(ops, udata);
         if !live() {
             return;
         }
@@ -263,12 +277,50 @@ fn handle(ops: &WaitOps, kind: u32, fd_type: c_int) -> c_int {
         return -1;
     };
     // SAFETY: a native `ReactorHandler`, given its reactor and the prepared event.
-    unsafe { handler(ops.reactor, ops.event) }
+    unsafe { handler(ops.reactor, ops.event.cast()) }
+}
+
+/// Fills the event for a ready socket, as each upstream backend did: `fd` is poll's entry
+/// fd (-1: the socket's own), and `hangup` marks `event_hup`. Returns the fd type.
+fn fields(ops: &WaitOps) -> &SocketFields {
+    // SAFETY: the native accessors stay valid while the reactor waits.
+    unsafe { &*ops.fields }
+}
+
+fn prepare(ops: &WaitOps, socket: *mut c_void, fd: c_int, hangup: bool) -> c_int {
+    let fields = fields(ops);
+    let fd = if fd < 0 {
+        // SAFETY: `socket` is a registered native socket.
+        unsafe { (fields.fd)(socket) }
+    } else {
+        fd
+    };
+    // SAFETY: as above.
+    let fd_type = unsafe { (fields.fd_type)(socket) };
+    let event = Event {
+        fd,
+        reactor_id: ops.reactor_id,
+        fd_type,
+        socket,
+    };
+    // SAFETY: `ops.event` is the backend's own event, not otherwise borrowed now.
+    unsafe { ops.event.write(event) };
+    if hangup {
+        // SAFETY: as above.
+        unsafe { (fields.set_hangup)(socket) };
+    }
+    fd_type
+}
+
+/// Whether `socket` is still registered (`!socket->removed`).
+fn registered(ops: &WaitOps, socket: *mut c_void) -> bool {
+    // SAFETY: `socket` stays live while its handlers run.
+    !unsafe { (fields(ops).removed)(socket) }
 }
 
 fn oneshot(ops: &WaitOps, socket: *mut c_void, live: impl Fn() -> bool) {
     // SAFETY: `socket` stays live until its removal below.
-    if live() && unsafe { (ops.oneshot)(socket) } != 0 {
+    if live() && unsafe { (fields(ops).events)(socket) } & SW_EVENT_ONCE != 0 {
         // SAFETY: the native effect accepts `context` and the socket.
         unsafe { (ops.remove)(ops.context, socket) };
     }
