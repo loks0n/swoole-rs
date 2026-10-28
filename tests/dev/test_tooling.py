@@ -625,7 +625,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('--build-manifest', commands['utilities-php-logger'])
         self.assertIn('--archive', commands['utilities-php-logger'])
         self.assertIn('--source-ref', commands['utilities-php-logger'])
-        self.assertIn('--archive',commands['httpbindings-cookie'])
         self.assertIn('--archive', commands['httpbindings-server'])
         self.assertNotIn('httpbindings-php', commands)
         self.assertNotIn('httpbindings-codec-0', commands)

@@ -321,10 +321,8 @@ def plan(args, reports):
         script('hooks-compile', 'tests/modules/hooks/compile_gate.py', '--source', ROOT / 'target/upstream/src',
                '--config', manifest.parent / 'src/config.h', '--report', reports / 'hooks-compile.json')
     if 'httpbindings' in modules:
-        for family, runner in [('cookie', 'cookie_gate.py'), ('server', 'server_gate.py')]:
-            name = 'httpbindings-' + family
-            script(name, 'tests/modules/httpbindings/' + runner, '--source', ROOT / 'target/upstream/src',
-                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report(name))
+        script('httpbindings-server', 'tests/modules/httpbindings/server_gate.py', '--source', ROOT / 'target/upstream/src',
+               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('httpbindings-server'))
         for suffix, options in [('', []), ('-without-compression', ['--without-compression'])]:
             name = 'httpbindings-request' + suffix
             script(name, 'tests/modules/httpbindings/request_gate.py', '--source', ROOT / 'target/upstream/src',

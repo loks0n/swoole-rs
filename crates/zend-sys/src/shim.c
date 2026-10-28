@@ -94,6 +94,22 @@ void swr_zval_try_delref(zval *value) {
     Z_TRY_DELREF_P(value);
 }
 
+zend_string *swr_zend_string_init(const char *text, size_t length) {
+    return zend_string_init(text, length, 0);
+}
+
+zend_string *swr_zend_string_copy(zend_string *string) {
+    return zend_string_copy(string);
+}
+
+void swr_zend_string_release(zend_string *string) {
+    zend_string_release(string);
+}
+
+void swr_zval_str(zval *value, zend_string *string) {
+    ZVAL_STR(value, string);
+}
+
 int swr_zend_register_class_alias(const char *name, size_t length, zend_class_entry *ce) {
     zend_string *alias = zend_string_init(name, length, 1);
     zend_str_tolower(ZSTR_VAL(alias), length);
