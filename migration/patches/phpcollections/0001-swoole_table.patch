@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_table.cc b/ext-src/swoole_table.cc
-index f08300427..1159cc357 100644
+index f083004..094aea7 100644
 --- a/ext-src/swoole_table.cc
 +++ b/ext-src/swoole_table.cc
 @@ -18,3 +18,9 @@
@@ -398,7 +398,7 @@ index f08300427..1159cc357 100644
 +        memcpy(&set_value, row->data + column.index(), sizeof(set_value));
 +        const long amount = changeby ? zval_get_long(changeby) : 1;
 +        if (!swr_v1_phpcollections_integer_update(set_value, amount, subtract, &set_value)) {
-+            // Preserve the original native undefined overflow domain; no parity claim.
++            // Outside the compared domain: keep the original arithmetic.
 +            if (subtract) { set_value -= amount; } else { set_value += amount; }
 +        }
 +        if (!column.set_value(row, &set_value, 0)) {

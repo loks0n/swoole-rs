@@ -3,22 +3,22 @@ use crate::scheduler_phase::SchedulerPhase;
 use std::ffi::{c_int, c_long};
 
 #[repr(C)]
-pub struct ErrorCell {
+pub(crate) struct ErrorCell {
     pub value: c_int,
 }
 #[repr(C)]
-pub struct ParentCell {
+pub(crate) struct ParentCell {
     pub value: c_long,
 }
 #[repr(C)]
-pub struct ClockCell {
+pub(crate) struct ClockCell {
     pub value: i64,
 }
 
 /// Native forms addresses only; Rust never interprets a `PHPContext` or Zend value.
 /// Null cells denote absent/unused fields, not an alternate registry.
 #[repr(C)]
-pub struct ContextCells {
+pub(crate) struct ContextCells {
     pub silence: *mut SchedulerPhase,
     pub scheduler: *mut SchedulerPhase,
     pub original: *mut ErrorCell,
@@ -28,7 +28,7 @@ pub struct ContextCells {
     pub clock: *mut ClockCell,
 }
 #[repr(C)]
-pub struct MetadataPlan {
+pub(crate) struct MetadataPlan {
     pub action: u32,
     pub value: i64,
 }
@@ -41,7 +41,7 @@ pub struct MetadataPlan {
 /// Stage is exclusive invocation-local zeroed POD. Observation is the requested
 /// fresh error-mask/clock fact. No borrow/frame survives Native effects.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_metadata(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_metadata(
     stage: *mut u32,
     kind: u32,
     cells: *const ContextCells,

@@ -2,12 +2,12 @@
 use std::ffi::c_char;
 #[repr(C)]
 #[derive(Default)]
-pub struct ConfigureState {
+pub(crate) struct ConfigureState {
     pub stage: u32,
     pub created: u8,
 }
 #[repr(C)]
-pub struct ConfigurePlan {
+pub(crate) struct ConfigurePlan {
     pub action: u32,
     pub key: *const c_char,
     pub key_length: usize,
@@ -32,7 +32,7 @@ impl ConfigurePlan {
 /// Native stack state is exclusive writable POD, initially zeroed. Observations
 /// are freshly requested presence facts only; native pointers never enter Rust.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_configure(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_configure(
     state: *mut ConfigureState,
     observation: u8,
 ) -> ConfigurePlan {

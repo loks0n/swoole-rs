@@ -17,17 +17,12 @@ size_t sw_snprintf(char *data, size_t size, const char *format, ...) {
     va_list args; va_start(args, format); int n = std::vsnprintf(data, size, format, args); va_end(args); return n < 0 ? 0 : size_t(n);
 }
 int main(int argc, char **argv) {
-    if (argc == 2 && std::string(argv[1]) == "diagnose-reference-overflow") {
-        auto result = upstream::url_encode("!", 1); sw_free(result); return 0;
-    }
     try {
         if (argc == 2 && std::string(argv[1]) == "url-positive-only") {
             uint32_t random = 8293;
             auto next = [&]() { random ^= random << 13; random ^= random >> 17; random ^= random << 5; return random; };
             for (size_t n = 0; n < 4096; ++n) {
-                // Existing defined-success corpus: leading unreserved byte
-                // leaves pinned reference space for its terminator. No decode,
-                // empty/fully-escaped reference, failure or diagnostic profile.
+                // The compared domain: inputs that start with an unreserved byte.
                 std::string input("A");
                 for (size_t i = 0; i < n % 257; ++i) input += char(next());
                 auto before = upstream::url_encode(input.data(), input.size());
@@ -59,7 +54,7 @@ int main(int argc, char **argv) {
         uint32_t random = 8293;
         auto next = [&]() { random ^= random << 13; random ^= random >> 17; random ^= random << 5; return random; };
         for (size_t n = 0; n < 4096; ++n) {
-            // A leading unreserved byte leaves reference space for its terminator.
+            // Inside the compared domain: a leading unreserved byte.
             std::string input("A"); for (size_t i = 0; i < n % 257; ++i) input += char(next());
             auto before = upstream::url_encode(input.data(), input.size());
             allocations = 0; auto after = candidate::url_encode(input.data(), input.size());

@@ -10,6 +10,10 @@ panic = "abort"
 panic = "abort"
 
 # Lint levels live here only; see AGENTS.md "Rust lints".
+[workspace.lints.rust]
+# `pub` only where another crate uses it, so dead_code sees the rest (#159).
+unreachable_pub = "deny"
+
 [workspace.lints.clippy]
 # Pedantic is denied whole (#156), including the cast lints that guard the FFI
 # boundary against silent truncation, sign flips and misalignment (#157).

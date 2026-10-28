@@ -17,7 +17,7 @@ enum Action {
 /// for Observe (presence/self identity) or the constructor's copied retain flag.
 /// Native executes each returned effect after Rust returns; no Zend pointer enters.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phphelpers_string_plan(
+pub(crate) unsafe extern "C" fn swr_v1_phphelpers_string_plan(
     phase: *mut u32,
     operation: u32,
     observation: u8,
@@ -73,7 +73,7 @@ enum ValueAction {
 /// insertion/destruction;3/4 are Variable retained copy/move. Key presence is
 /// refreshed by native `ObserveKey` before use. Native owns every value and effect.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phphelpers_value_plan(
+pub(crate) unsafe extern "C" fn swr_v1_phphelpers_value_plan(
     phase: *mut u32,
     operation: u32,
     key_present: u8,
@@ -114,7 +114,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_value_plan(
 /// Initialized native phase0. Name presence is observed only at action4 after
 /// native cache/value copy and retention. No callable or string pointer enters.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phphelpers_duplicate_plan(
+pub(crate) unsafe extern "C" fn swr_v1_phphelpers_duplicate_plan(
     phase: *mut u32,
     name_present: u8,
 ) -> u32 {
@@ -150,7 +150,7 @@ enum FactoryAction {
 /// are refreshed only on Observe actions; `allow_null` is the copied native flag.
 /// Allocation, constructor warnings/destruction and exceptions remain native.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phphelpers_factory_plan(
+pub(crate) unsafe extern "C" fn swr_v1_phphelpers_factory_plan(
     phase: *mut u32,
     operation: u32,
     observation: u8,
@@ -203,7 +203,10 @@ enum IteratorAction {
 /// Native owns Bucket bounds, zval decoding, cursor/value/key/index storage. No
 /// pointers or native layout are passed to Rust; no native work within this call.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phphelpers_iterator_plan(phase: *mut u32, observation: u8) -> u32 {
+pub(crate) unsafe extern "C" fn swr_v1_phphelpers_iterator_plan(
+    phase: *mut u32,
+    observation: u8,
+) -> u32 {
     use IteratorAction::{
         Advance, Dereference, Done, ObserveEnd, ObserveIndirect, ObserveKey, ObservePointer,
         ObserveUndefined, PublishIndex, PublishString, ReadValue,

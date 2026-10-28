@@ -3,6 +3,8 @@
 # stops at a test's first failed re-run; the hybrid then re-runs every flagged test until its
 # verdict is settled, once only when its first failure timed out (gate.py --print-pending).
 # An inconclusive re-run (the #200 runner abort) is replaced, up to six attempts in all.
+# A test the hybrid both passed and failed then gets more upstream re-runs (up to 9 in all),
+# so a test racy on both engines isn't counted as a hybrid regression.
 #   recheck.sh RESULTS_DIR ENGINES_DIR RECHECK_DIR [run.py arguments...]
 # ENGINES_DIR holds upstream.so and hybrid.so; RECHECK_DIR receives <engine>-<attempt>.json.
 set -eo pipefail
@@ -24,4 +26,11 @@ for engine in upstream hybrid; do
     python3 corpus/upstream/run.py "$@" $cases --engine "$engine=$engines/$engine.so" \
       --output "$recheck/$engine-$attempt.json" || [ $? -eq 1 ]
   done
+done
+for attempt in 7 8 9 10 11 12; do
+  cases=$(pending upstream-extended)
+  [ -n "$cases" ] || break
+  # shellcheck disable=SC2086 # one --case per word
+  python3 corpus/upstream/run.py "$@" $cases --engine "upstream=$engines/upstream.so" \
+    --output "$recheck/upstream-$attempt.json" || [ $? -eq 1 ]
 done

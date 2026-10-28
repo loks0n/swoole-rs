@@ -76,8 +76,7 @@ static std::string run(unsigned bits,unsigned scenario,unsigned outcome,unsigned
     auto callback=[&](Client*c,const std::string&name){observe("callback:"+name);
         if(scenario==2){c->open_ssl=false;c->close();}
         if(scenario==3)throw std::runtime_error("native callback");
-        // Connect is followed by another original Client observation; deleting
-        // there is an existing native undefined path, not a parity fixture.
+        // Deleting the Client during connect is outside the compared domain.
         if(scenario==4){if(name=="connect")c->open_ssl=false;else delete c;}
     };
     if(bits&2)cli->onReceive=[](Client*){};

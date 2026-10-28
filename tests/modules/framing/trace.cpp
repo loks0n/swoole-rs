@@ -82,7 +82,7 @@ int main() {
             for (auto &c: chunk) c = "a\r\n\x02\0"[rng() % 5];
             s.chunks.push_back(chunk);
         }
-        // Avoid invoking upstream's unchecked out-of-bounds recv configuration.
+        // Keep the configured offset within the compared domain.
         if (mode == 0 && b.offset && size_t(b.offset) <= b.length) b.offset = 0;
         if (mode != 0 && b.offset > off_t(b.length)) b.offset = 0;
         int r; try { r = mode == 0 ? p.recv_with_length_protocol(&s, &b) : mode == 1 ? p.recv_with_eof_protocol(&s, &b) : p.recv_split_by_eof(&s, &b); } catch (const std::bad_alloc &) { event("bad_alloc"); r = -777; }

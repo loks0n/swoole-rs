@@ -3,11 +3,11 @@ use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicU8, Ordering};
 
 #[repr(C)]
-pub struct InterruptState {
+pub(crate) struct InterruptState {
     running: UnsafeCell<u8>,
 }
 #[repr(C)]
-pub struct InterruptPlan {
+pub(crate) struct InterruptPlan {
     pub action: u32,
     pub value: u64,
 }
@@ -39,7 +39,7 @@ unsafe fn store(state: *mut InterruptState, value: u8) {
 /// VM stores, signal masking, clock reads, sleeps or joins. No Rust Send/Sync
 /// promise is added for the surrounding Native state.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_interrupt(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_interrupt(
     state: *mut InterruptState,
     stage: *mut u32,
     kind: u32,

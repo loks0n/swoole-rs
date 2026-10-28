@@ -14,7 +14,7 @@ enum Action {
 /// Phase is independent aligned exclusive scalar storage initialized to zero.
 /// Observation is fresh only after `ObserveCoroutine`. No pointer is retained.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phphelpers_async(
+pub(crate) unsafe extern "C" fn swr_v1_phphelpers_async(
     phase: *mut u32,
     blocking: u8,
     coroutine: u8,

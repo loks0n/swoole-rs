@@ -17,9 +17,8 @@ callers may pass uninitialized writable storage. Only the FFI boundary construct
 slices; checked size/address arithmetic rejects null and unrepresentable ranges.
 Allocation validity and disjointness remain caller preconditions.
 
-The pinned encoder has undefined behavior for zero input: its unsigned index
-underflows and may read before the input. **Zero-length encode is excluded from
-the C++ oracle.** The Rust definition writes a NUL and returns zero; null input
+**Zero-length encode is outside the compared domain** and is excluded from the
+C++ oracle. The Rust definition writes a NUL and returns zero; null input
 is permitted for zero length.
 
 The encoder processes full three-byte groups without padding decisions; one tail

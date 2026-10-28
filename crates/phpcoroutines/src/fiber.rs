@@ -1,6 +1,6 @@
 //! Fiber observer selection/order over fresh copied facts; effects stay native.
 #[repr(C)]
-pub struct FiberStates {
+pub(crate) struct FiberStates {
     pub init: i64,
     pub waiting: i64,
     pub running: i64,
@@ -13,7 +13,7 @@ pub struct FiberStates {
 /// contains this native build's coroutine constants. No context/Zend pointer or
 /// borrow survives a return into native observer execution.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_fiber(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_fiber(
     stage: *mut u32,
     kind: u32,
     observation: i64,

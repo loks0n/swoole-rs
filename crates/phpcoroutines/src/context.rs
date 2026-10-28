@@ -1,7 +1,11 @@
 //! Common frontend routing and stack accounting over copied native facts only.
 /// Route a whole context query. Native context identity never enters Rust.
 #[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phpcoroutines_context_route(kind: u32, cid: i64, present: u8) -> u32 {
+pub(crate) extern "C" fn swr_v1_phpcoroutines_context_route(
+    kind: u32,
+    cid: i64,
+    present: u8,
+) -> u32 {
     match kind {
         0 => u32::from(present != 0), // active/value admission: none or current
         1 if cid == 0 => 1,           // parent lookup: current
@@ -18,7 +22,7 @@ pub extern "C" fn swr_v1_phpcoroutines_context_route(kind: u32, cid: i64, presen
 /// Signed subtraction is widened: the original defined int64 difference domain
 /// is identical; native signed-overflow inputs are outside the parity claim.
 #[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phpcoroutines_scheduler_policy(
+pub(crate) extern "C" fn swr_v1_phpcoroutines_scheduler_policy(
     kind: u32,
     present: u8,
     enabled: u8,
@@ -37,7 +41,7 @@ pub extern "C" fn swr_v1_phpcoroutines_scheduler_policy(
 }
 
 #[repr(C)]
-pub struct StackState {
+pub(crate) struct StackState {
     pub cid: i64,
     pub current_cid: i64,
     pub usage: usize,
@@ -50,7 +54,7 @@ pub struct StackState {
 /// State is exclusive writable native POD, with requested cid and zeroed stage.
 /// Observation answers the previous request; bytes are the native page byte fact.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_stack_step(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_stack_step(
     state: *mut StackState,
     observation: i64,
     bytes: usize,
@@ -102,7 +106,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_stack_step(
 /// For context kind 0, stage is exclusive writable zero-initialized native POD.
 /// For scalar parent/stack result kinds 1/2, stage may be null.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_context_query(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_context_query(
     kind: u32,
     stage: *mut u32,
     cid: i64,
