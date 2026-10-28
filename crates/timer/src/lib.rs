@@ -875,7 +875,7 @@ mod tests {
             unsafe { swr_v1_timer_ids(q.0, ids.as_mut_ptr(), 2, &raw mut count) },
             OK
         );
-        ids.sort();
+        ids.sort_unstable();
         assert_eq!(ids, [a.id, b.id]);
         let mut out = TimerView::default();
         for id in ids {

@@ -49,6 +49,21 @@ unsafe fn active(row: *mut Row) -> bool {
     // SAFETY: as above.
     unsafe { field::<u8>(row, mem::offset_of!(Row, active)).read_unaligned() != 0 }
 }
+// Compare fixed-width endpoints for short keys. They can overlap each
+// other, but neither load extends beyond either borrowed key span.
+unsafe fn endpoints<T: Copy + Eq>(left: *const u8, right: *const u8, length: usize) -> bool {
+    // Both spans hold `length >= size_of::<T>()` readable bytes.
+    let end = length - mem::size_of::<T>();
+    // SAFETY: as above.
+    let head = unsafe { left.cast::<T>().read_unaligned() };
+    // SAFETY: as above.
+    let other_head = unsafe { right.cast::<T>().read_unaligned() };
+    // SAFETY: as above; the last `size_of::<T>()` bytes start at `end`.
+    let tail = unsafe { left.wrapping_add(end).cast::<T>().read_unaligned() };
+    // SAFETY: as above.
+    let other_tail = unsafe { right.wrapping_add(end).cast::<T>().read_unaligned() };
+    (head == other_head) && (tail == other_tail)
+}
 // Callers pass a live row (see the row invariant).
 unsafe fn matches(row: *mut Row, key: &[u8]) -> bool {
     // SAFETY: as above.
@@ -58,21 +73,6 @@ unsafe fn matches(row: *mut Row, key: &[u8]) -> bool {
         return false;
     }
     let stored = field::<u8>(row, mem::offset_of!(Row, key)).cast_const();
-    // Compare fixed-width endpoints for short keys. They can overlap each
-    // other, but neither load extends beyond either borrowed key span.
-    unsafe fn endpoints<T: Copy + Eq>(left: *const u8, right: *const u8, length: usize) -> bool {
-        // Both spans hold `length >= size_of::<T>()` readable bytes.
-        let end = length - mem::size_of::<T>();
-        // SAFETY: as above.
-        let head = unsafe { left.cast::<T>().read_unaligned() };
-        // SAFETY: as above.
-        let other_head = unsafe { right.cast::<T>().read_unaligned() };
-        // SAFETY: as above; the last `size_of::<T>()` bytes start at `end`.
-        let tail = unsafe { left.wrapping_add(end).cast::<T>().read_unaligned() };
-        // SAFETY: as above.
-        let other_tail = unsafe { right.wrapping_add(end).cast::<T>().read_unaligned() };
-        (head == other_head) && (tail == other_tail)
-    }
     // The stored key holds `length` (<= 63) initialized bytes, equal to `key.len()`.
     match length {
         0 => true,
@@ -147,6 +147,7 @@ pub unsafe extern "C" fn swr_v1_memory_table_layout(
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_sign_loss,
+        clippy::cast_precision_loss,
         reason = "native float row sizing"
     )]
     let all_rows = (rows as f32 * (1.0 + conflict)) as usize;

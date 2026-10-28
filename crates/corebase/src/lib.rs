@@ -128,10 +128,10 @@ pub unsafe extern "C" fn swr_v1_corebase_radix(
     output: *mut u8,
     capacity: usize,
 ) -> usize {
+    const DIGITS: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
     if !(2..=36).contains(&radix) || output.is_null() || capacity < c_ulong::BITS as usize + 1 {
         return usize::MAX;
     }
-    const DIGITS: &[u8; 36] = b"0123456789abcdefghijklmnopqrstuvwxyz";
     let put = |index: usize, byte: u8| {
         // SAFETY: `index < capacity`; `output` is non-null and lends `capacity` writable bytes.
         unsafe { output.wrapping_add(index).write(byte) }
@@ -378,8 +378,8 @@ mod tests {
             [b"foo".to_vec(), b"foo/".to_vec(), b"foo//bar".to_vec()]
         );
         assert_eq!(prefixes(b"a\0/b"), [b"a".to_vec()]);
-        assert!(prefixes(b"a\0/b/").is_empty());
-        assert!(prefixes(b"/").is_empty());
+        assert_eq!(prefixes(b"a\0/b/"), [] as [std::vec::Vec<u8>; 0]);
+        assert_eq!(prefixes(b"/"), [] as [std::vec::Vec<u8>; 0]);
     }
 
     #[test]

@@ -190,6 +190,10 @@ fn native_storage_stride_alignment_preserves_frozen_logical_plan_and_header() {
                 );
                 assert_eq!(logical.row_size, 88 + item);
                 assert_eq!(storage.row_size, (88 + item).next_multiple_of(8));
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "mirrors the native float row sizing"
+                )]
                 let all_rows = (rows as f32 * 1.2) as usize;
                 assert_eq!(
                     storage.total - logical.total,

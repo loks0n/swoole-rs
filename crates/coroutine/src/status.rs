@@ -25,10 +25,10 @@ pub unsafe extern "C" fn swr_v1_coroutine_status_read(
     status: *const CoroutineStatus,
 ) -> CoroutineStatusView {
     // SAFETY: per this function's `# Safety` contract, `status` is live, aligned and initialized.
-    read(unsafe { &*status })
+    read(unsafe { *status })
 }
 
-pub(crate) fn read(status: &CoroutineStatus) -> CoroutineStatusView {
+pub(crate) fn read(status: CoroutineStatus) -> CoroutineStatusView {
     CoroutineStatusView {
         state: status.state,
         code: status.code,

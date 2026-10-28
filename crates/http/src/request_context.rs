@@ -803,6 +803,10 @@ pub unsafe extern "C" fn swr_v2_http_request_chunk(
 mod tests {
     use super::*;
     use std::ptr;
+    #[expect(
+        clippy::unnecessary_box_returns,
+        reason = "the context is the Box that swr_v2_http_request_new hands out"
+    )]
     fn framed(input: &[u8]) -> Box<HttpRequestContext> {
         let owner = unsafe { Box::from_raw(swr_v2_http_request_new()) };
         assert_eq!(owner.observe(), HttpRequestObservation::default());

@@ -35,16 +35,16 @@ pub unsafe extern "C" fn swr_v1_httpbindings_request_option(key: Text, capabilit
 /// Encoding is an initialized borrowed span, readable only for this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_httpbindings_compression(encoding: Text, capabilities: u32) -> i32 {
-    // SAFETY: `encoding` spans `length` initialized bytes (null only when empty) for this call.
-    let Some(encoding) = (unsafe { bytes(encoding) }) else {
-        return -1;
-    };
     const METHODS: [(u32, i32, &[u8]); 4] = [
         (2, 3, b"br"),
         (1, 1, b"gzip"),
         (1, 2, b"deflate"),
         (4, 4, b"zstd"),
     ];
+    // SAFETY: `encoding` spans `length` initialized bytes (null only when empty) for this call.
+    let Some(encoding) = (unsafe { bytes(encoding) }) else {
+        return -1;
+    };
     METHODS
         .iter()
         .find(|&&(capability, _, token)| {
