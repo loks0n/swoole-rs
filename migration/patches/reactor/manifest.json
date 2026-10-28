@@ -98,6 +98,14 @@
         "include/swoole_socket.h",
         "src/reactor/base.cc"
       ]
+    },
+    {
+      "path": "0013-flush.patch",
+      "sha256": "c57d8d63288f03b9b9ffe566b414714e6f44bd231995333cc6b6b61b10aca389",
+      "upstream_paths": [
+        "include/swoole_socket.h",
+        "src/reactor/base.cc"
+      ]
     }
   ]
 }

@@ -23,6 +23,7 @@ pub struct SocketOutput {
     pub close_wait: u8,
     pub nonblock: u8,
     pub ssl_send: u8,
+    pub send_wait: u8,
 }
 
 /// What to append when the data can't all go out now: `length` bytes at `data`, or
@@ -306,6 +307,7 @@ mod tests {
             close_wait: 0,
             nonblock: 0,
             ssl_send: 0,
+            send_wait: 0,
         }
     }
 

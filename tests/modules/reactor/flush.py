@@ -43,13 +43,17 @@ def main():
         for label, text in [('Original',original),('Selected',selected)]:
             name = 'Reactor'+label
             methods = []
+            if label == 'Selected':
+                # The selected bodies' native effects for Rust's flush and drain.
+                start = text.index('namespace {\n// The native effects of Rust')
+                methods.append(text[start:text.index('}  // namespace\n', start) + 16].replace('Reactor', name))
             for signature in ['int Reactor::_writable_callback(', 'void Reactor::drain_write_buffer(']:
                 body, _ = block(text,text.index(signature))
                 methods.append(body.replace('Reactor',name))
             fragments.append('struct '+name+''' {
                 static int _writable_callback('''+name+'''*, Event*);
                 void drain_write_buffer(Socket*);
-                int close('''+name+'''*, Socket *socket) { effects.emplace_back("close"); socket->removed=true; socket->out_buffer->chunks.clear(); return SW_OK; }
+                int close('''+name+'''*, Socket *socket) { effects.emplace_back("close"); socket->removed=true; socket->out_buffer->clear(); return SW_OK; }
                 int trigger_close_event(Event*) { effects.emplace_back("trigger-close"); return SW_OK; }
                 int remove_write_event(Socket*) { effects.emplace_back("remove-write"); return SW_OK; }
             };\n'''+ '\n'.join(methods))
