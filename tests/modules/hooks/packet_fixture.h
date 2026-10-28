@@ -38,6 +38,7 @@ struct Socket {
  void set_err(int e){record("set-error:"+std::to_string(e));errCode=errno=e;}
  void check_return_value(ssize_t result){record("check:"+std::to_string(result));if(result>=0)set_err(0);else if(errCode==0)set_err(errno);}
  bool wait_event(int event){record("wait:"+std::to_string(event));if(!wake_ok)return false;auto *barrier=event==SW_EVENT_READ?recv_barrier:send_barrier;while((*barrier)())record("barrier:again");return true;}
+ bool wait_event(int event,swr_v1_hook_barrier b,void *s){std::function<bool()> f=[b,s]{return b(s);};auto *&slot=event==SW_EVENT_READ?recv_barrier:send_barrier;slot=&f;bool woke=wait_event(event);slot=nullptr;return woke;}
  void set_err(int e,const char *message){record("error:"+std::to_string(e)+":"+message);errno=e;}
  String *get_read_buffer(){record("buffer:get");if(!read_buffer)read_buffer=new String(4);return read_buffer;}
  static void timer_callback(){}
