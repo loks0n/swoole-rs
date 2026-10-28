@@ -102,6 +102,32 @@ fn checked(process: &Process) -> *mut c_void {
     process.worker
 }
 
+/// The worker of a Process object (null before its constructor ran).
+pub(crate) fn worker_of(object: *mut zend_object) -> *mut c_void {
+    // SAFETY: callers pass a live Process object.
+    unsafe { data(object) }.worker
+}
+
+/// `php_swoole_process_set_worker` on a Process object.
+pub(crate) fn set_worker_of(
+    object: *mut zend_object,
+    worker: *mut c_void,
+    enable_coroutine: bool,
+    pipe_type: c_int,
+) {
+    // SAFETY: callers pass a live Process object.
+    set_worker(unsafe { data(object) }, worker, enable_coroutine, pipe_type);
+}
+
+/// A live worker's pid.
+pub(crate) fn worker_pid(worker: *mut c_void) -> i32 {
+    view(worker).pid
+}
+
+pub(crate) fn worker_view(worker: *mut c_void) -> WorkerView {
+    view(worker)
+}
+
 fn view(worker: *mut c_void) -> WorkerView {
     // SAFETY: a live worker.
     unsafe { (host().worker_view)(worker) }
@@ -466,7 +492,7 @@ fn wait(call: &Call) {
 }
 
 /// `php_swoole_msgqueue_key_is_valid` for a signed 32-bit `key_t`.
-fn key_is_valid(key: i64) -> bool {
+pub(crate) fn key_is_valid(key: i64) -> bool {
     if key < 0 {
         key >= i64::from(i32::MIN)
     } else {
