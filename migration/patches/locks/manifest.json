@@ -49,6 +49,13 @@
       "upstream_paths": [
         "src/lock/coroutine_lock.cc"
       ]
+    },
+    {
+      "path": "0008-swoole_lock.patch",
+      "sha256": "824c55c889783cd4718bb811acd05e029b3b25e2035daea50675e5363a98cbd2",
+      "upstream_paths": [
+        "ext-src/swoole_lock.cc"
+      ]
     }
   ]
 }

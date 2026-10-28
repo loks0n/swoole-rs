@@ -1,9 +1,8 @@
 //! Zvals, arrays, properties and constants: the Zend API calls Swoole's classes
 //! make outside argument parsing.
 use crate::sys::{
-    CONST_CS, CONST_PERSISTENT, ZEND_ACC_PUBLIC, add_assoc_long_ex, swr_zend_hash_foreach,
-    zend_array, zend_class_entry, zend_declare_class_constant_long, zend_declare_property_null,
-    zend_object, zend_register_long_constant, zend_string, zend_update_property,
+    add_assoc_long_ex, swr_zend_hash_foreach, zend_array, zend_class_entry,
+    zend_declare_property_null, zend_object, zend_string, zend_update_property,
     zend_update_property_long, zval,
 };
 use std::{
@@ -99,14 +98,6 @@ pub unsafe fn update_property(
     unsafe { zend_update_property(scope, object, name.as_ptr(), name.count_bytes(), value) };
 }
 
-/// `zend_declare_class_constant_long(class, name, value)`, at MINIT.
-/// # Safety
-/// `class` is a class being registered.
-pub unsafe fn declare_class_long(class: *mut zend_class_entry, name: &CStr, value: i64) {
-    // SAFETY: per the caller.
-    unsafe { zend_declare_class_constant_long(class, name.as_ptr(), name.count_bytes(), value) };
-}
-
 /// `zend_declare_property_null(class, name, access)`, at MINIT; `access` is a
 /// `ZEND_ACC_*` visibility.
 /// # Safety
@@ -119,19 +110,6 @@ pub unsafe fn declare_property_null(class: *mut zend_class_entry, name: &CStr, a
     let access = access as c_int;
     // SAFETY: per the caller.
     unsafe { zend_declare_property_null(class, name.as_ptr(), name.count_bytes(), access) };
-}
-
-/// `ZEND_ACC_PUBLIC`, for [`declare_property_null`].
-pub const PUBLIC: u32 = ZEND_ACC_PUBLIC;
-
-/// `REGISTER_LONG_CONSTANT(name, value, CONST_CS | CONST_PERSISTENT)`, at MINIT.
-/// # Safety
-/// MINIT of the module `module`.
-pub unsafe fn register_long_constant(name: &CStr, value: i64, module: c_int) {
-    #[expect(clippy::cast_possible_wrap, reason = "constant flags are small")]
-    let flags = (CONST_CS | CONST_PERSISTENT) as c_int;
-    // SAFETY: per the caller; Zend copies the name.
-    unsafe { zend_register_long_constant(name.as_ptr(), name.count_bytes(), value, flags, module) };
 }
 
 /// `ZVAL_LONG`: a zval holding `value`.

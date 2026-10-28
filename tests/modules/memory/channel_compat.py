@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Compare original/selected Channel source initialization using real pinned headers.
+"""Compare Channel source initialization under the pinned and the hybrid build's headers.
 
 Compiler-only observations. No runtime object, fixture, network or timing workload.
 Physical ABI assertions and source initialization domains are separate gates.
 """
 import argparse
-import hashlib
 import io
 import json
 from pathlib import Path
@@ -18,40 +17,26 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 from tools.harness import run_isolated
-from tools.build_hybrid import apply_patch_verified
+from tools.build_hybrid import hybrid_tree
 from tools.build_upstream import COMMIT as PIN
-
-
-def sha(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def apply_overlays(tree, entries):
-    return [apply_patch_verified(tree, ROOT / 'migration/patches/memory' / entry['path'],
-                                 entry['upstream_paths'], entry['sha256']) for entry in entries]
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
+    parser.add_argument('--archive', type=Path, required=True, help='Rust archive of the hybrid build under test')
     parser.add_argument('--cxx', default='c++')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    manifest = json.loads((ROOT / 'migration/patches/memory/manifest.json').read_text())
-    entries = [p for p in manifest['patches'] if 'include/swoole_channel.h' in p['upstream_paths']]
-    patches = [ROOT / 'migration/patches/memory' / p['path'] for p in entries]
-    header = ROOT / 'native/memory/swoole_rs_memory.h'
-    report = {'passed': False, 'scope': __doc__, 'upstream_commit': PIN,
-              'patches': entries, 'cases': [], 'commands': []}
+    report = {'passed': False, 'scope': __doc__, 'upstream_commit': PIN, 'cases': [], 'commands': []}
     def run(command):
         result = run_isolated(list(map(str, command)), timeout=30)
         report['commands'].append({'argv': list(map(str, command)), 'returncode': result.returncode,
                                    'stdout': result.stdout, 'stderr': result.stderr})
         return result
     try:
-        manifest = json.loads((ROOT / 'migration/patches/memory/manifest.json').read_text())
-        assert manifest['upstream_commit'] == PIN
-        assert all(e['sha256'] == sha(p) for e,p in zip(entries,patches))
+        hybrid_source, hybrid_flags = hybrid_tree(args.archive)
+        report['hybrid_tree'] = str(hybrid_source)
         report['compiler'] = run([*shlex.split(args.cxx), '--version']).stdout
         flags = shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
         archive = subprocess.check_output(['git', '-C', str(args.source), 'archive', PIN, 'include'], timeout=15)
@@ -65,30 +50,31 @@ def main():
             for engine in ['upstream', 'rust']:
                 tree = root / engine
                 tree.mkdir()
-                with tarfile.open(fileobj=io.BytesIO(archive)) as bundle:
-                    for member in bundle:
-                        if member.isfile():
-                            path = tree / member.name
-                            path.parent.mkdir(parents=True, exist_ok=True)
-                            path.write_bytes(bundle.extractfile(member).read())
-                if engine == 'rust':
-                    report['patch_applications'] = apply_overlays(tree, entries)
-                    (tree / 'include/swoole_rs_memory.h').write_bytes(header.read_bytes())
+                if engine == 'upstream':
+                    with tarfile.open(fileobj=io.BytesIO(archive)) as bundle:
+                        for member in bundle:
+                            if member.isfile():
+                                path = tree / member.name
+                                path.parent.mkdir(parents=True, exist_ok=True)
+                                path.write_bytes(bundle.extractfile(member).read())
+                    headers = ['-DSWOOLE_RS_MEMORY=1', '-I' + str(tree / 'include')]
+                else:
+                    # The hybrid build's fully patched headers, with its module switches.
+                    headers = hybrid_flags
                 for name, standard, definition in cases:
                     source = tree / (name + '.cc')
                     source.write_text(prefix + definition + suffix)
-                    result = run([*shlex.split(args.cxx), '-std=' + standard, '-DSWOOLE_RS_MEMORY=1',
-                                  '-I' + str(tree / 'include'), *flags, '-fsyntax-only', source])
+                    result = run([*shlex.split(args.cxx), '-std=' + standard, *headers, *flags, '-fsyntax-only', source])
                     report['cases'].append({'engine': engine, 'case': name, 'standard': standard,
                                             'passed': result.returncode == 0, 'command_index': len(report['commands'])-1})
                 if engine == 'rust':
-                    command=[*shlex.split(args.cxx), '-std=c++14', '-I'+str(tree/'include'), *flags,
-                             '-fsyntax-only', tree/'flat.cc']
+                    includes = [flag for flag in hybrid_flags if flag.startswith('-I')]
+                    command=[*shlex.split(args.cxx), '-std=c++14', *includes, *flags, '-fsyntax-only', tree/'flat.cc']
                     rejected=run(command)
                     report['missing_feature_rejected']=(rejected.returncode != 0 and
                         'Memory overlay requires --enable-swoole-rs-memory' in rejected.stderr)
-                    (tree/'include/config.h').write_text('#define SWOOLE_RS_MEMORY 1\n')
-                    configured=run([*command[:-1], '-DHAVE_CONFIG_H', command[-1]])
+                    (tree/'config.h').write_text(''.join('#define ' + flag[2:] + ' 1\n' for flag in hybrid_flags if flag.startswith('-D')))
+                    configured=run([*command[:-1], '-I'+str(tree), '-DHAVE_CONFIG_H', command[-1]])
                     report['config_header_feature_accepted']=configured.returncode==0
             report['passed'] = (all(c['passed'] for c in report['cases']) and
                                 report.get('missing_feature_rejected') is True and

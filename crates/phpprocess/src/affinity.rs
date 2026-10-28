@@ -118,24 +118,7 @@ fn get_affinity(call: &Call) {
     unsafe { swr_v1_phpprocess_cpu_set_to_array(call.value(), (&raw const set).cast()) };
 }
 
-/// # Safety
-/// Called by Zend with a live frame and return slot.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn zim_swoole_process_setAffinity(
-    frame: *mut swoole_rs_zend::sys::zend_execute_data,
-    value: *mut zval,
-) {
-    // SAFETY: per Zend's handler contract.
-    set_affinity(&unsafe { Call::new(frame, value) });
-}
-
-/// # Safety
-/// Called by Zend with a live frame and return slot.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn zim_swoole_process_getAffinity(
-    frame: *mut swoole_rs_zend::sys::zend_execute_data,
-    value: *mut zval,
-) {
-    // SAFETY: per Zend's handler contract.
-    get_affinity(&unsafe { Call::new(frame, value) });
+swoole_rs_zend::handlers! {
+    zim_swoole_process_setAffinity => set_affinity;
+    zim_swoole_process_getAffinity => get_affinity;
 }

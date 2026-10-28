@@ -2,12 +2,12 @@
 """Actual original/patched protocol TU comparison. No network listener or timing."""
 import argparse
 from datetime import datetime, timezone
-import hashlib
 import json
 import os
 from pathlib import Path
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import uuid
@@ -16,10 +16,8 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 from tools.harness import run_isolated
 from tools.native_core import library_identity, verify_loader_output, test_outcome
-
-
-def digest(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+from tools.build_hybrid import hybrid_tree
+from tools.build_upstream import COMMIT
 
 
 def main():
@@ -27,6 +25,7 @@ def main():
     parser.add_argument('--source', type=Path, required=True, help='Matching configured pinned native tree')
     parser.add_argument('--reference', type=Path, required=True, help='Pinned Git reference checkout, read-only')
     parser.add_argument('--library', type=Path, required=True, help='Existing unselected native full-core library')
+    parser.add_argument('--hybrid-library', type=Path, required=True, help='Native core library built from the hybrid tree')
     parser.add_argument('--openssl', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--command-timeout', type=int, default=90, help='Explicit bounded per-command correctness deadline, 1..300 seconds')
@@ -37,7 +36,7 @@ def main():
     modes.add_argument('--benchmark-check', action='store_true', help='Prepare optimized actual-TU workloads, execute checks only; never measure')
     modes.add_argument('--peers', action='store_true', help='MemoryBIO TLS verification/ALPN/shutdown and actual DTLS listen fixture')
     parser.add_argument('--gtest-prefix', type=Path, help='Existing GoogleTest prefix for unchanged ssl.* originals')
-    parser.add_argument('--archive', type=Path, help='Published selected Rust archive; otherwise compile owned source')
+    parser.add_argument('--archive', type=Path, required=True, help='Rust archive of a hybrid build, whose tree is the patched side')
     parser.add_argument('--sanitize', action='store_true', help='Native ASan/UBSan only, Rust instrumented separately')
     args = parser.parse_args()
     if args.crypto_operation!='client-ca' and not args.crypto_allocation:
@@ -46,12 +45,11 @@ def main():
         parser.error('--command-timeout must be between1 and300 seconds')
     if args.benchmark_check and (args.peers or args.sanitize or args.gtest_prefix):
         parser.error('--benchmark-check requires unsanitized optimized module-only compilation')
-    if args.benchmark_check and not args.archive:
-        parser.error('--benchmark-check requires an actual selected FFI archive')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     attempt = args.output.parent.resolve() / ('tls-' + uuid.uuid4().hex);attempt.mkdir()
     driver=ROOT/'tests/modules/tls'/('crypto_allocation.cc' if args.crypto_allocation else 'allocation.cc' if args.allocation else 'benchmark.cc' if args.benchmark_check else 'peers.cc' if args.peers else 'driver.cc')
-    source = args.source.resolve();library = args.library.resolve();openssl = args.openssl.resolve()
+    source = args.source.resolve();openssl = args.openssl.resolve()
+    libraries = {'original': args.library.resolve(), 'rust': args.hybrid_library.resolve()}
     report = dict(passed=False, utc=datetime.now(timezone.utc).isoformat(), attempt=str(attempt),
         commands=[], command_timeout_seconds=args.command_timeout, native_sanitizers=args.sanitize, rust_sanitizers=False,
         scope='Complete actual protocol TUs, initialized SSLContext/config masks and actual DTLS BIO callbacks; no handshake/PHP/network/performance claim.',
@@ -64,8 +62,6 @@ def main():
     report['removed_tracing'] = {k: env.pop(k) for k in list(env) if k.startswith(('LD_DEBUG','LD_TRACE_','DYLD_PRINT_'))}
     env['GTEST_COLOR'] = 'no'
     system = platform.system();selection = 'DYLD_LIBRARY_PATH' if system == 'Darwin' else 'LD_LIBRARY_PATH'
-    env[selection] = str(library.parent)
-    env['SWR_TLS_NATIVE_LIBRARY'] = str(library)
     env['SWR_TLS_REFERENCE'] = str(args.reference.resolve())
     env['SWR_TLS_CRYPTO_OPERATION'] = args.crypto_operation
     if args.sanitize:
@@ -121,50 +117,38 @@ def main():
             report['measurement_executed']=False
         if args.peers:
             report['scope']='Complete original/patched protocol TUs, callback-driven MemoryBIO TLS1.2/1.3 trust/hostname/ALPN/data/shutdown and native DTLS listen/cookie/datagram socketpair peer; no IP Socket/PHP/packetloss/cancel/performance claim'
-        expected = library_identity(library);report['native_library_before'] = expected
-        manifest = ROOT / 'migration/patches/tls/manifest.json'
-        m = json.loads(manifest.read_text());pin = m['upstream_commit'];report['upstream_commit'] = pin
+        expected = {label: library_identity(path) for label, path in libraries.items()}
+        report['native_library_before'] = expected
+        pin = COMMIT;report['upstream_commit'] = pin
         original = attempt/'original';patched=attempt/'patched'
         for folder in [original,patched]: (folder/'src/protocol').mkdir(parents=True)
         for name in ['ssl.cc','dtls.cc']:
-            # Pinned Git content, never mutate or trust arbitrary scratch source.
+            # Pinned Git content for the original side.
             result = run(['git','-C',args.reference.resolve(),'show',pin+':src/protocol/'+name])
-            for folder in [original,patched]: (folder/'src/protocol'/name).write_text(result.stdout)
-        # git apply otherwise silently filters paths below an enclosing worktree.
-        # Give this disposable tree its own explicit Git root, then verify effects.
-        run(['git','init','--quiet',patched])
-        top=run(['git','-C',patched,'rev-parse','--show-toplevel']).stdout.strip()
-        if Path(top).resolve()!=patched.resolve(): raise ValueError('Foreign patch worktree')
-        for p in m['patches']:
-            path=ROOT/'migration/patches/tls'/p['path']
-            if digest(path)!=p['sha256']: raise ValueError('Patch hash mismatch')
-            run(['git','apply','--check',path],cwd=patched)
-            run(['git','apply',path],cwd=patched)
+            (original/'src/protocol'/name).write_text(result.stdout)
+        # The patched side is the hybrid build's fully patched tree, headers included.
+        hybrid_source, hybrid_flags = hybrid_tree(args.archive)
+        report['hybrid_tree'] = str(hybrid_source)
+        for name in ['ssl.cc','dtls.cc']:
+            shutil.copyfile(hybrid_source/'src/protocol'/name, patched/'src/protocol'/name)
         for name, required in [('ssl.cc',['context_create','set_capath']),('dtls.cc',['read','control','listen'])]:
             old=original/'src/protocol'/name;new=patched/'src/protocol'/name
             if old.read_bytes()==new.read_bytes() or any('swr_v1_tls_'+fn+'(' not in new.read_text() for fn in required):
                 raise ValueError('Overlay skipped or missing actual caller: '+name)
 
-        archive=args.archive.resolve() if args.archive else attempt/'libtls.a'
-        if not args.archive: run(['rustc','--edition=2024','--crate-type','staticlib','-C','opt-level=2',ROOT/'crates/tls/src/lib.rs','-o',archive])
+        archive=args.archive.resolve()
         # Mac two-level DSO binding otherwise leaves Socket::ssl_create using the
         # DSO's separate ex_data authority while these actual protocol TUs own
-        # another. Compile the unchanged pinned real caller in both comparators;
-        # no protected source patch or stub and no full native-world rebuild.
+        # another. Compile each side's own socket.cc into its driver.
         # Linux binds flat: the executable's protocol TUs already interpose the DSO's, and a second
         # copy of socket.cc there is an ODR violation that ASan aborts on.
-        socket_sources=[]
+        socket_sources={'original':[],'rust':[]}
         if sys.platform=='darwin' and (args.peers or (args.crypto_allocation and args.crypto_operation=='dtls-init')):
-            socket_source=attempt/'native-socket.cc'
-            socket_source.write_text(run(['git','-C',args.reference.resolve(),'show',pin+':src/network/socket.cc']).stdout)
-            socket_sources=[socket_source]
-            for name in ['swoole.h','swoole_ssl.h','swoole_dtls.h','swoole_socket.h']:
-                header=source/'include'/name
-                pinned=run(['git','-C',args.reference.resolve(),'show',pin+':include/'+name]).stdout.encode()
-                if hashlib.sha256(pinned).hexdigest()!=digest(header):
-                    raise ValueError('Native Socket caller public header differs from pin: '+name)
-            report['native_socket_caller']={'source':str(socket_source),
-                'pin':pin,'upstream_path':'src/network/socket.cc','backend':'unchanged native caller in both engines',
+            for folder in [original,patched]: (folder/'src/network').mkdir()
+            (original/'src/network/socket.cc').write_text(run(['git','-C',args.reference.resolve(),'show',pin+':src/network/socket.cc']).stdout)
+            shutil.copyfile(hybrid_source/'src/network/socket.cc', patched/'src/network/socket.cc')
+            socket_sources={label:[folder/'src/network/socket.cc'] for label,folder in [('original',original),('rust',patched)]}
+            report['native_socket_caller']={'pin':pin,'upstream_path':'src/network/socket.cc','backend':"each side's own Socket caller",
                 'purpose':'One protocol/ex_data authority with actual native Socket caller; full DSO supplies remaining dependencies',
                 'excluded':'No selected M15 Socket policy or full integrated PHP coverage claim'}
         outputs={}
@@ -175,12 +159,15 @@ def main():
             report['original_google_tests'] = {}
             env['SWR_TLS_REFERENCE'] = str(args.reference.resolve())
         for label,folder in [('original',original),('rust',patched)]:
+            library=libraries[label]
+            env[selection]=str(library.parent);env['SWR_TLS_NATIVE_LIBRARY']=str(library)
             executable=folder/'driver'
-            flags=['-std=c++14','-O2','-DHAVE_CONFIG_H','-I'+str(source),'-I'+str(source/'include'),'-I'+str(openssl/'include')]
+            tree=source if label=='original' else hybrid_source
+            headers=['-I'+str(source/'include')] if label=='original' else hybrid_flags
+            flags=['-std=c++14','-O2','-DHAVE_CONFIG_H','-I'+str(tree),*headers,'-I'+str(openssl/'include')]
             if args.sanitize: flags+=['-fsanitize=address,undefined','-fno-omit-frame-pointer','-g']
-            if label=='rust': flags+=['-DSWOOLE_RS_TLS','-I'+str(ROOT/'native/tls')]
             link=['-L'+str(openssl/'lib'),'-lssl','-lcrypto',str(library),'-Wl,-rpath,'+str(library.parent),'-pthread']
-            run(['c++',*flags,driver,folder/'src/protocol/ssl.cc',folder/'src/protocol/dtls.cc',*socket_sources,*([archive]if label=='rust'else []),*link,'-o',executable])
+            run(['c++',*flags,driver,folder/'src/protocol/ssl.cc',folder/'src/protocol/dtls.cc',*socket_sources[label],*([archive]if label=='rust'else []),*link,'-o',executable])
             report[label+'_caller_proof']=verify_calls(executable,label=='rust')
             if args.peers:
                 binding=json.loads(run([executable,'--callback-binding']).stdout)
@@ -197,14 +184,14 @@ def main():
                     'scope':'Deliberate native contract correction, not Rust conversion or original callback-control parity'}]
             if args.gtest_prefix:
                 gtest=args.gtest_prefix.resolve();test_binary=folder/'original-tests'
-                run(['c++',*flags,'-I'+str(source/'core-tests/include'),'-I'+str(gtest/'include'),original_tests,
+                run(['c++',*flags,'-I'+str(tree/'core-tests/include'),'-I'+str(gtest/'include'),original_tests,
                      ROOT/'tests/modules/tls/original_main.cc',folder/'src/protocol/ssl.cc',folder/'src/protocol/dtls.cc',
                      *([archive]if label=='rust'else []),gtest/'lib/libgtest.a',*link,'-o',test_binary])
                 report[label+'_original_caller_proof']=verify_calls(test_binary,label=='rust')
                 setting='DYLD_PRINT_LIBRARIES' if system=='Darwin' else 'LD_TRACE_LOADED_OBJECTS'
                 probe=run([test_binary,'--gtest_list_tests'],extra={setting:'1'})
                 crypto=crypto_snapshot(probe.stdout+probe.stderr)
-                report[label+'_original_loader']=verify_loader_output(probe.stdout+probe.stderr,expected,system)
+                report[label+'_original_loader']=verify_loader_output(probe.stdout+probe.stderr,expected[label],system)
                 report[label+'_original_crypto_before']=crypto
                 report['original_google_tests'][label]={}
                 for case in ['destroy','get_error','password']:
@@ -218,7 +205,7 @@ def main():
                     report['original_google_tests'][label][case]={**outcome,'xml':str(xml)}
             setting='DYLD_PRINT_LIBRARIES'if system=='Darwin'else'LD_TRACE_LOADED_OBJECTS'
             probe=run([executable,'--identify'],extra={setting:'1'})
-            report[label+'_loader']=verify_loader_output(probe.stdout+probe.stderr,expected,system)
+            report[label+'_loader']=verify_loader_output(probe.stdout+probe.stderr,expected[label],system)
             crypto=crypto_snapshot(probe.stdout+probe.stderr)
             report[label+'_crypto_before']=crypto
             result=run([executable]);outputs[label]=result.stdout
@@ -233,7 +220,7 @@ def main():
         report['unknown_warning_counts'] = {k: v.count('WARNING\tdtls::BIO_ctrl(): unknown cmd: -12345') for k,v in normalized.items()}
         if not args.peers and not args.allocation and not args.crypto_allocation and not args.benchmark_check and set(report['unknown_warning_counts'].values()) != {4}: raise ValueError('Missing/extra expected unknown-command warnings')
         if normalized['original']!=normalized['rust']: raise ValueError('Actual TU result mismatch; both outputs retained')
-        report['native_library_after']=library_identity(library)
+        report['native_library_after']={label: library_identity(path) for label, path in libraries.items()}
         if report['native_library_after']!=expected: raise ValueError('Native library changed')
         if args.benchmark_check:
             report['prepared_commands']={label:[str(attempt/('patched' if label=='rust' else label)/'driver'),'--measure'] for label in ['original','rust']}

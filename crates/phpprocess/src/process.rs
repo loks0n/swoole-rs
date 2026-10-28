@@ -12,9 +12,8 @@ use std::{
     sync::atomic::{AtomicU32, Ordering},
 };
 use swoole_rs_zend::{
-    Call, Class, E_ERROR, E_WARNING, Object, PUBLIC, add_assoc_long, class_name,
-    declare_class_long, declare_property_null, each_value, message, object_of,
-    register_long_constant, set_object,
+    Call, Class, E_ERROR, E_WARNING, Object, add_assoc_long, class_name, declare_property_null,
+    each_value, handlers, message, object_of, register_long_constant, set_object,
     sys::{
         _zend_bailout, IS_NULL, ZEND_ACC_NOT_SERIALIZABLE, ZEND_ACC_PRIVATE, swr_zend_emalloc,
         swr_zend_module_loaded, swr_zend_object_addref, swr_zend_object_release,
@@ -22,8 +21,8 @@ use swoole_rs_zend::{
         zend_get_executed_filename, zend_hash_str_find, zend_is_true, zend_object,
         zend_object_handlers, zend_read_property, zend_string, zval, zval_get_string_func,
     },
-    throw_error, throw_exception, type_of, unset_property_deny, update_property,
-    update_property_long,
+    throw_constructed_twice, throw_error, throw_exception, type_of, unset_property_deny,
+    update_property, update_property_long,
 };
 
 /// `Swoole\Process::IPC_NOWAIT` (`MSGQUEUE_NOWAIT`).
@@ -143,7 +142,6 @@ pub unsafe extern "C" fn swr_v1_phpprocess_minit(
     install(table);
     // SAFETY: MINIT, with the caller's table.
     unsafe { PROCESS.register(c"Swoole\\Process", methods, configure) };
-    let class = entry();
     for (name, value) in [
         (c"IPC_NOWAIT", IPC_NOWAIT),
         (c"PIPE_MASTER", 1),
@@ -154,15 +152,15 @@ pub unsafe extern "C" fn swr_v1_phpprocess_minit(
         (c"PIPE_TYPE_STREAM", PIPE_TYPE_STREAM),
         (c"PIPE_TYPE_DGRAM", PIPE_TYPE_DGRAM),
     ] {
-        // SAFETY: the class just registered.
-        unsafe { declare_class_long(class, name, value) };
+        // SAFETY: MINIT, after `register`.
+        unsafe { PROCESS.constant_long(name, value) };
     }
     for name in [c"pipe", c"msgQueueId", c"msgQueueKey", c"pid", c"id"] {
         // SAFETY: as above.
-        unsafe { declare_property_null(class, name, PUBLIC) };
+        unsafe { PROCESS.property_null(name) };
     }
     // SAFETY: as above.
-    unsafe { declare_property_null(class, c"callback", ZEND_ACC_PRIVATE) };
+    unsafe { declare_property_null(entry(), c"callback", ZEND_ACC_PRIVATE) };
     // SAFETY: MINIT; the module registry is populated.
     if !unsafe { swr_zend_module_loaded(c"pcntl".as_ptr(), 5) } {
         for (name, value) in signal_constants() {
@@ -174,7 +172,7 @@ pub unsafe extern "C" fn swr_v1_phpprocess_minit(
     unsafe { register_long_constant(c"SWOOLE_MSGQUEUE_ORIENT", MSGQUEUE_ORIENT, module) };
     // SAFETY: as above.
     unsafe { register_long_constant(c"SWOOLE_MSGQUEUE_BALANCE", MSGQUEUE_BALANCE, module) };
-    class
+    entry()
 }
 
 /// `SW_SET_CLASS_NOT_SERIALIZABLE`, clone and unset denied, custom object.
@@ -360,7 +358,10 @@ fn construct(call: &Call) {
         call.set_bool(false);
     };
     if !process.worker.is_null() {
-        return refuse(format!("Constructor of {name} can only be called once"));
+        // SAFETY: in a handler, with `$this`.
+        unsafe { throw_constructed_twice(object) };
+        call.set_bool(false);
+        return;
     }
     // SAFETY: C++'s reader of an ini flag.
     if !unsafe { (host.cli)() } {
@@ -1075,23 +1076,7 @@ fn get_priority(call: &Call) {
     call.set_long(i64::from(priority));
 }
 
-macro_rules! methods {
-    ($($name:ident => $body:path;)*) => {$(
-        /// # Safety
-        /// Called by Zend with a live frame and return slot.
-        #[unsafe(no_mangle)]
-        pub unsafe extern "C" fn $name(
-            frame: *mut swoole_rs_zend::sys::zend_execute_data,
-            value: *mut zval,
-        ) {
-            // SAFETY: per Zend's handler contract.
-            let call = unsafe { Call::new(frame, value) };
-            $body(&call);
-        }
-    )*};
-}
-
-methods! {
+handlers! {
     zim_swoole_process___construct => construct;
     zim_swoole_process___destruct => destruct;
     zim_swoole_process_wait => wait;

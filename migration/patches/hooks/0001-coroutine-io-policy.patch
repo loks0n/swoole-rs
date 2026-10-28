@@ -976,6 +976,146 @@ index cffe31a..803879e 100644
 +    swr_v1_hook_socket_ops lifecycle_ops();
 +
    public:
+diff --git a/include/swoole_iouring.h b/include/swoole_iouring.h
+index 060a261..577092d 100644
+--- a/include/swoole_iouring.h
++++ b/include/swoole_iouring.h
+@@ -16,2 +16,3 @@
+ 
++
+ #pragma once
+@@ -21,3 +22,3 @@
+ #ifdef SW_USE_IOURING
+-#include <liburing.h>
++#include "swoole_rs_uring.h"
+ 
+@@ -27,3 +28,3 @@ enum swIouringFlag {
+     SW_IOURING_DEFAULT = 0,
+-    SW_IOURING_SQPOLL = IORING_SETUP_SQPOLL,
++    SW_IOURING_SQPOLL = 1U << 1,  // IORING_SETUP_SQPOLL
+ };
+@@ -31,15 +32,6 @@ enum swIouringFlag {
+ namespace swoole {
+-
+-struct IouringEvent;
+-
+-struct IouringTimeout {
+-    int64_t tv_sec;
+-    int64_t tv_nsec;
+-};
+-
++// The ring, its queues and the requests are Rust's (swoole_rs_uring.h); this keeps
++// the reactor registration, the coroutine switches and the log lines.
+ class Iouring {
+-    uint32_t task_num = 0;
+-    uint32_t entries = SW_IOURING_QUEUE_SIZE;
+-    io_uring ring;
+-    std::queue<IouringEvent *> waiting_tasks;
++    swr_v1_uring *engine = nullptr;
+     network::Socket *ring_socket = nullptr;
+@@ -47,23 +39,15 @@ class Iouring {
+ 
+-    IouringEvent *ready_events[SW_IOURING_QUEUE_SIZE];
+-    io_uring_cqe *cqes[SW_IOURING_QUEUE_SIZE];
+-
+     explicit Iouring(Reactor *reactor_);
+-    bool ready() const;
+-    void yield(IouringEvent *event);
+-    void resume(IouringEvent *event);
+-    bool cancel(IouringEvent *prev_event);
+-    void dispatch(IouringEvent *event);
+-    void submit(bool immediately);
+-    bool wakeup();
+-
+-    io_uring_sqe *alloc_sqe() {
+-        return io_uring_get_sqe(&ring);
+-    }
+-
+     static Iouring *get_instance();
+-    static ssize_t execute(IouringEvent *event);
+-    static const char *get_opcode_name(enum io_uring_op opcode);
++    static void *current();
++    static swr_v1_uring *instance();
++    static void yield(void *coroutine, void *event);
++    static void resume(void *coroutine);
++    static bool event_running();
++    static void submit();
++    static void dispatch(int ring_fd);
+ 
+   public:
++    static const swr_v1_uring_host host;
++
+     ~Iouring();
+@@ -71,3 +55,3 @@ class Iouring {
+     bool is_empty_waiting_tasks() const {
+-        return waiting_tasks.empty();
++        return swr_v1_uring_waiting_num(engine) == 0;
+     }
+@@ -75,15 +59,3 @@ class Iouring {
+     uint64_t get_task_num() const {
+-        return task_num;
+-    }
+-
+-    uint32_t get_sq_space_left() const {
+-        return io_uring_sq_space_left(&ring);
+-    }
+-
+-    uint32_t get_sq_capacity() const {
+-        return ring.sq.ring_entries;
+-    }
+-
+-    uint32_t get_sq_used() const {
+-        return get_sq_capacity() - get_sq_space_left();
++        return swr_v1_uring_task_num(engine);
+     }
+@@ -91,3 +63,3 @@ class Iouring {
+     size_t get_waiting_task_num() const {
+-        return waiting_tasks.size();
++        return swr_v1_uring_waiting_num(engine);
+     }
+@@ -95,3 +67,3 @@ class Iouring {
+     float get_sq_usage_percent() const {
+-        return (float) get_sq_used() / get_sq_capacity() * 100.0f;
++        return swr_v1_uring_sq_usage_percent(engine);
+     }
+@@ -104,3 +76,2 @@ class Iouring {
+     static int listen(int fd, int backlog);
+-    static int sleep(int tv_sec, int tv_nsec, int flags = 0);
+     static int sleep(double seconds);
+@@ -144,3 +115,2 @@ class Iouring {
+ 
+-    static std::unordered_map<std::string, int> list_all_opcode();
+     static int callback(Reactor *reactor, Event *event);
+diff --git a/include/swoole_uring_socket.h b/include/swoole_uring_socket.h
+index 06e9f5b..7f49cb6 100644
+--- a/include/swoole_uring_socket.h
++++ b/include/swoole_uring_socket.h
+@@ -20,2 +20,3 @@
+ #include "swoole_coroutine_socket.h"
++#include "swoole_iouring.h"
+ 
+@@ -27,8 +28,15 @@ class UringSocket : public Socket {
+ 
+-    bool ssl_bio_write();
+-    bool ssl_bio_read();
+-    bool ssl_bio_prepare();
+-    bool ssl_bio_perform(int rc, const char *fn);
+-    ssize_t ssl_recv(void *_buf, size_t _n);
+-    ssize_t ssl_send(const void *_buf, size_t _n);
++#ifdef SW_USE_IOURING
++    // The TLS transport is Rust's (swoole_rs_uring.h); these apply its errors.
++    static const swr_v1_uring_tls_host tls_host;
++    static void tls_set_err(void *socket, int code);
++    static void tls_check_failure(void *socket);
++    static char *tls_buffer(void *socket, bool write, size_t *size);
++    static void ssl_bio_perform(void *socket, const char *fn, int error, unsigned long code);
++
++    swr_v1_uring_tls tls() {
++        return {&tls_host, this, socket->ssl, rbio, wbio, socket->get_fd(), socket->read_timeout, socket->write_timeout};
++    }
++#endif
++
+     ssize_t ssl_readv(network::IOVector *io_vector);
 diff --git a/src/coroutine/file.cc b/src/coroutine/file.cc
 index 587f524..aefc101 100644
 --- a/src/coroutine/file.cc
@@ -1549,21 +1689,251 @@ index 964a906..18870bd 100644
 +    return swr_v1_hook_access(pathname, mode, hook_offload());
  }
 diff --git a/src/coroutine/iouring.cc b/src/coroutine/iouring.cc
-index 63ca2f2..f0514c6 100644
+index 63ca2f2..2e240ee 100644
 --- a/src/coroutine/iouring.cc
 +++ b/src/coroutine/iouring.cc
-@@ -21,2 +21,7 @@
+@@ -21,34 +21,11 @@
  #include "swoole_iouring.h"
+-#include "swoole_coroutine_system.h"
+-
+-#ifdef SW_USE_IOURING
+-#ifdef HAVE_IOURING_FUTEX
+-#ifndef FUTEX2_SIZE_U32
+-#define FUTEX2_SIZE_U32 0x02
+-#endif
+-#include <linux/futex.h>
 +#ifndef SWOOLE_RS_HOOKS
 +#error "Hooks overlay requires --enable-swoole-rs-hooks"
-+#endif
+ #endif
 +#include "swoole_rs_hooks.h"
+ 
+-#if IO_URING_VERSION_MAJOR < 2 || (IO_URING_VERSION_MAJOR == 2 && IO_URING_VERSION_MINOR < 8)
+-#error "The version of liburing required must be greater than or equal to 2.8."
+-#endif
+-
+-#include <cmath>
+-
+-#define DOUBLE_TO_TIMESPEC(seconds, ts)                                                                                \
+-    do {                                                                                                               \
+-        double __int_part;                                                                                             \
+-        double __frac_part = modf((seconds), &__int_part);                                                             \
+-        (ts)->tv_sec = (__kernel_time64_t) __int_part;                                                                 \
+-        (ts)->tv_nsec = (long long) (__frac_part * 1000000000.0);                                                      \
+-        if ((ts)->tv_nsec >= 1000000000) {                                                                             \
+-            (ts)->tv_sec += 1;                                                                                         \
+-            (ts)->tv_nsec = 0;                                                                                         \
+-        }                                                                                                              \
+-    } while (0)
+-
+-#define TIMEOUT_EVENT (-1)
++#include "swoole_coroutine_system.h"
+ 
++#ifdef SW_USE_IOURING
+ using swoole::Coroutine;
+-using swoole::coroutine::System;
+ 
+@@ -56,47 +33,32 @@ namespace swoole {
+ //-------------------------------------------------------------------------------
+-enum IouringEventFlag {
+-    SW_URING_TIMEOUT = 1U << 0,
+-};
+-
+-struct IouringEvent {
+-    Coroutine *coroutine;
+-    io_uring_sqe data;
+-    ssize_t result;
+-    IouringTimeout timeout;
+-    int flags;
+-
+-    void set_timeout(double seconds) {
+-        if (seconds > 0) {
+-            flags |= SW_URING_TIMEOUT;
+-            DOUBLE_TO_TIMESPEC(seconds, &timeout);
+-        }
+-    }
+-};
++#ifdef MSG_SPLICE_PAGES
++static constexpr int splice_pages = MSG_SPLICE_PAGES;
++#else
++static constexpr int splice_pages = 0;
++#endif
 +
- #include "swoole_coroutine_system.h"
-@@ -248,11 +253,6 @@ bool Iouring::wakeup() {
-             auto event = ready_events[i];
-+            auto completion = swr_v1_hook_completion(event->result, ECANCELED, ETIMEDOUT);
-             if (event->result < 0) {
++const swr_v1_uring_host Iouring::host = {current, instance, yield, resume, event_running, submit, dispatch};
+ 
+ Iouring::Iouring(Reactor *_reactor) {
+-    const int liburing_runtime_major = io_uring_major_version();
+-    const int liburing_runtime_minor = io_uring_minor_version();
+-    if (liburing_runtime_major != IO_URING_VERSION_MAJOR || liburing_runtime_minor < IO_URING_VERSION_MINOR) {
++    reactor = _reactor;
++    swr_v1_uring_config config{SwooleG.iouring_entries, SwooleG.iouring_flag, SwooleG.iouring_workers, false, false};
++#ifdef HAVE_IOURING_FUTEX
++    config.probe_futex = true;
++#endif
++#ifdef HAVE_IOURING_FTRUNCATE
++    config.probe_ftruncate = true;
++#endif
++    auto opened = swr_v1_uring_open(config, &host);
++    engine = opened.uring;
++    switch (opened.status) {
++    case 1:
+         swoole_error("unsupported liburing version: Swoole requires liburing %d.%d or later with ABI major %d, but "
+                      "liburing %d.%d was loaded at runtime",
+-                     IO_URING_VERSION_MAJOR,
+-                     IO_URING_VERSION_MINOR,
+-                     IO_URING_VERSION_MAJOR,
+-                     liburing_runtime_major,
+-                     liburing_runtime_minor);
+-    }
+-
+-    reactor = _reactor;
+-    if (SwooleG.iouring_entries > 0) {
+-        uint32_t i = 6;
+-        while ((1U << i) < SwooleG.iouring_entries) {
+-            i++;
+-        }
+-        entries = 1 << i;
+-    }
+-
+-    int ret =
+-        io_uring_queue_init(entries, &ring, (SwooleG.iouring_flag == IORING_SETUP_SQPOLL ? IORING_SETUP_SQPOLL : 0));
+-    if (ret < 0) {
+-        errno = -ret;
++                     opened.major,
++                     opened.minor,
++                     opened.major,
++                     opened.runtime_major,
++                     opened.runtime_minor);
++        break;
++    case 2:
+         swoole_sys_error("Failed to initialize io_uring instance; grant the process permission to use io_uring "
+@@ -104,37 +66,19 @@ Iouring::Iouring(Reactor *_reactor) {
+         return;
+-    }
+-
+-#if defined(HAVE_IOURING_FUTEX) || defined(HAVE_IOURING_FTRUNCATE)
+-    io_uring_probe *probe = io_uring_get_probe_ring(&ring);
+-    if (!probe) {
++    case 3:
+         swoole_error("Failed to query the io_uring opcodes supported by the running kernel");
+-    }
+-
+-#ifdef HAVE_IOURING_FUTEX
+-    if (!io_uring_opcode_supported(probe, IORING_OP_FUTEX_WAIT) ||
+-        !io_uring_opcode_supported(probe, IORING_OP_FUTEX_WAKE)) {
++        break;
++    case 4:
+         swoole_error("The running kernel does not support IORING_OP_FUTEX_WAIT and IORING_OP_FUTEX_WAKE");
+-    }
+-#endif
+-
+-#ifdef HAVE_IOURING_FTRUNCATE
+-    if (!io_uring_opcode_supported(probe, IORING_OP_FTRUNCATE)) {
++        break;
++    case 5:
+         swoole_error("The running kernel does not support IORING_OP_FTRUNCATE");
+-    }
+-#endif
+-
+-    io_uring_free_probe(probe);
+-#endif
+-
+-    if (SwooleG.iouring_workers > 0) {
+-        uint32_t workers[2] = {SwooleG.iouring_workers, SwooleG.iouring_workers};
+-        ret = io_uring_register_iowq_max_workers(&ring, workers);
+-        if (ret < 0) {
+-            errno = -ret;
+-            swoole_sys_error("Failed to set the maximum of io_uring async workers");
+-            return;
+-        }
++        break;
++    case 6:
++        swoole_sys_error("Failed to set the maximum of io_uring async workers");
++        return;
++    default:
++        break;
+     }
+ 
+-    ring_socket = make_socket(ring.ring_fd, SW_FD_IOURING);
++    ring_socket = make_socket(swr_v1_uring_fd(engine), SW_FD_IOURING);
+     ring_socket->object = this;
+@@ -160,6 +104,6 @@ Iouring::Iouring(Reactor *_reactor) {
+         }
+-        SwooleTG.iouring->submit(true);
++        swr_v1_uring_submit(SwooleTG.iouring->engine);
+     });
+ 
+-    reactor->iouring_interrupt_handler = [this](Reactor *reactor) { wakeup(); };
++    reactor->iouring_interrupt_handler = [this](Reactor *reactor) { swr_v1_uring_wakeup(engine); };
+ 
+@@ -182,197 +126,3 @@ Iouring::~Iouring() {
+ 
+-    io_uring_queue_exit(&ring);
+-}
+-
+-bool Iouring::ready() const {
+-    return ring_socket && reactor->exists(ring_socket);
+-}
+-
+-void Iouring::yield(IouringEvent *event) {
+-    ++task_num;
+-    Coroutine::CancelFunc cancel_fn = [event, this](Coroutine *) { return cancel(event); };
+-    event->coroutine->yield(&cancel_fn);
+-}
+-
+-void Iouring::resume(IouringEvent *event) {
+-    --task_num;
+-    event->coroutine->resume();
+-}
+-
+-bool Iouring::wakeup() {
+-    IouringEvent *waiting_task = nullptr;
+-
+-    while (true) {
+-        auto count = io_uring_peek_batch_cqe(&ring, cqes, SW_IOURING_QUEUE_SIZE);
+-        if (count == 0) {
+-            break;
+-        }
+-
+-        uint32_t ready_count = 0;
+-        SW_LOOP_N(count) {
+-            auto cqe = cqes[i];
+-            auto event = static_cast<IouringEvent *>(io_uring_cqe_get_data(cqe));
+-            // The user data for the timeout request is -1, this event should be ignored.
+-            if (event == reinterpret_cast<void *>(TIMEOUT_EVENT)) {
+-                swoole_trace(
+-                    "timeout, cqe.flags=%d, ceq.res=%d, error=`%s`", cqe->flags, cqe->res, strerror(-cqe->res));
+-                continue;
+-            }
+-
+-            event->result = cqe->res;
+-            ready_events[ready_count++] = event;
+-
+-            swoole_trace("opcode=%s, cqe.flags=%d, ceq.res=%d, error=`%s`",
+-                         get_opcode_name((io_uring_op) event->data.opcode),
+-                         cqe->flags,
+-                         cqe->res,
+-                         strerror(cqe->res < 0 ? errno : 0));
+-        }
+-        io_uring_cq_advance(&ring, count);
+-
+-        /**
+-         * After the harvest is completed, the operating system's unprocessed task queue is reduced.
+-         * Before resuming the coroutine ready for IO, it should extract the queued SQE to the SQEs queue for processing
+-         * by the operating system. This can achieve a relatively good balance. If the submission is made after resuming
+-         * the coroutine, the kernel may become idle.
+-         */
+-        SW_LOOP_N(ready_count) {
+-            if (get_sq_space_left() == 0 || is_empty_waiting_tasks()) {
+-                break;
+-            }
+-            waiting_task = waiting_tasks.front();
+-            waiting_tasks.pop();
+-            dispatch(waiting_task);
+-        }
+-
+-        SW_LOOP_N(ready_count) {
+-            auto event = ready_events[i];
+-            if (event->result < 0) {
 -                errno = -(event->result);
 -                /**
 -                 * After a timeout, iouring will set errno to `ECANCELED`, but in the async implementation,
@@ -1572,11 +1942,108 @@ index 63ca2f2..f0514c6 100644
 -                 */
 -                errno = errno == ECANCELED ? ETIMEDOUT : errno;
 -                event->result = -1;
-+                errno = completion.error;
-+                event->result = completion.result;
-             }
-@@ -359,17 +359,16 @@ void Iouring::submit(bool immediately) {
-         int ret = io_uring_submit(&ring);
+-            }
+-            resume(ready_events[i]);
+-        }
+-    }
+-
+-    return true;
+-}
+-
+-const char *Iouring::get_opcode_name(io_uring_op opcode) {
+-    switch (opcode) {
+-    case IORING_OP_SOCKET:
+-        return "SOCKET";
+-    case IORING_OP_OPENAT:
+-        return "OPENAT";
+-    case IORING_OP_ACCEPT:
+-        return "ACCEPT";
+-    case IORING_OP_CONNECT:
+-        return "CONNECT";
+-    case IORING_OP_BIND:
+-        return "BIND";
+-    case IORING_OP_LISTEN:
+-        return "LISTEN";
+-    case IORING_OP_SEND:
+-        return "SEND";
+-    case IORING_OP_RECV:
+-        return "RECV";
+-    case IORING_OP_READV:
+-        return "READV";
+-    case IORING_OP_WRITEV:
+-        return "WRITEV";
+-    case IORING_OP_SENDMSG:
+-        return "SENDMSG";
+-    case IORING_OP_RECVMSG:
+-        return "RECVMSG";
+-    case IORING_OP_SHUTDOWN:
+-        return "SHUTDOWN";
+-    case IORING_OP_CLOSE:
+-        return "CLOSE";
+-    case IORING_OP_STATX:
+-        return "STATX";
+-    case IORING_OP_READ:
+-        return "READ";
+-    case IORING_OP_WRITE:
+-        return "WRITE";
+-    case IORING_OP_RENAMEAT:
+-        return "RENAMEAT";
+-    case IORING_OP_MKDIRAT:
+-        return "MKDIRAT";
+-    case IORING_OP_UNLINKAT:
+-        return "UNLINKAT";
+-    case IORING_OP_FSYNC:
+-        return "FSYNC";
+-#ifdef HAVE_IOURING_FUTEX
+-    case IORING_OP_FUTEX_WAIT:
+-        return "FUTEX_WAIT";
+-    case IORING_OP_FUTEX_WAKE:
+-        return "FUTEX_WAKE";
+-#endif
+-#ifdef HAVE_IOURING_FTRUNCATE
+-    case IORING_OP_FTRUNCATE:
+-        return "FTRUNCATE";
+-#endif
+-    case IORING_OP_POLL_ADD:
+-        return "POLL_ADD";
+-    case IORING_OP_POLL_REMOVE:
+-        return "POLL_REMOVE";
+-    case IORING_OP_ASYNC_CANCEL:
+-        return "CANCEL";
+-    default:
+-        return "unknown";
+-    }
+-}
+-
+-std::unordered_map<std::string, int> Iouring::list_all_opcode() {
+-    std::unordered_map<std::string, int> opcodes;
+-    for (int i = IORING_OP_NOP; i < IORING_OP_LAST; i++) {
+-        auto name = get_opcode_name((io_uring_op) i);
+-        if (strcmp(name, "unknown") == 0) {
+-            continue;
+-        }
+-        opcodes[name] = i;
+-    }
+-    return opcodes;
+-}
+-
+-void Iouring::submit(bool immediately) {
+-    /**
+-     * Submit SQEs in batches to reduce the number of system calls.
+-     * If the number of SQEs is still less than SW_IOURING_SQE_BATCH_SIZE at the end of this event loop,
+-     * it will be automatically submitted at the end of the event loop.
+-     */
+-    if (!immediately && swoole_event_is_running() && get_sq_used() < SW_IOURING_SQE_BATCH_SIZE) {
+-        return;
+-    }
+-
+-    do {
+-        /**
+-         * If the value returned by io_uring_submit() is less than the current length of the SQE queue,
+-         * it indicates that only a part of the SQEs has been submitted and needs to be retried after the next event
+-         * loop.
+-         */
+-        int ret = io_uring_submit(&ring);
 -        if (ret < 0) {
 -            /**
 -             * Returned EAGAIN error, ignoring this error, will retry on the next submit.
@@ -1592,21 +2059,526 @@ index 63ca2f2..f0514c6 100644
 -                swoole_sys_error("io_uring_submit() failed");
 -                return;
 -            }
-+        switch (swr_v1_hook_submit(ret, ret < 0 && -ret == EAGAIN,
-+                                  ret < 0 && -ret == EBUSY, ret < 0 && -ret == EINTR)) {
-+        case 1:
-+            return;
-+        case 2:
-+            usleep(10000);
-+            continue;
-+        case 3:
-+            continue;
-+        case -1:
-+            swoole_sys_error("io_uring_submit() failed");
-+            return;
-+        default:
-+            break;
-         }
+-        }
+-        break;
+-    } while (true);
++    swr_v1_uring_close(engine);
+ }
+@@ -389,53 +139,33 @@ Iouring *Iouring::get_instance() {
+ 
+-ssize_t Iouring::execute(IouringEvent *event) {
+-    auto iouring = get_instance();
+-    iouring->dispatch(event);
+-    iouring->yield(event);
+-    return event->result;
++void *Iouring::current() {
++    return Coroutine::get_current_safe();
+ }
+ 
+-void Iouring::dispatch(IouringEvent *event) {
+-    io_uring_sqe *sqe = alloc_sqe();
+-    if (sw_unlikely(!sqe)) {
+-        waiting_tasks.push(event);
+-        return;
+-    }
++swr_v1_uring *Iouring::instance() {
++    return get_instance()->engine;
++}
+ 
+-    swoole_trace("opcode=%s, timeout[tv_sec=%ld, tv_nsec=%ld]",
+-                 get_opcode_name((io_uring_op) event->data.opcode),
+-                 event->timeout.tv_sec,
+-                 event->timeout.tv_nsec);
+-
+-    memcpy(sqe, &event->data, sizeof(event->data));
+-    io_uring_sqe_set_data(sqe, (void *) event);
+-
+-    if (event->flags & SW_URING_TIMEOUT) {
+-        auto timeout_sqe = alloc_sqe();
+-        if (sw_likely(timeout_sqe)) {
+-            memset(timeout_sqe, 0, sizeof(*timeout_sqe));
+-            io_uring_prep_link_timeout(timeout_sqe, reinterpret_cast<__kernel_timespec *>(&event->timeout), 0);
+-            io_uring_sqe_set_data(timeout_sqe, reinterpret_cast<void *>(TIMEOUT_EVENT));
+-            sqe->flags |= IOSQE_IO_LINK;
+-        } else {
+-            swoole_warning("timeout setting failed, the iouring queue[%d] is full", ring.ring_fd);
+-        }
+-    }
++void Iouring::yield(void *coroutine, void *event) {
++    Coroutine::CancelFunc cancel_fn = [event](Coroutine *) { return swr_v1_uring_cancel(&host, event); };
++    static_cast<Coroutine *>(coroutine)->yield(&cancel_fn);
++}
+ 
+-    submit(false);
++void Iouring::resume(void *coroutine) {
++    static_cast<Coroutine *>(coroutine)->resume();
+ }
+ 
+-#define INIT_EVENT(op)                                                                                                 \
+-    IouringEvent event{};                                                                                              \
+-    event.coroutine = Coroutine::get_current_safe();
++bool Iouring::event_running() {
++    return swoole_event_is_running();
++}
+ 
+-int Iouring::open(const char *pathname, int flags, mode_t mode) {
+-    INIT_EVENT(IORING_OP_OPENAT);
+-    io_uring_prep_open(&event.data, pathname, flags | O_CLOEXEC, mode);
+-    return static_cast<int>(execute(&event));
++void Iouring::submit() {
++    swoole_sys_error("io_uring_submit() failed");
++}
++
++void Iouring::dispatch(int ring_fd) {
++    swoole_warning("timeout setting failed, the iouring queue[%d] is full", ring_fd);
+ }
+ 
+-bool Iouring::cancel(IouringEvent *prev_event) {
+-    INIT_EVENT(IORING_OP_ASYNC_CANCEL);
+-    io_uring_prep_cancel(&event.data, (void *) prev_event, 0);
+-    return static_cast<int>(execute(&event)) == 0;
++int Iouring::open(const char *pathname, int flags, mode_t mode) {
++    return swr_v1_uring_open_file(&host, pathname, flags, mode);
+ }
+@@ -443,5 +173,3 @@ bool Iouring::cancel(IouringEvent *prev_event) {
+ int Iouring::socket(int domain, int type, int protocol, int flags) {
+-    INIT_EVENT(IORING_OP_SOCKET);
+-    io_uring_prep_socket(&event.data, domain, type, protocol, flags);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_socket(&host, domain, type, protocol, flags);
+ }
+@@ -449,6 +177,3 @@ int Iouring::socket(int domain, int type, int protocol, int flags) {
+ int Iouring::connect(int fd, const struct sockaddr *addr, socklen_t len, double timeout) {
+-    INIT_EVENT(IORING_OP_CONNECT);
+-    io_uring_prep_connect(&event.data, fd, addr, len);
+-    event.set_timeout(timeout);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_connect(&host, fd, addr, len, timeout);
+ }
+@@ -456,9 +181,3 @@ int Iouring::connect(int fd, const struct sockaddr *addr, socklen_t len, double
+ int Iouring::bind(int fd, const struct sockaddr *addr, socklen_t len) {
+-#if 1
+-    return ::bind(fd, addr, len);
+-#else
+-    INIT_EVENT(IORING_OP_BIND);
+-    io_uring_prep_bind(&event.data, fd, (struct sockaddr *) addr, len);
+-    return static_cast<int>(execute(&event));
+-#endif
++    return swr_v1_uring_bind(fd, addr, len);
+ }
+@@ -466,7 +185,3 @@ int Iouring::bind(int fd, const struct sockaddr *addr, socklen_t len) {
+ int Iouring::listen(int fd, int backlog) {
+-#if 1
+-    return ::listen(fd, backlog);
+-#else
+-    io_uring_prep_listen(sqe, fd, backlog);
+-#endif
++    return swr_v1_uring_listen(fd, backlog);
+ }
+@@ -474,16 +189,3 @@ int Iouring::listen(int fd, int backlog) {
+ int Iouring::sleep(double seconds) {
+-    IouringTimeout ts;
+-    DOUBLE_TO_TIMESPEC(seconds, &ts);
+-    return sleep(ts.tv_sec, ts.tv_nsec, 0);
+-}
+-
+-int Iouring::sleep(int tv_sec, int tv_nsec, int flags) {
+-    struct __kernel_timespec ts {
+-        tv_sec, tv_nsec,
+-    };
+-
+-    INIT_EVENT(IORING_OP_TIMEOUT);
+-    io_uring_prep_timeout(&event.data, &ts, 0, flags);
+-    execute(&event);
+-    return errno == ETIME ? SW_OK : SW_ERR;
++    return swr_v1_uring_sleep(&host, seconds);
+ }
+@@ -491,6 +193,3 @@ int Iouring::sleep(int tv_sec, int tv_nsec, int flags) {
+ int Iouring::accept(int fd, struct sockaddr *addr, socklen_t *len, int flags, double timeout) {
+-    INIT_EVENT(IORING_OP_ACCEPT);
+-    io_uring_prep_accept(&event.data, fd, addr, len, flags);
+-    event.set_timeout(timeout);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_accept(&host, fd, addr, len, flags, timeout);
+ }
+@@ -498,6 +197,3 @@ int Iouring::accept(int fd, struct sockaddr *addr, socklen_t *len, int flags, do
+ ssize_t Iouring::recv(int fd, void *buf, size_t len, int flags, double timeout) {
+-    INIT_EVENT(IORING_OP_RECV);
+-    io_uring_prep_recv(&event.data, fd, buf, len, flags);
+-    event.set_timeout(timeout);
+-    return execute(&event);
++    return swr_v1_uring_recv(&host, fd, buf, len, flags, timeout);
+ }
+@@ -505,6 +201,3 @@ ssize_t Iouring::recv(int fd, void *buf, size_t len, int flags, double timeout)
+ ssize_t Iouring::send(int fd, const void *buf, size_t len, int flags, double timeout) {
+-    INIT_EVENT(IORING_OP_SEND);
+-    io_uring_prep_send(&event.data, fd, buf, len, flags);
+-    event.set_timeout(timeout);
+-    return execute(&event);
++    return swr_v1_uring_send(&host, fd, buf, len, flags, timeout);
+ }
+@@ -512,6 +205,3 @@ ssize_t Iouring::send(int fd, const void *buf, size_t len, int flags, double tim
+ ssize_t Iouring::recvmsg(int fd, struct msghdr *message, int flags, double timeout) {
+-    INIT_EVENT(IORING_OP_RECVMSG);
+-    io_uring_prep_recvmsg(&event.data, fd, message, flags);
+-    event.set_timeout(timeout);
+-    return execute(&event);
++    return swr_v1_uring_recvmsg(&host, fd, message, flags, timeout);
+ }
+@@ -519,6 +209,3 @@ ssize_t Iouring::recvmsg(int fd, struct msghdr *message, int flags, double timeo
+ ssize_t Iouring::sendmsg(int fd, const struct msghdr *message, int flags, double timeout) {
+-    INIT_EVENT(IORING_OP_SENDMSG);
+-    io_uring_prep_sendmsg(&event.data, fd, message, flags);
+-    event.set_timeout(timeout);
+-    return execute(&event);
++    return swr_v1_uring_sendmsg(&host, fd, message, flags, timeout);
+ }
+@@ -527,6 +214,3 @@ ssize_t Iouring::sendto(
+     int fd, const void *buf, size_t n, int flags, const struct sockaddr *addr, socklen_t len, double timeout) {
+-    INIT_EVENT(IORING_OP_SENDTO);
+-    io_uring_prep_sendto(&event.data, fd, buf, n, flags, addr, len);
+-    event.set_timeout(timeout);
+-    return execute(&event);
++    return swr_v1_uring_sendto(&host, fd, buf, n, flags, addr, len, timeout);
+ }
+@@ -534,8 +218,3 @@ ssize_t Iouring::sendto(
+ ssize_t Iouring::recvfrom(int fd, void *_buf, size_t _n, sockaddr *_addr, socklen_t *_socklen, double timeout) {
+-    auto rv = recv(fd, _buf, _n, MSG_PEEK, timeout);
+-    if (rv > 0) {
+-        return ::recvfrom(fd, _buf, _n, MSG_DONTWAIT, _addr, _socklen);
+-    } else {
+-        return rv;
+-    }
++    return swr_v1_uring_recvfrom(&host, fd, _buf, _n, _addr, _socklen, timeout);
+ }
+@@ -543,6 +222,3 @@ ssize_t Iouring::recvfrom(int fd, void *_buf, size_t _n, sockaddr *_addr, sockle
+ ssize_t Iouring::readv(int fd, const struct iovec *iovec, int count, double timeout) {
+-    INIT_EVENT(IORING_OP_READV);
+-    io_uring_prep_readv(&event.data, fd, iovec, count, -1);
+-    event.set_timeout(timeout);
+-    return execute(&event);
++    return swr_v1_uring_readv(&host, fd, iovec, count, timeout);
+ }
+@@ -550,6 +226,3 @@ ssize_t Iouring::readv(int fd, const struct iovec *iovec, int count, double time
+ ssize_t Iouring::writev(int fd, const struct iovec *iovec, int count, double timeout) {
+-    INIT_EVENT(IORING_OP_WRITEV);
+-    io_uring_prep_writev(&event.data, fd, iovec, count, -1);
+-    event.set_timeout(timeout);
+-    return execute(&event);
++    return swr_v1_uring_writev(&host, fd, iovec, count, timeout);
+ }
+@@ -557,99 +230,3 @@ ssize_t Iouring::writev(int fd, const struct iovec *iovec, int count, double tim
+ ssize_t Iouring::sendfile(int out_fd, int in_fd, off_t *offset, size_t size, double timeout) {
+-    if (size == 0) {
+-        return 0;
+-    }
+-
+-    INIT_EVENT(IORING_OP_SPLICE);
+-    event.set_timeout(timeout);
+-
+-#ifndef MSG_SPLICE_PAGES
+-    int pipe_fds[2];
+-    if (pipe(pipe_fds) < 0) {
+-        return -1;
+-    }
+-
+-    fcntl(pipe_fds[1], F_SETPIPE_SZ, 1024 * 1024);
+-    int pipe_size = fcntl(pipe_fds[0], F_GETPIPE_SZ);
+-    if (pipe_size < 0) {
+-        pipe_size = 65536;
+-    }
+-
+-    size_t total_sent = 0;
+-    off_t current_offset = offset ? *offset : 0;
+-
+-    while (total_sent < size) {
+-        size_t remaining = size - total_sent;
+-        size_t to_send = std::min(remaining, (size_t) pipe_size);
+-
+-        event.data = {};
+-        io_uring_prep_splice(
+-            &event.data, in_fd, offset ? (current_offset + total_sent) : -1, pipe_fds[1], -1, to_send, 0);
+-
+-        ssize_t ret1 = execute(&event);
+-        if (ret1 <= 0) {
+-            if (total_sent > 0) {
+-                break;
+-            }
+-            int saved_errno = errno;
+-            close(pipe_fds[0]);
+-            close(pipe_fds[1]);
+-            errno = saved_errno;
+-            return -1;
+-        }
+-
+-        event.data = {};
+-        io_uring_prep_splice(&event.data, pipe_fds[0], -1, out_fd, -1, ret1, 0);
+-
+-        ssize_t ret2 = execute(&event);
+-        if (ret2 <= 0) {
+-            if (total_sent > 0) {
+-                break;
+-            }
+-            int saved_errno = errno;
+-            close(pipe_fds[0]);
+-            close(pipe_fds[1]);
+-            errno = saved_errno;
+-            return -1;
+-        }
+-
+-        total_sent += ret2;
+-
+-        if (ret2 < ret1) {
+-            break;
+-        }
+-    }
+-
+-    close(pipe_fds[0]);
+-    close(pipe_fds[1]);
+-
+-    if (total_sent > 0 && offset) {
+-        *offset += total_sent;
+-    }
+-
+-    return total_sent;
+-
+-#else
+-    struct msghdr msg = {0};
+-    struct iovec iov = {0};
+-
+-    iov.iov_base = NULL;
+-    iov.iov_len = size;
+-
+-    msg.msg_iov = &iov;
+-    msg.msg_iovlen = 1;
+-
+-    io_uring_prep_sendmsg(&event.data, out_fd, &msg, MSG_SPLICE_PAGES);
+-
+-    event.data.len = size;
+-    event.data.splice_fd_in = in_fd;
+-    event.data.addr2 = offset ? (__u64) *offset : (__u64) -1;
+-
+-    ssize_t ret = execute(&event);
+-
+-    if (ret > 0 && offset) {
+-        *offset += ret;
+-    }
+-
+-    return ret;
+-#endif
++    return swr_v1_uring_sendfile(&host, out_fd, in_fd, offset, size, timeout, splice_pages);
+ }
+@@ -657,5 +234,3 @@ ssize_t Iouring::sendfile(int out_fd, int in_fd, off_t *offset, size_t size, dou
+ int Iouring::shutdown(int fd, int how) {
+-    INIT_EVENT(IORING_OP_SHUTDOWN);
+-    io_uring_prep_shutdown(&event.data, fd, how);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_shutdown(&host, fd, how);
+ }
+@@ -663,5 +238,3 @@ int Iouring::shutdown(int fd, int how) {
+ int Iouring::close(int fd) {
+-    INIT_EVENT(IORING_OP_CLOSE);
+-    io_uring_prep_close(&event.data, fd);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_close_fd(&host, fd);
+ }
+@@ -669,6 +242,3 @@ int Iouring::close(int fd) {
+ ssize_t Iouring::read(int fd, void *buf, size_t size, double timeout) {
+-    INIT_EVENT(IORING_OP_READ);
+-    io_uring_prep_read(&event.data, fd, buf, size, -1);
+-    event.set_timeout(timeout);
+-    return execute(&event);
++    return swr_v1_uring_read(&host, fd, buf, size, timeout);
+ }
+@@ -676,6 +246,3 @@ ssize_t Iouring::read(int fd, void *buf, size_t size, double timeout) {
+ ssize_t Iouring::write(int fd, const void *buf, size_t size, double timeout) {
+-    INIT_EVENT(IORING_OP_WRITE);
+-    io_uring_prep_write(&event.data, fd, buf, size, -1);
+-    event.set_timeout(timeout);
+-    return execute(&event);
++    return swr_v1_uring_write(&host, fd, buf, size, timeout);
+ }
+@@ -683,5 +250,3 @@ ssize_t Iouring::write(int fd, const void *buf, size_t size, double timeout) {
+ int Iouring::rename(const char *oldpath, const char *newpath) {
+-    INIT_EVENT(IORING_OP_RENAMEAT);
+-    io_uring_prep_rename(&event.data, oldpath, newpath);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_rename(&host, oldpath, newpath);
+ }
+@@ -689,5 +254,3 @@ int Iouring::rename(const char *oldpath, const char *newpath) {
+ int Iouring::mkdir(const char *pathname, mode_t mode) {
+-    INIT_EVENT(IORING_OP_MKDIRAT);
+-    io_uring_prep_mkdir(&event.data, pathname, mode);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_mkdir(&host, pathname, mode);
+ }
+@@ -695,5 +258,3 @@ int Iouring::mkdir(const char *pathname, mode_t mode) {
+ int Iouring::unlink(const char *pathname) {
+-    INIT_EVENT(IORING_OP_UNLINK_FILE);
+-    io_uring_prep_unlink(&event.data, pathname, 0);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_unlink(&host, pathname);
+ }
+@@ -701,5 +262,3 @@ int Iouring::unlink(const char *pathname) {
+ int Iouring::rmdir(const char *pathname) {
+-    INIT_EVENT(IORING_OP_UNLINK_DIR);
+-    io_uring_prep_unlink(&event.data, pathname, AT_REMOVEDIR);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_rmdir(&host, pathname);
+ }
+@@ -707,5 +266,3 @@ int Iouring::rmdir(const char *pathname) {
+ int Iouring::fsync(int fd) {
+-    INIT_EVENT(IORING_OP_FSYNC);
+-    io_uring_prep_fsync(&event.data, fd, 0);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_fsync(&host, fd);
+ }
+@@ -713,5 +270,3 @@ int Iouring::fsync(int fd) {
+ int Iouring::fdatasync(int fd) {
+-    INIT_EVENT(IORING_OP_FDATASYNC);
+-    io_uring_prep_fsync(&event.data, fd, IORING_FSYNC_DATASYNC);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_fdatasync(&host, fd);
+ }
+@@ -720,5 +275,3 @@ int Iouring::fdatasync(int fd) {
+ int Iouring::ftruncate(int fd, off_t length) {
+-    INIT_EVENT(IORING_OP_FTRUNCATE);
+-    io_uring_prep_ftruncate(&event.data, fd, length);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_ftruncate(&host, fd, length);
+ }
+@@ -726,56 +279,5 @@ int Iouring::ftruncate(int fd, off_t length) {
+ 
+-static inline int siginfo_to_status(const siginfo_t *info) {
+-    int status = 0;
+-
+-    switch (info->si_code) {
+-    case CLD_EXITED:
+-        status = (info->si_status & 0xFF) << 8;
+-        break;
+-    case CLD_KILLED:
+-        status = info->si_status & 0x7F;
+-        break;
+-    case CLD_DUMPED:
+-        status = (info->si_status & 0x7F) | 0x80;
+-        break;
+-    case CLD_STOPPED:
+-        status = ((info->si_status & 0xFF) << 8) | 0x7F;
+-        break;
+-    case CLD_CONTINUED:
+-        status = 0xFFFF;
+-        break;
+-    }
+-
+-    return status;
+-}
+-
+ #ifdef HAVE_IOURING_STATX
+-static void swoole_statx_to_stat(const struct statx *statxbuf, struct stat *statbuf) {
+-    statbuf->st_dev = (((unsigned int) statxbuf->stx_dev_major) << 8) | (unsigned int) statxbuf->stx_dev_minor;
+-    statbuf->st_mode = statxbuf->stx_mode;
+-    statbuf->st_nlink = statxbuf->stx_nlink;
+-    statbuf->st_uid = statxbuf->stx_uid;
+-    statbuf->st_gid = statxbuf->stx_gid;
+-    statbuf->st_rdev = (((unsigned int) statxbuf->stx_rdev_major) << 8) | (unsigned int) statxbuf->stx_rdev_minor;
+-    statbuf->st_ino = statxbuf->stx_ino;
+-    statbuf->st_size = statxbuf->stx_size;
+-    statbuf->st_blksize = statxbuf->stx_blksize;
+-    statbuf->st_blocks = statxbuf->stx_blocks;
+-    statbuf->st_atim.tv_sec = statxbuf->stx_atime.tv_sec;
+-    statbuf->st_atim.tv_nsec = statxbuf->stx_atime.tv_nsec;
+-    statbuf->st_mtim.tv_sec = statxbuf->stx_mtime.tv_sec;
+-    statbuf->st_mtim.tv_nsec = statxbuf->stx_mtime.tv_nsec;
+-    statbuf->st_ctim.tv_sec = statxbuf->stx_ctime.tv_sec;
+-    statbuf->st_ctim.tv_nsec = statxbuf->stx_ctime.tv_nsec;
+-}
+-
+ int Iouring::fstat(int fd, struct stat *statbuf) {
+-    struct statx statxbuf;
+-    INIT_EVENT(IORING_OP_FSTAT);
+-    io_uring_prep_statx(&event.data, fd, "", AT_EMPTY_PATH, STATX_BASIC_STATS | STATX_BTIME, &statxbuf);
+-
+-    auto retval = execute(&event);
+-    if (retval == 0) {
+-        swoole_statx_to_stat(&statxbuf, statbuf);
+-    }
+-    return retval;
++    return swr_v1_uring_fstat(&host, fd, statbuf);
+ }
+@@ -783,12 +285,3 @@ int Iouring::fstat(int fd, struct stat *statbuf) {
+ int Iouring::stat(const char *path, struct stat *statbuf) {
+-    struct statx statxbuf;
+-    INIT_EVENT(IORING_OP_FSTAT);
+-    io_uring_prep_statx(
+-        &event.data, AT_FDCWD, path, AT_SYMLINK_NOFOLLOW, STATX_BASIC_STATS | STATX_BTIME, &statxbuf);
+-
+-    auto retval = execute(&event);
+-    if (retval == 0) {
+-        swoole_statx_to_stat(&statxbuf, statbuf);
+-    }
+-    return retval;
++    return swr_v1_uring_stat(&host, path, statbuf);
+ }
+@@ -798,5 +291,3 @@ int Iouring::stat(const char *path, struct stat *statbuf) {
+ int Iouring::futex_wait(uint32_t *futex) {
+-    INIT_EVENT(IORING_OP_FUTEX_WAIT);
+-    io_uring_prep_futex_wait(&event.data, futex, 1, FUTEX_BITSET_MATCH_ANY, FUTEX2_SIZE_U32, 0);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_futex_wait(&host, futex);
+ }
+@@ -804,5 +295,3 @@ int Iouring::futex_wait(uint32_t *futex) {
+ int Iouring::futex_wakeup(uint32_t *futex) {
+-    INIT_EVENT(IORING_OP_FUTEX_WAKE);
+-    io_uring_prep_futex_wake(&event.data, futex, 1, FUTEX_BITSET_MATCH_ANY, FUTEX2_SIZE_U32, 0);
+-    return static_cast<int>(execute(&event));
++    return swr_v1_uring_futex_wakeup(&host, futex);
+ }
+@@ -815,20 +304,3 @@ pid_t Iouring::wait(int *stat_loc, double timeout) {
+ pid_t Iouring::waitpid(pid_t _pid, int *stat_loc, int options, double timeout) {
+-    if (options & WNOHANG) {
+-        return ::waitpid(_pid, stat_loc, options);
+-    }
+-
+-    INIT_EVENT(IORING_OP_WAITID);
+-    siginfo_t info{};
+-    idtype_t idtype = _pid > 0 ? P_PID : P_ALL;
+-    id_t id = _pid > 0 ? _pid : 0;
+-    options = options == 0 ? WEXITED : options;
+-    io_uring_prep_waitid(&event.data, idtype, id, &info, options, 0);
+-
+-    event.set_timeout(timeout);
+-    int rc = static_cast<int>(execute(&event));
+-    if (rc != -1) {
+-        *stat_loc = siginfo_to_status(&info);
+-        return info.si_pid;
+-    }
+-    return rc;
++    return swr_v1_uring_waitpid(&host, _pid, stat_loc, options, timeout);
+ }
+@@ -842,17 +314,3 @@ int Iouring::poll(struct pollfd *fds, nfds_t nfds, int timeout) {
+     }
+-
+-    if (timeout == 0) {
+-        return ::poll(fds, nfds, timeout);
+-    }
+-
+-    INIT_EVENT(IORING_OP_POLL);
+-    io_uring_prep_poll_add(&event.data, fds[0].fd, fds[0].events);
+-    event.set_timeout((double) timeout / 1000);
+-
+-    int rc = static_cast<int>(execute(&event));
+-    if (rc > 0) {
+-        fds[0].revents = rc;
+-        return 1;
+-    }
+-    return rc;
++    return swr_v1_uring_poll(&host, fds, timeout);
+ }
+@@ -861,3 +319,3 @@ int Iouring::callback(Reactor *reactor, Event *event) {
+     auto *iouring = static_cast<Iouring *>(event->socket->object);
+-    return iouring->wakeup() ? SW_OK : SW_ERR;
++    return swr_v1_uring_wakeup(iouring->engine) ? SW_OK : SW_ERR;
+ }
 diff --git a/src/coroutine/socket.cc b/src/coroutine/socket.cc
 index 5a16f4c..2862827 100644
 --- a/src/coroutine/socket.cc
@@ -3618,7 +4590,7 @@ index e6ef9c2..32545c3 100644
 -    return true;
  }
 diff --git a/src/coroutine/uring_socket.cc b/src/coroutine/uring_socket.cc
-index 758765a..4c1f907 100644
+index 758765a..fc7ab8f 100644
 --- a/src/coroutine/uring_socket.cc
 +++ b/src/coroutine/uring_socket.cc
 @@ -20,2 +20,7 @@
@@ -3698,21 +4670,27 @@ index 758765a..4c1f907 100644
 -    write_co = nullptr;
 +    bind_co(SW_EVENT_WRITE, nullptr);
  
-@@ -217,3 +222,3 @@ ssize_t UringSocket::recv(void *_buf, size_t _n) {
+@@ -217,5 +222,5 @@ ssize_t UringSocket::recv(void *_buf, size_t _n) {
      ssize_t retval;
 -    read_co = Coroutine::get_current_safe();
 +    bind_co(SW_EVENT_READ, Coroutine::get_current_safe());
      if (is_ssl()) {
+-        retval = ssl_recv(_buf, _n);
++        retval = swr_v1_uring_tls_recv(tls(), _buf, _n);
+     } else {
 @@ -223,3 +228,3 @@ ssize_t UringSocket::recv(void *_buf, size_t _n) {
      }
 -    read_co = nullptr;
 +    bind_co(SW_EVENT_READ, nullptr);
  
-@@ -235,3 +240,3 @@ ssize_t UringSocket::send(const void *_buf, size_t _n) {
+@@ -235,5 +240,5 @@ ssize_t UringSocket::send(const void *_buf, size_t _n) {
      ssize_t retval;
 -    write_co = Coroutine::get_current_safe();
 +    bind_co(SW_EVENT_WRITE, Coroutine::get_current_safe());
      if (is_ssl()) {
+-        retval = ssl_send(_buf, _n);
++        retval = swr_v1_uring_tls_send(tls(), _buf, _n);
+     } else {
 @@ -241,3 +246,3 @@ ssize_t UringSocket::send(const void *_buf, size_t _n) {
      }
 -    write_co = nullptr;
@@ -3785,8 +4763,228 @@ index 758765a..4c1f907 100644
 -    return retval < 0 && total_bytes == 0 ? -1 : total_bytes;
 +    return swr_v1_hook_transfer_result(retval, total_bytes);
  }
-@@ -404,3 +411,3 @@ ssize_t UringSocket::writev_all(network::IOVector *io_vector) {
+@@ -404,116 +411,36 @@ ssize_t UringSocket::writev_all(network::IOVector *io_vector) {
      check_return_value(retval);
 -    return retval < 0 && total_bytes == 0 ? -1 : total_bytes;
 +    return swr_v1_hook_transfer_result(retval, total_bytes);
  }
+ 
+-bool UringSocket::ssl_bio_write() {
+-    auto buf = get_write_buffer();
+-
+-    while (true) {
+-        size_t pending = BIO_ctrl_pending(wbio);
+-        if (pending == 0) {
+-            break;
+-        }
+-
+-        int nread = BIO_read(wbio, buf->str, buf->size);
+-        if (nread <= 0) {
+-            set_err(SW_ERROR_SSL_BAD_PROTOCOL);
+-            return false;
+-        }
++const swr_v1_uring_tls_host UringSocket::tls_host = {
++    &Iouring::host, tls_set_err, tls_check_failure, tls_buffer, ssl_bio_perform, SW_ERROR_SSL_BAD_PROTOCOL, SW_ERROR_SSL_RESET};
+ 
+-        ssize_t written = 0;
+-        while (written < nread) {
+-            ssize_t n = uring_send(buf->str + written, nread - written);
+-            if (n > 0) {
+-                written += n;
+-            } else if (n == 0) {
+-                errno = SW_ERROR_SSL_RESET;
+-                return false;
+-            } else {
+-                if (errno == EINTR) {
+-                    continue;
+-                }
+-                set_err(errno);
+-                return false;
+-            }
+-        }
+-    }
+-
+-    return true;
++void UringSocket::tls_set_err(void *socket, int code) {
++    static_cast<UringSocket *>(socket)->set_err(code);
+ }
+ 
+-bool UringSocket::ssl_bio_read() {
+-    auto buf = get_read_buffer();
+-    ssize_t rv = uring_recv(buf->str, buf->size);
+-    if (rv > 0) {
+-        int written = BIO_write(rbio, buf->str, rv);
+-        if (written != rv) {
+-            set_err(SW_ERROR_SSL_BAD_PROTOCOL);
+-            return false;
+-        }
+-        return true;
+-    } else if (rv == 0) {
+-        set_err(SW_ERROR_SSL_RESET);
+-        return false;
+-    } else {
+-        if (errno == EINTR) {
+-            return ssl_bio_read();
+-        }
+-        set_err(errno);
+-        return false;
+-    }
++void UringSocket::tls_check_failure(void *socket) {
++    static_cast<UringSocket *>(socket)->check_return_value(-1);
+ }
+ 
+-bool UringSocket::ssl_bio_prepare() {
+-    if (BIO_ctrl_pending(wbio) > 0) {
+-        if (!ssl_bio_write()) {
+-            check_return_value(-1);
+-            return false;
+-        }
+-    }
+-    return true;
++char *UringSocket::tls_buffer(void *socket, bool write, size_t *size) {
++    auto self = static_cast<UringSocket *>(socket);
++    auto buf = write ? self->get_write_buffer() : self->get_read_buffer();
++    *size = buf->size;
++    return buf->str;
+ }
+ 
+-bool UringSocket::ssl_bio_perform(int rc, const char *fn) {
+-    if (!ssl_bio_prepare()) {
+-        return false;
+-    }
+-
+-    int error = SSL_get_error(socket->ssl, rc);
+-    if (error == SSL_ERROR_WANT_WRITE) {
+-        if (!ssl_bio_write()) {
+-        _error:
+-            check_return_value(-1);
+-            return false;
+-        }
+-        return true;
+-    } else if (error == SSL_ERROR_WANT_READ) {
+-        if (!ssl_bio_read()) {
+-            goto _error;
+-        }
+-        return true;
+-    } else if (error == SSL_ERROR_ZERO_RETURN) {
+-        swoole_debug("%s(fd=%d) return zero value", fn, socket->get_fd());
+-        error = SW_ERROR_SSL_RESET;
+-        goto _error;
+-    } else if (error == SSL_ERROR_SYSCALL) {
+-        goto _error;
+-    } else {
+-        ulong_t err_code = ERR_get_error();
+-        if (err_code) {
+-            char error_buf[512];
+-            ERR_error_string_n(err_code, error_buf, sizeof(error_buf));
+-            swoole_notice("%s(fd=%d) to server[%s:%d] failed. Error: %s[%d|%d]",
+-                          fn,
+-                          socket->get_fd(),
+-                          socket->info.get_addr(),
+-                          socket->info.get_port(),
+-                          error_buf,
+-                          error,
+-                          ERR_GET_REASON(err_code));
+-            set_err(SW_ERROR_SSL_BAD_PROTOCOL, error_buf);
+-        } else {
+-            set_err(SW_ERROR_SSL_BAD_PROTOCOL);
+-        }
+-        return false;
+-    }
++void UringSocket::ssl_bio_perform(void *_socket, const char *fn, int error, unsigned long err_code) {
++    auto self = static_cast<UringSocket *>(_socket);
++    char error_buf[512];
++    ERR_error_string_n(err_code, error_buf, sizeof(error_buf));
++    swoole_notice("%s(fd=%d) to server[%s:%d] failed. Error: %s[%d|%d]",
++                  fn,
++                  self->socket->get_fd(),
++                  self->socket->info.get_addr(),
++                  self->socket->info.get_port(),
++                  error_buf,
++                  error,
++                  ERR_GET_REASON(err_code));
++    self->set_err(SW_ERROR_SSL_BAD_PROTOCOL, error_buf);
+ }
+@@ -557,3 +484,3 @@ bool UringSocket::ssl_handshake() {
+         }
+-        if (ssl_bio_perform(rs, fn)) {
++        if (swr_v1_uring_tls_perform(tls(), rs, fn)) {
+             continue;
+@@ -578,3 +505,3 @@ ssize_t UringSocket::ssl_readv(network::IOVector *io_vector) {
+     do {
+-        retval = ssl_recv(io_vector->get_iterator()->iov_base, io_vector->get_iterator()->iov_len);
++        retval = swr_v1_uring_tls_recv(tls(), io_vector->get_iterator()->iov_base, io_vector->get_iterator()->iov_len);
+         total_bytes += retval > 0 ? retval : 0;
+@@ -590,3 +517,3 @@ ssize_t UringSocket::ssl_writev(network::IOVector *io_vector) {
+     do {
+-        retval = ssl_send(io_vector->get_iterator()->iov_base, io_vector->get_iterator()->iov_len);
++        retval = swr_v1_uring_tls_send(tls(), io_vector->get_iterator()->iov_base, io_vector->get_iterator()->iov_len);
+         total_bytes += retval > 0 ? retval : 0;
+@@ -598,32 +525,2 @@ ssize_t UringSocket::ssl_writev(network::IOVector *io_vector) {
+ 
+-ssize_t UringSocket::ssl_recv(void *_buf, size_t _n) {
+-    while (true) {
+-        int n = SSL_read(socket->ssl, _buf, _n);
+-        if (!ssl_bio_prepare()) {
+-            return -1;
+-        }
+-        if (n > 0) {
+-            return n;
+-        }
+-        if (!ssl_bio_perform(n, "ssl_recv")) {
+-            return -1;
+-        }
+-    }
+-}
+-
+-ssize_t UringSocket::ssl_send(const void *_buf, size_t _n) {
+-    while (true) {
+-        int n = SSL_write(socket->ssl, _buf, _n);
+-        if (!ssl_bio_prepare()) {
+-            return -1;
+-        }
+-        if (n > 0) {
+-            return n;
+-        }
+-        if (!ssl_bio_perform(n, "ssl_send")) {
+-            return -1;
+-        }
+-    }
+-}
+-
+ ssize_t UringSocket::ssl_sendfile(const File &file, off_t *offset, size_t size) {
+@@ -640,3 +537,3 @@ ssize_t UringSocket::ssl_sendfile(const File &file, off_t *offset, size_t size)
+ 
+-        ssize_t ret = ssl_send(buf, n);
++        ssize_t ret = swr_v1_uring_tls_send(tls(), buf, n);
+         if (ret > 0) {
+@@ -677,3 +574,3 @@ ssize_t UringSocket::send_once(const void *buf, size_t count) {
+ 
+-        if (!ssl_bio_prepare()) {
++        if (!swr_v1_uring_tls_prepare(tls())) {
+             return -1;
+@@ -681,3 +578,3 @@ ssize_t UringSocket::send_once(const void *buf, size_t count) {
+ 
+-        if (socket->ssl_want_read == 1 && !ssl_bio_read()) {
++        if (socket->ssl_want_read == 1 && !swr_v1_uring_tls_read(tls())) {
+             return -1;
+@@ -685,3 +582,3 @@ ssize_t UringSocket::send_once(const void *buf, size_t count) {
+ 
+-        if (socket->ssl_want_write == 1 && !ssl_bio_write()) {
++        if (socket->ssl_want_write == 1 && !swr_v1_uring_tls_write(tls())) {
+             return -1;
+@@ -706,3 +603,3 @@ ssize_t UringSocket::recv_once(void *buf, size_t count) {
+ 
+-        if (!ssl_bio_prepare()) {
++        if (!swr_v1_uring_tls_prepare(tls())) {
+             return -1;
+@@ -710,3 +607,3 @@ ssize_t UringSocket::recv_once(void *buf, size_t count) {
+ 
+-        if (socket->ssl_want_read == 1 && !ssl_bio_read()) {
++        if (socket->ssl_want_read == 1 && !swr_v1_uring_tls_read(tls())) {
+             return -1;
+@@ -714,3 +611,3 @@ ssize_t UringSocket::recv_once(void *buf, size_t count) {
+ 
+-        if (socket->ssl_want_write == 1 && !ssl_bio_write()) {
++        if (socket->ssl_want_write == 1 && !swr_v1_uring_tls_write(tls())) {
+             return -1;
