@@ -111,7 +111,8 @@ fn header_end(input: &[u8], frame: &mut HttpFrame) -> i32 {
     if frame.offset > input.len() {
         return INVALID;
     }
-    // Jump to each '\r' and test the four bytes there, as upstream's get_header_length.
+    // Jump to each '\r' and test the four bytes there. Upstream's get_header_length
+    // compares at every position; both find the first "\r\n\r\n".
     let rest = &input[frame.offset..];
     let mut from = 0;
     while let Some(found) = rest
