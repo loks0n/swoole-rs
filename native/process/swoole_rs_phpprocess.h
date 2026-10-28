@@ -83,8 +83,8 @@ typedef struct {
 } swr_v1_phpprocess_host;
 
 struct _zend_class_entry *swr_v1_phpprocess_minit(const struct _zend_function_entry *methods,
-                                                  const swr_v1_phpprocess_host *host,
-                                                  int module_number);
+                                                  const swr_v1_phpprocess_host *table,
+                                                  int module);
 /* The php_swoole_process_* functions Server and Process\Pool call. */
 void *swr_v1_phpprocess_worker(const struct _zval_struct *object, bool check);
 void swr_v1_phpprocess_set_worker(const struct _zval_struct *object, void *worker, bool enable_coroutine, int pipe_type);
@@ -92,8 +92,8 @@ int swr_v1_phpprocess_start(void *worker, struct _zval_struct *object);
 void swr_v1_phpprocess_clean(void);
 bool swr_v1_phpprocess_signal_isset(int signo);
 #ifdef __linux__ /* HAVE_CPU_AFFINITY on the platforms this build supports */
-bool swr_v1_phpprocess_array_to_cpu_set(const struct _zval_struct *array, void *cpu_set);
-void swr_v1_phpprocess_cpu_set_to_array(struct _zval_struct *array, const void *cpu_set);
+bool swr_v1_phpprocess_array_to_cpu_set(const struct _zval_struct *array, void *set);
+void swr_v1_phpprocess_cpu_set_to_array(struct _zval_struct *array, const void *set);
 #endif
 
 #ifdef __cplusplus
