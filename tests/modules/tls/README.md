@@ -1,9 +1,9 @@
 # TLS validation
 
-Rust owns the TLS/DTLS setup policy, BIO read/control/listen decisions, info
-callback actions and password-callback copy rule (`swr_v1_tls_context`,
-`setup`, `read`, `control`, `listen`, `password`). Native code keeps callbacks,
-the global SSL authority, OpenSSL objects and public storage.
+Rust creates and configures `SSLContext`'s `SSL_CTX` and owns its callbacks
+(`crates/tls/src/context.rs`), and decides the DTLS BIO read/control/listen
+results. Native code keeps the configuration fields, the info callback, the DTLS
+Session and BIO method table.
 
 ## differential.py
 
@@ -11,7 +11,7 @@ Compiles the complete pinned and patched `src/protocol/ssl.cc` and `dtls.cc`
 into a driver, links both against one matching native full-core library and
 compares their output. The patched tree gets its own Git root so `git apply`
 cannot be silently skipped; the patched driver must contain definitions and
-call instructions for all six Rust functions, the reference none. Loader
+call instructions for every `swr_v1_tls_*` function it uses, the reference none. Loader
 output, the native library and the loaded libssl/libcrypto are checked to be
 unchanged across the run.
 
@@ -36,7 +36,8 @@ python3 tests/modules/tls/differential.py --reference PINNED_GIT \
   `Session.listen`, native re-init cycles, four native threads, info callback
   events and fork.
 - `--allocation` (`allocation.cc`): replaceable C++ `operator new` failures
-  through the native warning formatters and the DTLS `BIO_ctrl` callback.
+  through the DTLS `BIO_ctrl` callback's native warning (SSLContext's warnings
+  are formatted in Rust).
 - `--crypto-allocation --crypto-operation client-ca|dhparam|curve|dtls-init`
   (`crypto_allocation.cc`): OpenSSL allocator-hook single-failure sweep.
 - `--benchmark-check --archive A` (`benchmark.cc`): prepares six fixed optimized
@@ -84,7 +85,7 @@ argument guards and timeout handling, and `php.py` export parsing.
 - `verify_02` has been observed WARNED (flaky) in the PHP cohort.
 - An empty curve list is accepted by OpenSSL 3.6 and rejected by 3.0; the
   curve fixture probes OpenSSL directly rather than hard-coding either.
-- A native library built without DTLS/listen would fail the six-caller check;
+- A native library built without DTLS/listen would fail the caller check;
   there is no capability handling for that yet.
 - Not covered: real IP sockets, packet loss, PHP cancellation, legacy/no-ECDH
   OpenSSL configurations, PHP coverage of the curve/info/session/password

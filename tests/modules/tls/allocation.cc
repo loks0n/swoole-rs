@@ -34,14 +34,9 @@ int main(int argc, char **argv) {
     { swoole::SSLContext warm{};require(warm.create()); }
     const char *reference = std::getenv("SWR_TLS_REFERENCE");require(reference);
     const std::string missing = std::string(reference) + "/tests/include/ssl_certs/does-not-exist-m21-cert.pem";
-    const int scenarios[] = {0,1,2,3,4,5,6,7,
-#if OPENSSL_VERSION_MAJOR >= 3
-        8,
-#endif
-#ifndef OPENSSL_NO_ECDH
-        9,
-#endif
-    };
+    // SSLContext's warnings are formatted in Rust (crates/tls), so only the DTLS
+    // BIO's native unknown-command warning still allocates through operator new.
+    const int scenarios[] = {4};
     for (int scenario : scenarios) {
         for (size_t fail_at = 0; fail_at <= 6; ++fail_at) {
             swoole::SSLContext ctx{};
