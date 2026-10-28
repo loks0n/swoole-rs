@@ -18,7 +18,10 @@ python3 tests/modules/httpbindings/cookie_gate.py --source /readonly/pinned/git 
 
 All gates take `--source`, `--output` and either `--archive PATH` or
 `--rust-sanitize` (Linux: build an ASan Rust archive privately; std stays
-uninstrumented).
+uninstrumented). `request_gate.py`, `response_gate.py`, `payload_gate.py` and
+`server_gate.py` need `--archive` from a hybrid build: their candidate side,
+including the `swoole.h`/`swoole_util.h` helpers they inline, comes from that
+build's fully patched tree, the upstream side from the pin.
 
 | Gate | Checks | Extra flags |
 |---|---|---|

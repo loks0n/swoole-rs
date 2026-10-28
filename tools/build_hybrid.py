@@ -239,6 +239,19 @@ def patches_for(modules, *, root=None, read_bytes=None):
     return collected
 
 
+def hybrid_tree(archive):
+    """The hybrid build an archive came from (`<build>/rust-prefix/lib/libswoole_rs_ffi.a`): its
+    fully patched source tree and the compiler flags for its headers, i.e. the patched include/,
+    the Rust ABI headers and the module switches its config.h turns on. A gate's hybrid side
+    compiles against these, never against the pinned headers; its upstream side uses the pin."""
+    build = Path(archive).resolve().parents[2]
+    source, abi = build / 'src', build / 'rust-prefix/include'
+    if not (source / 'include/swoole.h').is_file() or not abi.is_dir():
+        raise ValueError(f'Not a hybrid build archive (<build>/rust-prefix/lib/): {archive}')
+    switches = re.findall(r'^#define (SWOOLE_RS_\w+) 1$', (source / 'config.h').read_text(), re.M)
+    return source, [*('-D' + name for name in switches), '-I' + str(source / 'include'), '-I' + str(abi)]
+
+
 def apply_patch_verified(source, patch, targets, expected_sha256=None):
     """Apply inside a private tree and prove every declared destination changed."""
     source, patch = Path(source).resolve(), Path(patch).resolve()

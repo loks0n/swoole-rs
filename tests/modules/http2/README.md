@@ -11,11 +11,12 @@ The overlay has no native fallback: patched builds define `SW_USE_RUST_HTTP2`.
 ## Running
 
 From the repository root, run the core gate first. Every other gate reads its
-report and reuses its overlay and archive:
+report and reuses its overlay and archive. The overlay is the http2 files of the
+archive's hybrid build tree (all modules' patches applied):
 
 ```sh
 python3 tests/modules/http2/gate.py --source /absolute/pinned/swoole \
-  --output target/http2/core.json --sanitize [--archive libswoole_rs_ffi.a]
+  --archive /absolute/hybrid/rust-prefix/lib/libswoole_rs_ffi.a --output target/http2/core.json --sanitize
 python3 tests/modules/http2/settings_calls.py --source /absolute/pinned/swoole \
   --core-report target/http2/core.json --output target/http2/settings.json
 ```
@@ -36,7 +37,9 @@ Each gate extracts the actual pinned and patched function bodies, compiles both
 against recording doubles for native effects, and compares effect order, emitted
 bytes, return values and published state.
 
-- `gate.py`: compiles the original and patched `src/protocol/http2.cc`, runs Rust unit tests, and compares the core codec calls
+- `gate.py`: compiles the original `src/protocol/http2.cc` against the pinned
+  headers and the hybrid tree's copy and `core_calls.cpp` against the hybrid
+  build's patched headers, runs Rust unit tests, and compares the core codec calls
   (`core_calls.cpp`) with a recording `Socket::send`.
 - `settings_calls.py`: server SETTINGS loop and client lambda, with HPACK/trace
   doubles.
