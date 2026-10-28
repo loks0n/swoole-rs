@@ -148,7 +148,7 @@ typedef struct {
     void *(*worker_copy)(void *pool, int64_t worker_id, int *pipe);
 } swr_v1_phpprocess_pool_host;
 
-void swr_v1_phpprocess_pool_minit(const struct _zend_function_entry *methods, const swr_v1_phpprocess_pool_host *host);
+void swr_v1_phpprocess_pool_minit(const struct _zend_function_entry *methods, const swr_v1_phpprocess_pool_host *table);
 void *swr_v1_phpprocess_pool_current(void);
 #ifdef __cplusplus
 }
