@@ -3,7 +3,9 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <algorithm>
 #include <iostream>
+#include <tuple>
 #include <new>
 #include <unordered_map>
 #include <utility>
@@ -11,14 +13,28 @@
 #include "swoole_rs_reactor.h"
 constexpr int SW_EVENT_READ = 1 << 9, SW_EVENT_WRITE = 1 << 10, SW_EVENT_ERROR = 1 << 11;
 struct Socket { int fd, events; };
+// The original body reads the std map, the selected one the Rust registry; add() fills both.
 struct Reactor {
     std::unordered_map<int, Socket *> sockets;
-    mutable unsigned copies = 0;
+    swr_v1_reactor_registry *registry = swr_v1_reactor_registry_new();
     int max_event_num = 0;
-    const std::unordered_map<int, Socket *> &get_sockets() const { ++copies; return sockets; }
-    // Selected body reads a registry snapshot; model it as a copy in Native map order.
-    std::vector<std::pair<int, Socket *>> socket_registry_snapshot() const { ++copies; return {sockets.begin(), sockets.end()}; }
+    ~Reactor() { swr_v1_reactor_registry_free(registry); }
+    const std::unordered_map<int, Socket *> &get_sockets() const { return sockets; }
+    void add(Socket *socket) {
+        sockets.emplace(socket->fd, socket);
+        assert(swr_v1_reactor_registry_put(registry, socket->fd, socket, socket->events) == 0);
+    }
 };
+// Poll order is each map's iteration order, so compare the entries as sets.
+template <class Snapshot>
+std::vector<std::tuple<int, short, short, Socket *>> entries(const Snapshot &snapshot, int n) {
+    std::vector<std::tuple<int, short, short, Socket *>> result;
+    for (int i = 0; i < n; ++i) {
+        result.emplace_back(snapshot.events_[i].fd, snapshot.events_[i].events, snapshot.events_[i].revents, snapshot.event_sockets_[i]);
+    }
+    std::sort(result.begin(), result.end());
+    return result;
+}
 struct ReactorImpl { Reactor *reactor_; explicit ReactorImpl(Reactor *r): reactor_(r) {} };
 int16_t translate_events_to_poll_original(int);
 int16_t translate_events_to_poll_selected(int);
@@ -44,25 +60,23 @@ int main() {
         sockets.reserve(n);
         for (int i = 0; i < n; ++i) {
             sockets.push_back({100 + i, (i % 4) << 9});
-            reactor.sockets.emplace(100 + i, &sockets.back());
+            reactor.add(&sockets.back());
         }
         auto *address = selected.events_;
         for (unsigned round = 0; round < 3; ++round) {
             assert(original.set_events() == n);
             assert(selected.set_events() == n);
             assert(selected.events_ == address);
+            assert(entries(original, n) == entries(selected, n));
             for (int i = 0; i < n; ++i) {
-                assert(original.events_[i].fd == selected.events_[i].fd);
-                assert(original.events_[i].events == selected.events_[i].events);
-                assert(original.events_[i].revents == 0 && selected.events_[i].revents == 0);
+                assert(selected.events_[i].revents == 0);
                 original.events_[i].revents = selected.events_[i].revents = POLLIN;
                 ++snapshots;
             }
         }
-        assert(reactor.copies == 6);
     }
     int fds[2]; assert(pipe(fds) == 0);
-    { Reactor reactor; Socket socket{fds[0], SW_EVENT_READ}; reactor.sockets.emplace(fds[0], &socket);
+    { Reactor reactor; Socket socket{fds[0], SW_EVENT_READ}; reactor.add(&socket);
       SnapshotOriginal original(&reactor, 1); SnapshotSelected selected(&reactor, 1);
       assert(original.set_events() == 1 && selected.set_events() == 1);
       char byte = 'x'; assert(write(fds[1], &byte, 1) == 1);

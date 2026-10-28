@@ -51,6 +51,8 @@ def main():
             for signature in ['ReactorPoll::ReactorPoll(', 'ReactorPoll::~ReactorPoll(', 'int ReactorPoll::set_events() const']:
                 method, _ = block(source, source.index(signature))
                 method = method.replace('ReactorPoll', name).replace('translate_events_to_poll(', 'translate_events_to_poll_'+label.lower()+'(')
+                if label == 'Selected':
+                    method = method.replace('reactor_->get_sockets()', 'reactor_->registry')
                 methods.append(method)
             fragments.append('struct '+name+' : ReactorImpl { '+fields+'\n'+name+'(Reactor*, int); ~'+name+'(); int set_events() const; };\n'+'\n'.join(methods))
             for signature in ['int16_t translate_events_to_poll(', 'int translate_events_from_poll(']:
@@ -65,7 +67,7 @@ def main():
         if sys.platform.startswith('linux'):
             cmd += ['-ldl', '-lm']
         result = subprocess.run(cmd, capture_output=True, text=True)
-        report = dict(pin=PIN, patches=patches, compiler=subprocess.check_output(['c++', '--version'], text=True).splitlines()[0], command=cmd, compile_returncode=result.returncode, compile_stdout=result.stdout, compile_stderr=result.stderr, scope='exact constructor/destructor/set_events/translation bodies; Native registry facade; actual libc pipe/poll; not full reactor or callback qualification')
+        report = dict(pin=PIN, patches=patches, compiler=subprocess.check_output(['c++', '--version'], text=True).splitlines()[0], command=cmd, compile_returncode=result.returncode, compile_stdout=result.stdout, compile_stderr=result.stderr, scope='exact constructor/destructor/set_events/translation bodies; original over a std map, selected over the Rust registry; actual libc pipe/poll; not full reactor or callback qualification')
         if result.returncode == 0:
             result = subprocess.run([str(executable)], capture_output=True, text=True)
             report.update(returncode=result.returncode, stdout=result.stdout, stderr=result.stderr)

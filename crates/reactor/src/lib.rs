@@ -18,6 +18,10 @@ pub use backend::*;
 mod poll;
 #[cfg(unix)]
 pub use poll::*;
+#[cfg(unix)]
+mod registry;
+#[cfg(unix)]
+pub use registry::*;
 
 #[cfg(unix)]
 mod output;
