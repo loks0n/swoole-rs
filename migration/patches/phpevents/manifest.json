@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-php-event-frontend.patch",
-      "sha256": "bd577def803dc30ea6ff9aa2706dc062a08ccd1574314ae87f7d1c4af9abc3c3",
+      "sha256": "506f19e8f6203d4ff0a5e6efe66fc515700019f318c3423abb70bd933d3873a1",
       "upstream_paths": [
         "ext-src/swoole_event.cc"
       ]
