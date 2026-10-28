@@ -17,7 +17,7 @@ def main():
  files=['src/core/buffer.cc','src/network/socket.cc','src/reactor/base.cc','src/server/base.cc','src/server/reactor_thread.cc','src/server/master.cc']
  for repaired in [False,True]:
   with tempfile.TemporaryDirectory(prefix='swr-buffer-callers-') as tmp:
-   tree=Path(tmp);data=subprocess.check_output(['git','-C',str(a.source),'archive',PIN,'include','thirdparty',*files,'src/reactor/poll.cc','src/reactor/epoll.cc','src/reactor/kqueue.cc','src/network/stream.cc','ext-src/swoole_admin_server.cc'])
+   tree=Path(tmp);data=subprocess.check_output(['git','-C',str(a.source),'archive',PIN,'include','thirdparty',*files,'src/reactor/poll.cc','src/reactor/epoll.cc','src/reactor/kqueue.cc','src/network/stream.cc','ext-src/swoole_admin_server.cc','src/server/reactor_process.cc'])
    with tarfile.open(fileobj=io.BytesIO(data)) as ar:
     for m in ar:
      if m.isfile():
