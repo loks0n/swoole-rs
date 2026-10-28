@@ -73,6 +73,33 @@ Mirror upstream's ZPP block exactly: the same min/max, defaults and failure
 return value. Errors are Zend's own (`zend_wrong_parameters_count_error`,
 `zend_wrong_parameter_error`), so messages match.
 
+## Calling PHP: bailouts
+
+`exit()` and fatal errors leave PHP code by `zend_bailout()`, a `longjmp` to the
+nearest `zend_try`. A `longjmp` must never cross a Rust frame, so Rust never
+calls PHP code directly where it could bail out:
+
+- `zend::bailout::call(fci, fcc)` runs `zend_call_function` inside a
+  `zend_try` that lives in the C shim, and returns `Err(Bailout)` if it bailed.
+- `zend::bailout::trap(body, arg)` does the same for a C or C++ `body` (for
+  example Swoole's coroutine-aware `zend::function::call`, lent by C++).
+- `Bailout` is `#[must_use]`: finish the Rust work (release what you hold),
+  return it to the C/C++ caller as a flag, and let that caller call
+  `zend_bailout()` once the Rust frames are gone. Callbacks driven by a C++
+  loop (timers, the reactor, Server's `onReceive`/`onRequest`) keep a C++
+  trampoline that does exactly this:
+
+```cpp
+static void timer_callback(Timer *timer, TimerNode *tnode) {
+    if (swr_v1_..._callback(tnode->data)) {  // Rust: true if it trapped a bailout
+        timer->abandon_selection();
+        zend_bailout();
+    }
+}
+```
+
+`zend::bailout::parse_func` is `Z_PARAM_FUNC` (Zend's own callback errors).
+
 ## Checks
 
 - `cargo clippy --workspace --all-targets --all-features` and `cargo test
