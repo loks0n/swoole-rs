@@ -115,7 +115,7 @@ fn get_affinity(call: &Call) {
         return;
     }
     // SAFETY: the return slot and a valid set.
-    unsafe { swr_v1_phpprocess_cpu_set_to_array(call.value(), (&raw const set).cast()) };
+    unsafe { swr_v1_phpprocess_cpu_set_to_array(call.return_value(), (&raw const set).cast()) };
 }
 
 swoole_rs_zend::handlers! {

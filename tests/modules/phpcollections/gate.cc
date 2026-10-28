@@ -8,14 +8,6 @@
 #include <initializer_list>
 #include "swoole_rs_phpcollections.h"
 using zend_long = intptr_t;
-static intptr_t native_capacity(intptr_t capacity) {
-#include "native-capacity.inc"
-    return capacity;
-}
-static intptr_t selected_capacity(intptr_t capacity) {
-#include "selected-capacity.inc"
-    return capacity;
-}
 struct Columns { size_t n; size_t size() const { return n; } };
 static bool column_cursor_failed=false;
 static unsigned cursor_opens=0,cursor_errors=0;
@@ -38,9 +30,6 @@ static size_t selected_count(Table *table,zend_long mode) {
 }
 int main() {
     size_t checks=0;
-    for (intptr_t value : {INTPTR_MIN, intptr_t(-1), intptr_t(0), intptr_t(1), intptr_t(2), INTPTR_MAX}) {
-        assert(native_capacity(value)==selected_capacity(value)); ++checks;
-    }
     for (size_t n : {size_t(0),size_t(1),size_t(63),SIZE_MAX}) {
         for (size_t cols : {size_t(0),size_t(1),size_t(7),SIZE_MAX}) {
             Columns columns{cols}; Table table{n,&columns};
@@ -90,5 +79,5 @@ int main() {
     assert(selected_count(&failed_table,0)==3 && cursor_opens==0 && cursor_errors==0);
     assert(selected_count(&failed_table,1)==0 && cursor_opens==1 && cursor_errors==1);
     column_cursor_failed=false;
-    std::printf("{\"checks\":%zu,\"actual_body_checks\":86,\"selected_count_cursor_error_checks\":2}\n",checks);
+    std::printf("{\"checks\":%zu,\"actual_body_checks\":80,\"selected_count_cursor_error_checks\":2}\n",checks);
 }

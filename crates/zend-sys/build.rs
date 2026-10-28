@@ -42,7 +42,7 @@ mod php {
             .generate_comments(false)
             .clang_args(includes.iter().map(|dir| format!("-I{}", dir.display())))
             .allowlist_function(
-                "(_?zend_|object_properties_init|object_init_ex|php_error_docref|swr_zend_|add_assoc_|add_index_|add_next_index_|zval_).*",
+                "(_?zend_|object_properties_init|object_init_ex|php_error_docref|swr_zend_|swr_zval_|zval_|add_assoc_|add_next_index_|add_index_).*",
             )
             .allowlist_type("(_?zend_|_?zval).*")
             .allowlist_var(

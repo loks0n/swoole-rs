@@ -456,7 +456,7 @@ fn wait(call: &Call) {
         return;
     }
     call.set_array();
-    let array = call.value();
+    let array = call.return_value();
     // SAFETY: the array just initialised.
     unsafe { add_assoc_long(array, c"pid", i64::from(pid)) };
     // SAFETY: as above.
@@ -546,12 +546,12 @@ fn stat_queue(call: &Call) {
     )]
     // SAFETY: the array just initialised.
     unsafe {
-        add_assoc_long(call.value(), c"queue_num", num as i64);
+        add_assoc_long(call.return_value(), c"queue_num", num as i64);
     }
     #[expect(clippy::cast_possible_wrap, reason = "as above")]
     // SAFETY: as above.
     unsafe {
-        add_assoc_long(call.value(), c"queue_bytes", bytes as i64);
+        add_assoc_long(call.return_value(), c"queue_bytes", bytes as i64);
     }
 }
 
@@ -755,7 +755,7 @@ fn export_socket(call: &Call) {
     // SAFETY: the object keeps its reference; the return value takes a new one.
     unsafe { swr_zend_object_addref(process.socket) };
     // SAFETY: as above.
-    unsafe { set_object(call.value(), process.socket) };
+    unsafe { set_object(call.return_value(), process.socket) };
 }
 
 fn push(call: &Call) {

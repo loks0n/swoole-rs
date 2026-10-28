@@ -42,9 +42,18 @@ bool swr_zend_module_loaded(const char *name, size_t length);
 /* zval_get_long, whose slow path's signature depends on the PHP version. */
 zend_long swr_zval_get_long(const zval *value);
 
-/* emalloc: request memory Zend frees at shutdown even after a bailout. */
-void *swr_zend_emalloc(size_t size);
-
 /* efree of a string never shared (zend_string_efree). */
 void swr_zend_string_free(zend_string *string);
+
+/* emalloc and efree (macros taking file and line in debug builds). */
+void *swr_zend_emalloc(size_t size);
+void swr_zend_efree(void *ptr);
+
+/* Z_TRY_ADDREF_P and Z_TRY_DELREF_P. */
+void swr_zval_try_addref(zval *value);
+void swr_zval_try_delref(zval *value);
+
+/* Swoole's sw_zend_register_class_alias for a name without a leading
+ * backslash: a lowercased, interned, persistent alias. */
+int swr_zend_register_class_alias(const char *name, size_t length, zend_class_entry *ce);
 #endif

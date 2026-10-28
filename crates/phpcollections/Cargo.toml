@@ -9,5 +9,12 @@ license = "Apache-2.0"
 name = "swoole_rs_phpcollections"
 crate-type = ["rlib"]
 
+[features]
+# Swoole\Coroutine\Channel needs PHP headers (swoole-rs-zend-sys).
+php = ["dep:swoole-rs-zend", "swoole-rs-zend/php"]
+
+[dependencies]
+swoole-rs-zend = { path = "../zend", optional = true }
+
 [lints]
 workspace = true

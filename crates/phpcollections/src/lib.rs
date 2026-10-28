@@ -1,5 +1,6 @@
-//! PHP collection decisions over copied metadata. Native storage and all effects
-//! remain in the facade; no Rust call allocates, invokes Zend or suspends.
+//! PHP `Swoole\Coroutine\Channel` (with the `php` feature, see docs/zend.md),
+//! and `Swoole\Table` decisions over copied metadata, whose native storage and
+//! effects remain in the C++ facade.
 #![cfg_attr(
     not(test),
     deny(
@@ -8,10 +9,10 @@
     )
 )]
 
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phpcollections_capacity(capacity: isize) -> isize {
-    capacity.max(1)
-}
+#[cfg(feature = "php")]
+mod channel;
+#[cfg(feature = "php")]
+pub use channel::*;
 
 /// Native `TableColumn` tags are pinned and checked by the native adapter.
 #[unsafe(no_mangle)]
@@ -59,60 +60,6 @@ pub extern "C" fn swr_v1_phpcollections_get_action(row: u8, field: u8) -> u32 {
     } else {
         2
     }
-}
-
-/// Operation-local native program counter. Every action completes in C++ before
-/// the next call; result is observed only after push/pop. No object is retained.
-/// Push=1, Pop=2. Invalid stage/operation returns 0 (native invariant failure).
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phpcollections_channel_next(
-    operation: u32,
-    stage: u32,
-    success: u8,
-) -> u32 {
-    let success = success != 0;
-    match (operation, stage) {
-        (1, 0) => 1,             // retain input
-        (1, 1) => 2,             // duplicate zval
-        (1, 2) => 3,             // push, may suspend
-        (1, 3) if success => 4,  // publish OK
-        (1, 3) => 5,             // observe and publish current error
-        (1, 4) if success => 6,  // return true
-        (1, 4) => 7,             // release failed input reference
-        (1, 5) => 8,             // free failed duplicate
-        (1, 6) => 9,             // return false
-        (2, 0) => 10,            // pop, may suspend
-        (2, 1) if success => 11, // transfer popped value to return
-        (2, 1) => 5,             // observe and publish current error
-        (2, 2) if success => 8,  // free transferred zval container
-        (2, 2) => 9,             // return false
-        (2, 3) => 4,             // publish OK after transfer+container free
-        (2, 4) => 12,            // done
-        _ => 0,
-    }
-}
-
-/// A copied action sequence, low byte first, ending at the next native result
-/// boundary or return. Native execution consumes bytes only after Rust returns.
-/// phase=0 starts an operation; phase=1 consumes the fresh push/pop success flag.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phpcollections_channel_plan(
-    operation: u32,
-    phase: u32,
-    success: u8,
-) -> u64 {
-    let actions: &[u8] = match (operation, phase, success != 0) {
-        (1, 0, _) => &[1, 2, 3],
-        (1, 1, true) => &[4, 6],
-        (1, 1, false) => &[5, 7, 8, 9],
-        (2, 0, _) => &[10],
-        (2, 1, true) => &[11, 8, 4, 12],
-        (2, 1, false) => &[5, 9],
-        _ => &[],
-    };
-    actions.iter().enumerate().fold(0, |plan, (index, action)| {
-        plan | (u64::from(*action) << (index * 8))
-    })
 }
 
 /// Operands are copied only after native Zend conversion. Row storage and return
@@ -260,42 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn packed_plan_preserves_frozen_action_sequences() {
-        for operation in [1, 2] {
-            for success in [0, 1, u8::MAX] {
-                let mut frozen = Vec::new();
-                for stage in 0..7 {
-                    let action = swr_v1_phpcollections_channel_next(operation, stage, success);
-                    frozen.push(u8::try_from(action).expect("action codes fit a byte"));
-                    if [6, 9, 12].contains(&action) {
-                        break;
-                    }
-                }
-                let mut planned = Vec::new();
-                for phase in [0, 1] {
-                    let mut bits = swr_v1_phpcollections_channel_plan(operation, phase, success);
-                    while bits != 0 {
-                        planned.push(bits.to_le_bytes()[0]);
-                        bits >>= 8;
-                    }
-                }
-                assert_eq!(planned, frozen);
-            }
-        }
-        for operation in [0, 3, u32::MAX] {
-            assert_eq!(swr_v1_phpcollections_channel_plan(operation, 0, 1), 0);
-        }
-        assert_eq!(swr_v1_phpcollections_channel_plan(1, 2, 1), 0);
-    }
-
-    #[test]
     fn constructors_and_types() {
-        for value in [isize::MIN, -1, 0, 1, 2, isize::MAX] {
-            assert_eq!(
-                swr_v1_phpcollections_capacity(value),
-                if value <= 0 { 1 } else { value }
-            );
-        }
         for kind in -8..16 {
             assert_eq!(
                 swr_v1_phpcollections_kind(kind),

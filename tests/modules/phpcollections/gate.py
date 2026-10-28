@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Actual pinned capacity/count bodies plus bounded collection policy comparison."""
+"""Actual pinned Table count bodies plus bounded Table policy comparison."""
 import argparse
 import hashlib
 import json
@@ -18,7 +18,7 @@ def sha(p):return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
 def snapshot_inputs(work):
     paths=[ROOT/'crates/phpcollections/src/lib.rs',ROOT/'native/phpcollections/swoole_rs_phpcollections.h',
-           *[Path(__file__).with_name(name) for name in ['gate.cc','effects.cc','arithmetic.cc','write.cc']]]
+           *[Path(__file__).with_name(name) for name in ['gate.cc','arithmetic.cc','write.cc']]]
     # Read everything before writing, then compile from private copies so the
     # retained work directory reproduces a failure.
     contents=[(path,path.read_bytes()) for path in paths]
@@ -67,21 +67,9 @@ def main():
         stage(a.source,work)
         for engine in ['native','selected']:
             def text(name):return (subprocess.check_output(['git','-C',str(a.source),'show',PIN+':ext-src/'+name],text=True) if engine=='native' else (work/'ext-src'/name).read_text())
-            channel=text('swoole_channel_coro.cc')
-            begin=channel.index('    if (capacity <= 0)') if engine=='native' else channel.index('    capacity = swr_v1_phpcollections_capacity(')
-            end=channel.index('\n\n    ChannelObject *chan_t',begin)
-            (work/(engine+'-capacity.inc')).write_text(channel[begin:end])
             table=text('swoole_table.cc');begin=table.index('    if (mode == COUNT_NORMAL)') if engine=='native' else table.index('    size_t column_count = 0;')
             end=table.index('\n}',begin)
             (work/(engine+'-count.inc')).write_text(table[begin:end])
-            effects=[]
-            for method in ['push','pop']:
-                begin=channel.rindex('static PHP_METHOD(swoole_channel_coro, '+method+')')
-                opening=channel.index('{',begin);end=opening+1;depth=1
-                while depth:
-                    depth+=(channel[end]=='{')-(channel[end]=='}');end+=1
-                effects.append(channel[begin:end])
-            (work/(engine+'-effects.inc')).write_text('\n'.join(effects))
             arithmetic=[]
             signatures=(['static inline bool table_read_field_value(', 'static void table_update('] if engine=='selected' else []) + ['static PHP_METHOD(swoole_table, '+method+')' for method in ['incr','decr']] + [('static inline bool table_row2array(' if engine=='selected' else 'static inline void table_row2array('), ('static inline bool table_get_field_value(' if engine=='selected' else 'static inline void table_get_field_value(')]
             for signature in signatures:
@@ -107,9 +95,7 @@ def main():
         if sys.platform.startswith('linux'):cmd+=['-ldl','-lrt','-lutil']
         if not a.archive and a.library_kind=='cdylib':cmd+=['-Wl,-rpath,'+str(work)]
         run(cmd);r['observations']=json.loads(run([binary]).stdout)
-        effects=work/'effects';cmd[cmd.index(inputs['gate.cc'])]=inputs['effects.cc'];cmd[cmd.index(binary)]=effects
-        run(cmd);r['effect_observations']=json.loads(run([effects]).stdout)
-        arithmetic=work/'arithmetic';cmd[cmd.index(inputs['effects.cc'])]=inputs['arithmetic.cc'];cmd[cmd.index(effects)]=arithmetic
+        arithmetic=work/'arithmetic';cmd[cmd.index(inputs['gate.cc'])]=inputs['arithmetic.cc'];cmd[cmd.index(binary)]=arithmetic
         run(cmd);r['arithmetic_observations']=json.loads(run([arithmetic]).stdout)
         write=work/'write';cmd[cmd.index(inputs['arithmetic.cc'])]=inputs['write.cc'];cmd[cmd.index(arithmetic)]=write
         run(cmd);r['write_observations']=json.loads(run([write]).stdout)
