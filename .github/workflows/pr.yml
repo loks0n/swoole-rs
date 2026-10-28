@@ -20,9 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
+      # PHP headers and libclang: zend-sys binds them under the `php` feature,
+      # which --all-features turns on (every module crate, as in the hybrid).
+      - uses: ./.github/actions/install
       - run: cargo fmt --all --check
-      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
-      - run: cargo test --locked --workspace
+      - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --locked --workspace --all-features
       - uses: taiki-e/install-action@v2
         with:
           tool: cbindgen@0.29.4,cargo-deny@0.18.9,cargo-machete@0.9.1

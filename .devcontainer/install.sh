@@ -15,7 +15,7 @@ if [ -n "$APT_CACHE" ]; then
 fi
 install() {
     apt-get $APT install -yq --no-install-recommends \
-        php-dev php-sqlite3 php-curl php-xml php-mbstring python3 python3-pytest composer \
+        php-dev libclang-dev php-sqlite3 php-curl php-xml php-mbstring python3 python3-pytest composer \
         libpcre2-dev libssl-dev zlib1g-dev pkg-config cmake g++ make autoconf git \
         ca-certificates curl libgtest-dev libnghttp2-dev libpq-dev libcurl4-openssl-dev libbrotli-dev unixodbc-dev ccache locales procps "$@"
 }

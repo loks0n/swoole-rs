@@ -418,6 +418,8 @@ jobs:
         shell: sh
     env:
       PHP_EXTENSIONS: --php-extension sockets --php-extension pcntl
+      # musl build scripts link statically and cannot dlopen libclang (zend-sys's bindgen).
+      RUSTFLAGS: -C target-feature=-crt-static
     steps:
       - run: apk add --no-cache git && git config --global --add safe.directory '*'
       - uses: actions/checkout@v4
