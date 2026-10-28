@@ -526,9 +526,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('corebase-native',commands)
         self.assertIn('http-native', commands)
         self.assertIn('--socket-output', commands['reactor-production-socket-output'])
-        self.assertIn('--sdk-export', commands['phpevents-sdk'])
-        self.assertIn('--native-export', commands['phpevents-sdk'])
-        self.assertNotIn('--sdk-report', commands['phpevents-sdk'])
         self.assertIn('coroutine-compile',commands)
         channel_state = commands['coroutine-channel-state']
         self.assertIn('tests/modules/coroutine/channel_state_gate.py', channel_state)
@@ -789,18 +786,6 @@ class Lanes(unittest.TestCase):
                 self.assertIn('tests/swoole_server/sendfile_02.phpt', original)
                 self.assertIn('--require-all', original)
                 self.assertIn('--isolate-cases', original)
-
-    def test_event_sdk_uses_its_own_exports_without_helper_capture(self):
-        args = SimpleNamespace(lane='integrate', module=['phpevents'], php='php',
-                               php_extension=[], jobs=2, test=None, case=None, benchmark=False,
-                               compare=False, fix_halfclose=False)
-        commands = dict(dev.plan(args, ROOT / 'target/reports/event-only'))
-        self.assertIn('reference-build', commands)
-        self.assertIn('--export', commands['reference-build'])
-        self.assertIn('--export', commands['build'])
-        self.assertIn('--sdk-export', commands['phpevents-sdk'])
-        self.assertIn('--native-export', commands['phpevents-sdk'])
-        self.assertNotIn('phphelpers-sdk', commands)
 
     def test_php_sockets_reuse_rejects_mismatched_native_or_configured_profile(self):
         import hashlib

@@ -114,6 +114,9 @@ pub use swoole_rs_tls::*;
 #[cfg(feature = "process")]
 pub use swoole_rs_process::*;
 
+#[cfg(feature = "process")]
+pub use swoole_rs_phpprocess::*;
+
 #[cfg(feature = "clients")]
 pub use swoole_rs_clients as clients;
 #[cfg(feature = "clients")]
@@ -125,6 +128,9 @@ pub use swoole_rs_inflate as inflate;
 #[cfg(feature = "httpbindings")]
 // Keep local Rust type names scoped; C exports retain their no_mangle names.
 pub use swoole_rs_httpbindings as httpbindings;
+
+#[cfg(feature = "httpbindings")]
+pub use swoole_rs_phphttp::*;
 
 #[cfg(feature = "http2")]
 pub use swoole_rs_http2 as http2;

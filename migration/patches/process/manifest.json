@@ -100,6 +100,13 @@
         "src/server/thread.cc",
         "src/server/worker.cc"
       ]
+    },
+    {
+      "path": "0010-php-process.patch",
+      "sha256": "932fc095bb50160a29b09cb01a50078cd35f97914fae7d9ebd0aeffec133bb46",
+      "upstream_paths": [
+        "ext-src/swoole_process.cc"
+      ]
     }
   ]
 }

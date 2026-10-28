@@ -244,6 +244,7 @@
       ],
       "owned_paths": [
         "crates/process/",
+        "crates/phpprocess/",
         "native/process/",
         "migration/patches/process/"
       ],
@@ -663,6 +664,7 @@
       ],
       "owned_paths": [
         "crates/httpbindings/",
+        "crates/phphttp/",
         "native/httpbindings/",
         "migration/patches/httpbindings/",
         "tests/modules/httpbindings/"
