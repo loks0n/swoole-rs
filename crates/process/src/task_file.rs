@@ -171,7 +171,9 @@ pub unsafe extern "C" fn swr_v1_process_task_pack(
     if pattern.len() >= pkg.tmpfile.len() {
         return TaskPack::default();
     }
-    pkg.tmpfile[..pattern.len()].copy_from_slice(pattern);
+    for (byte, &pattern) in pkg.tmpfile.iter_mut().zip(pattern) {
+        *byte = pattern;
+    }
     let fd = make_tmpfile(&mut pkg.tmpfile);
     if fd < 0 {
         return TaskPack::default();

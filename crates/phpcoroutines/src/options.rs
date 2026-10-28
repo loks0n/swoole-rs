@@ -100,9 +100,11 @@ pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_options(
                 return OptionPlan::action(11);
             }
             1 => {
-                let option = &OPTIONS[state.index as usize];
-                state.index += 1;
                 state.stage = 0;
+                let Some(option) = OPTIONS.get(state.index as usize) else {
+                    continue;
+                };
+                state.index += 1;
                 if observation == 0 {
                     continue;
                 }

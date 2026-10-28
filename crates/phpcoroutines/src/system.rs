@@ -152,9 +152,10 @@ pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_system_complete(
                         const WAIT: [&[u8]; 3] = [b"pid\0", b"code\0", b"signal\0"];
                         plan.action = 7;
                         plan.index = phase - 2;
-                        plan.key = if kind == 6 { EXEC } else { WAIT }[plan.index]
-                            .as_ptr()
-                            .cast();
+                        let keys = if kind == 6 { EXEC } else { WAIT };
+                        plan.key = keys
+                            .get(plan.index)
+                            .map_or(std::ptr::null(), |key| key.as_ptr().cast());
                     }
                     _ => {}
                 },

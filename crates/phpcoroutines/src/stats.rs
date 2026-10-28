@@ -51,7 +51,7 @@ pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_stats(
         state.index = 14;
     }
     let index = state.index.min(14) as usize;
-    let key = KEYS[index];
+    let key = KEYS.get(index).copied().unwrap_or(KEYS[14]);
     let action = if index == 14 {
         0
     } else {

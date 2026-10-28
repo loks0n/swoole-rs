@@ -793,24 +793,25 @@ pub extern "C" fn swr_v1_ports_class_property(index: usize) -> PortsProperty {
         (b"setting", 1, 0),
         (b"connections", 1, 0),
     ];
-    let (name, kind, value, private) = if let Some(&event) = EVENT_ORDER.get(index) {
-        (EVENTS[event].1, 1, 0, 1)
-    } else if let Some(&(name, kind, value)) = index
-        .checked_sub(EVENT_ORDER.len())
-        .and_then(|i| PUBLIC.get(i))
-    {
-        (name, kind, value, 0)
-    } else {
-        return PortsProperty {
-            name: PortsSpan {
-                data: std::ptr::null(),
-                len: 0,
-            },
-            value: 0,
-            kind: 0,
-            private: 0,
+    let (name, kind, value, private) =
+        if let Some(&(_, name)) = EVENT_ORDER.get(index).and_then(|&event| EVENTS.get(event)) {
+            (name, 1, 0, 1)
+        } else if let Some(&(name, kind, value)) = index
+            .checked_sub(EVENT_ORDER.len())
+            .and_then(|i| PUBLIC.get(i))
+        {
+            (name, kind, value, 0)
+        } else {
+            return PortsProperty {
+                name: PortsSpan {
+                    data: std::ptr::null(),
+                    len: 0,
+                },
+                value: 0,
+                kind: 0,
+                private: 0,
+            };
         };
-    };
     PortsProperty {
         name: PortsSpan {
             data: name.as_ptr(),
