@@ -679,17 +679,9 @@ class Lanes(unittest.TestCase):
         for family in ['settings', 'control', 'header', 'queue', 'window', 'response-headers', 'publication', 'write', 'send', 'server-header', 'request-headers', 'response-builders', 'response-lifecycle', 'connection']:
             self.assertIn('--core-report', commands['http2-' + family])
             self.assertLess(list(commands).index('http2-native'), list(commands).index('http2-' + family))
-        self.assertIn('--archive', commands['httpbindings-request'])
-        self.assertNotIn('--without-compression', commands['httpbindings-request'])
-        self.assertIn('--without-compression', commands['httpbindings-request-without-compression'])
-        for capabilities in range(8):
-            if capabilities:
-                codec = commands['httpbindings-codec-' + str(capabilities)]
-                self.assertEqual(codec[codec.index('--capabilities') + 1], str(capabilities))
-            command = commands['httpbindings-payload-' + str(capabilities)]
-            self.assertEqual(command[command.index('--capabilities') + 1], str(capabilities))
-        for locale in ['C', 'C.UTF-8', 'en_US.ISO8859-1', 'tr_TR.ISO8859-9', 'tr_TR.UTF-8']:
-            self.assertIn('--native-libc', commands['httpbindings-libc-' + locale])
+        for capabilities in range(1, 8):
+            codec = commands['httpbindings-codec-' + str(capabilities)]
+            self.assertEqual(codec[codec.index('--capabilities') + 1], str(capabilities))
         for name in ['clients-lifecycle', 'clients-write', 'clients-read', 'clients-connect', 'clients-persistent', 'clients-resolver-config', 'clients-transport', 'clients-pool', 'clients-resolver', 'clients-http-connection', 'clients-http-response', 'clients-http-format', 'clients-coro', 'clients-async', 'clients-object', 'clients-ip', 'clients-ip-text', 'clients-coro-io']:
             self.assertIn('--archive', commands[name])
             self.assertIn('--sanitize', commands[name])

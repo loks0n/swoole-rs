@@ -39,18 +39,16 @@ unsafe extern "C" {
     pub(crate) fn swr_http_host_fd(context: *const Context) -> zend_long;
     pub(crate) fn swr_http_host_mark(context: *mut Context, flag: u32);
     pub(crate) fn swr_http_host_request_free(context: *mut Context);
-    pub(crate) fn swr_http_host_request_body(
+    pub(crate) fn swr_http_host_request_create(return_value: *mut zval, options: *mut zval);
+    fn swr_http_host_log(level: c_int, error: c_int, func: *const c_char, message: *const c_char);
+    pub(crate) fn swr_http_host_treat_data(arg: c_int, text: *mut c_char, array: *mut zval);
+    pub(crate) fn swr_http_host_websocket_connection(context: *mut Context) -> c_int;
+    pub(crate) fn swr_http_host_upload_tmp_dir(context: *const Context) -> *const c_char;
+    pub(crate) fn swr_http_host_tmpfile(path: *mut c_char) -> c_int;
+    pub(crate) fn swr_http_host_http2_data(
         context: *mut Context,
         length: *mut usize,
     ) -> *const c_char;
-    pub(crate) fn swr_http_host_request_data(context: *mut Context) -> *mut zval;
-    pub(crate) fn swr_http_host_request_create(return_value: *mut zval, options: *mut zval);
-    pub(crate) fn swr_http_host_request_parse(
-        context: *mut Context,
-        data: *const c_char,
-        length: usize,
-    ) -> zend_long;
-    pub(crate) fn swr_http_host_request_method(context: *mut Context, return_value: *mut zval);
     pub(crate) fn swr_http_host_response_free(context: *mut Context);
     pub(crate) fn swr_http_host_response_create(
         object: *mut zval,
@@ -149,6 +147,19 @@ pub(crate) fn report(code: c_int, always: bool, message: impl Into<Vec<u8>>) {
     let message = CString::new(message).unwrap_or_default();
     // SAFETY: a NUL-terminated message, printed through "%s".
     unsafe { swr_http_host_error(code, c_int::from(always), message.as_ptr()) };
+}
+
+/// Swoole's log line as `func` would print it: `swoole_error_log(level, error)`
+/// when `error > 0`, `swoole_warning` when 0, `swoole_sys_warning` for `-errno`.
+/// The message ends at its first NUL, as `%s`/`%.*s` do.
+pub(crate) fn log(level: c_int, error: c_int, func: &std::ffi::CStr, message: impl Into<Vec<u8>>) {
+    let mut message = message.into();
+    if let Some(nul) = message.iter().position(|&byte| byte == 0) {
+        message.truncate(nul);
+    }
+    let message = CString::new(message).unwrap_or_default();
+    // SAFETY: NUL-terminated strings, printed through "%s".
+    unsafe { swr_http_host_log(level, error, func.as_ptr(), message.as_ptr()) };
 }
 
 /// The context's state bits.
