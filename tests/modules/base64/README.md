@@ -73,6 +73,15 @@ bound; the checks expect that behavior.
 
 Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
+Gate audit (#471/#472): `base64-consumers-*` is **kept**. The codec itself is
+covered by the `cargo test -p swoole-rs-base64` differential, the `base64_encode`
+/`base64_decode` fuzz targets and the two original core-test assertions above;
+`Client::set_basic_auth` by `swoole_http_client_coro/set_basic_auth.phpt` and the
+handshake accept by the `swoole_websocket_server` PHPTs. But the `HttpProxy::
+get_auth_str` proxy-auth path (its `%.*s` embedded-NUL truncation and 255-byte
+bound) has no PHPT, Rust or fuzz coverage, and all three are C++-caller
+integration checks that cannot move to a Rust unit test — so the phase stays.
+
 ## Other probes
 
 ## Open gates
