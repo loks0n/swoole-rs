@@ -27,7 +27,7 @@ hooks = ["dep:swoole-rs-hooks"]
 ossupport = ["dep:swoole-rs-ossupport"]
 tls = ["dep:swoole-rs-tls"]
 process = ["dep:swoole-rs-process"]
-clients = ["dep:swoole-rs-clients"]
+clients = ["dep:swoole-rs-clients", "dep:swoole-rs-inflate"]
 httpbindings = ["dep:swoole-rs-httpbindings"]
 http2 = ["dep:swoole-rs-http2"]
 ports = ["dep:swoole-rs-ports"]
@@ -58,6 +58,7 @@ swoole-rs-ossupport = { path = "../ossupport", optional = true }
 swoole-rs-tls = { path = "../tls", optional = true }
 swoole-rs-process = { path = "../process", optional = true }
 swoole-rs-clients = { path = "../clients", optional = true }
+swoole-rs-inflate = { path = "../inflate", optional = true }
 swoole-rs-httpbindings = { path = "../httpbindings", optional = true }
 swoole-rs-http2 = { path = "../http2", optional = true }
 swoole-rs-ports = { path = "../ports", optional = true }

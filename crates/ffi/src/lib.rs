@@ -108,6 +108,9 @@ pub use swoole_rs_process::*;
 
 #[cfg(feature = "clients")]
 pub use swoole_rs_clients as clients;
+// The clients patch calls the HTTP inflate stream in crates/inflate.
+#[cfg(feature = "clients")]
+pub use swoole_rs_inflate as inflate;
 
 #[cfg(feature = "httpbindings")]
 // Keep local Rust type names scoped; C exports retain their no_mangle names.
