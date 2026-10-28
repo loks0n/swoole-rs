@@ -8,11 +8,10 @@ use libc::{c_char, c_int, c_void, size_t, ssize_t};
 use swoole_rs_zend::sys::{zend_object, zend_string, zval};
 
 unsafe extern "C" {
-    /// `php_swoole_check_reactor()`, then a `Coroutine\Socket` of the type
-    /// `host` implies; null with `errno` in `error`.
+    /// `php_swoole_check_reactor()`, then a `Coroutine\Socket` of `kind`;
+    /// null with `errno` in `error`.
     pub(crate) fn swoole_http_client_coro_create_socket(
-        host: *const c_char,
-        length: size_t,
+        kind: i64,
         error: *mut c_int,
     ) -> *mut zend_object;
     pub(crate) fn swoole_http_client_coro_enable_ssl(socket: Socket) -> bool;

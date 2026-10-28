@@ -95,6 +95,21 @@ pub(crate) fn host_value(host: &[u8], port: u16, ssl: bool) -> Vec<u8> {
     value
 }
 
+/// `network::Socket::convert_to_type(host)`: the socket type a host implies
+/// (`SW_SOCK_TCP`, `SW_SOCK_TCP6`, `SW_SOCK_UNIX_STREAM`); a `unix:/` host
+/// loses its scheme and all but one leading slash.
+pub(crate) fn socket_type(host: &mut Vec<u8>) -> i64 {
+    if host.starts_with(b"unix:/") {
+        host.drain(..b"unix:".len());
+        match host.iter().position(|&b| b != b'/') {
+            Some(first) => drop(host.drain(..first - 1)),
+            None => host.clear(),
+        }
+        return 5;
+    }
+    if host.contains(&b':') { 3 } else { 1 }
+}
+
 /// A multipart boundary: the prefix and 21 random alphanumerics.
 pub(crate) fn boundary() -> [u8; BOUNDARY_SIZE] {
     const CHARACTERS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -350,6 +365,18 @@ mod tests {
             closing(&boundary).len(),
             "closing boundary"
         );
+    }
+
+    #[test]
+    fn hosts_imply_socket_types() {
+        let mut host = b"unix:///tmp/a.sock".to_vec();
+        assert_eq!(socket_type(&mut host), 5, "unix socket");
+        assert_eq!(host, b"/tmp/a.sock", "one leading slash kept");
+        let mut host = b"unix:/b".to_vec();
+        assert_eq!(socket_type(&mut host), 5, "one slash");
+        assert_eq!(host, b"/b", "path");
+        assert_eq!(socket_type(&mut b"::1".to_vec()), 3, "IPv6");
+        assert_eq!(socket_type(&mut b"example.com".to_vec()), 1, "TCP");
     }
 
     #[test]

@@ -33,7 +33,7 @@
     },
     {
       "path": "0004-swoole_http_client_coro.patch",
-      "sha256": "68027c71d214ac01473cc22d1cf9bca8c90ba6aa8e7d17c90319e6cb51983629",
+      "sha256": "23f53e6094ccf30c816ffb6928a94e5aa554fd385df0f648ce89eab69fb426a1",
       "upstream_paths": [
         "ext-src/swoole_http_client_coro.cc"
       ]

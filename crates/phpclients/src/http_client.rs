@@ -106,6 +106,7 @@ struct Client {
     object: *mut zend_object,
     conn: *mut Conn,
     host: Vec<u8>,
+    socket_type: i64,
     port: u16,
     ssl: bool,
     use_default_port: bool,
@@ -425,10 +426,12 @@ impl Client {
             zsocket: unsafe { zsocket.assume_init() },
             written: ptr::null_mut(),
         }));
+        let mut host = host.to_vec();
         Box::new(Self {
             object,
             conn,
-            host: host.to_vec(),
+            socket_type: request::socket_type(&mut host),
+            host,
             #[expect(
                 clippy::cast_possible_truncation,
                 clippy::cast_sign_loss,
@@ -593,11 +596,7 @@ impl Client {
         let mut error = 0;
         // SAFETY: the host bytes and a writable local.
         let object = unsafe {
-            native::swoole_http_client_coro_create_socket(
-                self.host.as_ptr().cast(),
-                self.host.len(),
-                &raw mut error,
-            )
+            native::swoole_http_client_coro_create_socket(self.socket_type, &raw mut error)
         };
         if object.is_null() {
             self.set_error(error, strerror(error), CONNECT_FAILED);

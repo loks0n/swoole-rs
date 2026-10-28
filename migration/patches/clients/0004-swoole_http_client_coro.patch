@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_http_client_coro.cc b/ext-src/swoole_http_client_coro.cc
-index 892bbfa..dabdc6b 100644
+index 892bbfa..a62d431 100644
 --- a/ext-src/swoole_http_client_coro.cc
 +++ b/ext-src/swoole_http_client_coro.cc
 @@ -24,2 +24,3 @@
@@ -389,7 +389,7 @@ index 892bbfa..dabdc6b 100644
  
 +
  // clang-format off
-@@ -412,284 +120,70 @@ static const zend_function_entry swoole_http_client_coro_methods[] =
+@@ -412,284 +120,69 @@ static const zend_function_entry swoole_http_client_coro_methods[] =
  
 -void php_swoole_http_parse_set_cookies(const char *at, size_t length, zval *zcookies, zval *zset_cookie_headers) {
 -    const auto plan = swr_v1_clients_cookie(reinterpret_cast<const uint8_t *>(at), length);
@@ -629,10 +629,9 @@ index 892bbfa..dabdc6b 100644
 -    this->use_default_port = port == 0;
 -    if (this->use_default_port) {
 -        port = ssl ? 443 : 80;
-+zend_object *swoole_http_client_coro_create_socket(const char *host, size_t length, int *error) {
++zend_object *swoole_http_client_coro_create_socket(int64_t type, int *error) {
 +    php_swoole_check_reactor();
-+    std::string name(host, length);
-+    zend_object *object = php_swoole_create_socket(network::Socket::convert_to_type(name));
++    zend_object *object = php_swoole_create_socket((swSocketType) type);
 +    if (!object) {
 +        *error = errno;
      }
@@ -721,7 +720,7 @@ index 892bbfa..dabdc6b 100644
 +    if (sock->http_proxy && !sock->ssl_is_enable()) {
 +        sock->http_proxy->dont_handshake = 1;
      }
-@@ -697,1424 +191,272 @@ void Client::apply_setting(zval *zset, const bool check_all) {
+@@ -697,1424 +190,272 @@ void Client::apply_setting(zval *zset, const bool check_all) {
  
 -void Client::set_basic_auth(const std::string &username, const std::string &password) {
 -    std::string input = username + ":" + password;

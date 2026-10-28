@@ -111,7 +111,7 @@ void swr_v1_phpclients_parse_set_cookies(const char *at,
                                          struct _zval_struct *set_cookie_headers);
 
 /* Defined by ext-src/swoole_http_client_coro.cc for those methods. */
-struct _zend_object *swoole_http_client_coro_create_socket(const char *host, size_t length, int *error);
+struct _zend_object *swoole_http_client_coro_create_socket(int64_t type, int *error);
 bool swoole_http_client_coro_enable_ssl(void *socket);
 void swoole_http_client_coro_apply(void *socket, const struct _zval_struct *settings);
 void *swoole_http_client_coro_resolve_new(void);
