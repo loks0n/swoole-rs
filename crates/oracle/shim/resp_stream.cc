@@ -27,7 +27,10 @@ extern "C" struct SwrOracleResp {
 #define SWR_CAT2(a, b) a##_##b
 #define SWR_CAT(a, b) SWR_CAT2(a, b)
 
+// Each shim's facade types get their own namespace: framing_stream.cc defines a
+// different network::Socket, and inline members of same-named classes would merge.
 namespace SWR_RESP_ENGINE {
+namespace resp_stream {
 // As upstream include/swoole.h, swoole_error.h and swoole_log.h (logging off).
 enum { SW_OK = 0, SW_ERR = -1 };
 enum { SW_CONTINUE = 1, SW_WAIT = 2, SW_CLOSE = 3, SW_ERROR = 4 };
@@ -120,6 +123,7 @@ static int on_package(const Protocol *, network::Socket *, const RecvData *data)
     events->append(data->data, data->info.len);
     return 0;
 }
+}  // namespace resp_stream
 }  // namespace SWR_RESP_ENGINE
 
 // Runs recv_packet until it fails or the chunks are drained, logging each call's
@@ -129,7 +133,7 @@ static int on_package(const Protocol *, network::Socket *, const RecvData *data)
 // Returns the log's full length; at most capacity bytes are written to out.
 extern "C" size_t SWR_CAT(swr_oracle_resp_stream, SWR_RESP_ENGINE)(const SwrOracleResp *stream, char *out,
                                                                   size_t capacity) {
-    using namespace SWR_RESP_ENGINE;
+    using namespace SWR_RESP_ENGINE::resp_stream;
     std::string log;
     events = &log;
     Protocol protocol{stream->max_length, on_package};

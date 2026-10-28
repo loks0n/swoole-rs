@@ -34,7 +34,7 @@ extern "C" struct SwrOracleSocks5 {
 // bytes sent (S<len>:bytes), the result, state and method (H<ok>,<state>,<method>;)
 // and the reply code's strerror, until a reply fails or the proxy is ready.
 // Returns the log's full length; at most capacity bytes are written to out.
-extern "C" size_t SWR_CAT(swr_oracle_socks5, swoole)(const SwrOracleSocks5 *c, char *out, size_t capacity) {
+extern "C" size_t SWR_CAT(swr_oracle_socks5, SWR_SOCKS5_ENGINE)(const SwrOracleSocks5 *c, char *out, size_t capacity) {
     using swoole::Socks5Proxy;
     std::string log;
     auto *proxy = Socks5Proxy::create(c->socket_type,
