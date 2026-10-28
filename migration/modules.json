@@ -89,6 +89,7 @@
       ],
       "owned_paths": [
         "crates/timer/",
+        "crates/phptimer/",
         "native/timer/",
         "migration/patches/timer/",
         "tests/modules/timer/"
