@@ -458,7 +458,7 @@ fn construct(call: &Call) {
     // SAFETY: `$this`.
     unsafe { update_property_long(entry(), object, c"id", i64::from(view(worker).id)) };
     // SAFETY: `$this`, and the callback argument.
-    unsafe { update_property(entry(), object, c"callback", call.arg(1)) };
+    unsafe { update_property(entry(), object, c"callback", call.zval(1)) };
     #[expect(
         clippy::cast_possible_truncation,
         reason = "upstream casts to PipeType"
@@ -730,7 +730,7 @@ fn string_data(string: *mut zend_string) -> *mut c_char {
 }
 
 fn write(call: &Call) {
-    let Ok(data) = call.arity(1, 1).and_then(|()| call.bytes(1)) else {
+    let Ok(data) = call.arity(1, 1).and_then(|()| call.string(1, b"")) else {
         call.set_bool(false);
         return;
     };
@@ -785,7 +785,7 @@ fn export_socket(call: &Call) {
 }
 
 fn push(call: &Call) {
-    let Ok(data) = call.arity(1, 1).and_then(|()| call.bytes(1)) else {
+    let Ok(data) = call.arity(1, 1).and_then(|()| call.string(1, b"")) else {
         call.set_bool(false);
         return;
     };
@@ -846,7 +846,7 @@ fn pop(call: &Call) {
 fn exec(call: &Call) {
     let parsed = call
         .arity(2, 2)
-        .and_then(|()| Ok((call.bytes(1)?, call.array(2)?)));
+        .and_then(|()| Ok((call.string(1, b"")?, call.array_table(2)?)));
     let Ok((file, Some(args))) = parsed else {
         call.set_bool(false);
         return;
@@ -895,9 +895,13 @@ fn exec(call: &Call) {
 }
 
 fn daemon(call: &Call) {
-    let parsed = call
-        .arity(0, 3)
-        .and_then(|()| Ok((call.bool(1, true)?, call.bool(2, true)?, call.array(3)?)));
+    let parsed = call.arity(0, 3).and_then(|()| {
+        Ok((
+            call.bool(1, true)?,
+            call.bool(2, true)?,
+            call.array_table(3)?,
+        ))
+    });
     let Ok((nochdir, noclose, pipes)) = parsed else {
         call.set_bool(false);
         return;
@@ -987,7 +991,7 @@ fn close(call: &Call) {
 }
 
 fn set(call: &Call) {
-    let Ok(Some(options)) = call.arity(1, 1).and_then(|()| call.array(1)) else {
+    let Ok(Some(options)) = call.arity(1, 1).and_then(|()| call.array_table(1)) else {
         call.set_bool(false);
         return;
     };

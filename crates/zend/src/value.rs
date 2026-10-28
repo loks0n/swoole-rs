@@ -1,137 +1,127 @@
-//! Zvals, arrays, properties and constants: the Zend API calls Swoole's classes
-//! make outside argument parsing.
+//! Object properties and arrays, through Zend's own update and add functions.
 use crate::sys::{
-    add_assoc_long_ex, swr_zend_hash_foreach, zend_array, zend_class_entry,
-    zend_declare_property_null, zend_object, zend_string, zend_update_property,
-    zend_update_property_long, zval,
+    HashTable, add_assoc_long_ex, add_assoc_string_ex, add_next_index_str, swr_zend_array_init,
+    zend_array_count, zend_class_entry, zend_long, zend_object, zend_string,
+    zend_update_property_long, zend_update_property_string, zval,
 };
-use std::{
-    ffi::{CStr, c_int, c_void},
-    mem::offset_of,
-};
+use std::ffi::CStr;
 
-/// `Z_TYPE_P`.
-/// # Safety
-/// `value` is a live zval.
-#[must_use]
-#[inline]
-pub unsafe fn type_of(value: *const zval) -> u32 {
-    // SAFETY: per the caller.
-    let u1 = unsafe { (*value).u1 };
-    // SAFETY: every zval sets `type_info`.
-    unsafe { u1.type_info & 0xff }
-}
-
-/// `ZSTR_VAL`/`ZSTR_LEN` of a live string, borrowed for as long as the caller
-/// keeps the string alive.
-/// # Safety
-/// `string` is a live `zend_string`.
-#[must_use]
-#[inline]
-pub unsafe fn bytes<'a>(string: *const zend_string) -> &'a [u8] {
-    let start = string
-        .wrapping_byte_add(offset_of!(zend_string, val))
-        .cast::<u8>();
-    // SAFETY: a live string.
-    let length = unsafe { (*string).len };
-    // SAFETY: a zend_string's `len` bytes follow its header.
-    unsafe { std::slice::from_raw_parts(start, length) }
-}
-
-/// `add_assoc_long_ex(array, key, value)`.
+/// `Z_ARRVAL_P`.
 /// # Safety
 /// `array` is a live array zval.
-pub unsafe fn add_assoc_long(array: *mut zval, key: &CStr, value: i64) {
-    // SAFETY: per the caller; Zend copies the key.
+#[must_use]
+#[inline]
+pub unsafe fn table(array: *const zval) -> *mut HashTable {
+    // SAFETY: per the caller.
+    let value = unsafe { (*array).value };
+    // SAFETY: an array zval holds `arr`.
+    unsafe { value.arr }
+}
+
+/// `Z_STR_P`.
+/// # Safety
+/// `string` is a live string zval.
+#[must_use]
+#[inline]
+pub unsafe fn str_of(string: *const zval) -> *mut zend_string {
+    // SAFETY: per the caller.
+    let value = unsafe { (*string).value };
+    // SAFETY: a string zval holds `str`.
+    unsafe { value.str_ }
+}
+
+/// `Z_LVAL_P`.
+/// # Safety
+/// `long` is a live int zval.
+#[must_use]
+#[inline]
+pub unsafe fn long_of(long: *const zval) -> zend_long {
+    // SAFETY: per the caller.
+    let value = unsafe { (*long).value };
+    // SAFETY: an int zval holds `lval`.
+    unsafe { value.lval }
+}
+
+/// `zend_array_count(Z_ARRVAL_P(array))`.
+/// # Safety
+/// `array` is a live array zval.
+#[must_use]
+#[inline]
+pub unsafe fn count(array: *const zval) -> u32 {
+    // SAFETY: per the caller.
+    let table = unsafe { table(array) };
+    // SAFETY: a live table.
+    unsafe { zend_array_count(table) }
+}
+
+/// `zend_update_property_long(ce, object, name, value)`.
+/// # Safety
+/// `ce` is a registered class and `object` a live instance of it.
+#[inline]
+pub unsafe fn update_long(
+    ce: *mut zend_class_entry,
+    object: *mut zend_object,
+    name: &CStr,
+    value: zend_long,
+) {
+    // SAFETY: per the caller; Zend copies the name.
+    unsafe { zend_update_property_long(ce, object, name.as_ptr(), name.count_bytes(), value) };
+}
+
+/// `zend_update_property_string(ce, object, name, value)`.
+/// # Safety
+/// As `update_long`.
+#[inline]
+pub unsafe fn update_string(
+    ce: *mut zend_class_entry,
+    object: *mut zend_object,
+    name: &CStr,
+    value: &CStr,
+) {
+    // SAFETY: per the caller; Zend copies both strings.
+    unsafe {
+        zend_update_property_string(
+            ce,
+            object,
+            name.as_ptr(),
+            name.count_bytes(),
+            value.as_ptr(),
+        );
+    }
+}
+
+/// `array_init(target)`.
+/// # Safety
+/// `target` is a writable zval holding nothing that needs releasing.
+#[inline]
+pub unsafe fn array_init(target: *mut zval) {
+    // SAFETY: per the caller.
+    unsafe { swr_zend_array_init(target) };
+}
+
+/// `add_assoc_long(array, key, value)`.
+/// # Safety
+/// `array` is a live array zval.
+#[inline]
+pub unsafe fn add_long(array: *mut zval, key: &CStr, value: zend_long) {
+    // SAFETY: per the caller.
     unsafe { add_assoc_long_ex(array, key.as_ptr(), key.count_bytes(), value) };
 }
 
-/// `add_next_index_long(array, value)`.
+/// `add_assoc_string(array, key, value)`: Zend copies the value.
 /// # Safety
 /// `array` is a live array zval.
-pub unsafe fn add_next_index_long(array: *mut zval, value: i64) {
-    // SAFETY: per the caller.
-    unsafe { crate::sys::add_next_index_long(array, value) };
-}
-
-/// `ZEND_HASH_FOREACH_VAL`: `each` returns false to stop early.
-/// # Safety
-/// `table` is a live array that `each` does not modify, and `each` does not
-/// unwind.
-pub unsafe fn each_value<F: FnMut(*mut zval) -> bool>(table: *const zend_array, mut each: F) {
-    unsafe extern "C" fn trampoline<F: FnMut(*mut zval) -> bool>(
-        value: *mut zval,
-        context: *mut c_void,
-    ) -> bool {
-        // SAFETY: `context` is the closure `each_value` passed, live for the loop.
-        let each = unsafe { &mut *context.cast::<F>() };
-        each(value)
-    }
-    let context = (&raw mut each).cast::<c_void>();
-    // SAFETY: per the caller; the closure outlives the loop.
-    unsafe { swr_zend_hash_foreach(table, Some(trampoline::<F>), context) };
-}
-
-/// `zend_update_property_long(scope, object, name, value)`.
-/// # Safety
-/// `scope` is a registered class and `object` a live object.
-pub unsafe fn update_property_long(
-    scope: *mut zend_class_entry,
-    object: *mut zend_object,
-    name: &CStr,
-    value: i64,
-) {
-    // SAFETY: per the caller.
-    unsafe { zend_update_property_long(scope, object, name.as_ptr(), name.count_bytes(), value) };
-}
-
-/// `zend_update_property(scope, object, name, value)`: the property takes a copy.
-/// # Safety
-/// As [`update_property_long`], with a live `value`.
-pub unsafe fn update_property(
-    scope: *mut zend_class_entry,
-    object: *mut zend_object,
-    name: &CStr,
-    value: *mut zval,
-) {
-    // SAFETY: per the caller.
-    unsafe { zend_update_property(scope, object, name.as_ptr(), name.count_bytes(), value) };
-}
-
-/// `zend_declare_property_null(class, name, access)`, at MINIT; `access` is a
-/// `ZEND_ACC_*` visibility.
-/// # Safety
-/// `class` is a class being registered.
-pub unsafe fn declare_property_null(class: *mut zend_class_entry, name: &CStr, access: u32) {
-    #[expect(
-        clippy::cast_possible_wrap,
-        reason = "ZEND_ACC_* visibilities are small"
-    )]
-    let access = access as c_int;
-    // SAFETY: per the caller.
-    unsafe { zend_declare_property_null(class, name.as_ptr(), name.count_bytes(), access) };
-}
-
-/// `ZVAL_LONG`: a zval holding `value`.
-#[must_use]
-pub fn long_zval(value: i64) -> zval {
-    // SAFETY: a zval is plain data; all-zero bytes are `IS_UNDEF`.
-    let mut zv: zval = unsafe { std::mem::zeroed() };
-    zv.value = crate::sys::zend_value { lval: value };
-    zv.u1 = crate::sys::_zval_struct__bindgen_ty_1 {
-        type_info: crate::sys::IS_LONG,
-    };
-    zv
-}
-
-/// `Z_OBJ_P`.
-/// # Safety
-/// `value` is a live object zval.
-#[must_use]
 #[inline]
-pub unsafe fn object_of(value: *const zval) -> *mut zend_object {
+pub unsafe fn add_string(array: *mut zval, key: &CStr, value: &CStr) {
     // SAFETY: per the caller.
-    let value = unsafe { (*value).value };
-    // SAFETY: an object zval holds its object.
-    unsafe { value.obj }
+    unsafe { add_assoc_string_ex(array, key.as_ptr(), key.count_bytes(), value.as_ptr()) };
+}
+
+/// `add_next_index_str(array, string)`: the array takes over the reference.
+/// # Safety
+/// `array` is a live array zval and the caller owns a reference to `string`.
+#[inline]
+pub unsafe fn push_str(array: *mut zval, string: *mut zend_string) {
+    // SAFETY: per the caller.
+    unsafe { add_next_index_str(array, string) };
 }
