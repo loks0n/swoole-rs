@@ -21,6 +21,7 @@ pub mod pool;
 pub mod resolver;
 mod sha1;
 pub mod state;
+pub mod transport;
 pub mod ws;
 
 #[repr(C)]
@@ -703,98 +704,6 @@ pub unsafe extern "C" fn swr_v1_clients_dns_endpoint(
             host_length: bytes.len(),
             ..DnsEndpoint::default()
         },
-    }
-}
-
-#[repr(u32)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TransportAction {
-    Advance = 0,
-    SetTimeout = 1,
-    KernelTimeout = 2,
-    PublishFlags = 3,
-    Address = 4,
-    WarnReceive = 5,
-    WarnError = 6,
-    DnsLookup = 7,
-    Activate = 8,
-    SocketTimeout = 9,
-    BindUnix = 10,
-    WarnBind = 11,
-    EnableDtls = 12,
-    Connect = 13,
-    Clean = 14,
-    AddEvent = 15,
-    ConnectCallback = 16,
-    SslHandshake = 17,
-    FailClose = 18,
-    ErrorCallback = 19,
-    Success = 20,
-    Error = 21,
-    EventWrite = 22,
-    Overflow = 23,
-    BufferFull = 24,
-    ReturnWrite = 25,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TransportPlan {
-    pub action: TransportAction,
-    pub stage: u32,
-}
-
-/// UDP stages start at0, async TCP write at100. Native effects and all mutable
-/// Client/Socket/proxy fields stay native, with copied facts refreshed by stage.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_clients_transport_next(stage: u32, facts: u32) -> TransportPlan {
-    use TransportAction::{
-        Activate, AddEvent, Address, Advance, BindUnix, BufferFull, Clean, Connect,
-        ConnectCallback, DnsLookup, EnableDtls, Error, ErrorCallback, EventWrite, FailClose,
-        KernelTimeout, Overflow, PublishFlags, ReturnWrite, SetTimeout, SocketTimeout,
-        SslHandshake, Success, WarnBind, WarnError, WarnReceive,
-    };
-    let (action, next) = match stage {
-        0 => (SetTimeout, 1),
-        1 => (if facts != 0 { KernelTimeout } else { Advance }, 2),
-        2 => (PublishFlags, 3),
-        3 => (Address, 4),
-        4 if facts != 0 => (Error, 4),
-        4 => (Advance, 5),
-        5 if facts != 0 => (WarnReceive, 5),
-        5 => (Advance, 6),
-        6 if facts != 0 => (Advance, 7),
-        6 => (Activate, 11),
-        7 => (if facts != 0 { DnsLookup } else { WarnError }, 7),
-        11 => (if facts != 0 { SocketTimeout } else { Advance }, 12),
-        12 if facts != 0 => (BindUnix, 13),
-        12 => (Advance, 14),
-        13 if facts != 0 => (WarnBind, 13),
-        13 => (Advance, 14),
-        14 => (if facts != 0 { EnableDtls } else { Advance }, 15),
-        15 if facts != 0 => (Connect, 16),
-        15 => (Advance, 18),
-        16 if facts != 0 => (Clean, 18),
-        16 => (FailClose, 30),
-        18 if facts != 0 => (AddEvent, 19),
-        18 => (Advance, 21),
-        19 if facts != 0 => (Error, 19),
-        19 => (ConnectCallback, 20),
-        20 => (Advance, 21),
-        21 if facts != 0 => (SslHandshake, 22),
-        21 => (Success, 21),
-        22 => (if facts != 0 { Error } else { Success }, 22),
-        30 => (if facts != 0 { ErrorCallback } else { Error }, 30),
-        100 => (EventWrite, 101),
-        101 => (Advance, if facts != 0 { 102 } else { 104 }),
-        102 if facts != 0 => (Overflow, 104),
-        102 => (Error, 102),
-        104 => (if facts != 0 { BufferFull } else { ReturnWrite }, 104),
-        _ => (Error, stage),
-    };
-    TransportPlan {
-        action,
-        stage: next,
     }
 }
 
