@@ -15,8 +15,14 @@
 
 mod client;
 mod constants;
+mod http_client;
+mod http_native;
+mod http_request;
+mod llhttp;
 mod native;
 mod socket;
+mod table;
 
 pub use client::*;
+pub use http_client::*;
 pub use socket::*;

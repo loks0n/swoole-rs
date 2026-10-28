@@ -89,6 +89,74 @@ int swoole_client_coro_enable_ssl(struct _zend_object *object, void *socket);
 struct _zend_string *swoole_client_coro_peer_cert(void *socket);
 bool swoole_client_coro_verify_peer(void *socket, bool allow_self_signed);
 
+/* PHP Coroutine\Http\Client (crates/phpclients): MINIT, the methods that can
+ * call PHP (the C++ trampolines re-raise a bailout they return), the socket's
+ * close hook and the Set-Cookie parser the HTTP/2 client shares. */
+struct _zend_execute_data;
+void swr_v1_phpclients_http_client_minit(const struct _zend_function_entry *methods,
+                                         struct _zend_class_entry *exception,
+                                         bool shortname,
+                                         int module,
+                                         uint32_t features);
+bool swr_v1_phpclients_http_client_execute(struct _zend_execute_data *execute_data, struct _zval_struct *return_value);
+bool swr_v1_phpclients_http_client_get(struct _zend_execute_data *execute_data, struct _zval_struct *return_value);
+bool swr_v1_phpclients_http_client_post(struct _zend_execute_data *execute_data, struct _zval_struct *return_value);
+bool swr_v1_phpclients_http_client_download(struct _zend_execute_data *execute_data, struct _zval_struct *return_value);
+bool swr_v1_phpclients_http_client_upgrade(struct _zend_execute_data *execute_data, struct _zval_struct *return_value);
+bool swr_v1_phpclients_http_client_recv(struct _zend_execute_data *execute_data, struct _zval_struct *return_value);
+void swr_v1_phpclients_http_client_socket_dtor(void *conn, void *written);
+void swr_v1_phpclients_parse_set_cookies(const char *at,
+                                         size_t length,
+                                         struct _zval_struct *cookies,
+                                         struct _zval_struct *set_cookie_headers);
+
+/* Defined by ext-src/swoole_http_client_coro.cc for those methods. */
+struct _zend_object *swoole_http_client_coro_create_socket(int64_t type, int *error);
+bool swoole_http_client_coro_enable_ssl(void *socket);
+void swoole_http_client_coro_apply(void *socket, const struct _zval_struct *settings);
+void *swoole_http_client_coro_resolve_new(void);
+void swoole_http_client_coro_resolve_reset(void *context, bool with_port);
+void swoole_http_client_coro_resolve_free(void *context);
+void swoole_http_client_coro_configure(void *socket, double timeout, void *resolve, void *conn);
+bool swoole_http_client_coro_connect(void *socket, const char *host, size_t length, int port);
+bool swoole_http_client_coro_close(void *socket);
+void swoole_http_client_coro_close_wait(void *socket);
+bool swoole_http_client_coro_closing(void *socket);
+void swoole_http_client_coro_check_bound(void *socket, int event);
+void swoole_http_client_coro_set_err(void *socket, int code);
+int swoole_http_client_coro_last_error(void);
+int swoole_http_client_coro_proxy(void *socket);
+struct _zend_string *swoole_http_client_coro_proxy_auth(void *socket);
+bool swoole_http_client_coro_send(void *socket, const char *data, size_t length);
+bool swoole_http_client_coro_send_raw(void *socket, const char *data, size_t length);
+const char *swoole_http_client_coro_written(void *socket, void *saved, size_t *length);
+void swoole_http_client_coro_buffer_free(void *buffer);
+char *swoole_http_client_coro_read_buffer(void *socket, size_t *length, size_t *size);
+void swoole_http_client_coro_read_buffer_set(void *socket, size_t length);
+void swoole_http_client_coro_read_buffer_keep(void *socket, size_t length, size_t offset);
+ssize_t swoole_http_client_coro_recv(void *socket, char *data, size_t length);
+void *swoole_http_client_coro_timeout(void *socket, double timeout);
+bool swoole_http_client_coro_timed_out(void *controller);
+void swoole_http_client_coro_timeout_end(void *controller);
+void *swoole_http_client_coro_ws_new(void);
+void swoole_http_client_coro_ws_free(void *ws);
+void swoole_http_client_coro_ws_apply(void *ws, const struct _zval_struct *settings);
+bool swoole_http_client_coro_ws_compression(void *ws);
+int swoole_http_client_coro_ws_push(
+    void *socket, void *ws, struct _zval_struct *data, int64_t opcode, int flags, int64_t code, bool compress);
+void swoole_http_client_coro_ws_recv(void *socket, void *ws, struct _zval_struct *return_value, double timeout);
+void swoole_http_client_coro_ws_protocol(void *socket);
+void *swoole_http_client_coro_file_open(const char *name, int64_t offset);
+bool swoole_http_client_coro_file_write(void *file, const char *data, size_t length);
+void swoole_http_client_coro_file_free(void *file);
+void *swoole_http_client_coro_callable(struct _zval_struct *fn);
+void swoole_http_client_coro_callable_free(void *callable);
+int swoole_http_client_coro_call(void *callable, struct _zend_object *client, const char *data, size_t length);
+struct _zend_string *swoole_http_client_coro_peer_cert(void *socket);
+const char *swoole_http_client_coro_mime(const char *path);
+void swoole_http_client_coro_sys_error(const char *message);
+void swoole_http_client_coro_inflate_warning(int method);
+
 #ifdef __cplusplus
 }
 #endif

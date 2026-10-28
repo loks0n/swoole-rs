@@ -153,17 +153,40 @@ impl Inflate {
     }
 }
 
+impl Inflate {
+    /// A gzip (or deflate) response decompressor.
+    #[must_use]
+    pub fn new(gzip: bool) -> Self {
+        Self {
+            stream: fresh_stream(),
+            active: false,
+            first_chunk: true,
+            gzip,
+            out: Vec::new(),
+        }
+    }
+
+    /// Inflate one body chunk: the bytes it produced, or None on an empty
+    /// input or a decompression error, as the pinned method.
+    pub fn decode(&mut self, input: &[u8]) -> Option<&[u8]> {
+        (!input.is_empty() && self.chunk(input)).then_some(&self.out[..])
+    }
+}
+
+impl Drop for Inflate {
+    fn drop(&mut self) {
+        if self.active {
+            // SAFETY: an initialized stream is ended exactly once here.
+            unsafe { inflateEnd(&raw mut self.stream) };
+        }
+    }
+}
+
 /// Create a gzip (or deflate) response decompressor. Returns null on allocation
 /// failure; the caller treats that as a compression error.
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_clients_http_inflate_new(gzip: bool) -> *mut Inflate {
-    Box::into_raw(Box::new(Inflate {
-        stream: fresh_stream(),
-        active: false,
-        first_chunk: true,
-        gzip,
-        out: Vec::new(),
-    }))
+    Box::into_raw(Box::new(Inflate::new(gzip)))
 }
 
 /// Inflate one response-body chunk. On success writes the produced bytes' view
@@ -209,12 +232,9 @@ pub unsafe extern "C" fn swr_v1_clients_http_inflate_free(handle: *mut Inflate) 
     if handle.is_null() {
         return;
     }
-    // SAFETY: the caller lends a live handle previously leaked by `_new`.
-    let mut boxed = unsafe { Box::from_raw(handle) };
-    if boxed.active {
-        // SAFETY: an initialized stream is ended exactly once here.
-        unsafe { inflateEnd(&raw mut boxed.stream) };
-    }
+    // SAFETY: the caller lends a live handle previously leaked by `_new`;
+    // dropping it ends its stream.
+    drop(unsafe { Box::from_raw(handle) });
 }
 
 #[cfg(test)]
