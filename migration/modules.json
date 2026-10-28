@@ -627,6 +627,7 @@
       "owned_paths": [
         "crates/clients/",
         "crates/phpclients/",
+        "crates/phptable/",
         "native/clients/",
         "migration/patches/clients/",
         "tests/modules/clients/"
@@ -702,6 +703,7 @@
       ],
       "owned_paths": [
         "crates/http2/",
+        "crates/phphttp2/",
         "native/http2/",
         "migration/patches/http2/",
         "tests/modules/http2/"
