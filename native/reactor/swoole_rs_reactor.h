@@ -271,33 +271,41 @@ swr_v1_socket_io_result swr_v1_socket_pending_error(int fd);
  * fstat failed (errno set), 2 empty file, 3 range outside the file. */
 int swr_v1_socket_sendfile_range(int file_fd, off_t begin, size_t length, off_t *end);
 size_t swr_v1_socket_sendfile_chunk(off_t begin, off_t end);
-/* Socket::ssl_recv/ssl_send: ERR_clear_error, SSL_read/SSL_write and SSL_get_error.
- * Native code sets the want flags, then logs (protocol_error) and sets errno
+/* network::Socket's TLS state group (ssl_state, ssl_want_read, ssl_want_write),
+ * embedded in this order and these types (Socket static_asserts it). The calls below
+ * that take it set it. */
+typedef struct {
+    uint32_t state;
+    uint8_t want_read;
+    uint8_t want_write;
+} swr_v1_socket_tls;
+/* Socket::ssl_clear_error: ERR_clear_error and clear the want flags.
+ * Socket::what_event_want: the event a pending TLS read or write waits for when ssl
+ * is set, else default_event. */
+void swr_v1_socket_ssl_clear(swr_v1_socket_tls *tls);
+int swr_v1_socket_tls_event(const swr_v1_socket_tls *tls, bool ssl, int default_event);
+/* Socket::ssl_recv/ssl_send: ERR_clear_error, SSL_read/SSL_write and SSL_get_error,
+ * setting tls's want flags. Native code then logs (protocol_error) and sets errno
  * (error, when nonzero). */
 typedef struct {
     ssize_t value;
-    bool want_read;
-    bool want_write;
     int error;
     bool protocol_error;
 } swr_v1_socket_ssl_io_result;
-swr_v1_socket_ssl_io_result swr_v1_socket_ssl_recv(struct ssl_st *ssl, void *buffer, size_t length);
-swr_v1_socket_ssl_io_result swr_v1_socket_ssl_send(struct ssl_st *ssl, const void *buffer, size_t length);
+swr_v1_socket_ssl_io_result swr_v1_socket_ssl_recv(swr_v1_socket_tls *tls, struct ssl_st *ssl, void *buffer, size_t length);
+swr_v1_socket_ssl_io_result swr_v1_socket_ssl_send(swr_v1_socket_tls *tls, struct ssl_st *ssl, const void *buffer, size_t length);
 /* Socket::ssl_accept/ssl_connect: one SSL_accept/SSL_connect step and its
- * classification. Native code sets the want flags, ssl_state (state >= 0) and the
- * last error (when nonzero), then logs: 1 bad client, 2 failed handshake with
- * ssl_error, 3 peer closed (connect). code is the method's return value. */
+ * classification, setting tls's want flags and state. Native code sets the last
+ * error (when nonzero), then logs: 1 bad client, 2 failed handshake with ssl_error,
+ * 3 peer closed (connect). code is the method's return value. */
 typedef struct {
     int code;
-    bool want_read;
-    bool want_write;
-    int state;
     int last_error;
     int log;
     int ssl_error;
 } swr_v1_socket_ssl_handshake_result;
-swr_v1_socket_ssl_handshake_result swr_v1_socket_ssl_accept(struct ssl_st *ssl, bool dtls);
-swr_v1_socket_ssl_handshake_result swr_v1_socket_ssl_connect(struct ssl_st *ssl);
+swr_v1_socket_ssl_handshake_result swr_v1_socket_ssl_accept(swr_v1_socket_tls *tls, struct ssl_st *ssl, bool dtls);
+swr_v1_socket_ssl_handshake_result swr_v1_socket_ssl_connect(swr_v1_socket_tls *tls, struct ssl_st *ssl);
 /* Socket::ssl_check_host: X509_check_host on the peer certificate (consumed; may be
  * null): 0 none, 1 match, 2 no match. Socket::ssl_verify: the verify error that
  * rejects the peer, or X509_V_OK (a self-signed leaf passes when allowed). */
@@ -306,11 +314,12 @@ long swr_v1_socket_ssl_verify(const struct ssl_st *ssl, bool allow_self_signed);
 /* PEM export of a certificate into at most length bytes (-1 BIO_new failed, -2
  * PEM_write_bio_X509 failed; frees cert when consume); the oldest queued error's
  * reason string (popped) and reason code (peeked); a new SSL on fd from context
- * (0, or 1 SSL_new, 2 SSL_set_fd with *error, 3 SSL_set_ex_data failed). */
+ * (0, or 1 SSL_new, 2 SSL_set_fd with *error, 3 SSL_set_ex_data failed), clearing
+ * tls's want flags first and its state on success. */
 int swr_v1_socket_ssl_pem(struct x509_st *cert, char *buffer, size_t length, bool consume);
 const char *swr_v1_socket_ssl_error_reason(int *reason);
 int swr_v1_socket_ssl_peek_reason(void);
-int swr_v1_socket_ssl_new(struct ssl_ctx_st *context, int fd, int flags, int index, void *socket, struct ssl_st **ssl, unsigned long *error);
+int swr_v1_socket_ssl_new(swr_v1_socket_tls *tls, struct ssl_ctx_st *context, int fd, int flags, int index, void *socket, struct ssl_st **ssl, unsigned long *error);
 /* network::Socket's per-request reads and writes: recv/send/peek with EINTR and
  * dont_restart, driving `tls` (ssl_recv/ssl_send/SSL_peek on `socket`) when set;
  * catch_error's classification (swReturnCode). */
