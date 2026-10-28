@@ -29,7 +29,8 @@ constexpr int EVFILT_READ=-1,EVFILT_WRITE=-2,EVFILT_SIGNAL=-6;
 #define swoole_trace(...) do {} while(false)
 #define swoole_trace_log(...) do {} while(false)
 struct Socket { int fd=7,fd_type=2,events=0; bool removed=false,event_hup=false; };
-struct Event { Socket *socket=nullptr; int fd=0,reactor_id=0,type=0; };
+// swoole::Event's layout: the selected bodies have Rust fill it.
+struct Event { int fd=0; int16_t reactor_id=0; int type=0; Socket *socket=nullptr; };
 struct Signal { bool activated=false; void (*handler)(int)=nullptr; int signo=0; };
 struct Reactor;
 using ReactorHandler=int (*)(Reactor*,Event*);
@@ -62,6 +63,16 @@ struct Reactor {
     }();
     ~Reactor() { swr_v1_reactor_handlers_free(handlers); }
     const swr_v1_reactor_handlers *get_handlers() const { return handlers; }
+    static const swr_v1_reactor_socket_fields *socket_fields() {
+        static const swr_v1_reactor_socket_fields fields{
+            [](void *s) { return static_cast<Socket *>(s)->fd; },
+            [](void *s) { return static_cast<Socket *>(s)->fd_type; },
+            [](void *s) { return static_cast<Socket *>(s)->events; },
+            [](void *s) { return static_cast<Socket *>(s)->removed; },
+            [](void *s) { static_cast<Socket *>(s)->event_hup = true; },
+        };
+        return &fields;
+    }
     void _del(Socket *s) { effects.emplace_back("delete");s->removed=true; }
 };
 #ifdef __APPLE__

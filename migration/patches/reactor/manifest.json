@@ -78,6 +78,17 @@
         "src/reactor/epoll.cc",
         "src/reactor/kqueue.cc"
       ]
+    },
+    {
+      "path": "0011-event-fill.patch",
+      "sha256": "2b09c2ccf5afd0eacff80723d7bc467e32d5c0f636886a04d9e7bfe1afd01282",
+      "upstream_paths": [
+        "include/swoole_reactor.h",
+        "src/reactor/base.cc",
+        "src/reactor/epoll.cc",
+        "src/reactor/kqueue.cc",
+        "src/reactor/poll.cc"
+      ]
     }
   ]
 }

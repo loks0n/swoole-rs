@@ -86,6 +86,20 @@ enum { SWR_REACTOR_POLL, SWR_REACTOR_EPOLL, SWR_REACTOR_KQUEUE };
 /* Reactor handler tables (read/write/error per fd type, write and error defaults).
  * Handlers are ReactorHandler: int (*)(Reactor *, Event *). get kind: 0 read, 1 write,
  * 2 error; error_only false adds get_error_handler's read and write fallbacks. */
+/* swoole::Event, and accessors for the network::Socket fields the wait loop uses. */
+typedef struct {
+    int fd;
+    int16_t reactor_id;
+    int type;
+    void *socket;
+} swr_v1_reactor_event;
+typedef struct {
+    int (*fd)(void *socket);
+    int (*fd_type)(void *socket);
+    int (*events)(void *socket);
+    bool (*removed)(void *socket);
+    void (*set_hangup)(void *socket); /* event_hup = 1 */
+} swr_v1_reactor_socket_fields;
 typedef struct swr_v1_reactor_handlers swr_v1_reactor_handlers;
 typedef int (*swr_v1_reactor_handler)(void *, void *);
 swr_v1_reactor_handlers *swr_v1_reactor_handlers_new(void);
@@ -109,12 +123,11 @@ typedef struct {
     int (*interrupted)(void *); /* nullable: epoll io_uring builds only */
     void (*interrupt)(void *);  /* nullable */
     void (*wait_failed)(void *);
-    int (*prepare)(void *, void *socket, int fd, int hup); /* fd -1: the socket's own; returns its fd type */
-    int (*removed)(void *socket);
-    int (*oneshot)(void *socket);
+    const swr_v1_reactor_socket_fields *fields;
+    int16_t reactor_id;
     const swr_v1_reactor_handlers *handlers; /* each runs as handler(reactor, event) */
     void *reactor;
-    void *event;
+    swr_v1_reactor_event *event; /* filled for each ready socket */
     void (*handler_failed)(void *, uint32_t kind);
     void (*remove)(void *, void *socket);
     void (*signal)(void *signal);      /* nullable: kqueue only */
