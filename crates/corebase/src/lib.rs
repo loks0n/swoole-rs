@@ -146,7 +146,7 @@ pub unsafe extern "C" fn swr_v1_corebase_radix(
             reason = "a digit is below the radix, at most 36"
         )]
         let digit = (value % c_ulong::from(radix)) as usize;
-        put(index, DIGITS[digit]);
+        put(index, DIGITS.get(digit).copied().unwrap_or(b'0'));
         value /= c_ulong::from(radix);
         if value == 0 {
             return index;
@@ -315,7 +315,7 @@ pub unsafe extern "C" fn swr_v1_corebase_mkdir_next(
             .iter()
             .position(|&byte| byte == 0)
             .unwrap_or(input_length);
-        let append = input[input_length - 1] != b'/';
+        let append = input.last() != Some(&b'/');
         let length = prefix + usize::from(append);
         if length >= capacity {
             return 2;

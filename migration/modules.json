@@ -149,11 +149,13 @@
       ],
       "upstream_patch_targets": [
         "src/reactor/",
+        "ext-src/swoole_admin_server.cc",
         "src/network/stream.cc",
         "include/swoole_reactor.h",
         "src/network/socket.cc",
         "include/swoole_socket.h",
         "src/server/base.cc",
+        "src/server/reactor_process.cc",
         "src/server/reactor_thread.cc"
       ],
       "abi_contract": "docs/reactor-abi-v1.md",

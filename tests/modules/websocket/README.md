@@ -53,19 +53,6 @@ unpack), and 144 pack-only control-RSV1 cases that preserve upstream behaviour
 without asserting a roundtrip. It compares packed bytes and decoded values.
 
 ```sh
-python3 tests/modules/websocket/compression_limits.py \
-  --engine upstream=/absolute/upstream/swoole.so --engine hybrid=/absolute/hybrid/swoole.so
-```
-
-`compression_limits.py` runs a compressed success, a pack allocation failure and
-an inflate allocation failure at an 8MiB memory limit, each in a fresh PHP
-process. Setup markers keep a filler fatal from satisfying the expected failure.
-Both engines must match stdout, stderr and exit status. The fillers are fixed,
-so a new platform where setup fails or pack returns reports a failure. Linux PHP
-8.2 can escalate the inflate failure to a 16MiB hard limit and exit 137; that is
-preserved as-is.
-
-```sh
 python3 -m pytest tests/modules/websocket/test_invalid.py tests/modules/websocket/test_close.py \
   --engine hybrid=/absolute/hybrid/swoole.so
 ```
@@ -126,12 +113,6 @@ python3 -m pytest tests/modules/websocket/test_kernel.py --sanitize \
 python3 -m pytest tests/modules/websocket/test_codec.py --sanitize --rust-asan \
   --archive target/websocket-rust-asan/release/libswoole_rs_websocket.a
 ```
-
-`--rust-asan` requires `--sanitize` and rejects archives without ASan report
-imports. `rust_asan_negative.cc` is a manual witness that instrumentation covers
-Rust: compile it with the instrumented archive and C++ ASan/UBSan, then run it
-with `key` and with `payload`. Each must exit nonzero with a heap-buffer-overflow
-inside `swr_v1_ws_mask` (deliberately invalid calls, not ABI bugs).
 
 ## Known failures
 

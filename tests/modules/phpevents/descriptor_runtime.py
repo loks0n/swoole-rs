@@ -77,8 +77,9 @@ def main():
         parser.error('Runtime requires native/selected engines, source-ref, manifest and archive')
     work = args.output.resolve().parent / ('phpevents-descriptors-' + uuid.uuid4().hex)
     work.mkdir(parents=True)
-    fixtures = {name: Path(__file__).with_name('descriptor_' + name)
-                for name in ('entrypoint.cc', 'entrypoint.php')}
+    # Named in full so an orphan scan finds them (#640 deleted them as orphans).
+    fixtures = {'entrypoint.cc': Path(__file__).with_name('descriptor_entrypoint.cc'),
+                'entrypoint.php': Path(__file__).with_name('descriptor_entrypoint.php')}
     report = dict(passed=False, scope=__doc__, work=str(work), results=[], engines=[], metadata_commands=[],
                   preparation_only=args.prepare_only, runtime_executed=False,
                   fixture_sha256={name: sha(path) for name, path in fixtures.items()},

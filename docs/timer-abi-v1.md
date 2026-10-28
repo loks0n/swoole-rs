@@ -38,7 +38,7 @@ Zend bailout: the PHP callback marks the native selection abandoned and
 propagates. Owner destruction then uses the same close/complete/end/drain/
 release sequence, keeping timer metadata visible to PHP shutdown until teardown.
 No callback, Zend jump or bailout continuation runs under a Rust frame. See
-`tests/modules/timer/bailout.md`, `destructor_bailout.md` and `oom_observer.md`.
+`tests/modules/timer/bailout.md` and `destructor_bailout.md`.
 
 ## Operations
 

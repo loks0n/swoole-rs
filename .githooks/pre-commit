@@ -1,10 +1,11 @@
 #!/bin/sh
 # Quick checks (~5s warm). Enable with: git config core.hooksPath .githooks
 set -e
+# Git exports GIT_DIR and GIT_INDEX_FILE to hooks. A test that runs `git init`
+# with them set reinitialises this repository and sets core.bare = true.
+unset $(env | sed -n 's/^\(GIT_[A-Z_]*\)=.*/\1/p')
 cargo fmt --all --check
 cargo clippy --locked --workspace --all-targets -q -- -D warnings
 python3 tools/check_migration.py > /dev/null
 tests/dev/run.sh
-echo "pre-commit passed. After pushing and opening the PR, let GitHub merge it once rust, tooling and hybrid pass:
-  gh pr merge --auto --squash <pr>
-and watch its PR tier with: python3 tools/ci.py wait --workflow pr.yml --commit <branch>" >&2
+echo "pre-commit passed. Push, open the PR with gh pr merge --auto --squash <pr>, and move on to the next issue." >&2

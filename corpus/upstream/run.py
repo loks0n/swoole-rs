@@ -68,7 +68,19 @@ RACY = {'tests/swoole_websocket_server/send_close_frame.phpt':
         'replies (#428)',
         'tests/swoole_server/shutdown_in_master.phpt':
         'shutdown() from onStart, before the random 1-4 workers are up, sometimes hangs until '
-        'the deadline on both engines (upstream 2/8, hybrid 3/8, #438)'}
+        'the deadline on both engines (upstream 2/8, hybrid 3/8, #438)',
+        'tests/swoole_websocket_server/pack.phpt':
+        'mt_rand(0, 128000) can draw 0, and get_safe_random(0) reaches '
+        'openssl_random_pseudo_bytes(0), which throws ValueError: about 0.8% of runs on any '
+        'engine (#321)',
+        'tests/swoole_websocket_server/compression_incompressible.phpt':
+        "disconnect() pushes the close frame, then closes the session; the client closes on "
+        "receiving it, and when the reactor thread handles that first the session is gone and "
+        'disconnect() returns false (#321)',
+        'tests/swoole_server/task/task_pack.phpt':
+        "the server waits on its SysV message queue for a third task and sometimes never gets "
+        'it under CI load, on both engines: hybrid timed out in a shard while upstream passed, '
+        'then upstream timed out on re-run (#438, #664)'}
 
 
 def require_free_port(port):
@@ -128,9 +140,17 @@ def prepare(source, destination, cases, support_files=()):
     if original.count(remote_setup) != 1:
         raise ValueError('Upstream bootstrap remote setup changed; review adapter')
     bootstrap.write_text(original.replace(remote_setup, '// Remote-object service excluded from this isolated selection.\n'))
+    # The httpbin/guzzle/symfony cases need the pinned composer libraries. When the
+    # upstream tree has them installed (the phpt job runs `composer install` there from
+    # the committed lock), copy that vendor dir in; otherwise fall back to a stub that
+    # autoloads only the SwooleTest\ fixtures, so the lib-free cases still run offline.
     vendor = destination / 'tests/include/lib/vendor'
-    vendor.mkdir(parents=True)
-    (vendor / 'autoload.php').write_text(AUTOLOAD)
+    source_vendor = source / 'tests/include/lib/vendor'
+    if source_vendor.is_dir():
+        shutil.copytree(source_vendor, vendor)
+    else:
+        vendor.mkdir(parents=True)
+        (vendor / 'autoload.php').write_text(AUTOLOAD)
 
 
 def run_cases(engine, cases, sandbox, artifacts, timeout, jobs, *, offline=True, runner_ini=(), match_child_php=False):
@@ -278,7 +298,7 @@ def main():
     parser.add_argument('--case', action='append', help='Exact registered PHPT path; repeatable')
     parser.add_argument('--jobs', type=int, default=1, help='Official runner workers for explicitly audited independent cases')
     parser.add_argument('--isolate-cases', action='store_true', help='Original one-runner/process-group-per-case mode')
-    parser.add_argument('--require-all', action='store_true', help='Also fail on unsupported or upstream-skipped cases')
+    parser.add_argument('--require-all', action='store_true', help='Also fail on unsupported or upstream-skipped cases (except RACY ones)')
     parser.add_argument('--external-network', action='store_true', help='Include cases marked network (DNS/routes) and run every case online')
     parser.add_argument('--match-child-php', action='store_true', help='Explicitly match bare php child commands to this engine; absolute PHP paths are unchanged')
     parser.add_argument('--timeout', type=int, default=15)
@@ -361,7 +381,9 @@ def main():
         if report['execution_status'] == 'running':
             report['execution_status'] = 'interrupted'
         save_report(args.output, report)
-    return int(any(row['status'] == 'failed' or args.require_all and row['status'] != 'passed' for row in report['results']))
+    # A RACY row stays unsupported in the report; its verdict means nothing on either engine.
+    return int(any(row['status'] == 'failed' or args.require_all and row['status'] != 'passed'
+                   and row['test'] not in RACY for row in report['results']))
 
 
 if __name__ == '__main__':

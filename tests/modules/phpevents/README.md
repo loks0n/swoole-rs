@@ -73,12 +73,10 @@ operations, reactor, callbacks, sockets or IPC. Registered as
 ## Unit tests
 
 ```sh
-cd tests/modules/phpevents && python3 -m unittest test_identity.py test_callback_pair.py
+cd tests/modules/phpevents && python3 -m unittest test_identity.py
 ```
 
-`test_identity.py` covers the caller and import checks; `test_callback_pair.py`
-checks fallback bodies and caller closure against the pinned source
-(`SWOOLE_UPSTREAM_SOURCE`, default `target/upstream/src`).
+`test_identity.py` covers the caller and import checks.
 
 ## Originals and open gates
 

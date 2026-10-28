@@ -73,18 +73,6 @@ rejects c-ares builds, which bypass the converted codec. `php_async.py` bailout
 mode expects exit 43 on PHP 8.2 and 0 on 8.5; other versions are unsupported.
 `php_pool_fork.py` needs pcntl.
 
-## Production TU compilation
-
-```sh
-python3 tests/modules/clients/php_tu.py --source /path/to/pinned-git \
-  --sdk FROZEN_CONFIGURED_HEADERS --output target/clients-tu.json [--include PATH]
-```
-
-Rebuilds the five selected PHP destinations from the overlay with a private
-pinned header mirror and the SDK `config.h`, then checks each compiles with
-`SWOOLE_RS_CLIENTS` and fails with the module guard message without it. Syntax
-only, not a configured build.
-
 ## Original PHPTs
 
 Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).

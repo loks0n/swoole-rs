@@ -359,6 +359,106 @@ fn cpp() -> cc::Build {
     build
 }
 
+/// The stream receive loops from the pinned base.cc (upstream) and from it with
+/// the framing overlay patch applied (candidate, a step loop over the Rust
+/// exports), with String's split and reduce from the pinned string.cc, copied
+/// unchanged for `shim/framing_stream.cc`.
+fn framing_stream() {
+    let patch = "../../migration/patches/framing/0001-base.patch";
+    println!("cargo:rerun-if-changed={patch}");
+    let upstream = fs::read_to_string("upstream/src/protocol/base.cc").expect("vendored base.cc");
+    let candidate = apply(
+        &upstream,
+        &fs::read_to_string(patch).expect("framing patch"),
+    );
+    let methods = [
+        "int Protocol::recv_split_by_eof(",
+        "int Protocol::recv_with_length_protocol(",
+        "int Protocol::recv_with_eof_protocol(",
+    ];
+    for (name, text) in [("upstream", &upstream), ("candidate", &candidate)] {
+        let mut parts = Vec::new();
+        if text.contains("static int drive(") {
+            parts.push(definition(text, "static int drive("));
+        }
+        parts.extend(methods.iter().map(|signature| definition(text, signature)));
+        fs::write(
+            out(&format!("framing_stream_{name}.inc")),
+            parts.join("\n") + "\n",
+        )
+        .unwrap();
+    }
+    let string = fs::read_to_string("upstream/src/core/string.cc").expect("vendored string.cc");
+    let parts = [
+        definition(&string, "void String::reduce("),
+        // Its only preprocessor branch is a trace counter, off here.
+        slice(&string, "ssize_t String::split(", "\n}\n") + "\n}\n",
+    ];
+    fs::write(out("framing_stream_string.inc"), parts.join("\n") + "\n").unwrap();
+}
+
+/// `redis::recv_packet` and its `Request` from the pinned redis.cc (upstream) and
+/// from it with the protocols overlay patch applied (candidate, calling Rust),
+/// copied unchanged for `shim/resp_stream.cc`.
+fn resp_stream() {
+    let patch = "../../migration/patches/protocols/0001-rust-packet-protocols.patch";
+    let redis = fs::read_to_string("upstream/src/protocol/redis.cc").expect("vendored redis.cc");
+    let candidate = apply(
+        &redis,
+        section(
+            &fs::read_to_string(patch).expect("protocols patch"),
+            "src/protocol/redis.cc",
+        ),
+    );
+    for (name, text) in [("upstream", &redis), ("candidate", &candidate)] {
+        let request = if text.contains("struct Request {") {
+            slice(text, "struct Request {", "\n};") + "\n};"
+        } else {
+            slice(text, "using Request = ", "\n")
+        };
+        let mut parts = vec![request];
+        if text.contains("const char *get_number(") {
+            parts.push(definition(text, "const char *get_number("));
+        }
+        parts.push(definition(text, "int recv_packet("));
+        fs::write(
+            out(&format!("resp_stream_{name}.inc")),
+            parts.join("\n") + "\n",
+        )
+        .unwrap();
+    }
+}
+
+/// socks5.cc as pinned (upstream) and with the protocols overlay patch applied
+/// (candidate, calling Rust), each with `swoole` renamed to its engine, compiled
+/// with `shim/socks5.cc` over the facade in `shim/socks5`.
+fn socks5() {
+    let socks5 = fs::read_to_string("upstream/src/protocol/socks5.cc").expect("vendored socks5.cc");
+    let patch =
+        fs::read_to_string("../../migration/patches/protocols/0001-rust-packet-protocols.patch")
+            .expect("protocols patch");
+    fs::write(
+        out("socks5_candidate.cc"),
+        apply(&socks5, section(&patch, "src/protocol/socks5.cc")),
+    )
+    .unwrap();
+    for (engine, source) in [
+        ("upstream", PathBuf::from("upstream/src/protocol/socks5.cc")),
+        ("candidate", out("socks5_candidate.cc")),
+    ] {
+        cpp()
+            // Its own namespace: other shims define different swoole classes per engine.
+            .define("swoole", format!("socks5_{engine}").as_str())
+            .define("SWR_SOCKS5_ENGINE", engine)
+            .include("shim/socks5")
+            .include("upstream/include")
+            .include("../../native/protocols")
+            .file(source)
+            .file("shim/socks5.cc")
+            .compile(&format!("swoole_{engine}_socks5"));
+    }
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=upstream");
     println!("cargo:rerun-if-changed=shim");
@@ -368,9 +468,11 @@ fn main() {
     websocket();
     http();
     framing();
+    framing_stream();
     http_frame();
     http_range();
     protocols();
+    resp_stream();
     clients();
     cpp()
         .define("SWR_URL_ENGINE", "upstream")
@@ -449,6 +551,35 @@ fn main() {
         .file("shim/original_crc32.cc")
         .compile("swoole_original_tests");
 
+    for engine in ["upstream", "candidate"] {
+        cpp()
+            .define("SWR_STREAM_ENGINE", engine)
+            .define(
+                "SWR_STREAM_INC",
+                format!("\"framing_stream_{engine}.inc\"").as_str(),
+            )
+            .flag_if_supported("-Wno-unused-parameter")
+            .flag_if_supported("-Wno-unused-label")
+            .include("../../native/framing")
+            .include(env::var("OUT_DIR").unwrap())
+            .file("shim/framing_stream.cc")
+            .compile(&format!("swoole_{engine}_framing_stream"));
+    }
+    for engine in ["upstream", "candidate"] {
+        cpp()
+            .define("SWR_RESP_ENGINE", engine)
+            .define(
+                "SWR_RESP_INC",
+                format!("\"resp_stream_{engine}.inc\"").as_str(),
+            )
+            .flag_if_supported("-Wno-unused-parameter")
+            .flag_if_supported("-Wno-unused-label")
+            .include("../../native/protocols")
+            .include(env::var("OUT_DIR").unwrap())
+            .file("shim/resp_stream.cc")
+            .compile(&format!("swoole_{engine}_resp_stream"));
+    }
+    socks5();
     // The candidate framing bodies call the Rust exports, resolved by the binary.
     cpp()
         .define("SWR_FRAME_ENGINE", "candidate")

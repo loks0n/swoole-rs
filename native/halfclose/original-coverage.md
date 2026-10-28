@@ -1,7 +1,5 @@
 # Upstream originals relevant to half-close
 
-Pinned hashes and assertion anchors: [original-coverage.json](../../tests/modules/halfclose/original-coverage.json).
-
 | Original | What its assertions establish | Not covered |
 | --- | --- | --- |
 | server/close_queued | 2 MiB + CRLF response length after ordinary close | exact payload hash, early FIN, both server modes, TLS |
@@ -11,12 +9,6 @@ Pinned hashes and assertion anchors: [original-coverage.json](../../tests/module
 | http_server/chunk_with_end_data | BASE reconstructed body matches image MD5 | return-value failures, FIN |
 | http_server/trailer | PROCESS write/trailer/end return true; MD5 trailer matches | retention, transport EOF |
 | http_server/sendfile_no_keepalive | mode 7 repeated close-header responses | exact body hash, all modes, TLS |
-
-The regression cohort is close_queued, pipeline, response_create,
-chunk_with_end_data and trailer, listed in
-`tests/modules/halfclose/normal-originals.json`. Do not use close_force as a
-force/reset witness. sendfile_no_keepalive has concurrency/request-count macros
-and is an integration test, not a smoke test.
 
 Run originals with PHP's official runner and the support adapter in a
 disposable tree (never upstream `tests/start.sh`), with private process groups

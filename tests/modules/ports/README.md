@@ -68,16 +68,11 @@ Linux sanitizer run (builds an ASan Rust archive and reruns `gate.py`,
 `listen.py` and `socket_workflow.py`, then checks that a deliberately invalid
 ABI caller is caught):
 
-```text
-python3 tests/modules/ports/sanitizer.py --source PINNED_REFERENCE --core CONFIGURED_CORE --output REPORT
-```
-
 PHP runtime checks:
 
 ```text
 python3 tests/modules/ports/configuration.py --engine ... --build-manifest MANIFEST --archive SELECTED_ARCHIVE --source-ref REF [--case NAME] --output REPORT
 python3 tests/modules/ports/php.py --engine ... --output REPORT
-python3 tests/modules/ports/class_properties_loaded.py --source PINNED_REFERENCE --native NATIVE_EXPORT --selected SELECTED_EXPORT --output REPORT
 ```
 
 - `configuration.py`: setting conversion, reentry, ignored SSL, a throwing
@@ -88,8 +83,6 @@ python3 tests/modules/ports/class_properties_loaded.py --source PINNED_REFERENCE
   `swr_v1_ports_*` symbol.
 - `php.py`: event registration/lookup, unknown-event warnings, Stringable
   reentry and callback replacement lifetime across engines.
-- `class_properties_loaded.py`: reflection of all 19 Port properties in both
-  exported DSOs against the pinned declarations.
 - Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
 
 Unit tests (no native build):

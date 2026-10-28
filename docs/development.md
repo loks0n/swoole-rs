@@ -125,10 +125,17 @@ manual setup:
   `candidate`/`integrate` unless the command names its own
 - adds `--with-prerequisites` to a `--phase` selection, so the builds and reports a
   phase needs run first
+- runs a repository script instead of a lane when the first argument ends in `.py`,
+  for example `dev.py docker -- benchmarks/callgrind.py --engine … --profiles DIR`
+  (the image has valgrind)
 
 It warns when the disk has less than 20 GB free. `dev.py prune` also removes
 `target/worktrees/*` older than its window and dev images other than the current
 one, so nothing needs `rm -rf` outside `target/`.
+
+Any other image a tool or README builds gets one fixed name per purpose (for
+example `swoole-protocols-core`), never a hash or `:local` tag, so a rebuild
+replaces it instead of adding one; `docker image prune` clears the dangling one.
 
 ## Cloud executors
 
@@ -143,7 +150,7 @@ git config core.hooksPath .githooks        # pre-commit/pre-push checks
 ```
 
 Then run the executor loop (claim, branch, PR, `gh pr merge --auto --squash`,
-`python3 tools/ci.py wait`, close). A GitHub Codespace or any devcontainer host
+next issue). A GitHub Codespace or any devcontainer host
 builds `.devcontainer/` automatically and injects `GH_TOKEN`, so the clone and the
 hooks line are the only steps. Keep builds, profiles and clones under the
 environment's own disk; `python3 tools/dev.py prune` clears a day's leavings.

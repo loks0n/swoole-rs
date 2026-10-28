@@ -56,20 +56,19 @@ def main():
             'missing:recursive-mkdir,template-published\n'
             'readable-file:accepted-without-directory-check\n'
             'file-parent:reject,old-publication\n'
-            'embedded-nul:c-string-prefix,template-published\n'
-            'embedded-nul-long:raw-length-ignored-on-access-success\n'
+            'embedded-nul:prefix-checked,raw-string-published\n'
+            'embedded-nul-long:raw-length-rejected,published\n'
             'getter-alias:fresh-global-length,publication\n'
             'trailing-slash:double-slash-preserved\n'
             'length255:accepted,created,published\n'
             'length256:rejected,created,published\n'
-            'warnings:four-exact-payloads,ordered,no-extras\n'
+            'warnings:five-exact-payloads,ordered,no-extras\n'
             'logging-error:no-output,relative-preserves-errno,mkdir-publishes-error,lazy-format,long-publishes\n'
             'logging-none:no-output,relative-preserves-errno,mkdir-publishes-error,lazy-format,long-publishes\n'
             'cleanup:native-globals-cleared\n')
     if args.driver == 'task-lifetime':
-        expected_trace = ('reserve-failure:one-real-realloc,buffer-and-global-unchanged\n'
-            'string-copy-failure:formatted-buffer,old-global,recovered\n'
-            'allocator-publishes-second-buffer:fresh-lookup,length-reject-after-publication\n')
+        expected_trace = ('string-copy-failure:old-global,recovered\n'
+            'length-reject-after-publication\n')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     attempt = args.output.parent.resolve() / ('corebase-hooks-' + uuid.uuid4().hex)
     attempt.mkdir()

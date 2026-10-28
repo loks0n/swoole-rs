@@ -10,8 +10,19 @@ unsafe extern "C" {
 pub(crate) fn case_equal(left: &[u8], right: &[u8]) -> bool {
     left.len() == right.len() && case_prefix(left, right)
 }
+/// True when libc's case-insensitive comparison differs at this first byte pair in
+/// every locale, so the call can be skipped: `tolower` keeps ASCII in ASCII except
+/// Turkish `I` (to `ı`), and only Turkish `İ` lowers to an ASCII byte (`i`).
+fn differs_at_first(left: u8, right: u8) -> bool {
+    left.is_ascii()
+        && right.is_ascii()
+        && left | 0x20 != b'i'
+        && right | 0x20 != b'i'
+        && !left.eq_ignore_ascii_case(&right)
+}
 pub(crate) fn case_prefix(left: &[u8], right: &[u8]) -> bool {
     left.len() >= right.len()
+        && !matches!((left.first(), right.first()), (Some(&a), Some(&b)) if differs_at_first(a, b))
         && (right.is_empty()
             // SAFETY: both slices hold at least `right.len()` readable bytes.
             || unsafe {

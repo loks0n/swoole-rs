@@ -35,19 +35,23 @@ const fn offset(cursor: i64) -> usize {
 const fn signed(size: usize) -> i64 {
     size as i64
 }
+#[expect(
+    clippy::needless_bitwise_bool,
+    reason = "branch-free validation of scalar POD fields on the push/pop path; see comment"
+)]
 fn valid(c: &Channel) -> bool {
     // These predicates only read scalar POD fields. Combine them eagerly so
     // native callers do not pay a dependent branch for every invariant. Keep
     // pointer dereferences and queue writes behind the combined result.
     (!c.mem.is_null())
-        && (c.size > 0)
+        & (c.size > 0)
         & (c.size <= (isize::MAX as usize).saturating_sub(c.maxlen.max(0).unsigned_abs() as usize + 4))
         // A negative cursor fails the conversion, so these check both bounds.
         & usize::try_from(c.head).is_ok_and(|head| head < c.size)
         & usize::try_from(c.tail).is_ok_and(|tail| tail < c.size)
-        && ((c.head_tag | c.tail_tag) <= 1)
-        && (c.num >= 0)
-        && (c.maxlen >= 0) & (c.maxlen.unsigned_abs() as usize <= c.size)
+        & ((c.head_tag | c.tail_tag) <= 1)
+        & (c.num >= 0)
+        & (c.maxlen >= 0) & (c.maxlen.unsigned_abs() as usize <= c.size)
 }
 // Short channel records should not need a dynamic libc memcpy dispatch. Copy
 // fixed-width endpoints, which may overlap each other but stay inside both

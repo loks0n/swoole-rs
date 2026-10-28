@@ -114,6 +114,10 @@ def build_extension(source, log_path, args, extra=(), *, incremental=False, timi
             if timings is not None:
                 timings[phase] = round(time.monotonic() - started, 4)
             if result.returncode:
+                log.flush()
+                # CI keeps no build tree, so the errors must reach stderr.
+                errors = [line for line in log_path.read_text(errors='replace').splitlines() if 'error' in line.lower()]
+                print('\n'.join(errors[-40:]), file=sys.stderr, flush=True)
                 raise RuntimeError(f'Build failed ({result.returncode}). See {log_path}')
             if phase == 'make':
                 # GNU cp's sparse-file deallocation fails on some bind mounts.

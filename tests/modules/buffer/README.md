@@ -34,10 +34,6 @@ checkout (`target/upstream/src`).
 - `lifecycle.py --engine NAME=SO ... [--php-extension EXT]`: slow readers,
   stream/sendfile cancellation, half-close, churn and pending-write shutdown
   (corpus project `11-buffer-lifecycle`).
-- `zend-oom.py --engine control=SO --engine candidate=SO --output R`: packs a
-  4 MiB plain WebSocket frame, then repeats it under a memory limit so the real
-  Zend String allocator fails. Exit code, stdout and stderr must match the first
-  engine.
 - Original PHPTs (`originals.json`, seven Swoole v6.2.4 tests plus
   `examples/test.jpg`):
   `python3 corpus/upstream/run.py --manifest tests/modules/buffer/originals.json --source S --engine upstream=SO --engine hybrid=SO --require-all --isolate-cases`.

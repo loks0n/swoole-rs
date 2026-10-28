@@ -23,7 +23,6 @@ Gates that need no upstream source:
 - `compile_gate.py --source S --report R`: original and patched backend translation units compile as C++14.
 - `buffer_typed_compile.py --source S --master-patch P --report R`: typed Buffer compositions compile.
 - `declarations.py --archive A --report R`: every `swr_v1_reactor_*`/`swr_v1_stream_*` declaration in the header is defined in the archive.
-- `sockets_gnu_source.py --candidate-dir D --report R`: compares the Rust socket store with GNU libstdc++ hashtable bodies (inputs pinned by checksum in `gnu_source_body.py`).
 
 
 ## Production consumer
@@ -62,7 +61,5 @@ required. Cargo intermediates go in a keyed cache beside `--target` (or under
 
     cd tests/modules/reactor && python3 -m unittest test_*.py
 
-`test_staging.py` checks that overlays apply identically inside an ignored Git
-parent and an independent directory (skipped without `target/upstream/src`).
 `test_buffer_typed_identity.py` and `test_sockets_source.py` read historical
 commits with `git show` and fail in checkouts that lack them.

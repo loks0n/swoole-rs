@@ -45,20 +45,16 @@ binary messages from eight clients reach the independently computed CRC32
 worker, and that eight empty datagrams get no callback (pinned recvfrom's
 `ret <= 0` branch).
 
-`address_span.py --source PINNED_REFERENCE --native-report NATIVE_CORE_REPORT
---output REPORT` uses a completed native-core build library and checks six real
-`Address` spans against pinned C++ (`address_span.cc`). Known caller behaviour
-it documents: fresh `::1` gives CRC 2630436834, but 814556344 after the same
-thread formats a longer IPv6 address; a fresh thread starts zeroed and fork
-inherits the previous tail; short filesystem Unix recvfrom exposes two
-preexisting tail bytes. Rust matches C++ for every span.
+Gate audit (#471/#477): `crc32-consumers-*` is **kept**. The algorithm is covered
+by the `cargo test -p swoole-rs-crc32` differential and the original core-test
+above. The one production caller — `reactor_thread.cc`'s non-IPv4 datagram
+worker dispatch (`crc32(peer) % worker_num`) — is reached by no PHPT with a real
+dispatch choice: `swoole_server/{unsock_dgram,sendto_timeout}.phpt` run a
+datagram server with `worker_num = 1`, and `systemd_fds.phpt` exercises fd
+passing, not multi-worker routing. This phase is the only coverage of the
+`worker_num > 1` non-IPv4 dispatch, so it stays.
 
 ## x86_64
-
-`x86_probe.rs` includes the production source unchanged in a freestanding
-x86_64 Linux ELF that exits nonzero on any failed check. Build it with
-`rustc --target x86_64-unknown-linux-gnu`, `-C panic=abort`, static relocation,
-rust-lld and link args `-nostdlib -static -no-pie`, then run it in the devcontainer (see `docs/development.md`).
 
 ## Known gaps
 

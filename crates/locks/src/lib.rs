@@ -14,6 +14,15 @@
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]
 compile_error!("Rust locks require validated macOS or Linux platform contracts");
 
+// libc's surface is platform-specific here (e.g. __error on macOS vs
+// __errno_location on Linux, selected by cfg below), so it is not portably enumerable.
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::wildcard_imports,
+        reason = "libc's platform-specific surface is not portably enumerable"
+    )
+)]
 use libc::*;
 use std::{
     mem::{align_of, offset_of, size_of},

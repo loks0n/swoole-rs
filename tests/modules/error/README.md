@@ -65,10 +65,16 @@ differ across platforms.
 
 `--sanitize` instruments C++ only, not the Rust archive.
 
-## Benchmarks
+Gate audit (#471/#478): both phases are **kept**. `error-native` runs the native
+error allocator/state facades under C++ sanitizers — coverage no PHPT, Rust unit
+test or fuzz target reaches (rule 1, sanitizers). `error-php` uniquely checks the
+43-case `swoole_strerror` integer-narrowing corpus (64-bit PHP int → C error code
+across the FFI) under four selectors on both engines, which no PHPT exercises.
+(The two unchanged originals it also runs, `swoole_function/swoole_strerror.phpt`
+and `swoole_error_log.phpt`, are already run by the merge-tier PHPT gate, so only
+the narrowing corpus is unique to this phase.)
 
-`python3 tests/modules/error/benchmark_runner_test.py` checks the runner's
-timeout cleanup and report shape with synthetic processes; it does not measure.
+## Benchmarks
 
 Prepare (correctness checks, optimized consumers, state `--check` and
 `--check-latency` with clocks disabled; the destination must not exist):

@@ -1,5 +1,5 @@
 //! Pure checked String growth/format/random-storage policy. Native performs IO.
-use super::{INVALID, OK, OVERFLOW, StringState, aligned};
+use super::{INVALID, OK, OVERFLOW, StringState, aligned, page_align};
 
 const EMPTY_STATE: StringState = StringState {
     data: std::ptr::null_mut(),
@@ -235,7 +235,7 @@ pub(super) fn random_storage(
         .ok_or(OVERFLOW)?;
     let capacity = if needed > capacity {
         aligned(
-            aligned(needed.checked_mul(2).ok_or(OVERFLOW)?, page)?,
+            page_align(needed.checked_mul(2).ok_or(OVERFLOW)?, page)?,
             alignment,
         )?
     } else {

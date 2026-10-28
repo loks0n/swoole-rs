@@ -73,7 +73,10 @@ fn encode(input: &[u8], output: &mut [MaybeUninit<u8>]) -> usize {
 ))]
 #[target_feature(enable = "neon")]
 unsafe fn encode_neon(input: &[u8], output: &mut [MaybeUninit<u8>]) {
-    use core::arch::aarch64::*;
+    use core::arch::aarch64::{
+        uint8x16x3_t, uint8x16x4_t, vandq_u8, vdupq_n_u8, vld1q_u8, vld3q_u8, vorrq_u8, vqtbl4q_u8,
+        vshlq_n_u8, vshrq_n_u8, vst4q_u8,
+    };
     // One immutable alphabet, not four persistent copies.
     let quarter = |offset: usize| {
         // SAFETY: `offset` is 0, 16, 32 or 48, so these 16 bytes lie inside the

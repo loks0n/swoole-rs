@@ -73,7 +73,7 @@ jobs:
         with:
           shared-key: release
           save-if: false
-      - run: rm -rf target/hybrid
+      - run: rm -rf target/hybrid target/upstream target/thirdparty
       - uses: ./.github/actions/install
       - id: upstream
         uses: actions/cache@v4
@@ -130,7 +130,7 @@ jobs:
           shared-key: release
           save-if: false
       - if: steps.touched.outputs.modules != ''
-        run: rm -rf target/hybrid
+        run: rm -rf target/hybrid target/upstream target/thirdparty
       - if: steps.touched.outputs.modules != ''
         uses: ./.github/actions/install
       - if: steps.touched.outputs.modules != ''

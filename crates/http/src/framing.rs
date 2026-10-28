@@ -111,13 +111,21 @@ fn header_end(input: &[u8], frame: &mut HttpFrame) -> i32 {
     if frame.offset > input.len() {
         return INVALID;
     }
-    if let Some(at) = input[frame.offset..]
-        .windows(4)
-        .position(|s| s == b"\r\n\r\n")
+    // Jump to each '\r' and test the four bytes there. Upstream's get_header_length
+    // compares at every position; both find the first "\r\n\r\n".
+    let rest = &input[frame.offset..];
+    let mut from = 0;
+    while let Some(found) = rest
+        .get(from..)
+        .and_then(|tail| tail.iter().position(|&b| b == b'\r'))
     {
-        frame.offset += at + 4;
-        frame.header_length = field(frame.offset);
-        return 0;
+        let at = from + found;
+        if rest.get(at..at + 4) == Some(b"\r\n\r\n") {
+            frame.offset += at + 4;
+            frame.header_length = field(frame.offset);
+            return 0;
+        }
+        from = at + 1;
     }
     frame.offset = frame.offset.max(input.len().saturating_sub(3));
     INVALID

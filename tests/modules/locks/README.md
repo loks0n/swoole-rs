@@ -8,8 +8,8 @@ real classes and atomic exports. See
 ownership, timeout, ordering, fork and coroutine contracts, and
 [PLATFORMS.md](PLATFORMS.md) for the macOS/Linux platform guard.
 
-`overlay.py` generates the patched lock sources from the pinned upstream; run it
-directly to rewrite `migration/patches/locks/`.
+`overlay.py` applies `migration/patches/locks/` to the pinned sources for the gates;
+edit the patches with `tools/patches.py`.
 
 ```sh
 python3 tools/build_hybrid.py --module locks --dev --jobs 2
@@ -48,9 +48,6 @@ python3 tests/modules/locks/gate.py --source target/upstream/src \
 - `threads.py --engine ... --php-extension sockets`: real ZTS threads with a
   barrier, 20,000 increments per Thread Atomic width and 2,000 mutex-protected
   updates. Requires ZTS engines; also used by `tests/modules/integration/zts.py`.
-- `order.py --source S --engine ...`: instrumented admission/acquisition/receipt
-  traces for the `coroutine_lock/lock.phpt` topology (`order.php`), modes
-  `parallel` and `two-first`.
 - `constructor.py --source S --archive A --output R [--sanitize] [--rust-asan]`:
   lock constructors with faults injected at the native pthread init/attribute/
   pshared boundaries; checks no leaked storage, attribute cleanup, exception

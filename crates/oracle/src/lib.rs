@@ -230,6 +230,133 @@ pub mod http_frame {
     };
 }
 
+pub mod framing_stream {
+    /// One fuzz case for the stream receive loops: `mode` 0 is the length
+    /// protocol, 1 EOF and 2 EOF split; each recv returns at most the next of
+    /// `chunk_count` chunk sizes of the `length` stream bytes, then EAGAIN (or the
+    /// peer's close when `close_at_end`).
+    #[repr(C)]
+    pub struct Stream {
+        pub mode: u8,
+        pub eof_len: u8,
+        pub close_at_end: u8,
+        pub length_size: u8,
+        pub length_offset: u16,
+        pub body_offset: u16,
+        pub max_length: u32,
+        pub buffer_size: u32,
+        pub eof: *const u8,
+        pub data: *const u8,
+        pub length: usize,
+        pub chunks: *const u16,
+        pub chunk_count: usize,
+    }
+
+    /// Runs one engine's receive loop over the stream until it fails or the
+    /// chunks are drained, writing each call's result (`R<n>;`), each packet
+    /// (`P<len>:` and its bytes) and the final buffer length and offset to `out`.
+    /// Returns the log's full length. `upstream` is the pinned base.cc,
+    /// `candidate` the one with the framing overlay patch, which calls the Rust
+    /// exports (the caller's binary must link them).
+    pub type Run =
+        unsafe extern "C" fn(stream: *const Stream, out: *mut u8, capacity: usize) -> usize;
+
+    unsafe extern "C" {
+        fn swr_oracle_framing_stream_upstream(
+            stream: *const Stream,
+            out: *mut u8,
+            capacity: usize,
+        ) -> usize;
+        fn swr_oracle_framing_stream_candidate(
+            stream: *const Stream,
+            out: *mut u8,
+            capacity: usize,
+        ) -> usize;
+    }
+
+    pub const UPSTREAM: Run = swr_oracle_framing_stream_upstream;
+    pub const CANDIDATE: Run = swr_oracle_framing_stream_candidate;
+}
+
+pub mod resp_stream {
+    /// One fuzz case for `redis::recv_packet`: each recv returns at most the next
+    /// of `chunk_count` chunk sizes of the `length` stream bytes, then EAGAIN (or
+    /// the peer's close when `close_at_end`), into a buffer of `buffer_size` bytes
+    /// that grows to `max_length`.
+    #[repr(C)]
+    pub struct Stream {
+        pub data: *const u8,
+        pub length: usize,
+        pub chunks: *const u16,
+        pub chunk_count: usize,
+        pub buffer_size: u32,
+        pub max_length: u32,
+        pub close_at_end: u8,
+    }
+
+    /// Runs one engine's `recv_packet` over the stream until it fails or the
+    /// chunks are drained, writing each call's result and request state, each
+    /// package and the final buffer length and offset to `out`. Returns the log's
+    /// full length. `upstream` is the pinned redis.cc, `candidate` the one with the
+    /// protocols overlay patch, which calls the Rust exports (the caller's binary
+    /// must link them).
+    pub type Run =
+        unsafe extern "C" fn(stream: *const Stream, out: *mut u8, capacity: usize) -> usize;
+
+    unsafe extern "C" {
+        fn swr_oracle_resp_stream_upstream(
+            stream: *const Stream,
+            out: *mut u8,
+            capacity: usize,
+        ) -> usize;
+        fn swr_oracle_resp_stream_candidate(
+            stream: *const Stream,
+            out: *mut u8,
+            capacity: usize,
+        ) -> usize;
+    }
+
+    pub const UPSTREAM: Run = swr_oracle_resp_stream_upstream;
+    pub const CANDIDATE: Run = swr_oracle_resp_stream_candidate;
+}
+
+pub mod socks5 {
+    /// One fuzz case for `Socks5Proxy`: its settings (`socket_type` as upstream's
+    /// `SocketType`) and the server's replies, `reply_sizes[i]` bytes each, back to
+    /// back in `replies`. With `send_short` every send writes one byte too few.
+    #[repr(C)]
+    pub struct Case {
+        pub user: *const u8,
+        pub user_length: usize,
+        pub password: *const u8,
+        pub password_length: usize,
+        pub target_host: *const u8,
+        pub target_host_length: usize,
+        pub target_port: u16,
+        pub dns_tunnel: u8,
+        pub socket_type: u8,
+        pub send_short: u8,
+        pub replies: *const u8,
+        pub reply_sizes: *const u16,
+        pub reply_count: usize,
+    }
+
+    /// Runs one engine's `Socks5Proxy` from `create` through the replies, writing
+    /// every byte sent, each handshake result, state and method, and each reply
+    /// code's `strerror` to `out`. Returns the log's full length. `upstream` is the
+    /// pinned socks5.cc, `candidate` the one with the protocols overlay patch,
+    /// which calls the Rust exports (the caller's binary must link them).
+    pub type Run = unsafe extern "C" fn(case: *const Case, out: *mut u8, capacity: usize) -> usize;
+
+    unsafe extern "C" {
+        fn swr_oracle_socks5_upstream(case: *const Case, out: *mut u8, capacity: usize) -> usize;
+        fn swr_oracle_socks5_candidate(case: *const Case, out: *mut u8, capacity: usize) -> usize;
+    }
+
+    pub const UPSTREAM: Run = swr_oracle_socks5_upstream;
+    pub const CANDIDATE: Run = swr_oracle_socks5_candidate;
+}
+
 pub mod http_range {
     use std::ffi::c_char;
 

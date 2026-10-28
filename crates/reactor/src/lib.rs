@@ -18,6 +18,14 @@ pub use backend::*;
 mod poll;
 #[cfg(unix)]
 pub use poll::*;
+#[cfg(unix)]
+mod registration;
+#[cfg(unix)]
+pub use registration::*;
+#[cfg(unix)]
+mod registry;
+#[cfg(unix)]
+pub use registry::*;
 
 #[cfg(unix)]
 mod output;
@@ -35,6 +43,9 @@ pub use deferred::*;
 
 mod callbacks;
 pub use callbacks::*;
+
+mod handlers;
+pub use handlers::*;
 
 mod owner;
 

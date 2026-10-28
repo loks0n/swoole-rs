@@ -82,6 +82,27 @@ doc = false
 bench = false
 
 [[bin]]
+name = "framing_stream"
+path = "fuzz_targets/framing_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "socks5"
+path = "fuzz_targets/socks5.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "resp_stream"
+path = "fuzz_targets/resp_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "framing_unpack"
 path = "fuzz_targets/framing_unpack.rs"
 test = false

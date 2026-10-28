@@ -41,7 +41,6 @@ the rest require `--archive PATH`. All take `--source PINNED_GIT --output REPORT
 | `index_page_gate.py` (`--positive-only`) | `make_index_page` with pinned String `format_impl` |
 | `multipart_gate.py` | Multipart upload accounting callbacks |
 | `multipart_headers_gate.py` [A\|R] (`--positive-only`) | Multipart header field/value and filename callbacks |
-| `multipart_parser_gate.py` [A\|R] | Pinned C multipart parser plus all seven callbacks with real temp files |
 | `multipart_emit_gate.py` [A\|R] | Header-complete/data-end/part-begin/body-end callbacks |
 | `rewrite_gate.py` [A\|R] (`--positive-only`) | `add_rewrite_rule`/`apply_rewrite_rules` |
 | `inline_gate.py` [A\|R] | StaticHandler inline content-type/boundary/path/error bodies |
@@ -49,7 +48,6 @@ the rest require `--archive PATH`. All take `--source PINNED_GIT --output REPORT
 | `locale_gate.py` | Case-insensitive helpers against libc `strncasecmp` across available locales |
 | `cookie_flow_gate.py` [A\|R] (`--status-only`, `--codes-only`) | Cookie callback flow; status fallback buffer; public `int[128]` status-code array export |
 | `request_lifecycle_gate.py` [A\|R] | Request multipart init/destroy/destructor |
-| `request_v2_model.py` [A\|R] | RequestV2 metadata through the facade and Rust owner |
 | `context_gate.py` [A\|R] | Static context/serve-path controls |
 | `boundary_rng_gate.py --export DIR` | Random-boundary overloads against a production corebase export; verifies the export's archive/header/source checksums first |
 
@@ -65,8 +63,6 @@ These compile the real pinned and patched headers/translation units (no
 - `directory_compat.py`: legacy StaticHandler data declarations, layout and
   copy/reference traits; V2 composition, under C++14 and C++17. C++20 fails on
   the pinned process-pool volatile increment under `-Werror`.
-- `request_v2_compat.py [--upstream-unused-parameter-policy]`: C++14/17 syntax
-  for legacy, HTTP-only, PORTS-only and paired RequestV2 modes.
 
 ## PHP checks
 
@@ -75,19 +71,6 @@ These take `--engine NAME=/abs/swoole.so` (first `upstream=`), optional
 
 - `binding_reflection.py`: class/method metadata of five HTTP PHP classes
   must equal the upstream engine.
-- `static_server.py`: real local PHP HTTP server (16 requests: file bytes,
-  percent/query paths, rewrite, ranges and multipart ranges, If-Range, HEAD,
-  304, index, autoindex, 404, dynamic fallback) over one keep-alive socket;
-  multiple engines also compare response fingerprints (excluding `Date`).
-  `--measure --requests N --repeat N` times it; only run that on an otherwise
-  idle host.
-- `multipart_server.py`: successful streaming uploads (98 KiB file, two-file
-  requests exceeding the 128 KiB total) checking field values and uploaded file
-  SHA256s.
-- `locale_server.py`: static location matching under explicit worker locales
-  (binary prefixes, Turkish `I`/`i`).
-- `request_splits.py --source PINNED_GIT`: deterministic sweep of all 501 cuts
-  of the first request in `create_request.phpt` (pinned checksum verified).
 
 ### Original PHPTs
 
@@ -95,20 +78,8 @@ Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` j
 
 ## Benchmark preparation
 
-`path_bench.py`, `proxy_bench.py [--positive-only]` and `index_page_bench.py`
-take `--source --archive --binary --output`. Preparation compiles `-O3 -DNDEBUG` consumers,
-verifies linked Rust symbols and runs an untimed check. Timing is
-`BINARY --measure ENGINE WORKLOAD ITERATIONS` and must run on an idle host with
-an optimized, uninstrumented archive. No timings have been recorded.
-
 ## Known failures
 
-- `create_request.phpt`: random cookie-fragment defect in the untouched PHP
-  request callbacks, not the Rust cookie iterator. `ext-src/swoole_http_request.cc`
-  passes each llhttp header-value fragment to native `treat_data(PARSE_COOKIE)`
-  separately, so a cut inside the Cookie value yields four cookies instead of
-  three. `request_splits.py` reports 67 of 501 cuts failing (524-529, 532-533,
-  535-541, 545-552, 554-590, 594-600) identically on both engines and exits 1.
 - `If_Modified_Since.phpt` fails on macOS for native and hybrid (200 instead of
   304), consistent with a libc calendar offset difference.
 - Full originals also fail or are unsupported for reasons outside Rust: the

@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <sys/types.h>
 #include <stdio.h>
 #include <dirent.h>
 #include <sys/stat.h>
@@ -162,6 +163,39 @@ void swr_v1_hook_socket_state_free(swr_v1_hook_socket_state *state);
 swr_v1_hook_socket_flags_t swr_v1_hook_socket_flags(const swr_v1_hook_socket_state *state);
 void swr_v1_hook_socket_set_flags(swr_v1_hook_socket_state *state, swr_v1_hook_socket_flags_t flags);
 void swr_v1_hook_socket_connect(swr_v1_hook_socket_state *state);
+/* Server setup (crates/hooks/src/setup.rs): bind (host: availability first, then
+ * record the name), listen (SW_BACKLOG for a non-positive backlog, stored in
+ * *stored) and accept (wait and accept again when it would block). fail(-1) is
+ * set_err(); call is the operation's network::Socket call. */
+typedef struct {
+    void *context;
+    bool (*available)(void *, int event);
+    void (*fail)(void *, int error);
+    bool (*wait)(void *, int event);
+    int (*name)(void *);
+    int (*call)(void *, int argument);
+} swr_v1_hook_setup_ops;
+bool swr_v1_hook_bind(const swr_v1_hook_setup_ops *ops, bool host);
+bool swr_v1_hook_listen(const swr_v1_hook_setup_ops *ops, int backlog, int *stored);
+bool swr_v1_hook_accept(const swr_v1_hook_setup_ops *ops);
+/* Coroutine Socket::sendfile's loop over [*offset, end): 0 all sent, 1 a send
+ * returned zero, 2 one failed (errno set), 3 the wait failed. */
+typedef struct {
+    void *context;
+    ssize_t (*send)(void *, off_t *offset, size_t length);
+    bool (*wait)(void *);
+} swr_v1_hook_sendfile_ops;
+int swr_v1_hook_sendfile(const swr_v1_hook_sendfile_ops *ops, off_t *offset, size_t end);
+/* connect(host)/sendto(host)'s address loop: up to two assigns with a resolve
+ * between them on SW_ERROR_BAD_HOST_ADDR. 0 assigned (or fell through), 1 an
+ * assign failed otherwise, 2 the resolve failed. */
+typedef struct {
+    void *context;
+    bool (*assign)(void *);
+    bool (*bad_host)(void);
+    bool (*resolve)(void *);
+} swr_v1_hook_resolve_ops;
+int swr_v1_hook_resolve(const swr_v1_hook_resolve_ops *ops);
 /* The coroutine bound for reading or writing (event SW_EVENT_READ/WRITE; bind accepts both bits).
    bound_co follows get_bound_co; event_name returns 0 reading, 1 writing, 2 reading or writing. */
 void *swr_v1_hook_socket_co(const swr_v1_hook_socket_state *state, uint32_t event);

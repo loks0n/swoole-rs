@@ -564,9 +564,7 @@ fn resp_receive_range(
             else {
                 return (0, set_offset);
             };
-            if next > bytes.len() {
-                return (0, set_offset);
-            }
+            // Past the end is fine: the line still counts, and the next pass fails.
             position = next;
             request.bytes_total = 0;
             let Some(lines) = request.lines_received.checked_add(1) else {
@@ -901,6 +899,19 @@ mod tests {
         assert_eq!(
             resp_receive(b"abcd", 4, 4, &mut RespRequest::default()),
             (4, false)
+        );
+    }
+    #[test]
+    fn last_line_counts_when_its_crlf_runs_past_the_end() {
+        // Upstream: a byte that isn't `$` or `:` is an empty string, and the line
+        // completes the request even though its CRLF would end past the buffer.
+        assert_eq!(
+            resp_receive(b"*2\r\n\n\r\n", 64, 64, &mut RespRequest::default()),
+            (3, true)
+        );
+        assert_eq!(
+            resp_receive(b"*3\r\n\n\r\n", 64, 64, &mut RespRequest::default()),
+            (0, true)
         );
     }
 }

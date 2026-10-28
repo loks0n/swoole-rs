@@ -3,11 +3,34 @@
 import argparse
 import json
 from pathlib import Path
+import subprocess
 import sys
+import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from tools.harness import run_isolated, write_report
-from overlay import ROOT, PIN, original, generated
+from tools.build_hybrid import apply_patch_verified
+from tools.build_upstream import COMMIT as PIN
+from tools.harness import ROOT, run_isolated, write_report
+
+PATCHES = ROOT / 'migration/patches/framing'
+
+
+def original(path):
+    return subprocess.check_output(['git', '-C', str(ROOT / 'target/upstream/src'), 'show', PIN + ':' + path], text=True)
+
+
+def generated():
+    """The pinned files with the framing overlay applied, as the hybrid build compiles them."""
+    patches = json.loads((PATCHES / 'manifest.json').read_text())['patches']
+    paths = [path for patch in patches for path in patch['upstream_paths']]
+    with tempfile.TemporaryDirectory() as directory:
+        tree = Path(directory)
+        for path in paths:
+            (tree / path).parent.mkdir(parents=True, exist_ok=True)
+            (tree / path).write_text(original(path))
+        for patch in patches:
+            apply_patch_verified(tree, PATCHES / patch['path'], patch['upstream_paths'])
+        return {path: (tree / path).read_text() for path in paths}
 
 
 def main():

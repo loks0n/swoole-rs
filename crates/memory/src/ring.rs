@@ -294,13 +294,19 @@ pub unsafe extern "C" fn swr_v1_memory_ring_storage_alloc(
 
 // All guards are scalar and can be combined before any memory access. With
 // size>=8, a wrapped subtraction is larger than every permitted u32 range.
+#[expect(
+    clippy::needless_bitwise_bool,
+    reason = "branch-free validation of scalar fields; see comment"
+)]
 fn release_offset(memory: usize, size: u32, count: usize, data: usize) -> Option<usize> {
     let offset = data.wrapping_sub(memory).wrapping_sub(8);
     let aligned = ((memory | data) & 7) | (count & 3) == 0;
     let valid = (memory != 0)
-        && (count != 0)
-        && (data >= memory)
-        && (size >= 8) & (offset <= (size as usize).wrapping_sub(8)) & aligned;
+        & (count != 0)
+        & (data >= memory)
+        & (size >= 8)
+        & (offset <= (size as usize).wrapping_sub(8))
+        & aligned;
     valid.then_some(offset)
 }
 

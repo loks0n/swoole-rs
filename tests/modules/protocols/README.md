@@ -100,7 +100,14 @@ Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` j
 ## Original core GTests (Linux)
 
 Runs the seven unchanged `redis.*`, `message_bus.*` and `mqtt.echo` GTests against
-upstream and Rust-overlay builds. Build `core.Dockerfile` on the repo dev image;
+upstream and Rust-overlay builds. Build `core.Dockerfile` on the repo dev image
+(`dev.py docker` builds it the first time), under one fixed tag so a rebuild replaces it:
+
+```sh
+docker build -f tests/modules/protocols/core.Dockerfile -t swoole-protocols-core \
+  --build-arg BASE_IMAGE=$(python3 -c 'import tools.dev; print(tools.dev.docker_image())') .
+```
+
 `mqtt.echo` needs Node with mqtt 4.3.8 and pino 6.14.0. Mount the repo at /repo
 and pinned source at /ref read-only, private targets at /work, and a configured
 Linux config.h at /configured.h:

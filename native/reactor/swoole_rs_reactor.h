@@ -83,6 +83,32 @@ size_t swr_v1_reactor_callbacks_copy_layout(uint32_t);
 /* Each backend's whole wait() loop in one call (#336, #391). Rust runs the loop and its readiness
    order; these are the native effects, each passed `context` (prepare/remove also the socket). */
 enum { SWR_REACTOR_POLL, SWR_REACTOR_EPOLL, SWR_REACTOR_KQUEUE };
+/* Reactor handler tables (read/write/error per fd type, write and error defaults).
+ * Handlers are ReactorHandler: int (*)(Reactor *, Event *). get kind: 0 read, 1 write,
+ * 2 error; error_only false adds get_error_handler's read and write fallbacks. */
+/* swoole::Event, and accessors for the network::Socket fields the wait loop uses. */
+typedef struct {
+    int fd;
+    int16_t reactor_id;
+    int type;
+    void *socket;
+} swr_v1_reactor_event;
+typedef struct {
+    int (*fd)(void *socket);
+    int (*fd_type)(void *socket);
+    int (*events)(void *socket);
+    bool (*removed)(void *socket);
+    void (*set_hangup)(void *socket); /* event_hup = 1 */
+} swr_v1_reactor_socket_fields;
+typedef struct swr_v1_reactor_handlers swr_v1_reactor_handlers;
+typedef int (*swr_v1_reactor_handler)(void *, void *);
+swr_v1_reactor_handlers *swr_v1_reactor_handlers_new(void);
+void swr_v1_reactor_handlers_free(swr_v1_reactor_handlers *);
+bool swr_v1_reactor_handlers_set(swr_v1_reactor_handlers *, int fd_type, int events, swr_v1_reactor_handler);
+bool swr_v1_reactor_handlers_isset(const swr_v1_reactor_handlers *, int fd_type, int events);
+swr_v1_reactor_handler swr_v1_reactor_handlers_get(const swr_v1_reactor_handlers *, uint32_t kind, int fd_type, bool error_only);
+void swr_v1_reactor_handlers_set_default(swr_v1_reactor_handlers *, uint32_t kind, swr_v1_reactor_handler);
+swr_v1_reactor_handler swr_v1_reactor_handlers_default(const swr_v1_reactor_handlers *, uint32_t kind);
 typedef struct {
     void *context;
     uint32_t backend;
@@ -97,10 +123,11 @@ typedef struct {
     int (*interrupted)(void *); /* nullable: epoll io_uring builds only */
     void (*interrupt)(void *);  /* nullable */
     void (*wait_failed)(void *);
-    void (*prepare)(void *, void *socket, int fd, int hup); /* fd -1: the socket's own */
-    int (*removed)(void *socket);
-    int (*oneshot)(void *socket);
-    int (*handle)(void *, uint32_t kind); /* 0 read, 1 write, 2 error */
+    const swr_v1_reactor_socket_fields *fields;
+    int16_t reactor_id;
+    const swr_v1_reactor_handlers *handlers; /* each runs as handler(reactor, event) */
+    void *reactor;
+    swr_v1_reactor_event *event; /* filled for each ready socket */
     void (*handler_failed)(void *, uint32_t kind);
     void (*remove)(void *, void *socket);
     void (*signal)(void *signal);      /* nullable: kqueue only */
@@ -114,6 +141,8 @@ swr_v1_reactor_epoll_events *swr_v1_reactor_epoll_new(size_t);
 void swr_v1_reactor_epoll_free(swr_v1_reactor_epoll_events *);
 struct epoll_event *swr_v1_reactor_epoll_data(swr_v1_reactor_epoll_events *);
 swr_v1_reactor_backend_layout swr_v1_reactor_epoll_layout(void);
+/* epoll_ctl for op 0 add, 1 set (MOD), 2 del, with the socket as token; the kernel's result. */
+int swr_v1_reactor_epoll_ctl(int epfd, uint32_t op, int fd, void *socket, int events);
 #endif
 #if (defined(__APPLE__) && TARGET_OS_OSX) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
 typedef struct swr_v1_reactor_kqueue_events swr_v1_reactor_kqueue_events;
@@ -121,6 +150,12 @@ swr_v1_reactor_kqueue_events *swr_v1_reactor_kqueue_new(size_t);
 void swr_v1_reactor_kqueue_free(swr_v1_reactor_kqueue_events *);
 struct kevent *swr_v1_reactor_kqueue_data(swr_v1_reactor_kqueue_events *);
 swr_v1_reactor_backend_layout swr_v1_reactor_kqueue_layout(void);
+/* ReactorKqueue add/set/del's kevent calls; errno is the kernel's. add: 0, or the failed
+ * filter (1 read, 2 write). set: 0, or 1 read add, 2 read delete, 3 write add, 4 write delete.
+ * del: each failed filter's errno in errors (0 if it took); -1 stops at one not EBADF/ENOENT. */
+int swr_v1_reactor_kqueue_add(int kq, int fd, void *socket, int events);
+int swr_v1_reactor_kqueue_set(int kq, int fd, void *socket, int events);
+int swr_v1_reactor_kqueue_del(int kq, int fd, void *socket, int events, int *errors);
 #endif
 typedef struct swr_v1_reactor_poll_snapshot swr_v1_reactor_poll_snapshot;
 typedef struct { size_t size, alignment, fd, events, revents; } swr_v1_reactor_poll_layout_info;
@@ -129,6 +164,21 @@ swr_v1_reactor_poll_snapshot *swr_v1_reactor_poll_new(size_t);
 void swr_v1_reactor_poll_free(swr_v1_reactor_poll_snapshot *);
 /* Actual target libc pollfd storage, borrowed until owner destruction. */
 struct pollfd *swr_v1_reactor_poll_data(swr_v1_reactor_poll_snapshot *);
+/* The socket of each pollfd entry, borrowed likewise. */
+void **swr_v1_reactor_poll_sockets(swr_v1_reactor_poll_snapshot *);
+/* The fd -> socket registry (Reactor::sockets_); null reads as empty. put: 0, or -2 out of memory. */
+typedef struct swr_v1_reactor_registry swr_v1_reactor_registry;
+swr_v1_reactor_registry *swr_v1_reactor_registry_new(void);
+void swr_v1_reactor_registry_free(swr_v1_reactor_registry *);
+int swr_v1_reactor_registry_put(swr_v1_reactor_registry *, int fd, void *socket, int events);
+void swr_v1_reactor_registry_set(swr_v1_reactor_registry *, int fd, int events); /* if registered */
+void swr_v1_reactor_registry_remove(swr_v1_reactor_registry *, int fd);
+void *swr_v1_reactor_registry_get(const swr_v1_reactor_registry *, int fd);
+size_t swr_v1_reactor_registry_count(const swr_v1_reactor_registry *);
+/* Visits a copy of the entries; 0, or -2 out of memory. */
+int swr_v1_reactor_registry_foreach(const swr_v1_reactor_registry *, void *context, void (*visit)(void *, int fd, void *socket));
+/* Rebuilds the snapshot from the registry; the entry count. */
+int swr_v1_reactor_poll_fill(swr_v1_reactor_poll_snapshot *, const swr_v1_reactor_registry *);
 typedef struct { uint32_t phase; } swr_v1_reactor_flush_state;
 typedef struct { int64_t seconds, nanoseconds; uint32_t finite; } swr_v1_reactor_kqueue_timeout_result;
 // Independent zero state; requests10running/11EINTR/12uring-handler/13once.
