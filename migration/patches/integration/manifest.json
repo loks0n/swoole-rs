@@ -22,6 +22,14 @@
       "upstream_paths": [
         "src/server/master.cc"
       ]
+    },
+    {
+      "path": "0004-worker-registry.patch",
+      "sha256": "ea842932aac097c4df401d66db0b420cafdb0046ce76339ce131a87f82a46798",
+      "upstream_paths": [
+        "include/swoole_server.h",
+        "src/server/master.cc"
+      ]
     }
   ]
 }
