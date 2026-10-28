@@ -1087,14 +1087,14 @@ index 060a261..577092d 100644
 -    static std::unordered_map<std::string, int> list_all_opcode();
      static int callback(Reactor *reactor, Event *event);
 diff --git a/include/swoole_uring_socket.h b/include/swoole_uring_socket.h
-index 06e9f5b..14ea463 100644
+index 06e9f5b..7f49cb6 100644
 --- a/include/swoole_uring_socket.h
 +++ b/include/swoole_uring_socket.h
 @@ -20,2 +20,3 @@
  #include "swoole_coroutine_socket.h"
 +#include "swoole_iouring.h"
  
-@@ -27,8 +28,13 @@ class UringSocket : public Socket {
+@@ -27,8 +28,15 @@ class UringSocket : public Socket {
  
 -    bool ssl_bio_write();
 -    bool ssl_bio_read();
@@ -1102,6 +1102,7 @@ index 06e9f5b..14ea463 100644
 -    bool ssl_bio_perform(int rc, const char *fn);
 -    ssize_t ssl_recv(void *_buf, size_t _n);
 -    ssize_t ssl_send(const void *_buf, size_t _n);
++#ifdef SW_USE_IOURING
 +    // The TLS transport is Rust's (swoole_rs_uring.h); these apply its errors.
 +    static const swr_v1_uring_tls_host tls_host;
 +    static void tls_set_err(void *socket, int code);
@@ -1112,6 +1113,7 @@ index 06e9f5b..14ea463 100644
 +    swr_v1_uring_tls tls() {
 +        return {&tls_host, this, socket->ssl, rbio, wbio, socket->get_fd(), socket->read_timeout, socket->write_timeout};
 +    }
++#endif
 +
      ssize_t ssl_readv(network::IOVector *io_vector);
 diff --git a/src/coroutine/file.cc b/src/coroutine/file.cc
