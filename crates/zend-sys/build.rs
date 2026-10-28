@@ -32,23 +32,21 @@ mod php {
     }
 
     pub(super) fn bind() {
-        for file in [
-            "src/shim.h",
-            "src/shim.c",
-            "src/shim_values.h",
-            "src/shim_values.c",
-            "src/shim_clients.h",
-            "src/shim_clients.c",
-            "src/callable.h",
-            "src/callable.c",
-        ] {
-            println!("cargo::rerun-if-changed={file}");
+        // Every family adds its own src/shim_<family>.{h,c}; nothing here
+        // lists them, so parallel changes never touch this file.
+        let mut sources: Vec<PathBuf> = std::fs::read_dir("src")
+            .expect("zend-sys: read src")
+            .map(|entry| entry.expect("zend-sys: src entry").path())
+            .filter(|path| matches!(path.extension().and_then(|e| e.to_str()), Some("c" | "h")))
+            .collect();
+        sources.sort();
+        for file in &sources {
+            println!("cargo::rerun-if-changed={}", file.display());
         }
         let includes = includes();
         let out = PathBuf::from(env::var("OUT_DIR").expect("zend-sys: OUT_DIR"));
         bindgen::Builder::default()
-            .header("src/shim.h")
-            .header("src/callable.h")
+            .headers(sources.iter().filter(|p| p.extension().is_some_and(|e| e == "h")).map(|p| p.display().to_string()))
             .generate_comments(false)
             .clang_args(includes.iter().map(|dir| format!("-I{}", dir.display())))
             .allowlist_function("(_?zend_|object_properties_init|object_init_ex|php_error_docref|php_url_encode|php_format_date|php_time|swr_zend_|swr_zval_|zval_|get_active_|add_assoc_|add_next_index_|add_index_).*")
@@ -66,10 +64,11 @@ mod php {
             .write_to_file(out.join("bindings.rs"))
             .expect("zend-sys: write bindings");
         cc::Build::new()
-            .file("src/shim.c")
-            .file("src/shim_values.c")
-            .file("src/shim_clients.c")
-            .file("src/callable.c")
+            .files(
+                sources
+                    .iter()
+                    .filter(|p| p.extension().is_some_and(|e| e == "c")),
+            )
             .includes(&includes)
             .warnings(true)
             .compile("swoole_rs_zend_shim");

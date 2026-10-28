@@ -54,5 +54,4 @@ int swr_zend_try_call(zend_fcall_info *fci, zend_fcall_info_cache *fcc, int *res
 /* Z_PARAM_FUNC of argument `number` (not nullable): 1, or 0 after raising
  * Zend's own parameter error. */
 int swr_zend_parse_func(zval *arg, uint32_t number, zend_fcall_info *fci, zend_fcall_info_cache *fcc);
-#include "shim_clients.h"
 #endif

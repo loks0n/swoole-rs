@@ -25,6 +25,10 @@ void swr_zend_callable_release(void *arg) {
     }
 }
 
+void swr_zend_zval_release(void *value) {
+    zval_ptr_dtor(value);
+}
+
 int swr_zend_register_function_alias(zend_class_entry *ce, const char *origin, size_t origin_length,
                                      const char *alias, size_t alias_length,
                                      const zend_internal_arg_info *arg_info) {
