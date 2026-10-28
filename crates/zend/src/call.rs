@@ -1,16 +1,33 @@
 //! The frame of an internal function call, parsed as Zend's fast ZPP macros do.
-use crate::sys::{
-    _zend_expected_type_Z_EXPECTED_DOUBLE, _zend_expected_type_Z_EXPECTED_LONG,
-    _zval_struct__bindgen_ty_1, IS_DOUBLE, IS_FALSE, IS_LONG, IS_TRUE, ZPP_ERROR_WRONG_ARG,
-    zend_execute_data, zend_expected_type, zend_object, zend_parse_arg_double_slow,
-    zend_parse_arg_long_slow, zend_value, zend_wrong_parameter_error,
-    zend_wrong_parameters_count_error, zval,
+use crate::{
+    string::bytes,
+    sys::{
+        _zend_expected_type_Z_EXPECTED_ARRAY, _zend_expected_type_Z_EXPECTED_DOUBLE,
+        _zend_expected_type_Z_EXPECTED_LONG, _zend_expected_type_Z_EXPECTED_STRING,
+        _zval_struct__bindgen_ty_1, IS_ARRAY, IS_DOUBLE, IS_FALSE, IS_LONG, IS_NULL, IS_REFERENCE,
+        IS_STRING, IS_TRUE, ZPP_ERROR_WRONG_ARG, swr_zval_empty_array, swr_zval_empty_string,
+        swr_zval_str, zend_execute_data, zend_expected_type, zend_object,
+        zend_parse_arg_double_slow, zend_parse_arg_long_slow, zend_parse_arg_str_slow, zend_string,
+        zend_value, zend_wrong_parameter_error, zend_wrong_parameters_count_error, zval,
+    },
 };
 use std::ptr;
 
 /// Zval slots `zend_execute_data` occupies before the first argument
 /// (`ZEND_CALL_FRAME_SLOT`).
 const FRAME_SLOT: usize = size_of::<zend_execute_data>().div_ceil(size_of::<zval>());
+
+/// `Z_TYPE_P`.
+/// # Safety
+/// `value` is a live zval.
+#[must_use]
+#[inline]
+pub unsafe fn type_of(value: *const zval) -> u32 {
+    // SAFETY: per the caller.
+    let zv = unsafe { *value };
+    // SAFETY: every zval sets `u1.type_info`.
+    unsafe { zv.u1.type_info & 0xff }
+}
 
 /// The arguments did not parse; Zend has raised the error.
 #[derive(Debug)]
@@ -125,6 +142,73 @@ impl Call {
         Err(Self::wrong(n, arg, _zend_expected_type_Z_EXPECTED_DOUBLE))
     }
 
+    /// `Z_PARAM_STRING` of argument `n` (1-based), or `default` when an optional
+    /// argument was not passed. The bytes are NUL-terminated and live for the call.
+    /// # Errors
+    /// The argument is not a string under the caller's typing mode; Zend has thrown.
+    #[inline]
+    pub fn string<'a>(&self, n: u32, default: &'a [u8]) -> Result<&'a [u8], Invalid> {
+        if n > self.num_args() {
+            return Ok(default);
+        }
+        let arg = self.arg(n);
+        // SAFETY: `n` is a passed argument, so `arg` is its live zval.
+        let zv = unsafe { *arg };
+        // SAFETY: every zval sets `u1.type_info`.
+        if unsafe { zv.u1.type_info } & 0xff == IS_STRING {
+            // SAFETY: an IS_STRING zval holds `str`.
+            let string = unsafe { zv.value.str_ };
+            // SAFETY: a live string the frame keeps.
+            return Ok(unsafe { bytes(string) });
+        }
+        let mut out: *mut zend_string = ptr::null_mut();
+        // SAFETY: `arg` is live and `out` is a writable local; Zend leaves the
+        // converted string in the argument slot, so it lives for the call.
+        if unsafe { zend_parse_arg_str_slow(arg, &raw mut out, n) } {
+            // SAFETY: as above.
+            return Ok(unsafe { bytes(out) });
+        }
+        Err(Self::wrong(n, arg, _zend_expected_type_Z_EXPECTED_STRING))
+    }
+
+    /// `Z_PARAM_ARRAY` of argument `n` (1-based), which must be passed.
+    /// # Errors
+    /// The argument is not an array; Zend has thrown.
+    #[inline]
+    pub fn array(&self, n: u32) -> Result<*mut zval, Invalid> {
+        let arg = self.arg(n);
+        // SAFETY: `n` is a passed argument, so `arg` is its live zval.
+        if unsafe { type_of(arg) } == IS_ARRAY {
+            return Ok(arg);
+        }
+        Err(Self::wrong(n, arg, _zend_expected_type_Z_EXPECTED_ARRAY))
+    }
+
+    /// `Z_PARAM_ZVAL` of argument `n` (1-based), which must be passed; with
+    /// `deref`, a reference yields the value it refers to (`Z_PARAM_ZVAL_EX(.., 1)`).
+    #[must_use]
+    #[inline]
+    pub fn zval(&self, n: u32, deref: bool) -> *mut zval {
+        let arg = self.arg(n);
+        // SAFETY: `n` is a passed argument, so `arg` is its live zval.
+        if deref && unsafe { type_of(arg) } == IS_REFERENCE {
+            // SAFETY: `arg` is live.
+            let value = unsafe { (*arg).value };
+            // SAFETY: an IS_REFERENCE zval holds `ref`.
+            let reference = unsafe { value.ref_ };
+            // SAFETY: a live reference.
+            return unsafe { &raw mut (*reference).val };
+        }
+        arg
+    }
+
+    /// The return slot (`return_value`).
+    #[must_use]
+    #[inline]
+    pub fn value(&self) -> *mut zval {
+        self.value
+    }
+
     /// `ZEND_PARSE_PARAMETERS_END`'s report of a wrong argument.
     #[cold]
     fn wrong(n: u32, arg: *mut zval, expected: zend_expected_type) -> Invalid {
@@ -163,6 +247,35 @@ impl Call {
     #[inline]
     pub fn set_bool(&self, value: bool) {
         self.set(if value { IS_TRUE } else { IS_FALSE });
+    }
+
+    /// `RETVAL_NULL`.
+    #[inline]
+    pub fn set_null(&self) {
+        self.set(IS_NULL);
+    }
+
+    /// `RETVAL_STR`: the return value takes over `string`'s reference.
+    /// # Safety
+    /// `string` is a live string the caller owns a reference to.
+    #[inline]
+    pub unsafe fn set_str(&self, string: *mut zend_string) {
+        // SAFETY: the return slot is live; per the caller.
+        unsafe { swr_zval_str(self.value, string) };
+    }
+
+    /// `RETVAL_EMPTY_STRING`.
+    #[inline]
+    pub fn set_empty_string(&self) {
+        // SAFETY: the return slot is live.
+        unsafe { swr_zval_empty_string(self.value) };
+    }
+
+    /// `RETVAL_EMPTY_ARRAY`.
+    #[inline]
+    pub fn set_empty_array(&self) {
+        // SAFETY: the return slot is live.
+        unsafe { swr_zval_empty_array(self.value) };
     }
 }
 

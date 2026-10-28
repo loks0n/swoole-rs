@@ -1,0 +1,1109 @@
+//! `Swoole\Coroutine\Socket` and its exception: registration, the socket
+//! constants, the object and every method but `getOption`, `setOption` and
+//! `import` (still C++, over the `ext/sockets` option helpers and PHP streams).
+//! Each method parses as upstream's ZPP block does, then makes one call into the
+//! C++ socket (`crate::native`).
+use crate::{
+    constants,
+    native::{self, Socket, Transfer},
+};
+use libc::{c_char, c_int, iovec};
+use std::{
+    ffi::{CStr, CString},
+    ptr,
+    sync::atomic::{AtomicUsize, Ordering},
+};
+use swoole_rs_zend::{
+    Call, Class, Invalid, Object, alias, class_name, constant, declare_bool, declare_long,
+    declare_string, set_object, string,
+    sys::{
+        E_WARNING, HashPosition, IS_LONG, IS_STRING, SWR_PHP_HAVE_AI_ALL, SWR_PHP_HAVE_AI_IDN,
+        SWR_PHP_HAVE_AI_V4MAPPED, ZEND_ACC_NOT_SERIALIZABLE, ZEND_ACC_PUBLIC, ZEND_ACC_READONLY,
+        module_registry, swr_php_config, zend_class_entry, zend_function_entry,
+        zend_get_type_by_const, zend_hash_get_current_data_ex, zend_hash_internal_pointer_reset_ex,
+        zend_hash_move_forward_ex, zend_hash_str_find, zend_object, zend_object_handlers,
+        zend_string, zval, zval_ptr_dtor,
+    },
+    throw_error, throw_exception, type_of, unset_property_deny, value,
+};
+
+/// `SW_BUFFER_SIZE_BIG`.
+const BUFFER_SIZE_BIG: i64 = 65536;
+/// `SW_BACKLOG`.
+const BACKLOG: i64 = 512;
+/// `SW_EVENT_READ` and `SW_EVENT_WRITE`.
+const EVENT_READ: i64 = 1 << 9;
+const EVENT_WRITE: i64 = 1 << 10;
+/// `IOV_MAX` on Linux and Apple.
+const IOV_MAX: u32 = 1024;
+
+/// `struct SocketObject { SocketImpl *socket; zval zstream; bool reference; zend_object std; }`.
+#[repr(C)]
+pub(crate) struct Data {
+    socket: Socket,
+    stream: zval,
+    reference: bool,
+}
+
+type SocketObject = Object<Data>;
+
+static SOCKET: Class = Class::new();
+static EXCEPTION: Class = Class::new();
+
+unsafe extern "C" fn create(ce: *mut zend_class_entry) -> *mut zend_object {
+    // SAFETY: Zend creates this class or a subclass; zeroed data is a null
+    // socket, an undefined stream and no reference, as upstream starts.
+    unsafe { SocketObject::create(&SOCKET, ce) }
+}
+
+/// Upstream does not close here: the engine may be shutting down, and closing
+/// would resume other coroutines.
+unsafe extern "C" fn free(std: *mut zend_object) {
+    // SAFETY: Zend frees a socket object.
+    unsafe { native::swoole_socket_coro_release(std) };
+    // SAFETY: as above.
+    unsafe { SocketObject::dtor(std) };
+}
+
+fn configure(entry: &mut zend_class_entry, handlers: &mut zend_object_handlers) {
+    entry.ce_flags |= ZEND_ACC_NOT_SERIALIZABLE;
+    handlers.clone_obj = None;
+    handlers.unset_property = Some(unset_property_deny);
+    SocketObject::install(entry, handlers, create, free);
+}
+
+/// MINIT, as `php_swoole_socket_coro_minit` did: both classes, their short
+/// names when `shortname`, the properties (with the `ext/sockets` bridge ones
+/// when `sockets`), and the socket constants unless `ext/sockets` is loaded.
+/// # Safety
+/// Called once, at MINIT of module `module`, with upstream's static method
+/// table, Swoole's exception class and a writable class-entry slot.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_phpclients_socket_minit(
+    methods: *const zend_function_entry,
+    exception: *mut zend_class_entry,
+    shortname: bool,
+    sockets: bool,
+    module: c_int,
+    socket_class: *mut *mut zend_class_entry,
+) {
+    // SAFETY: MINIT, with the caller's table.
+    unsafe { SOCKET.register(c"Swoole\\Coroutine\\Socket", methods, configure) };
+    let ce = SOCKET.entry();
+    if shortname {
+        // SAFETY: MINIT, with the class just registered.
+        unsafe { alias(c"Co\\Socket", ce) };
+    }
+    let readonly = ZEND_ACC_PUBLIC | ZEND_ACC_READONLY;
+    for name in [c"fd", c"domain", c"type", c"protocol"] {
+        let default = if name == c"fd" { -1 } else { 0 };
+        // SAFETY: as above.
+        unsafe { declare_long(ce, name, default, readonly) };
+    }
+    // SAFETY: as above.
+    unsafe { declare_long(ce, c"errCode", 0, ZEND_ACC_PUBLIC) };
+    // SAFETY: as above.
+    unsafe { declare_string(ce, c"errMsg", c"", ZEND_ACC_PUBLIC) };
+    if sockets {
+        // SAFETY: as above.
+        unsafe { declare_bool(ce, c"__ext_sockets_nonblock", false, ZEND_ACC_PUBLIC) };
+        // SAFETY: as above.
+        unsafe { declare_long(ce, c"__ext_sockets_timeout", 0, ZEND_ACC_PUBLIC) };
+    }
+    // SAFETY: MINIT, extending Swoole's registered exception class.
+    unsafe {
+        EXCEPTION.register_child(
+            c"Swoole\\Coroutine\\Socket\\Exception",
+            ptr::null(),
+            exception,
+            |_, _| {},
+        );
+    }
+    if shortname {
+        // SAFETY: as above.
+        unsafe { alias(c"Co\\Socket\\Exception", EXCEPTION.entry()) };
+    }
+    // SAFETY: the module registry is complete before any MINIT runs.
+    let loaded = unsafe { zend_hash_str_find(&raw const module_registry, c"sockets".as_ptr(), 7) };
+    if loaded.is_null() {
+        // SAFETY: MINIT of `module`.
+        unsafe { register_constants(module) };
+    }
+    for (name, value) in constants::ALWAYS {
+        // SAFETY: as above.
+        unsafe { constant(name, i64::from(*value), module) };
+    }
+    // SAFETY: per the caller, a writable slot.
+    unsafe { *socket_class = ce };
+}
+
+/// `socket_coro_register_constants`.
+/// # Safety
+/// MINIT of `module`.
+unsafe fn register_constants(module: c_int) {
+    // SAFETY: a pure query of PHP's configure results.
+    let found = unsafe { swr_php_config() };
+    let ai = [
+        (found & SWR_PHP_HAVE_AI_V4MAPPED != 0).then_some(constants::AI_V4MAPPED),
+        (found & SWR_PHP_HAVE_AI_ALL != 0).then_some(constants::AI_ALL),
+        Some(constants::AI_ADDRCONFIG),
+    ];
+    let idn = if found & SWR_PHP_HAVE_AI_IDN == 0 {
+        &[][..]
+    } else {
+        constants::AI_IDN
+    };
+    let all = constants::SOCKET
+        .iter()
+        .chain(constants::MULTICAST)
+        .chain(constants::ERRNO)
+        .copied()
+        .chain(ai.into_iter().flatten())
+        .chain(idn.iter().copied())
+        .chain([constants::AI_NUMERICSERV]);
+    for (name, value) in all {
+        // SAFETY: per the caller.
+        unsafe { constant(name, i64::from(value), module) };
+    }
+}
+
+/// `$this`'s data.
+fn this<'a>(call: &Call) -> &'a mut Data {
+    // SAFETY: socket methods are non-static, so `$this` is a socket object, and
+    // no other reference to its data is live during the call.
+    unsafe { SocketObject::data(call.this()) }
+}
+
+/// `swoole_get_socket_coro`: the constructed, open socket of `$this`; else
+/// errCode/errMsg say EBADF and the method returns false.
+fn open(call: &Call) -> Option<Socket> {
+    let socket = this(call).socket;
+    if socket.is_null() {
+        // SAFETY: a fatal error; it does not return.
+        unsafe { native::swoole_socket_coro_unconstructed() };
+        call.set_bool(false);
+        return None;
+    }
+    // SAFETY: a constructed socket stays live while its object is.
+    if unsafe { native::swoole_socket_coro_is_closed(socket) } {
+        set_error(call, libc::EBADF, strerror(libc::EBADF));
+        call.set_bool(false);
+        return None;
+    }
+    Some(socket)
+}
+
+/// `strerror(code)`.
+fn strerror<'a>(code: c_int) -> &'a CStr {
+    // SAFETY: a pure query; the text stays valid until the next call.
+    let text = unsafe { libc::strerror(code) };
+    // SAFETY: strerror returns a NUL-terminated string.
+    unsafe { CStr::from_ptr(text) }
+}
+
+/// errCode and errMsg.
+fn set_error(call: &Call, code: c_int, message: &CStr) {
+    let object = call.this();
+    // SAFETY: `$this` is a live instance of the registered class.
+    unsafe { value::update_long(SOCKET.entry(), object, c"errCode", i64::from(code)) };
+    // SAFETY: as above.
+    unsafe { value::update_string(SOCKET.entry(), object, c"errMsg", message) };
+}
+
+/// `socket_coro_sync_properties`: errCode and errMsg from the socket.
+fn sync(call: &Call, socket: Socket) {
+    let mut message: *const c_char = ptr::null();
+    // SAFETY: an open socket; `message` is a writable local.
+    let code = unsafe { native::swoole_socket_coro_error(socket, &raw mut message) };
+    let message = if message.is_null() {
+        c""
+    } else {
+        // SAFETY: errMsg is a NUL-terminated string the socket keeps.
+        unsafe { CStr::from_ptr(message) }
+    };
+    set_error(call, code, message);
+}
+
+/// `php_swoole_error(E_WARNING, ...)`, or with `fatal` `php_swoole_fatal_error`.
+fn warn(fatal: bool, message: &str) {
+    let message = CString::new(message).unwrap_or_default();
+    #[expect(clippy::cast_possible_wrap, reason = "E_WARNING is 2")]
+    // SAFETY: a NUL-terminated message, reported from a handler.
+    unsafe {
+        native::swoole_rs_php_error(E_WARNING as c_int, fatal, message.as_ptr());
+    }
+}
+
+/// `zend_throw_exception_ex(swoole_socket_coro_exception_ce, code, ...)`.
+fn throw(code: c_int, message: &str) {
+    let message = CString::new(message).unwrap_or_default();
+    // SAFETY: from a handler, with the registered exception class.
+    unsafe { throw_exception(EXCEPTION.entry(), &message, i64::from(code)) };
+}
+
+/// `swoole_pagesize()`.
+fn pagesize() -> usize {
+    static SIZE: AtomicUsize = AtomicUsize::new(0);
+    let size = SIZE.load(Ordering::Relaxed);
+    if size != 0 {
+        return size;
+    }
+    // SAFETY: a pure query.
+    let size = usize::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) }).unwrap_or(4096);
+    SIZE.store(size, Ordering::Relaxed);
+    size
+}
+
+/// `sw_zend_string_recycle`: shrink a buffer string to `used` bytes, giving the
+/// memory back when it wasted more than half of a buffer over a page.
+/// # Safety
+/// `buffer` is an unshared string of `allocated` bytes, `used` of them filled.
+unsafe fn recycle(buffer: *mut zend_string, allocated: usize, used: usize) -> *mut zend_string {
+    let mut buffer = buffer;
+    if allocated != used && allocated > pagesize() && allocated > used * 2 {
+        // SAFETY: per the caller.
+        buffer = unsafe { string::realloc(buffer, used) };
+    }
+    // SAFETY: per the caller.
+    unsafe { string::truncate(buffer, used) };
+    buffer
+}
+
+/// Return the first `bytes` of `buffer` (`length` allocated): false when
+/// negative, '' when zero.
+fn set_received(call: &Call, buffer: *mut zend_string, length: usize, bytes: isize) {
+    match usize::try_from(bytes) {
+        Ok(used) if used > 0 => {
+            // SAFETY: an unshared buffer string the transfer filled `used` bytes of.
+            let buffer = unsafe { recycle(buffer, length, used) };
+            // SAFETY: the return value takes the buffer's only reference.
+            unsafe { call.set_str(buffer) };
+        }
+        result => {
+            // SAFETY: the buffer was never shared.
+            unsafe { string::free(buffer) };
+            if result.is_ok() {
+                call.set_empty_string();
+            } else {
+                call.set_bool(false);
+            }
+        }
+    }
+}
+
+/// `__construct(int $domain, int $type, int $protocol = IPPROTO_IP)`.
+fn construct(call: &Call) {
+    let parsed = call.arity(2, 3).and_then(|()| {
+        Ok((
+            call.long(1, 0)?,
+            call.long(2, 0)?,
+            call.long(3, i64::from(libc::IPPROTO_IP))?,
+        ))
+    });
+    let Ok((domain, kind, protocol)) = parsed else {
+        return call.set_bool(false);
+    };
+    let data = this(call);
+    if !data.socket.is_null() {
+        // SAFETY: `$this` is live.
+        let name = unsafe { class_name(call.this()) }.to_string_lossy();
+        let message = CString::new(format!("Constructor of {name} can only be called once"));
+        // SAFETY: from a handler.
+        unsafe { throw_error(&message.unwrap_or_default()) };
+        return call.set_bool(false);
+    }
+    let mut error = 0;
+    // SAFETY: `error` is a writable local.
+    let socket =
+        unsafe { native::swoole_socket_coro_create(domain, kind, protocol, &raw mut error) };
+    if socket.is_null() {
+        let text = strerror(error).to_string_lossy();
+        throw(
+            error,
+            &format!("new Socket() failed. Error: {text} [{error}]"),
+        );
+        return call.set_bool(false);
+    }
+    data.socket = socket;
+    // SAFETY: `$this` now holds its socket.
+    unsafe { native::swoole_socket_coro_init(call.this()) };
+}
+
+/// `bind(string $address, int $port = 0): bool`.
+fn bind(call: &Call) {
+    let parsed = call
+        .arity(1, 2)
+        .and_then(|()| Ok((call.string(1, b"")?, call.long(2, 0)?)));
+    let Ok((address, port)) = parsed else {
+        return call.set_bool(false);
+    };
+    let Some(socket) = open(call) else { return };
+    // SAFETY: an open socket and the argument's bytes.
+    if unsafe {
+        native::swoole_socket_coro_bind(socket, address.as_ptr().cast(), address.len(), port)
+    } {
+        call.set_bool(true);
+    } else {
+        sync(call, socket);
+        call.set_bool(false);
+    }
+}
+
+/// `listen(int $backlog = SW_BACKLOG): bool`.
+fn listen(call: &Call) {
+    let Ok(backlog) = call.arity(0, 1).and_then(|()| call.long(1, BACKLOG)) else {
+        return call.set_bool(false);
+    };
+    let Some(socket) = open(call) else { return };
+    // SAFETY: an open socket.
+    if unsafe { native::swoole_socket_coro_listen(socket, backlog) } {
+        call.set_bool(true);
+    } else {
+        sync(call, socket);
+        call.set_bool(false);
+    }
+}
+
+/// `accept(float $timeout = 0): Socket|false`.
+fn accept(call: &Call) {
+    let Ok(timeout) = call.arity(0, 1).and_then(|()| call.double(1, 0.0)) else {
+        return call.set_bool(false);
+    };
+    let Some(socket) = open(call) else { return };
+    // SAFETY: an open socket.
+    let connection = unsafe { native::swoole_socket_coro_accept(socket, timeout) };
+    if connection.is_null() {
+        sync(call, socket);
+        return call.set_bool(false);
+    }
+    // SAFETY: a new object of the registered class.
+    let client = unsafe { create(SOCKET.entry()) };
+    // SAFETY: the object just created, not yet shared.
+    unsafe { SocketObject::data(client) }.socket = connection;
+    // SAFETY: the return slot takes the new object's only reference.
+    unsafe { set_object(call.value(), client) };
+    // SAFETY: the object holds its socket.
+    unsafe { native::swoole_socket_coro_init(client) };
+}
+
+/// `connect(string $host, int $port = 0, float $timeout = 0): bool`.
+fn connect(call: &Call) {
+    let parsed = call
+        .arity(1, 3)
+        .and_then(|()| Ok((call.string(1, b"")?, call.long(2, 0)?, call.double(3, 0.0)?)));
+    let Ok((host, port, timeout)) = parsed else {
+        return call.set_bool(false);
+    };
+    let Some(socket) = open(call) else { return };
+    // SAFETY: an open socket.
+    if unsafe { native::swoole_socket_coro_port_required(socket) } {
+        if call.num_args() == 1 {
+            warn(
+                false,
+                "Socket of type AF_INET/AF_INET6 requires port argument",
+            );
+            return call.set_bool(false);
+        } else if port == 0 || port >= 65536 {
+            warn(false, &format!("Invalid port argument[{port}]"));
+            return call.set_bool(false);
+        }
+    }
+    // SAFETY: an open socket and the argument's bytes.
+    let connected = unsafe {
+        native::swoole_socket_coro_connect(socket, host.as_ptr().cast(), host.len(), port, timeout)
+    };
+    if connected {
+        call.set_bool(true);
+    } else {
+        sync(call, socket);
+        call.set_bool(false);
+    }
+}
+
+/// `checkLiveness(): bool`.
+fn check_liveness(call: &Call) {
+    let Some(socket) = open(call) else { return };
+    // SAFETY: an open socket.
+    let alive = unsafe { native::swoole_socket_coro_check_liveness(socket) };
+    sync(call, socket);
+    call.set_bool(alive);
+}
+
+/// `getBoundCid(int $event): int`.
+fn bound_cid(call: &Call) {
+    let Ok(event) = call.arity(1, 1).and_then(|()| call.long(1, 0)) else {
+        return call.set_bool(false);
+    };
+    let Some(socket) = open(call) else { return };
+    // SAFETY: an open socket.
+    call.set_long(unsafe { native::swoole_socket_coro_bound_cid(socket, event) });
+}
+
+/// A length argument: non-positive means `SW_BUFFER_SIZE_BIG`.
+fn buffer_length(length: i64) -> usize {
+    usize::try_from(if length <= 0 { BUFFER_SIZE_BIG } else { length }).unwrap_or(usize::MAX)
+}
+
+/// `peek(int $length = 65536): string|false`.
+fn peek(call: &Call) {
+    let Ok(length) = call
+        .arity(0, 1)
+        .and_then(|()| call.long(1, BUFFER_SIZE_BIG))
+    else {
+        return call.set_bool(false);
+    };
+    let length = buffer_length(length);
+    let Some(socket) = open(call) else { return };
+    receive(call, socket, Transfer::Peek, length, 0.0);
+}
+
+/// Fill a new string of `length` bytes with one transfer and return it.
+fn receive(call: &Call, socket: Socket, op: Transfer, length: usize, timeout: f64) {
+    let buffer = string::alloc(length);
+    // SAFETY: an open socket and a buffer of `length` bytes.
+    let bytes = unsafe {
+        native::swoole_socket_coro_transfer(
+            socket,
+            op as c_int,
+            string::val(buffer).cast(),
+            length,
+            timeout,
+        )
+    };
+    sync(call, socket);
+    set_received(call, buffer, length, bytes);
+}
+
+/// `recv`, `recvAll`, `recvLine` and `recvWithBuffer`:
+/// `(int $length = 65536, float $timeout = 0): string|false`.
+fn recv_as(call: &Call, op: Transfer) {
+    let parsed = call
+        .arity(0, 2)
+        .and_then(|()| Ok((call.long(1, BUFFER_SIZE_BIG)?, call.double(2, 0.0)?)));
+    let Ok((length, timeout)) = parsed else {
+        return call.set_bool(false);
+    };
+    let length = buffer_length(length);
+    let Some(socket) = open(call) else { return };
+    receive(call, socket, op, length, timeout);
+}
+
+fn recv(call: &Call) {
+    recv_as(call, Transfer::Recv);
+}
+
+fn recv_all(call: &Call) {
+    recv_as(call, Transfer::RecvAll);
+}
+
+fn recv_line(call: &Call) {
+    recv_as(call, Transfer::RecvLine);
+}
+
+fn recv_with_buffer(call: &Call) {
+    recv_as(call, Transfer::RecvWithBuffer);
+}
+
+/// `recvPacket(float $timeout = 0): string|false`.
+fn recv_packet(call: &Call) {
+    let Ok(timeout) = call.arity(0, 1).and_then(|()| call.double(1, 0.0)) else {
+        return call.set_bool(false);
+    };
+    let Some(socket) = open(call) else { return };
+    // SAFETY: an open socket.
+    let bytes = unsafe { native::swoole_socket_coro_recv_packet(socket, timeout) };
+    sync(call, socket);
+    let Ok(length) = usize::try_from(bytes) else {
+        return call.set_bool(false);
+    };
+    if length == 0 {
+        return call.set_empty_string();
+    }
+    // SAFETY: an open socket holding a packet.
+    let packet = unsafe { native::swoole_socket_coro_pop_packet(socket) };
+    if packet.is_null() {
+        return call.set_bool(false);
+    }
+    // `zend::assign_zend_string_by_val`: the packet is the value of a zend
+    // string of at least `length` bytes the caller now owns.
+    let packet = string::from_val(packet.cast());
+    // SAFETY: as above.
+    unsafe { string::truncate(packet, length) };
+    // SAFETY: as above.
+    unsafe { call.set_str(packet) };
+}
+
+/// `send` and `sendAll`: `(string $data, float $timeout = 0): int|false`.
+fn send_as(call: &Call, op: Transfer) {
+    let parsed = call
+        .arity(1, 2)
+        .and_then(|()| Ok((call.string(1, b"")?, call.double(2, 0.0)?)));
+    let Ok((data, timeout)) = parsed else {
+        return call.set_bool(false);
+    };
+    let Some(socket) = open(call) else { return };
+    // SAFETY: an open socket; the transfer only reads the argument's bytes.
+    let sent = unsafe {
+        native::swoole_socket_coro_transfer(
+            socket,
+            op as c_int,
+            data.as_ptr().cast_mut().cast(),
+            data.len(),
+            timeout,
+        )
+    };
+    sync(call, socket);
+    if sent < 0 {
+        call.set_bool(false);
+    } else {
+        call.set_long(sent as i64);
+    }
+}
+
+fn send(call: &Call) {
+    send_as(call, Transfer::Send);
+}
+
+fn send_all(call: &Call) {
+    send_as(call, Transfer::SendAll);
+}
+
+/// The values of the array in `array`, in order (`SW_HASHTABLE_FOREACH_START`).
+/// # Safety
+/// `array` is a live array zval that does not change while the result is used.
+unsafe fn values(array: *mut zval) -> impl Iterator<Item = *mut zval> {
+    // SAFETY: per the caller.
+    let table = unsafe { value::table(array) };
+    let mut position: HashPosition = 0;
+    // SAFETY: a live table and a writable position.
+    unsafe { zend_hash_internal_pointer_reset_ex(table, &raw mut position) };
+    std::iter::from_fn(move || {
+        // SAFETY: as above.
+        let item = unsafe { zend_hash_get_current_data_ex(table, &raw mut position) };
+        if item.is_null() {
+            return None;
+        }
+        // SAFETY: as above.
+        unsafe { zend_hash_move_forward_ex(table, &raw mut position) };
+        Some(item)
+    })
+}
+
+/// The vectors argument: its element count, or false (with errCode EINVAL)
+/// past `IOV_MAX`.
+fn vector_count(socket: Socket, array: *mut zval) -> Option<usize> {
+    // SAFETY: a live array argument.
+    let count = unsafe { value::count(array) };
+    if count > IOV_MAX {
+        let message = CString::new(format!("The maximum of iov count is {IOV_MAX}"));
+        // SAFETY: an open socket and a NUL-terminated message it copies.
+        unsafe {
+            native::swoole_socket_coro_set_error(
+                socket,
+                libc::EINVAL,
+                message.unwrap_or_default().as_ptr(),
+            );
+        }
+        return None;
+    }
+    usize::try_from(count).ok()
+}
+
+/// `zend_get_type_by_const(Z_TYPE_P(item))`.
+fn type_name(item: *mut zval) -> String {
+    // SAFETY: a live element.
+    let kind = unsafe { type_of(item) };
+    #[expect(clippy::cast_possible_wrap, reason = "zval types are below 32")]
+    // SAFETY: Zend returns a static name or null.
+    let name = unsafe { zend_get_type_by_const(kind as c_int) };
+    if name.is_null() {
+        return String::new();
+    }
+    // SAFETY: a static NUL-terminated name.
+    unsafe { CStr::from_ptr(name) }
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// `(array $io_vector, float $timeout = 0)`.
+fn vector_arguments(call: &Call) -> Result<(*mut zval, f64), Invalid> {
+    call.arity(1, 2)?;
+    Ok((call.array(1)?, call.double(2, 0.0)?))
+}
+
+/// `writeVector` and `writeVectorAll`: `(array $io_vector, float $timeout = 0): int|false`.
+fn write_vector_as(call: &Call, op: c_int) {
+    let Ok((array, timeout)) = vector_arguments(call) else {
+        return call.set_bool(false);
+    };
+    let Some(socket) = open(call) else { return };
+    write_vector(call, socket, op, array, timeout);
+    sync(call, socket);
+}
+
+fn write_vector(call: &Call, socket: Socket, op: c_int, array: *mut zval, timeout: f64) {
+    let Some(count) = vector_count(socket, array) else {
+        return call.set_bool(false);
+    };
+    let mut vectors = Vec::with_capacity(count);
+    // SAFETY: a live array argument the call does not change.
+    for (index, item) in unsafe { values(array) }.enumerate() {
+        // SAFETY: a live element.
+        if unsafe { type_of(item) } != IS_STRING {
+            let given = type_name(item);
+            throw(
+                libc::EINVAL,
+                &format!("Item #[{index}] must be of type string, {given} given"),
+            );
+            return call.set_bool(false);
+        }
+        // SAFETY: an IS_STRING element.
+        let text = unsafe { value::str_of(item) };
+        // SAFETY: as above.
+        let bytes = unsafe { string::bytes(text) };
+        if bytes.is_empty() {
+            throw(
+                libc::EINVAL,
+                &format!("Item #[{index}] cannot be empty string"),
+            );
+            return call.set_bool(false);
+        }
+        vectors.push(iovec {
+            iov_base: bytes.as_ptr().cast_mut().cast(),
+            iov_len: bytes.len(),
+        });
+    }
+    let (mut stopped, mut offset) = (0, 0);
+    // SAFETY: an open socket; the writes only read the elements' bytes.
+    let written = unsafe {
+        native::swoole_socket_coro_vector(
+            socket,
+            op,
+            vectors.as_mut_ptr(),
+            c_int::try_from(vectors.len()).unwrap_or(c_int::MAX),
+            timeout,
+            &raw mut stopped,
+            &raw mut offset,
+        )
+    };
+    if written < 0 {
+        call.set_bool(false);
+    } else {
+        call.set_long(written as i64);
+    }
+}
+
+fn write_vector_once(call: &Call) {
+    write_vector_as(call, 2);
+}
+
+fn write_vector_all(call: &Call) {
+    write_vector_as(call, 3);
+}
+
+/// `readVector` and `readVectorAll`: `(array $io_vector, float $timeout = 0): array|false`.
+fn read_vector_as(call: &Call, op: c_int) {
+    let Ok((array, timeout)) = vector_arguments(call) else {
+        return call.set_bool(false);
+    };
+    let Some(socket) = open(call) else { return };
+    read_vector(call, socket, op, array, timeout);
+    sync(call, socket);
+}
+
+fn read_vector(call: &Call, socket: Socket, op: c_int, array: *mut zval, timeout: f64) {
+    let Some(count) = vector_count(socket, array) else {
+        return call.set_bool(false);
+    };
+    let mut vectors: Vec<iovec> = Vec::with_capacity(count);
+    let mut total = 0usize;
+    let release = |vectors: &[iovec]| {
+        for vector in vectors {
+            // SAFETY: each buffer is a string allocated below and never shared.
+            unsafe { string::free(string::from_val(vector.iov_base.cast())) };
+        }
+    };
+    // SAFETY: a live array argument the call does not change.
+    for (index, item) in unsafe { values(array) }.enumerate() {
+        // SAFETY: a live element.
+        if unsafe { type_of(item) } != IS_LONG {
+            let given = type_name(item);
+            throw(
+                libc::EINVAL,
+                &format!("Item #[{index}] must be of type int, {given} given"),
+            );
+            release(&vectors);
+            return call.set_bool(false);
+        }
+        // SAFETY: an IS_LONG element.
+        let Ok(length) = usize::try_from(unsafe { value::long_of(item) }) else {
+            throw(
+                libc::EINVAL,
+                &format!("Item #[{index}] must be greater than 0"),
+            );
+            release(&vectors);
+            return call.set_bool(false);
+        };
+        vectors.push(iovec {
+            iov_base: string::val(string::alloc(length)).cast(),
+            iov_len: length,
+        });
+        total += length;
+    }
+    let (mut stopped, mut offset) = (0, 0);
+    // SAFETY: an open socket and buffers of the listed lengths.
+    let read = unsafe {
+        native::swoole_socket_coro_vector(
+            socket,
+            op,
+            vectors.as_mut_ptr(),
+            c_int::try_from(vectors.len()).unwrap_or(c_int::MAX),
+            timeout,
+            &raw mut stopped,
+            &raw mut offset,
+        )
+    };
+    let read = match usize::try_from(read) {
+        Ok(0) | Err(_) => {
+            release(&vectors);
+            return if read == 0 {
+                call.set_empty_array();
+            } else {
+                call.set_bool(false);
+            };
+        }
+        Ok(read) => read,
+    };
+    // SAFETY: the return slot is writable and holds nothing yet.
+    unsafe { value::array_init(call.value()) };
+    let mut filled = vectors.len();
+    if read < total {
+        // The read stopped `offset` bytes into vector `stopped`: keep that
+        // much of it and free the vectors after it.
+        let stopped = usize::try_from(stopped).unwrap_or(0);
+        filled = stopped + 1;
+        let vector = &mut vectors[stopped];
+        // SAFETY: a buffer string allocated above, `offset` bytes of it filled.
+        let kept = unsafe {
+            recycle(
+                string::from_val(vector.iov_base.cast()),
+                vector.iov_len,
+                offset,
+            )
+        };
+        vector.iov_base = string::val(kept).cast();
+        vector.iov_len = offset;
+        release(&vectors[filled..]);
+    }
+    for vector in &vectors[..filled] {
+        let buffer = string::from_val(vector.iov_base.cast());
+        // SAFETY: an unshared buffer string of at least `iov_len` bytes.
+        unsafe { string::truncate(buffer, vector.iov_len) };
+        // SAFETY: the array takes the buffer's only reference.
+        unsafe { value::push_str(call.value(), buffer) };
+    }
+}
+
+fn read_vector_once(call: &Call) {
+    read_vector_as(call, 0);
+}
+
+fn read_vector_all(call: &Call) {
+    read_vector_as(call, 1);
+}
+
+/// `sendFile(string $file, int $offset = 0, int $length = 0): bool`.
+fn send_file(call: &Call) {
+    let parsed = call
+        .arity(1, 3)
+        .and_then(|()| Ok((call.string(1, b"")?, call.long(2, 0)?, call.long(3, 0)?)));
+    let Ok((file, offset, length)) = parsed else {
+        return call.set_bool(false);
+    };
+    if file.is_empty() {
+        warn(true, "file to send is empty");
+        return call.set_bool(false);
+    }
+    let Some(socket) = open(call) else { return };
+    // SAFETY: an open socket; a string argument's bytes are NUL-terminated.
+    if unsafe { native::swoole_socket_coro_sendfile(socket, file.as_ptr().cast(), offset, length) }
+    {
+        call.set_bool(true);
+    } else {
+        sync(call, socket);
+        call.set_bool(false);
+    }
+}
+
+/// `recvfrom(&$peername, float $timeout = 0): string|false`.
+fn recvfrom(call: &Call) {
+    let parsed = call
+        .arity(1, 2)
+        .and_then(|()| Ok((call.zval(1, true), call.double(2, 0.0)?)));
+    let Ok((peer, timeout)) = parsed else {
+        return call.set_bool(false);
+    };
+    let Some(socket) = open(call) else { return };
+    let length = buffer_length(BUFFER_SIZE_BIG);
+    let buffer = string::alloc(length);
+    // SAFETY: an open socket and a buffer of `length` bytes.
+    let bytes = unsafe {
+        native::swoole_socket_coro_recvfrom(socket, string::val(buffer).cast(), length, timeout)
+    };
+    sync(call, socket);
+    let Ok(used @ 1..) = usize::try_from(bytes) else {
+        // SAFETY: the buffer was never shared.
+        unsafe { string::free(buffer) };
+        return if bytes == 0 {
+            call.set_empty_string();
+        } else {
+            call.set_bool(false);
+        };
+    };
+    // SAFETY: the dereferenced by-reference argument: release what it held and
+    // make it the peer's address.
+    unsafe { zval_ptr_dtor(peer) };
+    // SAFETY: as above.
+    unsafe { value::array_init(peer) };
+    add_address(peer, socket);
+    // SAFETY: an unshared buffer string `used` bytes of which were filled.
+    unsafe { string::truncate(buffer, used) };
+    // SAFETY: the return value takes the buffer's only reference.
+    unsafe { call.set_str(buffer) };
+}
+
+/// `address` and `port` of the socket's last address into `array`.
+fn add_address(array: *mut zval, socket: Socket) {
+    let mut port = 0;
+    // SAFETY: an open socket and a writable local.
+    let address = unsafe { native::swoole_socket_coro_address(socket, &raw mut port) };
+    // SAFETY: the socket's NUL-terminated address text.
+    let address = unsafe { CStr::from_ptr(address) };
+    // SAFETY: a live array.
+    unsafe { value::add_string(array, c"address", address) };
+    // SAFETY: as above.
+    unsafe { value::add_long(array, c"port", i64::from(port)) };
+}
+
+/// `sendto(string $addr, int $port, string $data): int|false`.
+fn sendto(call: &Call) {
+    let parsed = call
+        .arity(3, 3)
+        .and_then(|()| Ok((call.string(1, b"")?, call.long(2, 0)?, call.string(3, b"")?)));
+    let Ok((address, port, data)) = parsed else {
+        return call.set_bool(false);
+    };
+    let Some(socket) = open(call) else { return };
+    // SAFETY: an open socket and the arguments' bytes.
+    let sent = unsafe {
+        native::swoole_socket_coro_sendto(
+            socket,
+            address.as_ptr().cast(),
+            address.len(),
+            port,
+            data.as_ptr().cast(),
+            data.len(),
+        )
+    };
+    sync(call, socket);
+    if sent < 0 {
+        call.set_bool(false);
+    } else {
+        call.set_long(sent as i64);
+    }
+}
+
+/// `shutdown(int $how = SHUT_RDWR): bool`.
+fn shutdown(call: &Call) {
+    let Ok(how) = call
+        .arity(0, 1)
+        .and_then(|()| call.long(1, i64::from(libc::SHUT_RDWR)))
+    else {
+        return call.set_bool(false);
+    };
+    let Some(socket) = open(call) else { return };
+    // SAFETY: an open socket.
+    if unsafe { native::swoole_socket_coro_shutdown(socket, how) } {
+        call.set_bool(true);
+    } else {
+        sync(call, socket);
+        call.set_bool(false);
+    }
+}
+
+/// `close(): bool`.
+fn close(call: &Call) {
+    if open(call).is_none() {
+        return;
+    }
+    if this(call).reference {
+        warn(false, "cannot close the referenced resource");
+        return call.set_bool(false);
+    }
+    // SAFETY: `$this` holds an open socket it owns.
+    unsafe { native::swoole_socket_coro_close(call.this()) };
+    call.set_bool(true);
+}
+
+/// `getsockname(): array|false`.
+fn getsockname(call: &Call) {
+    let Some(socket) = open(call) else { return };
+    // SAFETY: an open socket.
+    if !unsafe { native::swoole_socket_coro_getsockname(socket) } {
+        sync(call, socket);
+        return call.set_bool(false);
+    }
+    // SAFETY: the return slot is writable and holds nothing yet.
+    unsafe { value::array_init(call.value()) };
+    add_address(call.value(), socket);
+}
+
+/// `getpeername(): array|false`.
+fn getpeername(call: &Call) {
+    let Some(socket) = open(call) else { return };
+    // Room for the longest address text: a Unix socket path.
+    let mut address = [0 as c_char; 256];
+    let mut port = 0;
+    // SAFETY: an open socket and writable locals of the sizes given.
+    let found = unsafe {
+        native::swoole_socket_coro_getpeername(
+            socket,
+            address.as_mut_ptr(),
+            address.len(),
+            &raw mut port,
+        )
+    };
+    if !found {
+        sync(call, socket);
+        return call.set_bool(false);
+    }
+    // SAFETY: the hook NUL-terminates what it writes.
+    let address = unsafe { CStr::from_ptr(address.as_ptr()) };
+    let array = call.value();
+    // SAFETY: the return slot is writable and holds nothing yet.
+    unsafe { value::array_init(array) };
+    // SAFETY: a live array.
+    unsafe { value::add_string(array, c"address", address) };
+    // SAFETY: as above.
+    unsafe { value::add_long(array, c"port", i64::from(port)) };
+}
+
+/// `cancel(int $event = SW_EVENT_READ): bool`; the socket is checked first.
+fn cancel(call: &Call) {
+    let Some(socket) = open(call) else { return };
+    let Ok(event) = call.arity(0, 1).and_then(|()| call.long(1, EVENT_READ)) else {
+        return call.set_bool(false);
+    };
+    let event = if event == EVENT_READ {
+        EVENT_READ
+    } else {
+        EVENT_WRITE
+    };
+    // SAFETY: an open socket.
+    call.set_bool(unsafe {
+        native::swoole_socket_coro_cancel(socket, c_int::try_from(event).unwrap_or(0))
+    });
+}
+
+/// `setProtocol(array $settings): bool`; the socket is checked first.
+fn set_protocol(call: &Call) {
+    let Some(socket) = open(call) else { return };
+    let Ok(settings) = call.arity(1, 1).and_then(|()| call.array(1)) else {
+        return call.set_bool(false);
+    };
+    // SAFETY: a live array argument.
+    if unsafe { value::count(settings) } == 0 {
+        return call.set_bool(false);
+    }
+    // SAFETY: an open socket and a live array.
+    call.set_bool(unsafe { native::swoole_socket_coro_set_protocol(socket, settings) });
+}
+
+/// `sslHandshake(): bool`.
+fn ssl_handshake(call: &Call) {
+    let Some(socket) = open(call) else { return };
+    // SAFETY: an open socket.
+    call.set_bool(unsafe { native::swoole_socket_coro_ssl_handshake(socket) });
+}
+
+/// `isClosed(): bool`: unconstructed counts as closed.
+fn is_closed(call: &Call) {
+    let socket = this(call).socket;
+    // SAFETY: a constructed socket is live.
+    call.set_bool(socket.is_null() || unsafe { native::swoole_socket_coro_is_closed(socket) });
+}
+
+macro_rules! methods {
+    ($($name:ident => $body:path;)*) => {$(
+        /// # Safety
+        /// Called by Zend with a live frame and return slot.
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(
+            frame: *mut swoole_rs_zend::sys::zend_execute_data,
+            value: *mut zval,
+        ) {
+            // SAFETY: per Zend's handler contract.
+            let call = unsafe { Call::new(frame, value) };
+            $body(&call);
+        }
+    )*};
+}
+
+methods! {
+    zim_swoole_socket_coro___construct => construct;
+    zim_swoole_socket_coro_bind => bind;
+    zim_swoole_socket_coro_listen => listen;
+    zim_swoole_socket_coro_accept => accept;
+    zim_swoole_socket_coro_connect => connect;
+    zim_swoole_socket_coro_checkLiveness => check_liveness;
+    zim_swoole_socket_coro_getBoundCid => bound_cid;
+    zim_swoole_socket_coro_peek => peek;
+    zim_swoole_socket_coro_recv => recv;
+    zim_swoole_socket_coro_recvAll => recv_all;
+    zim_swoole_socket_coro_recvLine => recv_line;
+    zim_swoole_socket_coro_recvWithBuffer => recv_with_buffer;
+    zim_swoole_socket_coro_recvPacket => recv_packet;
+    zim_swoole_socket_coro_send => send;
+    zim_swoole_socket_coro_sendAll => send_all;
+    zim_swoole_socket_coro_readVector => read_vector_once;
+    zim_swoole_socket_coro_readVectorAll => read_vector_all;
+    zim_swoole_socket_coro_writeVector => write_vector_once;
+    zim_swoole_socket_coro_writeVectorAll => write_vector_all;
+    zim_swoole_socket_coro_sendFile => send_file;
+    zim_swoole_socket_coro_recvfrom => recvfrom;
+    zim_swoole_socket_coro_sendto => sendto;
+    zim_swoole_socket_coro_shutdown => shutdown;
+    zim_swoole_socket_coro_close => close;
+    zim_swoole_socket_coro_getsockname => getsockname;
+    zim_swoole_socket_coro_getpeername => getpeername;
+    zim_swoole_socket_coro_cancel => cancel;
+    zim_swoole_socket_coro_setProtocol => set_protocol;
+    zim_swoole_socket_coro_sslHandshake => ssl_handshake;
+    zim_swoole_socket_coro_isClosed => is_closed;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_positive_lengths_read_a_big_buffer() {
+        assert_eq!(buffer_length(0), 65536, "zero means SW_BUFFER_SIZE_BIG");
+        assert_eq!(
+            buffer_length(-5),
+            65536,
+            "negative means SW_BUFFER_SIZE_BIG"
+        );
+        assert_eq!(buffer_length(10), 10, "positive lengths are kept");
+    }
+
+    #[test]
+    fn data_matches_socket_object() {
+        // SocketImpl *, zval, bool, then the zend_object.
+        assert_eq!(
+            SocketObject::OFFSET,
+            (size_of::<Socket>() + size_of::<zval>() + 1).next_multiple_of(8),
+            "std follows the socket, stream and reference flag"
+        );
+    }
+}

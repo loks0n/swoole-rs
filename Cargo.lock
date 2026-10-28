@@ -384,6 +384,7 @@ dependencies = [
  "swoole-rs-locks",
  "swoole-rs-memory",
  "swoole-rs-ossupport",
+ "swoole-rs-phpclients",
  "swoole-rs-phpcollections",
  "swoole-rs-phpcoroutines",
  "swoole-rs-phpevents",
@@ -458,6 +459,14 @@ name = "swoole-rs-ossupport"
 version = "0.1.0"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "swoole-rs-phpclients"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "swoole-rs-zend",
 ]
 
 [[package]]

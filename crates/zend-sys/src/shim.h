@@ -20,4 +20,24 @@ zend_class_entry *swr_zend_register_class(const char *name, size_t length,
  * depends on the PHP version. */
 void swr_zend_class_set_create_object(zend_class_entry *ce,
                                       zend_object *(*create)(zend_class_entry *ce));
+
+/* zend_string_alloc, zend_string_realloc and zend_string_free, non-persistent. */
+zend_string *swr_zend_string_alloc(size_t length);
+zend_string *swr_zend_string_realloc(zend_string *string, size_t length);
+void swr_zend_string_free(zend_string *string);
+
+/* ZVAL_STR, ZVAL_EMPTY_STRING, array_init and ZVAL_EMPTY_ARRAY. */
+void swr_zval_str(zval *target, zend_string *string);
+void swr_zval_empty_string(zval *target);
+void swr_zval_array_init(zval *target);
+void swr_zval_empty_array(zval *target);
+
+/* Swoole's sw_zend_register_class_alias: a lowercased, interned alias. */
+int swr_zend_register_class_alias(const char *name, size_t length, zend_class_entry *ce);
+
+/* What PHP's configure found, as SWR_PHP_HAVE_* bits. */
+#define SWR_PHP_HAVE_AI_V4MAPPED 1
+#define SWR_PHP_HAVE_AI_ALL 2
+#define SWR_PHP_HAVE_AI_IDN 4
+unsigned swr_php_config(void);
 #endif

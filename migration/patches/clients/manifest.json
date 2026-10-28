@@ -15,6 +15,13 @@
         "src/network/client.cc",
         "src/network/dns.cc"
       ]
+    },
+    {
+      "path": "0002-swoole_socket_coro.patch",
+      "sha256": "9e1984db630a50c55deb7a17380b31d4da9623f93ffdaaf5b6209222ea017992",
+      "upstream_paths": [
+        "ext-src/swoole_socket_coro.cc"
+      ]
     }
   ]
 }
