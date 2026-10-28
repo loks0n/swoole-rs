@@ -20,6 +20,7 @@ mod send_queue;
 pub use send_queue::*;
 use std::ffi::c_char;
 use std::ptr;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 #[repr(C)]
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
@@ -72,6 +73,51 @@ pub extern "C" fn sw_rs_http2_setting_index(id: u32) -> i32 {
         (id - 1).cast_signed()
     } else {
         -1
+    }
+}
+
+/// The process-wide defaults (`SW_HTTP2_DEFAULT_*`), indexed by setting id - 1:
+/// header table, push, concurrent streams, initial window, frame size, header list.
+static DEFAULT_SETTINGS: [AtomicU32; 6] = [
+    AtomicU32::new(1 << 12),
+    AtomicU32::new(0),
+    AtomicU32::new(u32::MAX),
+    AtomicU32::new((1 << 16) - 1),
+    AtomicU32::new(1 << 14),
+    AtomicU32::new(u32::MAX),
+];
+
+fn default_slot(id: u32) -> Option<&'static AtomicU32> {
+    let index = usize::try_from(sw_rs_http2_setting_index(id)).ok()?;
+    DEFAULT_SETTINGS.get(index)
+}
+
+/// `http2::put_default_setting`; false for an unknown id (upstream asserts).
+#[no_mangle]
+pub extern "C" fn sw_rs_http2_put_default_setting(id: u32, value: u32) -> bool {
+    default_slot(id).is_some_and(|slot| {
+        slot.store(value, Ordering::Relaxed);
+        true
+    })
+}
+
+/// `http2::get_default_setting`; 0 for an unknown id (upstream asserts).
+#[no_mangle]
+pub extern "C" fn sw_rs_http2_get_default_setting(id: u32) -> u32 {
+    default_slot(id).map_or(0, |slot| slot.load(Ordering::Relaxed))
+}
+
+/// All defaults, for the server's SETTINGS frame.
+#[no_mangle]
+pub extern "C" fn sw_rs_http2_default_settings() -> Http2Settings {
+    let get = |id| sw_rs_http2_get_default_setting(id);
+    Http2Settings {
+        header_table_size: get(1),
+        enable_push: get(2),
+        max_concurrent_streams: get(3),
+        init_window_size: get(4),
+        max_frame_size: get(5),
+        max_header_list_size: get(6),
     }
 }
 
@@ -694,6 +740,26 @@ pub extern "C" fn sw_rs_http2_color_group(kind: i32) -> u32 {
 )]
 mod tests {
     use super::*;
+    #[test]
+    fn default_settings_round_trip() {
+        assert_eq!(
+            sw_rs_http2_default_settings(),
+            Http2Settings {
+                header_table_size: 4096,
+                enable_push: 0,
+                max_concurrent_streams: u32::MAX,
+                init_window_size: 65535,
+                max_frame_size: 16384,
+                max_header_list_size: u32::MAX,
+            }
+        );
+        assert!(!sw_rs_http2_put_default_setting(0, 1));
+        assert!(!sw_rs_http2_put_default_setting(7, 1));
+        assert_eq!(sw_rs_http2_get_default_setting(7), 0);
+        assert!(sw_rs_http2_put_default_setting(2, 1));
+        assert_eq!(sw_rs_http2_get_default_setting(2), 1);
+        assert!(sw_rs_http2_put_default_setting(2, 0));
+    }
     #[test]
     fn send_complete_matches_the_wrapping_native_cast() {
         for wanted in [
