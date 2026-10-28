@@ -87,16 +87,13 @@ signed coroutine ID after native creation/release.
 ## Response default headers and codecs
 
 The Response known-header classifier keeps the pinned flag values and libc case
-semantics (static-asserted at the caller). After native custom-header/cookie
-iteration, a phase cursor drives the Server / date / upgrade / Connection / type
-/ chunked / compression / length / final-publication sequence.
-
-- Upgrade emits its CRLF and publishes `send_header_` before returning without
-  the remaining headers.
-- Chunked mode keeps the native length assertion even when Transfer-Encoding is
-  already set.
-- Empty HEAD responses skip compression and Content-Length.
-- Compressed length is read only after the native codec runs.
+semantics (static-asserted at the caller): it maps each known header name to its
+original native flag, and unknown headers keep the custom path. The header-emission
+tail — the Server / date / upgrade / Connection / type / chunked / compression /
+length / final-publication sequence — is upstream C++ again: #372 restored
+`build_header`'s tail and deleted the Rust phase machine, so Rust no longer drives
+that sequence. What Rust still owns in the response is this classifier and the codec
+policy below.
 
 Codec selection happens only after the original acceptance/minimum-length checks.
 Declined compression stays a silent false; unknown/unavailable methods take the
