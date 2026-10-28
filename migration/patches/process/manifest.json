@@ -27,6 +27,13 @@
       "upstream_paths": [
         "src/server/process.cc"
       ]
+    },
+    {
+      "path": "0004-worker-record.patch",
+      "sha256": "7a92c4d4d29d96350ec62e8caba7e2bd954592431868cf1c3f6b3853527dbbb1",
+      "upstream_paths": [
+        "src/server/process.cc"
+      ]
     }
   ]
 }
