@@ -20,7 +20,7 @@ bailout or panic crosses the ABI. All spans and pointer differences fit
   remainder loop. Native LCM's unsigned-to-int conversion above `INT_MAX` is
   implementation-defined.
 - `itoa`: writes decimal bytes then NUL into caller-owned storage and returns the
-  length. Handles `LONG_MIN` (upstream overflows there). Buffers need only fit the
+  length. Handles `LONG_MIN`. Buffers need only fit the
   actual value.
 - `radix`: base 2..36, writes backwards into scratch of at least
   `sizeof(unsigned long)*8+1`. Returns `SIZE_MAX` without writing for invalid

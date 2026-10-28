@@ -13,8 +13,8 @@ exception/bailout, row lock/unlock, queue transfer and coroutine suspension.
 
 - Constructor defaults, type and narrowing checks, binary key/field lengths,
   column conversions, return/error/property publication and row-unlock/temporary
-  cleanup order match upstream. Undefined upstream overflow and casts are not
-  reproduced.
+  cleanup order match upstream. Undefined overflow and casts are outside the
+  compared domain.
 - Table iterators and borrowed row values stay inside their original locked scope.
 - Channel zval custody transfers only at the original successful push/pop point;
   suspension, cancellation, close and destructor draining stay native.

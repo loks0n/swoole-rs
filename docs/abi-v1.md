@@ -61,7 +61,7 @@ the selected class layout, so SDK consumers must be rebuilt.
   required. `header_length` is a valid exclusive `uint32_t` output: unchanged for
   fewer than two input bytes, otherwise the required header length including
   any mask key. `data` may be null only when `length` is 0. Frame lengths that
-  do not fit a signed pointer-size value are rejected (upstream overflows).
+  do not fit a signed pointer-size value are rejected.
 - `size_t swr_v1_ws_write_header(payload_length, opcode, flags, output, capacity)`:
   writes a 2, 4 or 10 byte header in network order, or returns 0 without
   writing on insufficient capacity or invalid output. Flags: FIN=1, RSV1=4,
