@@ -22,7 +22,8 @@ required symbols so the loader reaches the actual module startup check on Linux.
 It runs libtool in a temporary directory and loads only the
 temporary extension. It neither rebuilds sources nor replaces published modules.
 No unsupported or missing artifact is reported as a pass.
-`--startup-only` runs only the positive startup and flag checks.
+`--startup-only` runs only the positive startup and flag checks; the candidate
+lane's `abi` phase uses it, and the integrate lane runs every test.
 
 ## Other gates
 
@@ -44,3 +45,21 @@ No unsupported or missing artifact is reported as a pass.
   fixture. Every profile requires both engines to pass and agree.
 - `test_bridge_inventory.py` is a plain unittest (no build needed) for the
   selected-export check in `test_bridge.py`.
+
+## Gate audit (#486)
+
+Kept (5):
+
+- `ownership` (`tools/check_migration.py`) and `reference-build`: the migration
+  manifest check and the upstream build that every comparison needs.
+- `abi`: the only C and C++ consumer checks of the bridge headers, and the only
+  check that PHP rejects an incompatible or feature-short bridge archive.
+- `api-surface`: the full reflected Swoole API against upstream.
+- `reference-identity`: the reference extension's identity, which the
+  base64/crc32 consumer phases read.
+
+Deleted (1): `abi-startup` ran `test_bridge.py --startup-only`, four of the six
+tests that `abi` runs in full in the same integrate lane.
+
+`zts.py` and `zts_originals.py` are not phases: they need a ZTS PHP, which no
+CI lane has.
