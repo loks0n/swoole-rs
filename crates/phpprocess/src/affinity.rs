@@ -81,12 +81,12 @@ pub unsafe extern "C" fn swr_v1_phpprocess_cpu_set_to_array(array: *mut zval, se
 }
 
 fn set_affinity(call: &Call) {
-    let Ok(Some(_)) = call.arity(1, 1).and_then(|()| call.array(1)) else {
+    let Ok(Some(_)) = call.arity(1, 1).and_then(|()| call.array_table(1)) else {
         return;
     };
     // SAFETY: an all-zero cpu set is empty.
     let mut set: libc::cpu_set_t = unsafe { std::mem::zeroed() };
-    let argument = call.arg(1);
+    let argument = call.zval(1);
     // SAFETY: the array argument and a local set.
     if !unsafe { swr_v1_phpprocess_array_to_cpu_set(argument, (&raw mut set).cast()) } {
         call.set_bool(false);

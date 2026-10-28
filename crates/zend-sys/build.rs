@@ -37,6 +37,8 @@ mod php {
             "src/shim.c",
             "src/shim_values.h",
             "src/shim_values.c",
+            "src/shim_clients.h",
+            "src/shim_clients.c",
         ] {
             println!("cargo::rerun-if-changed={file}");
         }
@@ -51,7 +53,7 @@ mod php {
             )
             .allowlist_type("(_?zend_|_?zval).*")
             .allowlist_var(
-                "(std_object_handlers|zend_ce_.*|ZEND_ACC_.*|IS_.*|_IS_BOOL|E_.*|ZPP_ERROR_.*|CONST_.*)",
+                "(std_object_handlers|module_registry|zend_ce_.*|ZEND_ACC_.*|IS_.*|_IS_BOOL|E_.*|ZPP_ERROR_.*|CONST_.*)",
             )
             // PHP 8.5's tail-call VM types opcode handlers preserve_none, which
             // bindgen cannot express; every VM kind but SWITCH stores a pointer,
@@ -65,6 +67,7 @@ mod php {
         cc::Build::new()
             .file("src/shim.c")
             .file("src/shim_values.c")
+            .file("src/shim_clients.c")
             .includes(&includes)
             .warnings(true)
             .compile("swoole_rs_zend_shim");

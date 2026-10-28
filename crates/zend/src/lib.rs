@@ -17,14 +17,23 @@ pub mod bailout;
 mod call;
 mod class;
 mod error;
+mod frame;
+mod helpers;
 mod object;
-mod value;
+pub mod string;
+pub mod value;
 
-pub use call::{Call, Invalid};
-pub use class::{Class, class_name, unset_property_deny};
-pub use class::{register_double_constant, register_long_constant};
+pub use call::{Call, Invalid, type_of};
+pub use class::{
+    Class, class_name, declare_bool, declare_long, declare_string, register_double_constant,
+    register_long_constant, unset_property_deny,
+};
 pub use error::{
     E_ERROR, E_WARNING, Message, php_error, throw_constructed_twice, throw_error, throw_exception,
+};
+pub use helpers::{
+    add_assoc_long, add_next_index_long, declare_property_null, each_value, long_zval, object_of,
+    update_property, update_property_long,
 };
 pub use object::{Object, set_object};
 pub use swoole_rs_zend_sys as sys;
@@ -48,7 +57,3 @@ macro_rules! handlers {
         }
     )*};
 }
-pub use value::{
-    add_assoc_long, add_next_index_long, bytes, declare_property_null, each_value, long_zval,
-    object_of, type_of, update_property, update_property_long,
-};
