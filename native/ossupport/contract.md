@@ -4,48 +4,26 @@ Opt-in feature bit 131072 (`ossupport`). ABI: `docs/os-support-abi-v1.md` and
 `swoole_rs_ossupport.h`. Patched upstream files: `src/os/async_thread.cc`,
 `src/os/file.cc`, `src/os/msg_queue.cc`, `src/os/base.cc`, `src/os/sendfile.cc`.
 
-Rust holds policy only. Payload objects, threads, condition variables, callbacks,
-descriptors, files, SysV queues, OpenSSL and all syscalls stay native. Apart from
-the EventQueue storage below, Rust keeps no state and retains no borrow. Every
-native effect (IO, logging, warnings, callbacks) runs after Rust returns.
+Rust owns the async thread pool. File, SysV queue, sendfile and entropy code is
+still policy only: Rust keeps no state there and every native effect runs after
+Rust returns.
 
 ## Thread pool
 
-- `swr_v1_os_pool_config`: independently defaulted core/maximum workers,
-  including an explicit core larger than cpu*8. `repr(C)` result uses native
-  `size_t` and `double`. Pinned defaults: multiplier 8, wait 0.001, idle 1.0.
-  Native integer wrap is retained; fractional idle truncation stays in the native
-  chrono wait expression.
-- `swr_v1_os_pool_expand`: number of workers to create: queued tasks beyond the
-  idle workers, or one once the oldest task waited past a strictly positive
-  threshold, capped at the free worker slots (upstream v6.2.4).
-  The native caller keeps the outer short-circuit guard (so the queue-age clock is
-  read in original order) and calls it while holding the queue mutex, before
-  dispatch publishes a new task.
-- `swr_v1_os_event_action`: 1 = missing handler, 2 = canceled (missing handler
-  wins), 0 = run the native handler. Native reads `canceled` only with a non-null
-  handler. The existing unsynchronized `uint8` cancellation field is a known
-  native race; no shadow atomic is added.
-- `swr_v1_os_worker_action`: one popped worker iteration. 0 wait, 1 native
-  handler, 2 bad request, 3 canceled, 4 idle retirement. An event always precedes
-  timeout retirement. Native takes the closing-count snapshot only when there is
-  no event and timeout is true. The temporary lives at loop scope so the original
-  idle `goto` does not skip initialization.
+`crates/ossupport/src/pool.rs` is upstream's `async::ThreadPool`: one process-wide
+pool (created on first `swr_v1_os_pool_acquire` with that call's configuration,
+restarted after a full shutdown), its queue, `std::thread` workers, growth
+scheduling and idle retirement. Each `AsyncThreads` holds one reference; the last
+release shuts the pool down and joins every worker, as upstream's `use_count() == 1`.
 
-### EventQueue storage
-
-One Rust `VecDeque<usize>` replaces the native `std::queue`. Six module-local
-functions (create/destroy/push/pop/front/count) operate on opaque tokens and are
-serialized by the existing native `event_mutex`. The `repr(C)` item carries a
-separate `present` flag so a stored zero differs from empty. Rust never
-dereferences tokens, invokes callbacks or frees payloads. Front returns before
-native timestamp access; destroy discards tokens after the native shutdown/join.
-
-Creation uses fallible `std::alloc::alloc`, growth uses `try_reserve`; failure
-returns null/false with no panic or abort, and native throws `std::bad_alloc`
-after return. Known remaining issues: locked-push OOM publication, queued payloads
-at shutdown, unsynchronized running/thread-map/canceled fields, and the
-retirement leak in [retirement-shutdown-gap.md](retirement-shutdown-gap.md).
+Event tokens are native `AsyncEvent` pointers that Rust never dereferences. Native
+hooks (`swr_v1_os_pool_hooks`) run on worker threads: `execute` runs the handler
+(missing handler wins over canceled) and writes the event to its pipe; `retire`
+sends the idle worker's key to the default pipe, whose callback joins it with
+`swr_v1_os_pool_join`. Defaults, scheduling and the whole-second idle wait match
+upstream v6.2.4. Workers get an 8 MiB stack. Known remaining issues: the
+unsynchronized `canceled` field and the retirement leak in
+[retirement-shutdown-gap.md](retirement-shutdown-gap.md).
 
 ## File
 
