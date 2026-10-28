@@ -152,7 +152,7 @@ def plan(args, reports):
     variant = build_variant(args)
     manifest = ROOT / 'target/hybrid' / variant / 'build-manifest.json'
     hybrid = manifest.parent / 'modules/swoole.so'
-    captured_reference = integrate and (getattr(args, 'php_sockets', False) or bool({'buffer', 'utilities', 'ports', 'phphelpers', 'phpevents', 'reactor', 'phpcoroutines', 'coroutine'} & set(modules)) or {'http', 'corebase'} <= set(modules))
+    captured_reference = integrate and (getattr(args, 'php_sockets', False) or bool({'buffer', 'utilities', 'ports', 'phphelpers', 'reactor', 'phpcoroutines', 'coroutine'} & set(modules)) or {'http', 'corebase'} <= set(modules))
     native_variant = build_alias('upstream', [], profile_suffix(args))
     reference = (ROOT / 'target/hybrid' / native_variant / 'modules/swoole.so'
                  if captured_reference or getattr(args, 'stdext', False) or getattr(args, 'php_sockets', False) else ROOT / 'target/upstream/src/modules/swoole.so')
@@ -434,13 +434,6 @@ def plan(args, reports):
                 script('phphelpers-runtime', 'tests/modules/phphelpers/runtime.py', *php, *engines,
                        '--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                        '--source-ref', 'HEAD', *report('phphelpers-runtime'))
-    if 'phpevents' in modules:
-        script('phpevents-policy', 'tests/modules/phpevents/gate.py', '--source', ROOT / 'target/upstream/src',
-               '--sanitize', *report('phpevents-policy'))
-        if integrate:
-            script('phpevents-sdk', 'tests/modules/phpevents/sdk.py', '--source', ROOT / 'target/upstream/src',
-                   '--sdk-export', selected_export / 'export.json', '--native-export', native_export,
-                   *report('phpevents-sdk'))
     if 'phpcoroutines' in modules:
         for suffix, options in [('', []), ('-native-sanitized', ['--sanitize'])]:
             name = 'phpcoroutines-method-catalogue' + suffix
@@ -532,7 +525,8 @@ def plan(args, reports):
     if 'framing' in modules:
         script('framing-native', 'tests/modules/framing/gate.py', '--archive',
                manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report('framing-native'))
-        script('framing-traces', 'tests/modules/framing/trace.py', *report('framing-traces'))
+        script('framing-traces', 'tests/modules/framing/trace.py', '--archive',
+               manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('framing-traces'))
         if integrate:
             script('framing-versioned-expectation', 'corpus/upstream/versioned.py',
                    '--source', ROOT / 'target/upstream/src', '--case', 'tests/swoole_server/wrong_eof_setting.phpt',

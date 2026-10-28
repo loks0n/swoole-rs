@@ -3,6 +3,7 @@
 #include "swoole_static_handler.h"
 #include "swoole_util.h"
 #include "swoole_rs_http.h"
+#include "swoole_rs_http_context.h"
 #include <regex>
 #include <iostream>
 #include <random>

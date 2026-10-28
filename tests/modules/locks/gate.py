@@ -9,19 +9,22 @@ import tempfile
 
 ROOT=Path(__file__).resolve().parents[3]
 sys.path.insert(0,str(ROOT))
+from tools.build_hybrid import hybrid_tree
 from tools.harness import run_isolated,write_report
 from importlib.util import spec_from_file_location,module_from_spec
 spec=spec_from_file_location('locks_overlay',Path(__file__).with_name('overlay.py'));overlay=module_from_spec(spec);spec.loader.exec_module(overlay)
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True);p.add_argument('--sanitize',action='store_true');p.add_argument('--rust-asan',action='store_true');p.add_argument('--output',type=Path,default=ROOT/'target/reports/locks-gate.json');a=p.parse_args();overlay.SOURCE=a.source
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True,help='Rust archive of the hybrid build under test');p.add_argument('--sanitize',action='store_true');p.add_argument('--rust-asan',action='store_true');p.add_argument('--output',type=Path,default=ROOT/'target/reports/locks-gate.json');a=p.parse_args();overlay.SOURCE=a.source
     if a.rust_asan:
         if not a.sanitize:p.error('--rust-asan requires --sanitize')
         symbols=subprocess.check_output(['nm','-u',str(a.archive)],text=True,stderr=subprocess.DEVNULL)
         if '__asan_report_' not in symbols:p.error('Archive lacks Rust ASan report imports')
     pin=overlay.PIN;original=overlay.original
-    report={'upstream_commit':pin,'rust_asan_declared':a.rust_asan,'scope':'Actual pinned pthread bodies vs real Rust overlay facades; thread/fork/RW/timeout/barrier/atomic/futex witnesses. C++ sanitizer; Rust instructions instrumented only when rust_asan_declared=true; prebuilt Rust stdlib and OS code excluded. Coroutine lifecycle, PHP/ZTS and optimized performance are separate gates.','passed':False}
+    # Reference side from the pin, ported side from the hybrid build's fully patched tree.
+    hybrid_source,hybrid_flags=hybrid_tree(a.archive);ported=lambda path:(hybrid_source/path).read_text()
+    report={'upstream_commit':pin,'hybrid_tree':str(hybrid_source),'rust_asan_declared':a.rust_asan,'scope':'Actual pinned pthread bodies vs real Rust overlay facades; thread/fork/RW/timeout/barrier/atomic/futex witnesses. C++ sanitizer; Rust instructions instrumented only when rust_asan_declared=true; prebuilt Rust stdlib and OS code excluded. Coroutine lifecycle, PHP/ZTS and optimized performance are separate gates.','passed':False}
     support='''#pragma once
 #include <cstdint>
 #include <cerrno>
@@ -54,25 +57,34 @@ inline void swoole_set_last_error(int e){errno=e;}
     base=original('src/core/base.cc');wait=base[base.index('bool sw_wait_for('):base.index('\nint swoole_itoa')]
     timer=original('src/os/timer.cc');realtime=timer[timer.index('void realtime_get('):timer.index('}  // namespace swoole')]
     misc=original('src/core/misc.cc');futex=misc[misc.index('#ifdef HAVE_FUTEX'):misc.index('/* {{{ DJBX33A')]
-    header=original('include/swoole_lock.h').replace('#include "swoole_memory.h"','#include "support.h"')
     original_bodies='';ported_bodies=''
     for name in ['mutex','rw_lock','spin_lock','barrier']:
-        path=f'src/lock/{name}.cc';original_bodies+=original(path).replace('#include "swoole_lock.h"','#include "reference.h"').replace('namespace swoole','namespace reference')+'\n';ported_bodies+=overlay.generated()[path]+'\n'
+        path=f'src/lock/{name}.cc';original_bodies+=original(path).replace('#include "swoole_lock.h"','#include "reference.h"').replace('namespace swoole','namespace reference')+'\n';ported_bodies+=ported(path)+'\n'
     with tempfile.TemporaryDirectory(prefix='swr-locks-') as temp:
-        tree=Path(temp);(tree/'support.h').write_text(support);(tree/'swoole_lock.h').write_text(header);(tree/'reference.h').write_text(header.replace('namespace swoole','namespace reference'))
-        (tree/'original.inc').write_text(futex+'\nnamespace reference {\n'+wait+realtime+'}\n'+original_bodies)
-        (tree/'ported.inc').write_text(ported_bodies)
-        binary=tree/'gate';cmd=['c++','-std=c++17','-O2','-DHAVE_RWLOCK','-DSWOOLE_RS_LOCKS','-I'+str(tree),'-I'+str(ROOT/'native/locks'),str(Path(__file__).with_suffix('.cc')),str(a.archive.resolve()),'-lpthread','-lm','-o',str(binary)]
-        if sys.platform.startswith('linux'):cmd+=['-DHAVE_SPINLOCK','-DHAVE_FUTEX','-DHAVE_PTHREAD_BARRIER','-DHAVE_MUTEX_TIMEDLOCK','-DHAVE_RWLOCK_TIMEDRDLOCK','-ldl','-lrt','-lutil']
-        if a.sanitize:cmd+=['-fsanitize=address,undefined','-fno-sanitize-recover=all']
-        report['compile']=cmd;r=run_isolated(cmd,timeout=90);report.update(compile_exit=r.returncode,compile_stderr=r.stderr)
+        tree=Path(temp);(tree/'reference').mkdir();(tree/'ported').mkdir();(tree/'support.h').write_text(support)
+        (tree/'reference/reference.h').write_text(original('include/swoole_lock.h').replace('#include "swoole_memory.h"','#include "support.h"').replace('namespace swoole','namespace reference'))
+        (tree/'reference/original.inc').write_text(futex+'\nnamespace reference {\n'+wait+realtime+'}\n'+original_bodies)
+        (tree/'ported/swoole_lock.h').write_text(ported('include/swoole_lock.h').replace('#include "swoole_memory.h"','#include "support.h"'))
+        (tree/'ported/ported.inc').write_text(ported_bodies)
+        # Two translation units: the reference side sees only pinned text, the ported side
+        # and the driver the hybrid build's flags.
+        binary=tree/'gate';witness=str(Path(__file__).with_suffix('.cc'))
+        common=['c++','-std=c++17','-O2','-DHAVE_RWLOCK','-I'+str(tree)]
+        if sys.platform.startswith('linux'):common+=['-DHAVE_SPINLOCK','-DHAVE_FUTEX','-DHAVE_PTHREAD_BARRIER','-DHAVE_MUTEX_TIMEDLOCK','-DHAVE_RWLOCK_TIMEDRDLOCK']
+        if a.sanitize:common+=['-fsanitize=address,undefined','-fno-sanitize-recover=all']
+        reference=[*common,'-c','-DLOCKS_REFERENCE','-I'+str(tree/'reference'),witness,'-o',str(tree/'reference.o')]
+        cmd=[*common,'-I'+str(tree/'ported'),*hybrid_flags,witness,str(tree/'reference.o'),str(a.archive.resolve()),'-lpthread','-lm','-o',str(binary)]
+        if sys.platform.startswith('linux'):cmd+=['-ldl','-lrt','-lutil']
+        report['compile']=[reference,cmd];r=run_isolated(reference,timeout=90)
+        if not r.returncode:r=run_isolated(cmd,timeout=90)
+        report.update(compile_exit=r.returncode,compile_stderr=r.stderr)
         if not r.returncode:
             r=run_isolated([str(binary)],timeout=30);report.update(exit=r.returncode,stdout=r.stdout,stderr=r.stderr,passed=r.returncode==0)
             if r.returncode==0:report['observations']=json.loads(r.stdout)
         if a.rust_asan and report['passed']:
             # Deliberately invalid caller: only Rust dereferences this one-past pointer.
             probe=tree/'asan-probe.cc';probe.write_text('#include "swoole_rs_locks.h"\nint main(){auto p=new uint32_t[1]{0};return swr_v1_locks_coroutine_try(p+1,0,0,42,7,0);}\n')
-            probe_binary=tree/'asan-probe';probe_cmd=cmd.copy();probe_cmd[probe_cmd.index(str(Path(__file__).with_suffix('.cc')))]=str(probe);probe_cmd[probe_cmd.index(str(binary))]=str(probe_binary)
+            probe_binary=tree/'asan-probe';probe_cmd=[part for part in cmd if part!=str(tree/'reference.o')];probe_cmd[probe_cmd.index(witness)]=str(probe);probe_cmd[probe_cmd.index(str(binary))]=str(probe_binary)
             compiled=run_isolated(probe_cmd,timeout=90)
             proof={'compile_exit':compiled.returncode,'compile_stderr':compiled.stderr,'scope':'Expected invalid-caller heap overflow in Rust coroutine CAS; excluded from valid-input behavior checks.'}
             if not compiled.returncode:

@@ -1,3 +1,5 @@
+// Two translation units: LOCKS_REFERENCE builds the pinned constructors against the pinned
+// header, the other the hybrid tree's against its header, plus the faults and the driver.
 #include "support.h"
 #include <cstdlib>
 #include <cstring>
@@ -5,9 +7,46 @@
 #include <iostream>
 #include <new>
 
-static bool watching;
-static int fault_kind, fault_stage, allocated, released, attr_destroyed, init_calls, attr_init_calls, shared_calls;
-static void *pointers[256];
+// One instance shared by both translation units.
+inline bool watching;
+inline int fault_kind, fault_stage, allocated, released, attr_destroyed, init_calls, attr_init_calls, shared_calls;
+inline void *pointers[256];
+
+#ifdef LOCKS_REFERENCE
+#include "original.inc"
+#else
+#include "ported.inc"
+#endif
+
+template<class L> static void one(const char *engine,int kind,bool shared,bool fail,int stage=0) {
+    allocated=released=attr_destroyed=init_calls=attr_init_calls=shared_calls=0;fault_kind=fail?kind:0;fault_stage=stage;
+    for(auto p:pointers)if(p)std::abort();
+    int code=0;bool threw=false;char message[256]{};
+    watching=true;
+    try { L lock(shared);code=lock.lock();if(!code)code=lock.unlock(); }
+    catch(const std::system_error &error) { threw=true;code=error.code().value();std::strncpy(message,error.what(),sizeof(message)-1); }
+    watching=false;
+    std::cout<<"{\"engine\":\""<<engine<<"\",\"kind\":"<<kind<<",\"shared\":"<<shared
+             <<",\"stage\":"<<stage<<",\"failed_init\":"<<fail<<",\"threw\":"<<threw<<",\"code\":"<<code
+             <<",\"allocated\":"<<allocated<<",\"released\":"<<released<<",\"live\":"<<allocated-released
+             <<",\"attr_destroyed\":"<<attr_destroyed<<",\"attr_init_calls\":"<<attr_init_calls
+             <<",\"shared_calls\":"<<shared_calls<<",\"init_calls\":"<<init_calls
+             <<",\"message\":\""<<message<<"\"}\n";
+    // Test-only reclamation AFTER recording the actual constructor's leaked ownership.
+    for(auto &p:pointers)if(p){std::free(p);p=nullptr;}
+}
+// The reference side's entry point: one upstream constructor of the given kind.
+void upstream(int kind,bool shared,bool fail);
+
+#ifdef LOCKS_REFERENCE
+void upstream(int kind,bool shared,bool fail) {
+    if(kind==3)one<reference::Mutex>("upstream",3,shared,fail);
+    if(kind==1)one<reference::RWLock>("upstream",1,shared,fail);
+#ifdef __linux__
+    if(kind==5)one<reference::SpinLock>("upstream",5,shared,fail);
+#endif
+}
+#else
 static void remember(void *p) {
     if(!watching||!p)return;
     for(auto &slot:pointers)if(!slot){slot=p;allocated++;return;}
@@ -76,26 +115,6 @@ extern "C" int pthread_spin_init(pthread_spinlock_t *p,int shared) {
 }
 #endif
 
-#include "original.inc"
-#include "ported.inc"
-
-template<class L> static void one(const char *engine,int kind,bool shared,bool fail,int stage=0) {
-    allocated=released=attr_destroyed=init_calls=attr_init_calls=shared_calls=0;fault_kind=fail?kind:0;fault_stage=stage;
-    for(auto p:pointers)if(p)std::abort();
-    int code=0;bool threw=false;char message[256]{};
-    watching=true;
-    try { L lock(shared);code=lock.lock();if(!code)code=lock.unlock(); }
-    catch(const std::system_error &error) { threw=true;code=error.code().value();std::strncpy(message,error.what(),sizeof(message)-1); }
-    watching=false;
-    std::cout<<"{\"engine\":\""<<engine<<"\",\"kind\":"<<kind<<",\"shared\":"<<shared
-             <<",\"stage\":"<<stage<<",\"failed_init\":"<<fail<<",\"threw\":"<<threw<<",\"code\":"<<code
-             <<",\"allocated\":"<<allocated<<",\"released\":"<<released<<",\"live\":"<<allocated-released
-             <<",\"attr_destroyed\":"<<attr_destroyed<<",\"attr_init_calls\":"<<attr_init_calls
-             <<",\"shared_calls\":"<<shared_calls<<",\"init_calls\":"<<init_calls
-             <<",\"message\":\""<<message<<"\"}\n";
-    // Test-only reclamation AFTER recording the actual constructor's leaked ownership.
-    for(auto &p:pointers)if(p){std::free(p);p=nullptr;}
-}
 static void direct(int kind,bool shared,int stage) {
     alignas(64) unsigned char storage[512];
     auto alignment=swr_v1_locks_align(kind);
@@ -124,10 +143,10 @@ int main() {
     real_spin_init=next_symbol<decltype(real_spin_init)>("pthread_spin_init");
 #endif
     for(bool shared:{false,true})for(bool fail:{false,true}) {
-        one<reference::Mutex>("upstream",3,shared,fail);one<swoole::Mutex>("rust",3,shared,fail);
-        one<reference::RWLock>("upstream",1,shared,fail);one<swoole::RWLock>("rust",1,shared,fail);
+        upstream(3,shared,fail);one<swoole::Mutex>("rust",3,shared,fail);
+        upstream(1,shared,fail);one<swoole::RWLock>("rust",1,shared,fail);
 #ifdef __linux__
-        one<reference::SpinLock>("upstream",5,shared,fail);one<swoole::SpinLock>("rust",5,shared,fail);
+        upstream(5,shared,fail);one<swoole::SpinLock>("rust",5,shared,fail);
 #endif
     }
     // Failed attribute-stage shims reject follow-up calls before touching storage.
@@ -144,3 +163,4 @@ int main() {
     for(bool shared:{false,true})direct(5,shared,0);
 #endif
 }
+#endif

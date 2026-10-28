@@ -89,6 +89,7 @@
       ],
       "owned_paths": [
         "crates/timer/",
+        "crates/phptimer/",
         "native/timer/",
         "migration/patches/timer/",
         "tests/modules/timer/"
@@ -662,6 +663,7 @@
       ],
       "owned_paths": [
         "crates/httpbindings/",
+        "crates/phphttp/",
         "native/httpbindings/",
         "migration/patches/httpbindings/",
         "tests/modules/httpbindings/"

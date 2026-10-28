@@ -10,6 +10,8 @@ crate-type = ["staticlib"]
 
 [features]
 default = []
+# The graduated modules' PHP classes (Swoole\Timer); every hybrid build has PHP.
+php = ["dep:swoole-rs-phptimer", "swoole-rs-phptimer/php"]
 
 memory = ["dep:swoole-rs-memory"]
 
@@ -31,12 +33,12 @@ ossupport = ["dep:swoole-rs-ossupport"]
 tls = ["dep:swoole-rs-tls"]
 process = ["dep:swoole-rs-process"]
 clients = ["dep:swoole-rs-clients", "dep:swoole-rs-inflate", "dep:swoole-rs-phpclients", "swoole-rs-phpclients/php"]
-httpbindings = ["dep:swoole-rs-httpbindings", "swoole-rs-httpbindings/php"]
+httpbindings = ["dep:swoole-rs-httpbindings", "dep:swoole-rs-phphttp", "swoole-rs-phphttp/php"]
 http2 = ["dep:swoole-rs-http2"]
 ports = ["dep:swoole-rs-ports"]
 phphelpers = ["dep:swoole-rs-phphelpers"]
 phpcollections = ["dep:swoole-rs-phpcollections", "swoole-rs-phpcollections/php"]
-phpevents = ["dep:swoole-rs-phpevents"]
+phpevents = ["dep:swoole-rs-phpevents", "swoole-rs-phpevents/php"]
 phpcoroutines = ["dep:swoole-rs-phpcoroutines"]
 
 [dependencies]
@@ -52,6 +54,7 @@ swoole-rs-http = { path = "../http" }
 swoole-rs-utilities = { path = "../utilities", optional = true }
 swoole-rs-locks = { path = "../locks", optional = true }
 swoole-rs-phplocks = { path = "../phplocks", optional = true }
+swoole-rs-phptimer = { path = "../phptimer", optional = true }
 swoole-rs-wrappers = { path = "../wrappers", optional = true }
 swoole-rs-framing = { path = "../framing" }
 swoole-rs-server = { path = "../server" }
@@ -66,6 +69,7 @@ swoole-rs-clients = { path = "../clients", optional = true }
 swoole-rs-phpclients = { path = "../phpclients", optional = true }
 swoole-rs-inflate = { path = "../inflate", optional = true }
 swoole-rs-httpbindings = { path = "../httpbindings", optional = true }
+swoole-rs-phphttp = { path = "../phphttp", optional = true }
 swoole-rs-http2 = { path = "../http2", optional = true }
 swoole-rs-ports = { path = "../ports", optional = true }
 swoole-rs-phphelpers = { path = "../phphelpers", optional = true }

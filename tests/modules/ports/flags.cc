@@ -9,14 +9,16 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#ifdef PORTS_DRIVER
 #include "swoole_rs_ports.h"
+#endif
 #include "config.inc"
 #include "bounds.inc"
 #include "data-head.inc"
 #include "timer-min.inc"
-#include "type-size.inc"
-static std::ostringstream trace;
-static bool observe;
+// One instance shared by both translation units.
+inline std::ostringstream trace;
+inline bool observe;
 template<class T> struct Field {
     const char *name; T value{};
     explicit Field(const char *n):name(n){}
@@ -61,13 +63,15 @@ static void php_swoole_server_length_func(){}
 #define E_ERROR 1
 #define RETURN_FALSE return false
 static void php_swoole_fatal_error(int,const char *,...){assert(false&&"invalid/fatal settings omitted");}
-namespace Original {
-#include "original.inc"
-}
-namespace Selected {
+namespace original { bool set_prefix(ListenPort *port, ServerPortProperty *property, HashTable *vht); }
+namespace selected { bool set_prefix(ListenPort *port, ServerPortProperty *property, HashTable *vht); }
+// Each side's body in its own translation unit; the selected one also holds the driver.
+namespace PORTS_SIDE {
+#include "type-size.inc"
 #include "apply.inc"
-#include "selected.inc"
+#include "body.inc"
 }
+#ifdef PORTS_DRIVER
 static uint32_t seed=0x91281;
 static uint32_t random_word(){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;return seed;}
 static const char *keys[]={"backlog","socket_buffer_size","kernel_socket_recv_buffer_size","kernel_socket_send_buffer_size","heartbeat_idle_time","buffer_high_watermark","buffer_low_watermark","open_tcp_nodelay","tcp_defer_accept","open_tcp_keepalive","open_eof_check","open_eof_split","package_eof","open_http_protocol","open_websocket_protocol","open_http2_protocol","open_mqtt_protocol","open_redis_protocol","max_idle_time","tcp_keepidle","tcp_keepinterval","tcp_keepcount","tcp_user_timeout","tcp_fastopen","open_length_check","package_length_type","package_length_offset","package_body_offset","package_body_start","package_max_length"};
@@ -94,7 +98,7 @@ static void initialize(ListenPort &p,unsigned sample) {
 }
 static std::string run(bool selected,unsigned sample,HashTable input) {
     trace.str("");trace.clear();ListenPort p;initialize(p,sample);Server server;ServerPortProperty property{&server};observe=true;
-    bool result=selected?Selected::set_prefix(&p,&property,&input):Original::set_prefix(&p,&property,&input);
+    bool result=selected?selected::set_prefix(&p,&property,&input):original::set_prefix(&p,&property,&input);
     observe=false;trace<<"result:"<<result<<";eof:";for(char c:p.protocol.package_eof)trace<<unsigned(static_cast<unsigned char>(c))<<',';
     trace<<";flags:"<<p.open_tcp_nodelay.value<<p.open_tcp_keepalive.value<<p.open_eof_check.value<<p.protocol.split_by_eof.value<<p.open_http_protocol.value<<p.open_websocket_protocol.value<<p.open_http2_protocol.value<<p.open_mqtt_protocol.value<<p.open_redis_protocol.value<<p.tcp_fastopen.value<<p.open_length_check.value;
     return trace.str();
@@ -129,4 +133,5 @@ int main() {
     printf("%zu normal exact-settings-prefix and direct plan comparisons passed\n",flag_checks());
     return 0;
 }
+#endif
 #endif
