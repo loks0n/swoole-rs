@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-rust-protocol-policy.patch",
-      "sha256": "dab30abb8c402c46ffb68f31c600c397415de31b5c0ee220a81c0b7e1a768f2c",
+      "sha256": "d75b59b5792dde7adb97a93e6b4912c87e6c9ae0e879281b6f61a29f31f570c7",
       "upstream_paths": [
         "src/protocol/dtls.cc",
         "src/protocol/ssl.cc"
