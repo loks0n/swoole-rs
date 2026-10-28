@@ -28,7 +28,7 @@ def main():
         if path=='src/network/client.cc':original=text
     gate.apply_overlay(scratch,out);selected=(scratch/'src/network/client.cc').read_text()
     signature='int Client::close() {';native=gate.body(original,signature);rust=gate.body(selected,signature)
-    if native==rust or 'swr_v1_clients_close_next' not in rust:raise ValueError('No actual selected Rust lifecycle caller')
+    if native==rust or 'swr_v1_clients_close(' not in rust:raise ValueError('No actual selected Rust lifecycle caller')
     prelude=r'''
 #include <cstdint>
 #include <string>
@@ -36,6 +36,8 @@ def main():
 #include <functional>
 #include <sstream>
 #include <stdexcept>
+#include <exception>
+#include <memory>
 #include <iostream>
 #include "swoole_rs_clients.h"
 #define SW_ERR -1
@@ -61,11 +63,29 @@ static void swoole_timer_del(TimerNode*t){observe("timer-delete:"+std::to_string
 '''
     facade=r'''
 struct Client {
-    Socket *socket=nullptr;bool closed=false,open_ssl=false,async=false,active=false;
+    Socket *socket=nullptr;bool open_ssl=false;
     void *ssl_context=nullptr;TimerNode *timer=nullptr;
     bool *destroyed=nullptr;
     std::function<void(Client*)> onClose;
-    ~Client(){observe("destroy");if(socket&&async)socket->object=nullptr;if(destroyed)*destroyed=true;}
+#ifdef SELECTED_STATE
+    // The selected Client's flags are Rust's (#439); scenarios set and read them the same way.
+    std::unique_ptr<swr_v1_clients_state, decltype(&swr_v1_clients_state_free)> state_{swr_v1_clients_state_new(false), swr_v1_clients_state_free};
+    bool is_closed() const{return swr_v1_clients_flag(state_.get(),SWR_CLIENTS_CLOSED);}
+    bool is_active() const{return swr_v1_clients_flag(state_.get(),SWR_CLIENTS_ACTIVE);}
+    bool is_async() const{return swr_v1_clients_flag(state_.get(),SWR_CLIENTS_ASYNC);}
+    void set_closed(bool v){swr_v1_clients_set_flag(state_.get(),SWR_CLIENTS_CLOSED,v);}
+    void set_active(bool v){swr_v1_clients_set_flag(state_.get(),SWR_CLIENTS_ACTIVE,v);}
+    void set_async(bool v){swr_v1_clients_set_flag(state_.get(),SWR_CLIENTS_ASYNC,v);}
+#else
+    bool closed=false,async=false,active=false;
+    bool is_closed() const{return closed;}
+    bool is_active() const{return active;}
+    bool is_async() const{return async;}
+    void set_closed(bool v){closed=v;}
+    void set_active(bool v){active=v;}
+    void set_async(bool v){async=v;}
+#endif
+    ~Client(){observe("destroy");if(socket&&is_async())socket->object=nullptr;if(destroyed)*destroyed=true;}
     int close();
 };
 static std::string run(unsigned bits,unsigned scenario,int result){
@@ -73,16 +93,16 @@ static std::string run(unsigned bits,unsigned scenario,int result){
     Socket first,second;second.fd=456;TimerNode timer1{1},timer2{2};bool destroyed=false;
     auto *client=new Client;client->destroyed=&destroyed;
     client->socket=(bits&1)?&first:nullptr;first.object=second.object=client;
-    client->closed=bits&2;client->open_ssl=bits&4;client->ssl_context=(bits&8)?&timer1:nullptr;
+    client->set_closed(bits&2);client->open_ssl=bits&4;client->ssl_context=(bits&8)?&timer1:nullptr;
     first.ssl=(bits&16)?&timer1:nullptr;first.socket_type=(bits&32)?SW_SOCK_UNIX_DGRAM:1;
-    client->async=bits&64;first.removed=bits&128;client->timer=(bits&256)?&timer1:nullptr;client->active=bits&512;
+    client->set_async(bits&64);first.removed=bits&128;client->timer=(bits&256)?&timer1:nullptr;client->set_active(bits&512);
     probe=[&]{
         if(destroyed)return std::string("deleted");
-        std::ostringstream s;s<<client->closed<<client->active<<client->async<<":"<<(client->timer?client->timer->id:0)<<":"<<(client->socket?client->socket->fd:0);return s.str();
+        std::ostringstream s;s<<client->is_closed()<<client->is_active()<<client->is_async()<<":"<<(client->timer?client->timer->id:0)<<":"<<(client->socket?client->socket->fd:0);return s.str();
     };
-    if(scenario&32)event_hook=[&]{client->active=false;client->timer=&timer2;};
+    if(scenario&32)event_hook=[&]{client->set_active(false);client->timer=&timer2;};
     if(scenario&64)timer_hook=[&]{client->timer=&timer2;};
-    if(scenario&128)ssl_hook=[&]{client->async=false;};
+    if(scenario&128)ssl_hook=[&]{client->set_async(false);};
     client->onClose=[&](Client*c){
         observe("callback");
         if(scenario&1)first.object=nullptr;
@@ -91,7 +111,7 @@ static std::string run(unsigned bits,unsigned scenario,int result){
         if(scenario&8)throw std::runtime_error("native close callback");
         // Test explicit deletion only where the original async Socket custody
         // keeps its saved object-null observation valid. Other cases stay live.
-        if((scenario&2)&&c->async)delete c;
+        if((scenario&2)&&c->is_async())delete c;
     };
     int returned=17;std::string exception;
     try{returned=client->close();}catch(const std::runtime_error&e){exception=e.what();}
@@ -115,7 +135,7 @@ int main(){size_t count=0;
     # Separate class declarations, common native effect hooks and trace recorder.
     # run() follows each actual body so its own Client type drives callbacks.
     at=facade.index('static std::string run(');decl=facade[:at];runner=facade[at:]
-    cpp=out/'actual_lifecycle.cpp';cpp.write_text(prelude+'\nnamespace native {\n'+decl+native+'\n'+runner+'\n}\nnamespace rust {\n'+decl+rust+'\n'+runner+'\n}\n'+driver);exe=out/'actual_lifecycle';flags=['-fsanitize=address,undefined','-fno-omit-frame-pointer'] if a.sanitize else []
+    cpp=out/'actual_lifecycle.cpp';cpp.write_text(prelude+'\nnamespace native {\n'+decl+native+'\n'+runner+'\n}\n#define SELECTED_STATE\nnamespace rust {\n'+decl+rust+'\n'+runner+'\n}\n'+driver);exe=out/'actual_lifecycle';flags=['-fsanitize=address,undefined','-fno-omit-frame-pointer'] if a.sanitize else []
     gate.run(['c++','-std=c++17','-O1',*flags,'-I',ROOT/'native/clients',cpp,archive,'-lpthread','-ldl','-lm','-o',exe]);cases=int(gate.run([exe]).strip())
     report=dict(passed=True,cases=cases,scope=__doc__,pin=gate.PIN,native_sanitized=a.sanitize,rust_sanitized=a.rust_sanitized)
     a.output.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))

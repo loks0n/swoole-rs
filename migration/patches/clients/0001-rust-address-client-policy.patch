@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_client.cc b/ext-src/swoole_client.cc
-index e340dc2..512b579 100644
+index e340dc2..e857b88 100644
 --- a/ext-src/swoole_client.cc
 +++ b/ext-src/swoole_client.cc
 @@ -17,2 +17,7 @@
@@ -20,6 +20,16 @@ index e340dc2..512b579 100644
 -static std::unordered_map<std::string, std::queue<Client *> *> long_connections;
 +static SwooleRustClientPool long_connections;
  
+@@ -108,3 +111,3 @@ Client *php_swoole_client_get_cli_safe(const zval *zobject) {
+     if (cli && cli->socket) {
+-        if (cli->active) {
++        if (cli->is_active()) {
+             return cli;
+@@ -116,3 +119,3 @@ Client *php_swoole_client_get_cli_safe(const zval *zobject) {
+                 if (error == 0) {
+-                    cli->active = true;
++                    cli->set_active(true);
+                     return cli;
 @@ -447,33 +450,40 @@ bool php_swoole_client_check_setting(Client *cli, const zval *zset) {
  void php_swoole_client_free(const zval *zobject, Client *cli) {
 -    if (cli->timer) {
@@ -178,6 +188,30 @@ index e340dc2..512b579 100644
 -
 -    return cli;
  }
+@@ -663,6 +678,6 @@ static PHP_METHOD(swoole_client, connect) {
+ 
+-    if (cli->keep && cli->active) {
++    if (cli->keep && cli->is_active()) {
+         zend_update_property_bool(swoole_client_ce, SW_Z8_OBJ_P(ZEND_THIS), ZEND_STRL("reuse"), 1);
+         RETURN_TRUE;
+-    } else if (cli->active == 1) {
++    } else if (cli->is_active()) {
+         php_swoole_fatal_error(E_WARNING, "connection to the server has already been established");
+@@ -756,3 +771,3 @@ static PHP_METHOD(swoole_client, sendto) {
+         }
+-        cli->active = true;
++        cli->set_active(true);
+         php_swoole_client_set_cli(ZEND_THIS, cli);
+@@ -1008,3 +1023,3 @@ static PHP_METHOD(swoole_client, isConnected) {
+     }
+-    RETURN_BOOL(cli->active);
++    RETURN_BOOL(cli->is_active());
+ }
+@@ -1085,3 +1100,3 @@ static PHP_METHOD(swoole_client, close) {
+     }
+-    if (cli->closed) {
++    if (cli->is_closed()) {
+         php_swoole_error(E_WARNING, "client socket is closed");
 @@ -1096,11 +1111,3 @@ static PHP_METHOD(swoole_client, close) {
          if (cli->keep) {
 -            std::queue<Client *> *q;
@@ -192,7 +226,7 @@ index e340dc2..512b579 100644
 +            long_connections.push(cli->server_id, cli);
          }
 diff --git a/ext-src/swoole_client_async.cc b/ext-src/swoole_client_async.cc
-index 2593ab9..d0f7b0f 100644
+index 2593ab9..f04d134 100644
 --- a/ext-src/swoole_client_async.cc
 +++ b/ext-src/swoole_client_async.cc
 @@ -17,2 +17,8 @@
@@ -306,6 +340,11 @@ index 2593ab9..d0f7b0f 100644
 +    const auto plan = swr_v1_clients_async_next(1, 0, cli->ssl_wait_handshake);
 +    if (plan.action == 4) {
          cli->ssl_wait_handshake = false;
+@@ -249,3 +232,3 @@ static PHP_METHOD(swoole_client_async, __destruct) {
+     }
+-    if (!cli->closed) {
++    if (!cli->is_closed()) {
+         cli->close();
 @@ -302,3 +285,4 @@ static PHP_METHOD(swoole_client_async, connect) {
  
 -    if (host_len == 0) {
@@ -470,6 +509,11 @@ index 2593ab9..d0f7b0f 100644
 +        stage = plan.stage;
      }
 -    RETURN_TRUE;
+ }
+@@ -407,3 +375,3 @@ static PHP_METHOD(swoole_client_async, isConnected) {
+     }
+-    RETURN_BOOL(cli->active);
++    RETURN_BOOL(cli->is_active());
  }
 @@ -438,39 +406,9 @@ static PHP_METHOD(swoole_client_async, on) {
  
@@ -1686,6 +1730,42 @@ index e959b5e..fe217f5 100644
 -    zval_ptr_dtor(&retval);
 -    return result;
  }
+diff --git a/include/swoole_client.h b/include/swoole_client.h
+index 3be52ce..8856915 100644
+--- a/include/swoole_client.h
++++ b/include/swoole_client.h
+@@ -23,2 +23,3 @@
+ #include "swoole_proxy.h"
++#include "swoole_rs_clients.h"
+ 
+@@ -41,4 +42,2 @@ class Client {
+     FdType fd_type;
+-    bool active = false;
+-    bool async = false;
+     bool keep = false;
+@@ -49,7 +48,3 @@ class Client {
+     bool host_preseted = false;
+-    bool shutdown_rw = false;
+-    bool shutdown_read = false;
+-    bool shutdown_write = false;
+     bool remove_delay = false;
+-    bool closed = false;
+     bool high_watermark = false;
+@@ -113,2 +108,9 @@ class Client {
+ 
++    // active, closed and async live in Rust (#439).
++    std::unique_ptr<swr_v1_clients_state, decltype(&swr_v1_clients_state_free)> state_;
++    bool is_active() const { return swr_v1_clients_flag(state_.get(), SWR_CLIENTS_ACTIVE); }
++    void set_active(bool value) { swr_v1_clients_set_flag(state_.get(), SWR_CLIENTS_ACTIVE, value); }
++    bool is_closed() const { return swr_v1_clients_flag(state_.get(), SWR_CLIENTS_CLOSED); }
++    bool is_async() const { return swr_v1_clients_flag(state_.get(), SWR_CLIENTS_ASYNC); }
++
+     Socket *get_socket() const {
+@@ -331,3 +333,3 @@ class SyncClient {
+     bool close() {
+-        if (!created || client.closed) {
++        if (!created || client.is_closed()) {
+             return false;
 diff --git a/src/network/address.cc b/src/network/address.cc
 index 04e0462..de48820 100644
 --- a/src/network/address.cc
@@ -1848,18 +1928,20 @@ index 04e0462..de48820 100644
 +        return swr_v1_clients_loopback(6, addr.inet_v6.sin6_addr.s6_addr);
      }
 diff --git a/src/network/client.cc b/src/network/client.cc
-index 56678c7..54b4c87 100644
+index 56678c7..2f78626 100644
 --- a/src/network/client.cc
 +++ b/src/network/client.cc
-@@ -25,2 +25,6 @@
+@@ -25,2 +25,7 @@
  #include <cassert>
++#include <exception>
 +#ifndef SWOOLE_RS_CLIENTS
 +#error "Clients overlay requires --enable-swoole-rs-clients"
 +#endif
 +#include "swoole_rs_clients.h"
  
-@@ -67,38 +71,46 @@ void Client::init_reactor(Reactor *reactor) {
- Client::Client(SocketType _type, bool _async) : async(_async) {
+@@ -66,39 +71,47 @@ void Client::init_reactor(Reactor *reactor) {
+ 
+-Client::Client(SocketType _type, bool _async) : async(_async) {
 -    fd_type = Socket::is_stream(_type) ? SW_FD_STREAM_CLIENT : SW_FD_DGRAM_CLIENT;
 -    socket = make_socket(_type, fd_type, (async ? SW_SOCK_NONBLOCK : 0) | SW_SOCK_CLOEXEC);
 -    if (socket == nullptr) {
@@ -1886,6 +1968,7 @@ index 56678c7..54b4c87 100644
 -        connect_ = Client_udp_connect;
 -        recv_ = Client_udp_recv;
 -        send_ = Client_udp_send;
++Client::Client(SocketType _type, bool _async) : state_(swr_v1_clients_state_new(_async), swr_v1_clients_state_free) {
 +    uint32_t stage = 0;
 +    for (;;) {
 +        uint8_t fact = 0;
@@ -1893,14 +1976,14 @@ index 56678c7..54b4c87 100644
 +        case 0: fact = Socket::is_stream(_type); break;
 +        case 2: fact = socket != nullptr; break;
 +        case 3: fact = socket->is_stream(); break;
-+        case 4: fact = async; break;
++        case 4: fact = is_async(); break;
 +        }
 +        const auto plan = swr_v1_clients_object_next(0, stage, fact);
 +        switch (plan.action) {
 +        case SWR_CLIENTS_OBJECT_FD_STREAM: fd_type = SW_FD_STREAM_CLIENT; break;
 +        case SWR_CLIENTS_OBJECT_FD_DGRAM: fd_type = SW_FD_DGRAM_CLIENT; break;
 +        case SWR_CLIENTS_OBJECT_MAKE:
-+            socket = make_socket(_type, fd_type, (async ? SW_SOCK_NONBLOCK : 0) | SW_SOCK_CLOEXEC);
++            socket = make_socket(_type, fd_type, (is_async() ? SW_SOCK_NONBLOCK : 0) | SW_SOCK_CLOEXEC);
 +            break;
 +        case SWR_CLIENTS_OBJECT_INITIALIZE:
 +            socket->object = this;
@@ -1940,13 +2023,17 @@ index 56678c7..54b4c87 100644
 -    protocol.package_max_length = SW_INPUT_BUFFER_SIZE;
 -    protocol.onPackage = Client_onPackage;
  }
-@@ -188,2 +200,4 @@ int Client::get_peer_name(Address *addr) const {
+@@ -166,3 +179,3 @@ int Client::sendto(const std::string &host, int port, const char *data, size_t l
+     Address tmp_addr;
+-    if (!tmp_addr.assign(socket->socket_type, host, port, !async)) {
++    if (!tmp_addr.assign(socket->socket_type, host, port, !is_async())) {
+         return SW_ERR;
+@@ -188,28 +201,6 @@ int Client::get_peer_name(Address *addr) const {
  int Client::shutdown(int _how) {
-+    const uint32_t request = _how == SHUT_RD ? 0 : (_how == SHUT_WR ? 1 : (_how == SHUT_RDWR ? 2 : 3));
-+    // Do not observe any shutdown flag until the original live guard passed.
-     if (!socket || closed) {
-@@ -192,24 +206,5 @@ int Client::shutdown(int _how) {
-     swoole_trace_log(SW_TRACE_CLIENT, "how=%d, fd=%d", _how, socket->fd);
+-    if (!socket || closed) {
+-        return SW_ERR;
+-    }
+-    swoole_trace_log(SW_TRACE_CLIENT, "how=%d, fd=%d", _how, socket->fd);
 -    if (_how == SHUT_RD) {
 -        if (shutdown_read || shutdown_rw || ::shutdown(socket->fd, SHUT_RD)) {
 -            return SW_ERR;
@@ -1969,28 +2056,21 @@ index 56678c7..54b4c87 100644
 -            return SW_OK;
 -        }
 -    } else {
-+    const auto action = swr_v1_clients_shutdown(1, (shutdown_read ? 1u : 0u) |
-+        (shutdown_write ? 2u : 0u) | (shutdown_rw ? 4u : 0u), request);
-+    if (action == 4) {
++    const uint32_t request = _how == SHUT_RD ? 0 : (_how == SHUT_WR ? 1 : (_how == SHUT_RDWR ? 2 : 3));
++    const int result =
++        swr_v1_clients_shutdown(state_.get(), socket != nullptr, socket ? socket->fd : -1, _how, request, ::shutdown);
++    if (result == -2) {
          swoole_set_last_error(EINVAL);
-@@ -217,2 +212,16 @@ int Client::shutdown(int _how) {
+@@ -217,2 +208,3 @@ int Client::shutdown(int _how) {
      }
-+    if (action == 0) {
-+        return SW_ERR;
-+    }
-+    const int result = ::shutdown(socket->fd, _how);
-+    if ((action == 1 && result != 0) || (action != 1 && result < 0)) {
-+        return SW_ERR;
-+    }
-+    // Pinned SHUT_RDWR publishes shutdown_read only; do not silently fix it.
-+    if (action == 2) {
-+        shutdown_write = true;
-+    } else {
-+        shutdown_read = true;
-+    }
-+    return SW_OK;
++    return result;
  }
-@@ -336,21 +345,22 @@ static int Client_inet_addr(Client *cli, const char *host, int port) {
+@@ -324,3 +316,3 @@ static int Client_inet_addr(Client *cli, const char *host, int port) {
+ 
+-    if (!cli->server_addr.assign(cli->socket->socket_type, host, port, !cli->async)) {
++    if (!cli->server_addr.assign(cli->socket->socket_type, host, port, !cli->is_async())) {
+         if (!cli->dns_completed && swoole_get_last_error() == SW_ERROR_BAD_HOST_ADDR) {
+@@ -336,21 +328,22 @@ static int Client_inet_addr(Client *cli, const char *host, int port) {
  Client::~Client() {
 -    if (!socket) {
 -        return;
@@ -2016,9 +2096,9 @@ index 56678c7..54b4c87 100644
 +        uint8_t fact = 0;
 +        switch (stage) {
 +        case 0: fact = socket != nullptr; break;
-+        case 1: fact = closed; break;
++        case 1: fact = is_closed(); break;
 +        case 2: fact = buffer != nullptr; break;
-+        case 3: fact = async; break;
++        case 3: fact = is_async(); break;
 +        }
 +        const auto plan = swr_v1_clients_object_next(1, stage, fact);
 +        switch (plan.action) {
@@ -2032,47 +2112,13 @@ index 56678c7..54b4c87 100644
 +        }
 +        stage = plan.stage;
      }
-@@ -363,46 +373,39 @@ Client::~Client() {
+@@ -362,114 +355,122 @@ Client::~Client() {
+  */
++// Rust runs the close; onClose may delete the client, so only the saved socket is read after it.
  int Client::close() {
 -    if (socket == nullptr || closed) {
 -        return SW_ERR;
-+    uint32_t stage = 0;
-+    Socket *saved_socket = nullptr;
-+    while (true) {
-+        uint32_t facts = 0;
-+        switch (stage) {
-+        case 0: facts = socket ? (closed ? 3u : 1u) : 0u; break;
-+        case 1: facts = open_ssl && ssl_context && socket->ssl; break;
-+        case 2: facts = socket->socket_type == SW_SOCK_UNIX_DGRAM; break;
-+        case 3: facts = async; break;
-+        case 4: facts = socket->removed; break;
-+        case 5: facts = timer != nullptr; break;
-+        case 6: facts = active; break;
-+        // onClose may have deleted this. Only the saved native Socket may be
-+        // inspected until its original object-null guard authorizes Client use.
-+        case 8: facts = saved_socket->object == nullptr; break;
-+        }
-+        const auto plan = swr_v1_clients_close_next(stage, facts);
-+        switch (plan.action) {
-+        case SWR_CLIENTS_CLOSE_PUBLISH: closed = true; saved_socket = socket; break;
-+        case SWR_CLIENTS_CLOSE_SSL: socket->ssl_close(); break;
-+        case SWR_CLIENTS_CLOSE_UNLINK: unlink(socket->info.addr.un.sun_path); break;
-+        case SWR_CLIENTS_CLOSE_EVENT: swoole_event_del(socket); break;
-+        case SWR_CLIENTS_CLOSE_TIMER: swoole_timer_del(timer); timer = nullptr; break;
-+        case SWR_CLIENTS_CLOSE_CALLBACK: active = false; onClose(this); break;
-+        case SWR_CLIENTS_CLOSE_DEACTIVATE: active = false; break;
-+        case SWR_CLIENTS_CLOSE_ADVANCE: break;
-+        case SWR_CLIENTS_CLOSE_SUCCESS: return SW_OK;
-+        case SWR_CLIENTS_CLOSE_FD: {
-+            const int fd = socket->fd;
-+            socket->fd = -1;
-+            swoole_trace_log(SW_TRACE_CLIENT, "fd=%d", fd);
-+            return ::close(fd);
-+        }
-+        default: return SW_ERR;
-+        }
-+        stage = plan.stage;
-     }
+-    }
 -    closed = true;
 -    auto _socket = socket;
 -
@@ -2114,9 +2160,9 @@ index 56678c7..54b4c87 100644
 -    swoole_trace_log(SW_TRACE_CLIENT, "fd=%d", fd);
 -
 -    return ::close(fd);
- }
-@@ -410,66 +413,63 @@ int Client::close() {
- static int Client_tcp_connect_sync(Client *cli, const char *host, int port, double timeout, int nonblock) {
+-}
+-
+-static int Client_tcp_connect_sync(Client *cli, const char *host, int port, double timeout, int nonblock) {
 -    cli->set_timeout(timeout);
 -    if (timeout > 0) {
 -        cli->socket->set_kernel_timeout(timeout);
@@ -2147,7 +2193,23 @@ index 56678c7..54b4c87 100644
 -            const auto len = ctx->pack_negotiate_request();
 -            if (cli->send(ctx->buf, len) < 0) {
 -                return SW_ERR;
--            }
++    struct Context {
++        Client *client;
++        Socket *saved;
++        std::exception_ptr thrown;
++    } context{this, nullptr, nullptr};
++    const swr_v1_clients_close_ops ops{
++        &context,
++        state_.get(),
++        [](void *c) -> void * {
++            auto *ctx = static_cast<Context *>(c);
++            return ctx->saved = ctx->client->socket;
++        },
++        [](void *c) {
++            Client *cli = static_cast<Context *>(c)->client;
++            if (cli->open_ssl && cli->ssl_context && cli->socket->ssl) {
++                cli->socket->ssl_close();
+             }
 -            ctx->state = SW_SOCKS5_STATE_HANDSHAKE;
 -            while (true) {
 -                const ssize_t n = cli->recv(recv_buf->str, recv_buf->size, 0);
@@ -2158,8 +2220,60 @@ index 56678c7..54b4c87 100644
 -                    continue;
 -                }
 -                return SW_ERR;
--            }
++            if (cli->socket->socket_type == SW_SOCK_UNIX_DGRAM) {
++                unlink(cli->socket->info.addr.un.sun_path);
+             }
 -        } else if (cli->http_proxy) {
+-            auto target_host = cli->get_http_proxy_host_name();
+-            const size_t n_write = cli->http_proxy->pack(recv_buf, target_host);
+-            if (cli->send(recv_buf->str, n_write, 0) < 0) {
+-                return SW_ERR;
++        },
++        [](void *c) {
++            Client *cli = static_cast<Context *>(c)->client;
++            if (!cli->socket->removed) {
++                swoole_event_del(cli->socket);
+             }
+-            const ssize_t n_read = cli->recv(recv_buf->str, recv_buf->size, 0);
+-            if (n_read <= 0) {
+-                return SW_ERR;
++            if (cli->timer) {
++                swoole_timer_del(cli->timer);
++                cli->timer = nullptr;
+             }
+-            recv_buf->length = n_read;
+-            if (!cli->http_proxy->handshake(recv_buf)) {
+-                return SW_ERR;
++        },
++        [](void *c) -> bool {
++            auto *ctx = static_cast<Context *>(c);
++            try {
++                ctx->client->onClose(ctx->client);
++                return true;
++            } catch (...) {
++                ctx->thrown = std::current_exception();
++                return false;
+             }
+-        }
++        },
++        [](void *c) -> bool { return static_cast<Context *>(c)->saved->object == nullptr; },
++        [](void *c) -> int32_t {
++            Socket *socket = static_cast<Context *>(c)->client->socket;
++            const int fd = socket->fd;
++            socket->fd = -1;
++            return ::close(fd);
++        },
++    };
++    const int result = swr_v1_clients_close(&ops);
++    if (context.thrown) {
++        std::rethrow_exception(context.thrown);
++    }
++    return result;
++}
+ 
+-        if (cli->open_ssl && cli->ssl_handshake() < 0) {
+-            return SW_ERR;
++static int Client_tcp_connect_sync(Client *cli, const char *host, int port, double timeout, int nonblock) {
 +    uint32_t stage = 0;
 +    int result = 0;
 +    ssize_t io_result = 0;
@@ -2193,7 +2307,7 @@ index 56678c7..54b4c87 100644
 +        case SWR_CLIENTS_CONNECT_NONBLOCKING: result = cli->socket->connect_async(cli->server_addr); break;
 +        case SWR_CLIENTS_CONNECT_BLOCKING: result = cli->socket->connect_sync(cli->server_addr); break;
 +        case SWR_CLIENTS_CONNECT_ASYNC_PENDING: cli->async_connect = true; return SW_ERR;
-+        case SWR_CLIENTS_CONNECT_ACTIVATE: cli->active = true; recv_buf = sw_tg_buffer(); break;
++        case SWR_CLIENTS_CONNECT_ACTIVATE: cli->set_active(true); recv_buf = sw_tg_buffer(); break;
 +        case SWR_CLIENTS_CONNECT_SOCKS_SEND: {
 +            socks = cli->socks5_proxy.get();
 +            const auto length = socks->pack_negotiate_request();
@@ -2204,26 +2318,11 @@ index 56678c7..54b4c87 100644
 +        case SWR_CLIENTS_CONNECT_SOCKS_RECEIVE: received = cli->recv(recv_buf->str, recv_buf->size, 0); break;
 +        case SWR_CLIENTS_CONNECT_SOCKS_HANDSHAKE: handshake_ok = cli->socks5_handshake(recv_buf->str, received); break;
 +        case SWR_CLIENTS_CONNECT_HTTP_SEND: {
-             auto target_host = cli->get_http_proxy_host_name();
--            const size_t n_write = cli->http_proxy->pack(recv_buf, target_host);
--            if (cli->send(recv_buf->str, n_write, 0) < 0) {
--                return SW_ERR;
--            }
--            const ssize_t n_read = cli->recv(recv_buf->str, recv_buf->size, 0);
--            if (n_read <= 0) {
--                return SW_ERR;
--            }
--            recv_buf->length = n_read;
--            if (!cli->http_proxy->handshake(recv_buf)) {
--                return SW_ERR;
--            }
++            auto target_host = cli->get_http_proxy_host_name();
 +            const size_t length = cli->http_proxy->pack(recv_buf, target_host);
 +            io_result = cli->send(recv_buf->str, length, 0);
 +            break;
          }
--
--        if (cli->open_ssl && cli->ssl_handshake() < 0) {
--            return SW_ERR;
 +        case SWR_CLIENTS_CONNECT_HTTP_RECEIVE: received = cli->recv(recv_buf->str, recv_buf->size, 0); break;
 +        case SWR_CLIENTS_CONNECT_HTTP_HANDSHAKE:
 +            recv_buf->length = received;
@@ -2233,13 +2332,13 @@ index 56678c7..54b4c87 100644
 +        case SWR_CLIENTS_CONNECT_RETURN_RESULT: return result;
 +        case SWR_CLIENTS_CONNECT_SUCCESS: return SW_OK;
 +        default: return SW_ERR;
-         }
++        }
 +        stage = plan.stage;
      }
 -
 -    return ret;
  }
-@@ -488,60 +488,44 @@ static int Client_dns_lookup(Client *cli) {
+@@ -488,60 +489,44 @@ static int Client_dns_lookup(Client *cli) {
  static int Client_tcp_connect_async(Client *cli, const char *host, int port, double timeout, int nonblock) {
 -    int ret;
 -
@@ -2311,7 +2410,7 @@ index 56678c7..54b4c87 100644
 +        case SWR_CLIENTS_CONNECT_ADD_TIMER: cli->timer = swoole_timer_add(timeout, false, Client_onTimeout, cli); break;
 +        case SWR_CLIENTS_CONNECT_ADD_EVENT: return swoole_event_add(cli->socket, SW_EVENT_WRITE);
 +        case SWR_CLIENTS_CONNECT_FAIL_CALLBACK:
-+            cli->active = false;
++            cli->set_active(false);
 +            cli->socket->removed = 1;
 +            cli->close();
 +            if (cli->onError) {
@@ -2323,16 +2422,16 @@ index 56678c7..54b4c87 100644
 -             *  listen for writable events to handle the proxy and SSL handshake within those events.
 -             */
 -            return swoole_event_add(cli->socket, SW_EVENT_WRITE);
-+            return result;
-+        default: return SW_ERR;
-         }
+-        }
 -        cli->active = false;
 -        cli->socket->removed = 1;
 -        cli->close();
 -        if (cli->onError) {
 -            cli->onerror_called = true;
 -            cli->onError(cli);
--        }
++            return result;
++        default: return SW_ERR;
+         }
 -        break;
 -    } while (true);
 -
@@ -2340,7 +2439,7 @@ index 56678c7..54b4c87 100644
 +        stage = plan.stage;
 +    }
  }
-@@ -549,17 +533,24 @@ static int Client_tcp_connect_async(Client *cli, const char *host, int port, dou
+@@ -549,17 +534,24 @@ static int Client_tcp_connect_async(Client *cli, const char *host, int port, dou
  static ssize_t Client_tcp_send_async(Client *cli, const char *data, size_t length, int flags) {
 +    uint32_t stage = 100;
      ssize_t n = length;
@@ -2377,7 +2476,7 @@ index 56678c7..54b4c87 100644
 -    }
 -    return n;
  }
-@@ -603,89 +594,61 @@ static ssize_t Client_tcp_recv_sync(Client *cli, char *data, size_t len, int fla
+@@ -603,89 +595,61 @@ static ssize_t Client_tcp_recv_sync(Client *cli, char *data, size_t len, int fla
  static int Client_udp_connect(Client *cli, const char *host, int port, double timeout, int udp_connect) {
 -    cli->set_timeout(timeout);
 -    if (!cli->async && timeout > 0) {
@@ -2434,18 +2533,18 @@ index 56678c7..54b4c87 100644
 +    while (true) {
 +        uint32_t facts = 0;
 +        switch (stage) {
-+        case 1: facts = !cli->async && timeout > 0; break;
++        case 1: facts = !cli->is_async() && timeout > 0; break;
 +        case 4: case 13: case 19: case 22: facts = result < 0; break;
-+        case 5: facts = cli->async && !cli->onReceive; break;
-+        case 6: facts = cli->wait_dns && cli->async; break;
++        case 5: facts = cli->is_async() && !cli->onReceive; break;
++        case 6: facts = cli->wait_dns && cli->is_async(); break;
 +        case 7: facts = bool(cli->onError); break;
 +        case 11: facts = timeout > 0; break;
 +        case 12: facts = cli->socket->socket_type == SW_SOCK_UNIX_DGRAM; break;
 +        case 14: case 21: facts = cli->open_ssl; break;
 +        case 15: facts = udp_connect == 1; break;
 +        case 16: facts = result == 0; break;
-+        case 18: facts = cli->async && cli->onConnect; break;
-+        case 30: facts = cli->async && cli->onError; break;
++        case 18: facts = cli->is_async() && cli->onConnect; break;
++        case 30: facts = cli->is_async() && cli->onError; break;
 +        }
 +        const auto plan = swr_v1_clients_transport_next(stage, facts);
 +        switch (plan.action) {
@@ -2457,7 +2556,7 @@ index 56678c7..54b4c87 100644
 +        case SWR_CLIENTS_TRANSPORT_WARN_RECEIVE: swoole_warning("`onReceive` callback have not set"); return SW_ERR;
 +        case SWR_CLIENTS_TRANSPORT_WARN_ERROR: swoole_warning("`onError` callback have not set"); return SW_ERR;
 +        case SWR_CLIENTS_TRANSPORT_DNS_LOOKUP: return Client_dns_lookup(cli);
-+        case SWR_CLIENTS_TRANSPORT_ACTIVATE: cli->active = true; cli->socket->set_buffer_size(Socket::default_buffer_size); break;
++        case SWR_CLIENTS_TRANSPORT_ACTIVATE: cli->set_active(true); cli->socket->set_buffer_size(Socket::default_buffer_size); break;
 +        case SWR_CLIENTS_TRANSPORT_SOCKET_TIMEOUT: cli->socket->set_timeout(timeout); break;
 +        case SWR_CLIENTS_TRANSPORT_BIND_UNIX:
 +            unix_address = &cli->socket->info.addr.un;
@@ -2505,7 +2604,7 @@ index 56678c7..54b4c87 100644
 +        case SWR_CLIENTS_TRANSPORT_ADD_EVENT: result = swoole_event_add(cli->socket, SW_EVENT_READ); break;
 +        case SWR_CLIENTS_TRANSPORT_CONNECT_CALLBACK: execute_onConnect(cli); break;
 +        case SWR_CLIENTS_TRANSPORT_SSL_HANDSHAKE: result = cli->ssl_handshake(); break;
-+        case SWR_CLIENTS_TRANSPORT_FAIL_CLOSE: cli->active = false; cli->socket->removed = 1; cli->close(); break;
++        case SWR_CLIENTS_TRANSPORT_FAIL_CLOSE: cli->set_active(false); cli->socket->removed = 1; cli->close(); break;
 +        case SWR_CLIENTS_TRANSPORT_ERROR_CALLBACK: cli->onerror_called = true; cli->onError(cli); return SW_ERR;
 +        case SWR_CLIENTS_TRANSPORT_SUCCESS: return SW_OK;
 +        default: return SW_ERR;
@@ -2522,7 +2621,7 @@ index 56678c7..54b4c87 100644
 -        return SW_ERR;
 +        stage = plan.stage;
      }
-@@ -694,8 +657,4 @@ static int Client_udp_connect(Client *cli, const char *host, int port, double ti
+@@ -694,8 +658,4 @@ static int Client_udp_connect(Client *cli, const char *host, int port, double ti
  static ssize_t Client_udp_send(Client *cli, const char *data, size_t len, int flags) {
 -    ssize_t n = cli->socket->sendto(cli->server_addr, data, len, 0);
 -    if (n < 0 || n < (ssize_t) len) {
@@ -2533,7 +2632,12 @@ index 56678c7..54b4c87 100644
 +    const ssize_t result = cli->socket->sendto(cli->server_addr, data, len, 0);
 +    return swr_v1_clients_datagram_send(result, static_cast<ssize_t>(len));
  }
-@@ -717,112 +676,78 @@ static int Client_onPackage(const Protocol *proto, Socket *conn, const RecvData
+@@ -703,3 +663,3 @@ static ssize_t Client_udp_send(Client *cli, const char *data, size_t len, int fl
+ static ssize_t Client_udp_recv(Client *cli, char *data, size_t length, int flags) {
+-    if (cli->async) {
++    if (cli->is_async()) {
+         return cli->socket->recvfrom_sync(data, length, flags, &cli->remote_addr);
+@@ -717,112 +677,78 @@ static int Client_onPackage(const Protocol *proto, Socket *conn, const RecvData
  static int Client_onStreamRead(Reactor *reactor, Event *event) {
 -    ssize_t n;
      auto *cli = (Client *) event->socket->object;
@@ -2546,74 +2650,8 @@ index 56678c7..54b4c87 100644
 -        if (n <= 0) {
 -            swoole_set_last_error(SW_ERROR_HTTP_PROXY_HANDSHAKE_ERROR);
 -        _connect_fail:
-+    const ssize_t buf_size = cli->buffer->size - cli->buffer->length;
-+    const bool do_ssl_handshake = cli->open_ssl;
-+    Socket *protocol_socket = nullptr;
-+    uint32_t stage = 0;
-+    ssize_t n = 0;
-+    int read_error = 0;
-+    bool handshake_ok = false;
-+    while (true) {
-+        uint32_t facts = 0;
-+        switch (stage) {
-+        case 0: facts = cli->http_proxy && cli->http_proxy->state != SW_HTTP_PROXY_STATE_READY; break;
-+        case 1: case 6: facts = n <= 0; break;
-+        case 2: case 7: facts = !handshake_ok; break;
-+        case 3: case 9: facts = do_ssl_handshake; break;
-+        case 5: facts = cli->socks5_proxy && cli->socks5_proxy->state != SW_SOCKS5_STATE_READY; break;
-+        case 8: facts = cli->socks5_proxy->state != SW_SOCKS5_STATE_READY; break;
-+        case 10: facts = cli->open_ssl && cli->socket->ssl_state != SW_SSL_STATE_READY; break;
-+        case 11: case 16: facts = n < 0; break;
-+        case 12: facts = cli->socket->ssl_state != SW_SSL_STATE_READY; break;
-+        case 15: facts = cli->open_eof_check || cli->open_length_check; break;
-+        case 17: facts = !cli->closed; break;
-+        case 18: facts = protocol_socket->removed == 0 && cli->remove_delay; break;
-+        case 21: facts = n < 0 ? 0u : (n == 0 ? 1u : 2u); break;
-+        case 22: facts = read_error == SW_ERROR ? 0u : (read_error == SW_CLOSE ? 1u : 2u); break;
-+        }
-+        const auto plan = swr_v1_clients_read_next(stage, facts);
-+        switch (plan.action) {
-+        case SWR_CLIENTS_READ_ADVANCE: break;
-+        case SWR_CLIENTS_READ_HTTP_RECEIVE:
-+        case SWR_CLIENTS_READ_SOCKS_RECEIVE:
-+        case SWR_CLIENTS_READ_RECEIVE:
-+            n = event->socket->recv(buf, buf_size, 0);
-+            break;
-+        case SWR_CLIENTS_READ_HTTP_HANDSHAKE:
-+            cli->buffer->length += n;
-+            handshake_ok = cli->http_proxy->handshake(cli->buffer);
-+            break;
-+        case SWR_CLIENTS_READ_HTTP_READY:
-+            cli->http_proxy->state = SW_HTTP_PROXY_STATE_READY;
-+            cli->buffer->clear();
-+            break;
-+        case SWR_CLIENTS_READ_SOCKS_HANDSHAKE:
-+            cli->buffer->length += n;
-+            handshake_ok = cli->socks5_handshake(buf, buf_size);
-+            break;
-+        case SWR_CLIENTS_READ_CLEAR_BUFFER: cli->buffer->clear(); break;
-+        case SWR_CLIENTS_READ_SSL_HANDSHAKE: n = cli->ssl_handshake(); break;
-+        case SWR_CLIENTS_READ_PROTOCOL_RECEIVE:
-+            protocol_socket = cli->socket;
-+            if (cli->open_eof_check) {
-+                n = cli->protocol.recv_with_eof_protocol(protocol_socket, cli->buffer);
-+            } else {
-+                n = cli->protocol.recv_with_length_protocol(protocol_socket, cli->buffer);
-+            }
-+            break;
-+        case SWR_CLIENTS_READ_PROTOCOL_CLOSE: cli->close(); return SW_OK;
-+        case SWR_CLIENTS_READ_SLEEP: cli->sleep(); cli->remove_delay = false; return SW_OK;
-+        case SWR_CLIENTS_READ_CATCH_ERROR: read_error = event->socket->catch_read_error(errno); break;
-+        case SWR_CLIENTS_READ_WARN: swoole_sys_warning("Read from socket[%d] failed", event->fd); return SW_OK;
-+        case SWR_CLIENTS_READ_CLOSE: return cli->close();
-+        case SWR_CLIENTS_READ_RECEIVE_CALLBACK: cli->onReceive(cli, buf, n); return SW_OK;
-+        case SWR_CLIENTS_READ_CONNECT_CALLBACK: execute_onConnect(cli); return SW_OK;
-+        case SWR_CLIENTS_READ_FAIL_HTTP: swoole_set_last_error(SW_ERROR_HTTP_PROXY_HANDSHAKE_ERROR); goto connect_fail;
-+        case SWR_CLIENTS_READ_FAIL_SOCKS: swoole_set_last_error(SW_ERROR_SOCKS5_HANDSHAKE_FAILED); goto connect_fail;
-+        case SWR_CLIENTS_READ_FAIL_SSL: swoole_set_last_error(SW_ERROR_SSL_HANDSHAKE_FAILED);
-+        connect_fail:
-             cli->active = false;
-             cli->close();
+-            cli->active = false;
+-            cli->close();
 -            if (cli->onError) {
 -                cli->onError(cli);
 -            }
@@ -2685,10 +2723,80 @@ index 56678c7..54b4c87 100644
 -            if (conn->removed == 0 && cli->remove_delay) {
 -                cli->sleep();
 -                cli->remove_delay = false;
--            }
--            return SW_OK;
--        }
--    }
++    const ssize_t buf_size = cli->buffer->size - cli->buffer->length;
++    const bool do_ssl_handshake = cli->open_ssl;
++    Socket *protocol_socket = nullptr;
++    uint32_t stage = 0;
++    ssize_t n = 0;
++    int read_error = 0;
++    bool handshake_ok = false;
++    while (true) {
++        uint32_t facts = 0;
++        switch (stage) {
++        case 0: facts = cli->http_proxy && cli->http_proxy->state != SW_HTTP_PROXY_STATE_READY; break;
++        case 1: case 6: facts = n <= 0; break;
++        case 2: case 7: facts = !handshake_ok; break;
++        case 3: case 9: facts = do_ssl_handshake; break;
++        case 5: facts = cli->socks5_proxy && cli->socks5_proxy->state != SW_SOCKS5_STATE_READY; break;
++        case 8: facts = cli->socks5_proxy->state != SW_SOCKS5_STATE_READY; break;
++        case 10: facts = cli->open_ssl && cli->socket->ssl_state != SW_SSL_STATE_READY; break;
++        case 11: case 16: facts = n < 0; break;
++        case 12: facts = cli->socket->ssl_state != SW_SSL_STATE_READY; break;
++        case 15: facts = cli->open_eof_check || cli->open_length_check; break;
++        case 17: facts = !cli->is_closed(); break;
++        case 18: facts = protocol_socket->removed == 0 && cli->remove_delay; break;
++        case 21: facts = n < 0 ? 0u : (n == 0 ? 1u : 2u); break;
++        case 22: facts = read_error == SW_ERROR ? 0u : (read_error == SW_CLOSE ? 1u : 2u); break;
++        }
++        const auto plan = swr_v1_clients_read_next(stage, facts);
++        switch (plan.action) {
++        case SWR_CLIENTS_READ_ADVANCE: break;
++        case SWR_CLIENTS_READ_HTTP_RECEIVE:
++        case SWR_CLIENTS_READ_SOCKS_RECEIVE:
++        case SWR_CLIENTS_READ_RECEIVE:
++            n = event->socket->recv(buf, buf_size, 0);
++            break;
++        case SWR_CLIENTS_READ_HTTP_HANDSHAKE:
++            cli->buffer->length += n;
++            handshake_ok = cli->http_proxy->handshake(cli->buffer);
++            break;
++        case SWR_CLIENTS_READ_HTTP_READY:
++            cli->http_proxy->state = SW_HTTP_PROXY_STATE_READY;
++            cli->buffer->clear();
++            break;
++        case SWR_CLIENTS_READ_SOCKS_HANDSHAKE:
++            cli->buffer->length += n;
++            handshake_ok = cli->socks5_handshake(buf, buf_size);
++            break;
++        case SWR_CLIENTS_READ_CLEAR_BUFFER: cli->buffer->clear(); break;
++        case SWR_CLIENTS_READ_SSL_HANDSHAKE: n = cli->ssl_handshake(); break;
++        case SWR_CLIENTS_READ_PROTOCOL_RECEIVE:
++            protocol_socket = cli->socket;
++            if (cli->open_eof_check) {
++                n = cli->protocol.recv_with_eof_protocol(protocol_socket, cli->buffer);
++            } else {
++                n = cli->protocol.recv_with_length_protocol(protocol_socket, cli->buffer);
+             }
++            break;
++        case SWR_CLIENTS_READ_PROTOCOL_CLOSE: cli->close(); return SW_OK;
++        case SWR_CLIENTS_READ_SLEEP: cli->sleep(); cli->remove_delay = false; return SW_OK;
++        case SWR_CLIENTS_READ_CATCH_ERROR: read_error = event->socket->catch_read_error(errno); break;
++        case SWR_CLIENTS_READ_WARN: swoole_sys_warning("Read from socket[%d] failed", event->fd); return SW_OK;
++        case SWR_CLIENTS_READ_CLOSE: return cli->close();
++        case SWR_CLIENTS_READ_RECEIVE_CALLBACK: cli->onReceive(cli, buf, n); return SW_OK;
++        case SWR_CLIENTS_READ_CONNECT_CALLBACK: execute_onConnect(cli); return SW_OK;
++        case SWR_CLIENTS_READ_FAIL_HTTP: swoole_set_last_error(SW_ERROR_HTTP_PROXY_HANDSHAKE_ERROR); goto connect_fail;
++        case SWR_CLIENTS_READ_FAIL_SOCKS: swoole_set_last_error(SW_ERROR_SOCKS5_HANDSHAKE_FAILED); goto connect_fail;
++        case SWR_CLIENTS_READ_FAIL_SSL: swoole_set_last_error(SW_ERROR_SSL_HANDSHAKE_FAILED);
++        connect_fail:
++            cli->set_active(false);
++            cli->close();
++            if (cli->onError) cli->onError(cli);
+             return SW_OK;
++        default: return SW_OK;
+         }
++        stage = plan.stage;
+     }
 -
 -    n = event->socket->recv(buf, buf_size, 0);
 -    if (n < 0) {
@@ -2701,21 +2809,35 @@ index 56678c7..54b4c87 100644
 -        case SW_WAIT:
 -            return SW_OK;
 -        default:
-+            if (cli->onError) cli->onError(cli);
-             return SW_OK;
-+        default: return SW_OK;
-         }
+-            return SW_OK;
+-        }
 -    } else if (n == 0) {
 -    __close:
 -        return cli->close();
 -    } else {
 -        cli->onReceive(cli, buf, n);
 -        return SW_OK;
-+        stage = plan.stage;
-     }
+-    }
 -    return SW_OK;
  }
-@@ -904,77 +829,74 @@ static int Client_onWrite(Reactor *reactor, Event *event) {
+@@ -844,3 +770,3 @@ static int Client_onError(Reactor *reactor, Event *event) {
+     auto *cli = (Client *) event->socket->object;
+-    if (cli->active) {
++    if (cli->is_active()) {
+         return cli->close();
+@@ -859,8 +785,8 @@ static void Client_onTimeout(Timer *timer, TimerNode *tnode) {
+     if (cli->open_ssl && cli->socket->ssl_state != SW_SSL_STATE_READY) {
+-        cli->active = false;
++        cli->set_active(false);
+     }
+     if (cli->socks5_proxy && cli->socks5_proxy->state != SW_SOCKS5_STATE_READY) {
+-        cli->active = false;
++        cli->set_active(false);
+     } else if (cli->http_proxy && cli->http_proxy->state != SW_HTTP_PROXY_STATE_READY) {
+-        cli->active = false;
++        cli->set_active(false);
+     }
+@@ -904,77 +830,74 @@ static int Client_onWrite(Reactor *reactor, Event *event) {
      auto *cli = (Client *) event->socket->object;
 -    Socket *_socket = cli->socket;
 -    int ret;
@@ -2746,7 +2868,7 @@ index 56678c7..54b4c87 100644
 +    while (true) {
 +        uint32_t facts = 0;
 +        switch (stage) {
-+        case 0: facts = cli->active; break;
++        case 0: facts = cli->is_active(); break;
 +        case 1: facts = cli->open_ssl && saved_socket->ssl_state == SW_SSL_STATE_WAIT_STREAM; break;
 +        case 2: case 5: case 11: case 16: facts = result < 0; break;
 +        case 3: facts = saved_socket->ssl_state == SW_SSL_STATE_READY; break;
@@ -2796,7 +2918,7 @@ index 56678c7..54b4c87 100644
 +            return SW_OK;
 +        case SWR_CLIENTS_WRITE_MARK_CONNECTED:
 +            swoole_event_set(event->socket, SW_EVENT_READ);
-+            cli->active = true;
++            cli->set_active(true);
 +            break;
 +        case SWR_CLIENTS_WRITE_SOCKS_SEND: {
 +            const auto length = cli->socks5_proxy->pack_negotiate_request();
@@ -2812,7 +2934,10 @@ index 56678c7..54b4c87 100644
 -            size_t n = cli->http_proxy->pack(proxy_buf, host_name);
 -            swoole_trace_log(SW_TRACE_HTTP_CLIENT, "proxy request: <<EOF\n%.*sEOF", (int) n, proxy_buf->str);
 -            return cli->send(proxy_buf->str, n, 0);
--        }
++            const size_t length = cli->http_proxy->pack(proxy_buf, host_name);
++            swoole_trace_log(SW_TRACE_HTTP_CLIENT, "proxy request: <<EOF\n%.*sEOF", (int) length, proxy_buf->str);
++            return cli->send(proxy_buf->str, length, 0);
+         }
 -        if (cli->open_ssl) {
 -            if (cli->ssl_handshake() < 0) {
 -                swoole_set_last_error(SW_ERROR_SSL_HANDSHAKE_FAILED);
@@ -2820,10 +2945,6 @@ index 56678c7..54b4c87 100644
 -            } else {
 -                _socket->ssl_state = SW_SSL_STATE_WAIT_STREAM;
 -            }
-+            const size_t length = cli->http_proxy->pack(proxy_buf, host_name);
-+            swoole_trace_log(SW_TRACE_HTTP_CLIENT, "proxy request: <<EOF\n%.*sEOF", (int) length, proxy_buf->str);
-+            return cli->send(proxy_buf->str, length, 0);
-+        }
 +        case SWR_CLIENTS_WRITE_CONNECT_CALLBACK:
 +            execute_onConnect(cli);
 +            return SW_OK;
@@ -2831,16 +2952,16 @@ index 56678c7..54b4c87 100644
 +            swoole_set_last_error(SW_ERROR_SSL_HANDSHAKE_FAILED);
 +            [[fallthrough]];
 +        case SWR_CLIENTS_WRITE_FAIL:
-+            cli->active = false;
++            cli->set_active(false);
 +            cli->close();
 +            cli->onError(cli);
-+            return SW_OK;
+             return SW_OK;
 +        case SWR_CLIENTS_WRITE_WARN_OPTION:
 +            swoole_sys_warning("getsockopt(%d) failed", event->fd);
 +            return SW_ERR;
 +        case SWR_CLIENTS_WRITE_SET_SSL_WAIT:
 +            saved_socket->ssl_state = SW_SSL_STATE_WAIT_STREAM;
-             return SW_OK;
++            return SW_OK;
 +        case SWR_CLIENTS_WRITE_SUCCESS: return SW_OK;
 +        default: return SW_ERR;
          }

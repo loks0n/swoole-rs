@@ -46,6 +46,8 @@ static int swoole_event_set(Socket*,int){observe("read-interest");if(effect_hook
 // DECLARATIONS: inserted once for each actual native/selected body.
 namespace BODY_NAMESPACE {
 struct Client {
+    // The patched bodies reach the flags through the Client accessors (#447).
+    bool is_active() const{return active;} void set_active(bool v){active=v;}
     Socket *socket=nullptr;bool active=false,open_ssl=false,high_watermark=false;
     size_t buffer_low_watermark=4;Proxy *socks5_proxy=nullptr,*http_proxy=nullptr;
     std::function<void(Client*)> onBufferEmpty,onError,onConnect;
