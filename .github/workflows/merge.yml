@@ -311,10 +311,15 @@ jobs:
         with:
           path: ~/.cache/composer
           key: composer-${{ runner.os }}-${{ hashFiles('corpus/upstream/lib-composer.lock') }}
-      - run: |
+      # Non-fatal: a resolve/platform failure must not red the shard. On failure drop
+      # any partial vendor so run.py falls back to its stub and the lib-free cases
+      # still run, exactly as before this install existed.
+      - continue-on-error: true
+        run: |
           cp corpus/upstream/lib-composer.lock target/upstream/src/tests/include/lib/composer.lock
           composer install --no-interaction --no-progress \
-            --working-dir=target/upstream/src/tests/include/lib
+            --working-dir=target/upstream/src/tests/include/lib \
+            || rm -rf target/upstream/src/tests/include/lib/vendor
       - run: python3 corpus/upstream/inventory.py --shard ${{ matrix.index }}/6 --output target/phpt/manifest.json
       # php -n loads nothing; load every extension the distribution enables, in its order.
       - id: extensions
