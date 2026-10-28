@@ -111,9 +111,10 @@ fn create_request(call: &Call) {
         return call.set_bool(false);
     };
     // SAFETY: the return slot and an optional array argument of this call.
-    unsafe {
-        swr_http_host_request_create(call.return_value(), options.unwrap_or(ptr::null_mut()));
-    }
+    let bailed = unsafe {
+        swr_http_host_request_create(call.return_value(), options.unwrap_or(ptr::null_mut()))
+    };
+    host::raise(bailed);
 }
 
 fn parse(call: &Call) {
