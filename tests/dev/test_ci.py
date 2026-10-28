@@ -31,21 +31,22 @@ deleted = [branch for branch in data.get('deleted', []) if call.startswith('api 
 if deleted:
     sys.stderr.write('HTTP 422: No commit found for SHA\\n')
     sys.exit(1)
-elif args[:2] == ['pr', 'list']:
-    print(json.dumps([{'headRefOid': 'e' * 40}]))
-elif args[:2] == ['pr', 'view']:
-    queue = data['pulls'][args[2]]
+elif args[:2] == ['api', '--paginate']:
+    for issue in data.get('issues', []):
+        print(json.dumps(issue))
+elif args[0] == 'api' and '/pulls?' in args[1]:
+    print('e' * 40)
+elif args[0] == 'api' and '/pulls/' in args[1]:
+    queue = data['pulls'][args[1].rsplit('/', 1)[1]]
     pull = queue.pop(0) if len(queue) > 1 else queue[0]
     save()
-    print(json.dumps({'url': 'p', **pull}))
+    print(json.dumps({'html_url': 'p', 'merged': False, 'merge_commit_sha': None, **pull}))
 elif args[0] == 'api' and '-X' in args:
     pass
 elif args[0] == 'api' and '/compare/' in args[1]:
     print(data.get('compare', 'ahead'))
 elif args[0] == 'api':
     print('c' * 40)
-elif args[:2] == ['issue', 'list']:
-    print(json.dumps(data.get('issues', [])))
 elif args[:2] == ['run', 'list'] and '--commit' not in args:
     print(json.dumps(data.get('history', [])))
 elif args[:2] == ['run', 'download']:
@@ -170,16 +171,20 @@ class Ci(unittest.TestCase):
         self.assertIn('rust', result['logs'])
 
     def test_next_orders_claimable_issues_by_priority_then_age(self):
-        def issue(number, created, *labels):
-            return {'number': number, 'title': f't{number}', 'createdAt': created,
-                    'labels': [{'name': name} for name in ('status:ready', *labels)]}
+        def issue(number, created, *labels, blocked_by=0, **extra):
+            return {'number': number, 'title': f't{number}', 'created_at': created,
+                    'labels': [{'name': name} for name in ('status:ready', *labels)],
+                    'issue_dependencies_summary': {'blocked_by': blocked_by}, **extra}
         issues = [issue(1, '2026-10-01T00:00:00Z', 'p2'), issue(2, '2026-10-05T00:00:00Z', 'p1'),
                   issue(3, '2026-10-02T00:00:00Z', 'p1'), issue(4, '2026-10-09T00:00:00Z', 'p0'),
-                  issue(5, '2026-09-01T00:00:00Z')]
+                  issue(5, '2026-09-01T00:00:00Z'), issue(6, '2026-09-01T00:00:00Z', 'p0', blocked_by=1),
+                  issue(7, '2026-09-01T00:00:00Z', 'p0', 'needs:decision'),
+                  issue(8, '2026-09-01T00:00:00Z', 'p0', pull_request={})]
         code, result, _ = self.ci('next', runs={}, flags=('--json',), issues=issues)
         self.assertEqual((code, [row['number'] for row in result]), (0, [4, 3, 2, 1, 5]))
-        self.assertIn('issue list --search is:open label:status:ready -is:blocked -label:needs:decision '
-                      '--limit 500 --json number,title,labels,createdAt', self.gh_calls)
+        # REST, not `gh issue list`: GraphQL is unavailable in some agent sessions.
+        self.assertIn('api --paginate repos/{owner}/{repo}/issues?state=open&labels=status:ready&per_page=100 '
+                      '--jq .[]', self.gh_calls)
         code, result, _ = self.ci('next', runs={}, flags=('--json',), issues=[])
         self.assertEqual((code, result), (2, []))
 
@@ -192,18 +197,20 @@ class Ci(unittest.TestCase):
         code, result, _ = self.ci('wait', '--workflow', 'pr.yml', '--commit', 'merged-branch',
                                   runs={'e' * 40: ['success']}, deleted=['merged-branch'])
         self.assertEqual((code, result['commit'], result['state']), (0, 'e' * 40, 'passed'))
-        self.assertIn('pr list --head merged-branch --state all --limit 1 --json headRefOid', self.gh_calls)
+        self.assertIn('api repos/{owner}/{repo}/pulls?state=all&head={owner}:merged-branch -q .[0].head.sha // ""',
+                      self.gh_calls)
         # The 422 for the deleted branch is permanent: resolved once, not retried.
         self.assertNotIn('retrying', _)
 
     def test_wait_pr_waits_for_the_merge_then_its_merge_tier(self):
-        pulls = {'9': [{'state': 'OPEN'}, {'state': 'OPEN'}, {'state': 'MERGED', 'mergeCommit': {'oid': 'c' * 40}}]}
+        pulls = {'9': [{'state': 'open'}, {'state': 'open'},
+                       {'state': 'closed', 'merged': True, 'merge_commit_sha': 'c' * 40}]}
         code, result, stderr = self.ci('wait', '--pr', '9', runs={'c' * 40: ['running', 'success']}, pulls=pulls)
         self.assertEqual((code, result['pr'], result['pr_state'], result['commit'], result['state']),
                          (0, 9, 'merged', 'c' * 40, 'passed'))
         self.assertIn('PR #9: open', stderr)
         self.assertIn('PR #9: merged', stderr)
-        code, result, _ = self.ci('wait', '--pr', '9', runs={}, pulls={'9': [{'state': 'CLOSED', 'mergeCommit': None}]})
+        code, result, _ = self.ci('wait', '--pr', '9', runs={}, pulls={'9': [{'state': 'closed'}]})
         self.assertEqual((code, result['pr_state'], result['state']), (1, 'closed', 'closed'))
 
     def test_status_without_a_run_is_none(self):

@@ -65,11 +65,11 @@ def resolve(commit):
         return gh('api', 'repos/{owner}/{repo}/commits/' + (commit or 'main'), '-q', '.sha').strip()
     except subprocess.CalledProcessError:
         # Auto-merge deletes a PR's branch: resolve it through that PR's head.
-        heads = json.loads(gh('pr', 'list', '--head', commit or 'main', '--state', 'all', '--limit', '1',
-                              '--json', 'headRefOid'))
-        if not heads:
+        head = gh('api', f'repos/{{owner}}/{{repo}}/pulls?state=all&head={{owner}}:{commit or "main"}',
+                  '-q', '.[0].head.sha // ""').strip()
+        if not head:
             raise
-        return heads[0]['headRefOid']
+        return head
 
 
 def wait_pr(number, deadline, poll):
@@ -77,14 +77,14 @@ def wait_pr(number, deadline, poll):
     merge commit. Returns that run's result with the PR's state, or the closed PR's."""
     announced = None
     while True:
-        pr = json.loads(gh('pr', 'view', str(number), '--json', 'state,mergeCommit,url'))
-        if pr['state'] != announced:
-            announced = pr['state']
-            say(f"PR #{number}: {pr['state'].lower()}")
-        if pr['state'] == 'MERGED':
-            sha = pr['mergeCommit']['oid']
-            return {**wait('merge.yml', sha, deadline, poll), 'pr': number, 'pr_state': 'merged'}
-        if pr['state'] == 'CLOSED':
+        pr = json.loads(gh('api', f'repos/{{owner}}/{{repo}}/pulls/{number}'))
+        state = 'merged' if pr['merged'] else pr['state']
+        if state != announced:
+            announced = state
+            say(f"PR #{number}: {state}")
+        if state == 'merged':
+            return {**wait('merge.yml', pr['merge_commit_sha'], deadline, poll), 'pr': number, 'pr_state': 'merged'}
+        if state == 'closed':
             return {'workflow': 'merge.yml', 'commit': '', 'state': 'closed', 'pr': number, 'pr_state': 'closed'}
         if time.monotonic() > deadline:
             return {'workflow': 'merge.yml', 'commit': '', 'state': 'running', 'timed_out': True, 'pr': number,
@@ -252,20 +252,22 @@ def report(result, as_json):
         print(f'--- new failure {name} (last {len(lines)} log lines)', *lines, sep='\n')
 
 
-CLAIMABLE = 'is:open label:status:ready -is:blocked -label:needs:decision'
-
-
 def claimable():
     """Open, ready, unblocked issues without needs:decision: p0, p1, p2, then unprioritised,
     oldest first within each (AGENTS.md's claim order)."""
-    issues = json.loads(gh('issue', 'list', '--search', CLAIMABLE, '--limit', '500',
-                           '--json', 'number,title,labels,createdAt'))
+    # REST, not `gh issue list`: GraphQL is unavailable in some agent sessions. Open blockers
+    # count in issue_dependencies_summary.blocked_by; the endpoint also lists pull requests.
+    issues = [issue for issue in map(json.loads, gh(
+        'api', '--paginate', 'repos/{owner}/{repo}/issues?state=open&labels=status:ready&per_page=100',
+        '--jq', '.[]').splitlines())
+        if 'pull_request' not in issue and not issue.get('issue_dependencies_summary', {}).get('blocked_by')
+        and not any(label['name'] == 'needs:decision' for label in issue['labels'])]
     def priority(issue):
         names = {label['name'] for label in issue['labels']}
         return next((rank for rank, name in enumerate(('p0', 'p1', 'p2')) if name in names), 3)
     return [{'number': issue['number'], 'priority': ('p0', 'p1', 'p2', '-')[priority(issue)],
-             'title': issue['title'], 'created': issue['createdAt']}
-            for issue in sorted(issues, key=lambda issue: (priority(issue), issue['createdAt']))]
+             'title': issue['title'], 'created': issue['created_at']}
+            for issue in sorted(issues, key=lambda issue: (priority(issue), issue['created_at']))]
 
 
 def main(argv=None):
