@@ -6,7 +6,15 @@ from pathlib import Path
 import shutil
 import sys
 import uuid
-from gate import ROOT, sha
+import hashlib
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT))
+
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
 from tools.harness import Engine, parse_engines, run_isolated, write_report
 from tools.hybrid_identity import attest
 from tools.build_upstream import require_build_space

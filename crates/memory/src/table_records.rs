@@ -37,7 +37,38 @@ pub struct Cursor {
     position: usize,
     generation: u64,
 }
+/// A declared column, as `Swoole\Table` reads it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Column<'a> {
+    pub name: &'a [u8],
+    pub index: usize,
+    pub width: u32,
+    pub kind: u32,
+}
+impl Record {
+    fn column(&self) -> Column<'_> {
+        Column {
+            name: &self.name,
+            index: self.index,
+            width: self.width,
+            kind: self.kind,
+        }
+    }
+}
 impl Records {
+    /// Every declaration in order, repeats included (upstream's `column_list`).
+    pub fn columns(&self) -> impl Iterator<Item = Column<'_>> {
+        self.order.iter().map(Record::column)
+    }
+
+    /// The first declaration named `name` (upstream's `column_map`).
+    #[must_use]
+    pub fn column(&self, name: &[u8]) -> Option<Column<'_>> {
+        self.first
+            .get(name)
+            .map(|&ordinal| self.order[ordinal].column())
+    }
+
     fn view(&self, ordinal: usize) -> Option<View> {
         self.order.get(ordinal).map(|record| View {
             ordinal,

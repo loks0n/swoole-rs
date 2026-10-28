@@ -196,3 +196,30 @@ fn records_clear_uses_authoritative_offsets_and_preserves_string_payload() {
         assert_eq!(swr_v1_memory_records_close(&raw mut owner), 0);
     }
 }
+
+#[test]
+fn table_reads_every_declaration_and_looks_up_the_first() {
+    unsafe {
+        let mut owner = ptr::null_mut();
+        assert_eq!(swr_v1_memory_records_open(&raw mut owner), 0);
+        let mut item = 0;
+        assert_eq!(add(owner, &mut item, b"id", 1, 0), 0);
+        assert_eq!(add(owner, &mut item, b"name", 3, 16), 0);
+        assert_eq!(add(owner, &mut item, b"id", 2, 0), 0);
+        let records = &*owner;
+        let columns: Vec<_> = records.columns().collect();
+        assert_eq!(columns.len(), 3, "repeats stay in the column list");
+        assert_eq!(
+            (columns[2].name, columns[2].kind, columns[2].index),
+            (&b"id"[..], 2, 8 + columns[1].width as usize),
+            "the repeat has its own slot"
+        );
+        assert_eq!(
+            records.column(b"id"),
+            Some(columns[0]),
+            "lookup keeps the first"
+        );
+        assert_eq!(records.column(b"missing"), None, "unknown name");
+        assert_eq!(swr_v1_memory_records_close(&raw mut owner), 0);
+    }
+}

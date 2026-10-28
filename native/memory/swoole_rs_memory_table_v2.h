@@ -155,6 +155,13 @@ class TableV2 final {
         assert(status == 0);
         (void) status;
     }
+    // Swoole\Table's column records (crates/phpcollections), and the core's
+    // item_size and created flag their declarations update and check.
+    swr_v1_memory_records *records(size_t **item_size, const uint8_t **created) {
+        *item_size = &core_->item_size;
+        *created = reinterpret_cast<const uint8_t *>(&core_->created);
+        return columns_;
+    }
     void destroy() { delete this; }
 
     bool create() { return core_->create(); }

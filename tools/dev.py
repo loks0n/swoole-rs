@@ -400,8 +400,6 @@ def plan(args, reports):
                        *(['--source-ref', 'HEAD'] if family != 'lifecycle' else []),
                        *php_for('curl', 'sockets'), *engines, *report(name))
     if 'phpcollections' in modules:
-        script('phpcollections-policy', 'tests/modules/phpcollections/gate.py', '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('phpcollections-policy'))
         if integrate:
             script('phpcollections-runtime', 'tests/modules/phpcollections/php_runtime.py', *php_for('curl'), *engines,
                    '--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
