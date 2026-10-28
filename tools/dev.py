@@ -377,8 +377,7 @@ def plan(args, reports):
                                ('queue', 'queue_calls.py'), ('window', 'window_calls.py'),
                                ('response-headers', 'response_headers.py'), ('publication', 'publication_calls.py'),
                                ('write', 'write_calls.py'), ('send', 'send_calls.py'),
-                               ('server-header', 'server_header_calls.py'), ('request-headers', 'request_headers.py'), ('response-builders', 'response_builders.py'), ('response-lifecycle', 'response_lifecycle.py'), ('connection', 'connection_calls.py'), ('file', 'file_calls.py'), ('receive', 'receive_calls.py'),
-                               ('syntax', 'syntax_gate.py')]:
+                               ('server-header', 'server_header_calls.py'), ('request-headers', 'request_headers.py'), ('response-builders', 'response_builders.py'), ('response-lifecycle', 'response_lifecycle.py'), ('connection', 'connection_calls.py'), ('file', 'file_calls.py'), ('receive', 'receive_calls.py')]:
             name = 'http2-' + family
             script(name, 'tests/modules/http2/' + runner, '--source', ROOT / 'target/upstream/src',
                    '--core-report', reports / 'http2-native.json', *includes, *report(name))

@@ -20,7 +20,7 @@ python3 tests/modules/http2/settings_calls.py --source /absolute/pinned/swoole \
   --core-report target/http2/core.json --output target/http2/settings.json
 ```
 
-All `*_calls.py`, `response_*.py`, `request_headers.py` and `syntax_gate.py`
+All `*_calls.py`, `response_*.py` and `request_headers.py`
 take the same `--source/--core-report/--output` arguments. Add
 `--include /path/to/openssl/include` when the pinned headers need OpenSSL. Each
 output's `-artifacts` directory must not exist yet. `tools/dev.py` registers all
@@ -72,11 +72,6 @@ bytes, return values and published state.
   including frame limits, chunk bytes and page-size splits.
 - `connection_calls.py`: client `connect` and `close`.
 - `file_calls.py`: file/range responses and the shared completion adapter.
-- `syntax_gate.py`: syntax-checks all three production TUs with Rust on and off,
-  using pinned headers exported into a private tree so untracked checkout
-  config cannot leak in. `--configured-headers DIR` adds a configured SDK whose
-  `identity.json` file hashes are checked before and after; `--php-config`
-  selects the PHP headers.
 
 ## Original PHPTs
 

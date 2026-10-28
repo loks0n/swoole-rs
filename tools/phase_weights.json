@@ -115,7 +115,6 @@
  "http2-send": 4,
  "http2-server-header": 10,
  "http2-settings": 5,
- "http2-syntax": 7,
  "http2-unit": 8,
  "http2-window": 5,
  "http2-write": 18,

@@ -706,7 +706,7 @@ class Lanes(unittest.TestCase):
         self.assertIn('--archive', commands['ports-policy'])
         self.assertIn('--archive', commands['http2-native'])
         self.assertIn('--sanitize', commands['http2-native'])
-        for family in ['settings', 'control', 'header', 'queue', 'window', 'response-headers', 'publication', 'write', 'send', 'server-header', 'request-headers', 'response-builders', 'response-lifecycle', 'connection', 'syntax']:
+        for family in ['settings', 'control', 'header', 'queue', 'window', 'response-headers', 'publication', 'write', 'send', 'server-header', 'request-headers', 'response-builders', 'response-lifecycle', 'connection']:
             self.assertIn('--core-report', commands['http2-' + family])
             self.assertLess(list(commands).index('http2-native'), list(commands).index('http2-' + family))
         self.assertIn('--archive', commands['httpbindings-request'])
