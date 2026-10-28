@@ -79,6 +79,30 @@ int swr_v1_uring_futex_wait(const swr_v1_uring_host *host, uint32_t *futex);
 int swr_v1_uring_futex_wakeup(const swr_v1_uring_host *host, uint32_t *futex);
 pid_t swr_v1_uring_waitpid(const swr_v1_uring_host *host, pid_t pid, int *stat_loc, int options, double timeout);
 int swr_v1_uring_poll(const swr_v1_uring_host *host, struct pollfd *fd, int timeout);
+/* UringSocket's TLS transport: OpenSSL over memory BIOs, pumped through the ring.
+ * Errors reach the socket through the host, in upstream's order. */
+typedef struct {
+    const swr_v1_uring_host *uring;
+    void (*set_err)(void *socket, int code);
+    void (*check_failure)(void *socket);
+    char *(*buffer)(void *socket, bool write, size_t *size);
+    void (*ssl_error)(void *socket, const char *function, int error, unsigned long code);
+    int bad_protocol, reset;
+} swr_v1_uring_tls_host;
+typedef struct {
+    const swr_v1_uring_tls_host *host;
+    void *socket;
+    struct ssl_st *ssl;
+    struct bio_st *rbio, *wbio;
+    int fd;
+    double read_timeout, write_timeout;
+} swr_v1_uring_tls;
+bool swr_v1_uring_tls_write(swr_v1_uring_tls tls);
+bool swr_v1_uring_tls_read(swr_v1_uring_tls tls);
+bool swr_v1_uring_tls_prepare(swr_v1_uring_tls tls);
+bool swr_v1_uring_tls_perform(swr_v1_uring_tls tls, int rc, const char *function);
+ssize_t swr_v1_uring_tls_recv(swr_v1_uring_tls tls, void *buf, size_t n);
+ssize_t swr_v1_uring_tls_send(swr_v1_uring_tls tls, const void *buf, size_t n);
 #ifdef __cplusplus
 }
 #endif

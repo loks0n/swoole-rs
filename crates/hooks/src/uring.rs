@@ -1010,8 +1010,72 @@ pub unsafe extern "C" fn swr_v1_uring_poll(
     rc
 }
 
+/// A ring host for tests, shared with the TLS transport's.
+#[cfg(test)]
+pub(crate) mod testing {
+    use super::*;
+
+    // A host without coroutines: "suspending" drives the ring until the event
+    // completes, which is what the reactor and the scheduler do together.
+    thread_local! {
+        static ENGINE: std::cell::Cell<*mut Uring> = const { std::cell::Cell::new(ptr::null_mut()) };
+    }
+    unsafe extern "C" fn current() -> *mut c_void {
+        ptr::dangling_mut()
+    }
+    unsafe extern "C" fn instance() -> *mut Uring {
+        ENGINE.with(std::cell::Cell::get)
+    }
+    unsafe extern "C" fn suspend(_coroutine: *mut c_void, event: *mut c_void) {
+        let uring = ENGINE.with(std::cell::Cell::get);
+        let event = event.cast::<Event>();
+        // SAFETY: the test engine is live; the event is in the caller's frame.
+        unsafe {
+            swr_v1_uring_submit(uring);
+            while (*uring).task_num > 0 && !(*event).coroutine.is_null() {
+                let mut cqe = ptr::null_mut();
+                sys::io_uring_wait_cqes(
+                    &raw mut (*uring).ring,
+                    &raw mut cqe,
+                    1,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                );
+                swr_v1_uring_wakeup(uring);
+            }
+        }
+    }
+    unsafe extern "C" fn resume(_coroutine: *mut c_void) {}
+    unsafe extern "C" fn event_running() -> bool {
+        false
+    }
+    unsafe extern "C" fn submit_failed() {}
+    unsafe extern "C" fn timeout_full(_fd: c_int) {}
+    pub(crate) static HOST: Host = Host {
+        current,
+        instance,
+        suspend,
+        resume,
+        event_running,
+        submit_failed,
+        timeout_full,
+    };
+
+    pub(crate) fn with_engine(test: impl FnOnce()) {
+        // SAFETY: HOST is static.
+        let opened = unsafe { swr_v1_uring_open(Config::default(), &raw const HOST) };
+        assert_eq!(opened.status, 0, "io_uring is available");
+        ENGINE.with(|engine| engine.set(opened.uring));
+        test();
+        // SAFETY: nothing is in flight.
+        unsafe { swr_v1_uring_close(opened.uring) };
+        ENGINE.with(|engine| engine.set(ptr::null_mut()));
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::testing::{HOST, with_engine};
     use super::*;
 
     #[test]
@@ -1064,63 +1128,6 @@ mod tests {
         assert_eq!(errno(), libc::ETIMEDOUT, "cancelled reads as a timeout");
         assert_eq!(complete(-(libc::EBADF as isize)), -1, "failure is -1");
         assert_eq!(errno(), libc::EBADF, "other errors pass through");
-    }
-
-    // A host without coroutines: "suspending" drives the ring until the event
-    // completes, which is what the reactor and the scheduler do together.
-    thread_local! {
-        static ENGINE: std::cell::Cell<*mut Uring> = const { std::cell::Cell::new(ptr::null_mut()) };
-    }
-    unsafe extern "C" fn current() -> *mut c_void {
-        ptr::dangling_mut()
-    }
-    unsafe extern "C" fn instance() -> *mut Uring {
-        ENGINE.with(std::cell::Cell::get)
-    }
-    unsafe extern "C" fn suspend(_coroutine: *mut c_void, event: *mut c_void) {
-        let uring = ENGINE.with(std::cell::Cell::get);
-        let event = event.cast::<Event>();
-        // SAFETY: the test engine is live; the event is in the caller's frame.
-        unsafe {
-            swr_v1_uring_submit(uring);
-            while (*uring).task_num > 0 && !(*event).coroutine.is_null() {
-                let mut cqe = ptr::null_mut();
-                sys::io_uring_wait_cqes(
-                    &raw mut (*uring).ring,
-                    &raw mut cqe,
-                    1,
-                    ptr::null_mut(),
-                    ptr::null_mut(),
-                );
-                swr_v1_uring_wakeup(uring);
-            }
-        }
-    }
-    unsafe extern "C" fn resume(_coroutine: *mut c_void) {}
-    unsafe extern "C" fn event_running() -> bool {
-        false
-    }
-    unsafe extern "C" fn submit_failed() {}
-    unsafe extern "C" fn timeout_full(_fd: c_int) {}
-    static HOST: Host = Host {
-        current,
-        instance,
-        suspend,
-        resume,
-        event_running,
-        submit_failed,
-        timeout_full,
-    };
-
-    fn with_engine(test: impl FnOnce()) {
-        // SAFETY: HOST is static.
-        let opened = unsafe { swr_v1_uring_open(Config::default(), &raw const HOST) };
-        assert_eq!(opened.status, 0, "io_uring is available");
-        ENGINE.with(|engine| engine.set(opened.uring));
-        test();
-        // SAFETY: nothing is in flight.
-        unsafe { swr_v1_uring_close(opened.uring) };
-        ENGINE.with(|engine| engine.set(ptr::null_mut()));
     }
 
     #[test]
