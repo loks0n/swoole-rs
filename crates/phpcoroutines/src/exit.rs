@@ -1,18 +1,18 @@
 //! Exit frontend policy; Zend operands, exceptions and termination stay Native.
 #[repr(C)]
-pub struct ExitState {
+pub(crate) struct ExitState {
     pub phase: u32,
     pub flags: i64,
 }
 #[repr(C)]
-pub struct ExitConfig {
+pub(crate) struct ExitConfig {
     pub coroutine: i64,
     pub server: i64,
     pub unused: u32,
     pub constant: u32,
 }
 #[repr(C)]
-pub struct ExitPlan {
+pub(crate) struct ExitPlan {
     pub action: u32,
     pub flags: i64,
 }
@@ -76,7 +76,7 @@ fn modern(state: &mut ExitState, phase: u32, fact: i64) -> u32 {
 /// scalar requested by the previous action. No Zend/server/context/string
 /// pointer enters Rust and no borrow/frame crosses Native effects or bailout.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_exit(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_exit(
     state: *mut ExitState,
     config: *const ExitConfig,
     kind: u32,

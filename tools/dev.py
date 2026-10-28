@@ -893,7 +893,8 @@ def prune(root, older_than_hours):
     hybrid = target / 'hybrid'
     candidates = []
     # Each hybrid build (and its alias) is its own candidate; per-branch builds are the growth.
-    for directory, keep in [(target, PRUNE_KEEP | {'hybrid'}), (hybrid, {'builds'}), (hybrid / 'builds', set())]:
+    for directory, keep in [(target, PRUNE_KEEP | {'hybrid', 'worktrees'}), (hybrid, {'builds'}), (hybrid / 'builds', set()),
+                            (target / 'worktrees', set())]:
         if directory.is_dir():
             candidates += [path for path in directory.iterdir() if path.name not in keep]
     freed, removed = 0, []
@@ -907,7 +908,116 @@ def prune(root, older_than_hours):
             freed += path.lstat().st_size
             path.unlink()
         removed.append(path)
+    if any(path.parent == target / 'worktrees' for path in removed):
+        subprocess.run(['git', 'worktree', 'prune'], cwd=root, check=False)
+    images = docker_images()
+    for image in images[1:] if images and images[0] == docker_image() else images:
+        if subprocess.run(['docker', 'image', 'rm', image], capture_output=True).returncode == 0:
+            removed.append(Path('docker:' + image))
     return removed, freed
+
+
+DOCKER_REPOSITORY = 'swoole-rs-dev'
+
+
+def docker_image():
+    """The dev image for this host's architecture and the current .devcontainer contents."""
+    digest = hashlib.sha256()
+    for path in sorted((ROOT / '.devcontainer').rglob('*')):
+        if path.is_file():
+            digest.update(path.relative_to(ROOT).as_posix().encode() + b'\0' + path.read_bytes())
+    return f'{DOCKER_REPOSITORY}:{os.uname().machine}-{digest.hexdigest()[:12]}'
+
+
+def docker_images():
+    """Local dev images, the current one first; [] without docker."""
+    try:
+        listed = subprocess.run(['docker', 'image', 'ls', DOCKER_REPOSITORY, '--format', '{{.Repository}}:{{.Tag}}'],
+                                capture_output=True, text=True, check=True).stdout.split()
+    except (OSError, subprocess.CalledProcessError):
+        return []
+    current = docker_image()
+    return sorted(listed, key=lambda image: image != current)
+
+
+# Inside the container: the pinned toolchain, the locked crates and the pinned upstream
+# build, then dev.py with the image's PHP extensions unless the command names its own.
+DOCKER_SCRIPT = r'''set -e
+git config --global --add safe.directory '*'
+rustup install >/dev/null
+cargo fetch --locked -q
+python3 tools/build_upstream.py > target/upstream/build-upstream.log 2>&1 || { tail -20 target/upstream/build-upstream.log; exit 1; }
+extensions=
+case " $* " in *" --php-extension "*) ;; *" candidate "*|*" integrate "*)
+    for name in $(sed -n 's/^extension=\(.*\)/\1/p' /etc/php/*/cli/conf.d/*.ini | sed 's/\.so$//' | sort -u); do
+        extensions="$extensions --php-extension $name"
+    done ;;
+esac
+exec python3 tools/dev.py "$@" $extensions
+'''
+
+
+def docker(arguments):
+    """dev.py docker [-- dev.py arguments]: run a dev.py command in the Linux dev image."""
+    if arguments[:1] == ['--']:
+        arguments = arguments[1:]
+    if not arguments:
+        sys.exit('usage: dev.py docker [--] LANE [dev.py options]')
+    if '--phase' in arguments and '--with-prerequisites' not in arguments:
+        arguments = [*arguments, '--with-prerequisites']
+    free = shutil.disk_usage(ROOT).free
+    if free < DOCKER_MIN_FREE:
+        print(f'dev.py docker: only {free / 1e9:.1f} GB free; `python3 tools/dev.py prune` clears old builds',
+              file=sys.stderr)
+    image = docker_image()
+    if subprocess.run(['docker', 'image', 'inspect', image], capture_output=True).returncode:
+        subprocess.run(['docker', 'build', '-t', image, str(ROOT / '.devcontainer')], check=True)
+    common = Path(subprocess.check_output(['git', 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+                                          cwd=ROOT, text=True).strip())
+    architecture = os.uname().machine
+    mounts = [ROOT, common] if not common.is_relative_to(ROOT) else [ROOT]
+    # Linux builds live in target/docker/<arch>/, seen inside at their usual paths, so
+    # the host's own target/upstream and target/hybrid never hold another platform's.
+    private = ROOT / 'target/docker' / architecture
+    builds = []
+    for name in ['upstream', 'hybrid']:
+        (private / name).mkdir(parents=True, exist_ok=True)
+        builds += ['-v', f'{private / name}:{ROOT / "target" / name}']
+    command = ['docker', 'run', '--rm', '--init', '-w', str(ROOT),
+               *[part for mount in mounts for part in ('-v', f'{mount}:{mount}')], *builds,
+               '-v', f'swr-rustup-{architecture}:/usr/local/rustup',
+               '-v', f'swr-cargo-{architecture}:/usr/local/cargo/registry',
+               '-e', f'CARGO_TARGET_DIR={private}/cargo',
+               image, 'bash', '-c', DOCKER_SCRIPT, 'dev.py', *arguments]
+    return subprocess.run(command).returncode
+
+
+DOCKER_MIN_FREE = 20 * 1024**3
+
+
+def with_prerequisites(planned, phases):
+    """`phases` plus, transitively, the phases whose reports they read and the builds whose
+    output they use, in plan order."""
+    names = [name for name, _ in planned]
+    commands = {name: list(map(str, command)) for name, command in planned}
+    # What each phase writes besides its report: the directories it --export s.
+    exports = {name: [command[i + 1] for i, part in enumerate(command[:-1]) if part == '--export']
+               for name, command in commands.items()}
+    selected = set(phases)
+    while True:
+        grown = set(selected)
+        for name in selected:
+            for argument in commands.get(name, []):
+                grown |= {owner for owner in names if owner != name and argument.endswith('/' + owner + '.json')}
+                grown |= {owner for owner, paths in exports.items() if owner != name
+                          and any(argument == path or argument.startswith(path + '/') for path in paths)}
+                if 'build' in names and ('/target/hybrid/' in argument or 'libswoole_rs_ffi' in argument):
+                    grown.add('build')
+                if 'reference-build' in names and '/target/upstream/' in argument:
+                    grown.add('reference-build')
+        if grown == selected:
+            return [name for name in names if name in selected]
+        selected = grown
 
 
 def shard_spec(value):
@@ -948,6 +1058,8 @@ def schedule(commands, dependencies):
 
 
 def main():
+    if sys.argv[1:2] == ['docker']:
+        return docker(sys.argv[2:])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('lane', choices=['edit', 'candidate', 'integrate', 'prune'])
     parser.add_argument('--older-than', type=float, default=24, metavar='HOURS',
@@ -981,6 +1093,8 @@ def main():
     parser.add_argument('--benchmark', action='store_true', help='Run isolated benchmarks after all correctness phases pass')
     parser.add_argument('--compare', action='store_true', help='Also rerun upstream controls in the candidate lane (integration always does)')
     parser.add_argument('--phase', action='append', help='Run named canonical phases only; omitted gates remain explicitly not run and cannot qualify full integration')
+    parser.add_argument('--with-prerequisites', action='store_true',
+                        help='Add the phases each --phase needs: the reports it reads and the builds it uses')
     parser.add_argument('--phase-timeout', type=int, default=1200, metavar='SECONDS',
                         help='Kill a phase (and the processes it started) after this long; it fails')
     parser.add_argument('--shard', type=shard_spec, metavar='I/N',
@@ -1025,6 +1139,8 @@ def main():
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:8]
     reports = ROOT / 'target/reports/dev' / stamp
     planned = plan(args, reports)
+    if args.phase and args.with_prerequisites:
+        args.phase = with_prerequisites(planned, args.phase)
     if args.phase:
         unknown = set(args.phase) - {name for name, _ in planned}
         if unknown:

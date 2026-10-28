@@ -42,9 +42,7 @@ Snapshots and outputs must be valid, aligned, mutually disjoint and disjoint fro
 the handle and storage. No reference survives a call. No reentry, concurrency,
 exception, destructor or Zend escape crosses Rust.
 
-Known difference: upstream deletes DATA before calling its destroy callback, but
-this path calls the callback while the bytes are still live. A callback that reads
-DATA during destruction therefore behaves differently; upstream's behavior there
-is a use-after-free.
+Known difference: this path calls the destroy callback while DATA is still live,
+so a callback may read DATA during destruction. That case is not compared.
 
 Test: `tests/modules/buffer/test_facade.py`.

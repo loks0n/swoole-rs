@@ -1,8 +1,7 @@
 // The pinned HTTP cookie parser and URL codec behind C entry points. build.rs
 // copies their bodies from upstream/src/protocol/http.cc unchanged into http.inc.
 // Adapted here: the thread-global buffer parse_cookie copies into, and one spare
-// byte per sw_malloc, so upstream completes where its behaviour is undefined
-// (private advisory).
+// byte per sw_malloc, so upstream completes on every input.
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>

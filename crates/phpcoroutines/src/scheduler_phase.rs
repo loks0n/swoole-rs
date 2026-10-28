@@ -1,6 +1,6 @@
 //! Inline frontend admission/publication byte; Native owns its storage slot.
 #[repr(C)]
-pub struct SchedulerPhase {
+pub(crate) struct SchedulerPhase {
     pub(crate) started: u8,
 }
 
@@ -14,7 +14,7 @@ pub struct SchedulerPhase {
 /// whole-state mutable reference is formed for a read.
 /// no state borrow/frame spans callbacks, task creation, event wait or bailout.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_phase(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_phase(
     state: *mut SchedulerPhase,
     operation: u32,
 ) -> u8 {

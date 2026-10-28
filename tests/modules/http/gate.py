@@ -169,9 +169,6 @@ def main():
         result = run_isolated([str(binary), *(['url-positive-only'] if args.url_positive_only else [])], timeout=30); report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
         if result.returncode: write_report(args.output, report); print(result.stderr, file=sys.stderr); return 1
         report['outcome'] = json.loads(result.stdout.splitlines()[-1])
-        if not args.url_positive_only:
-            diagnostic = subprocess.run([str(binary), 'diagnose-reference-overflow'], timeout=10, capture_output=True, text=True)
-            report['known_unsafe_reference_diagnostic'] = {'returncode': diagnostic.returncode, 'stderr': diagnostic.stderr, 'expected_heap_buffer_overflow': 'heap-buffer-overflow' in diagnostic.stderr}
         report['passed'] = True
         write_report(args.output, report); print(json.dumps(report['outcome']))
     return 0

@@ -19,8 +19,8 @@ end.
   error before any mutation. Rust does not panic on inputs that meet the contract.
 - Byte APIs return 0 = success, -1 = invalid, -2 = overflow, unless a function
   documents its own convention.
-- Where upstream has undefined or out-of-bounds behavior, Rust rejects the input.
-  Such corrections are listed per section and are not counted as parity.
+- Inputs outside the compared domain are rejected by Rust. They are listed per
+  section and are not counted as parity.
 
 ## Encoding and lookup
 

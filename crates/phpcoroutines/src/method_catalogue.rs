@@ -94,12 +94,12 @@ const TABLE_3: &[Method] = &[
     Method::public_static(c"waitEvent", 11),
 ];
 #[repr(C)]
-pub struct MethodCursor {
+pub(crate) struct MethodCursor {
     next: u32,
     output: u32,
 }
 #[repr(C)]
-pub struct MethodPlan {
+pub(crate) struct MethodPlan {
     done: u32,
     slot: u32,
     handler: u32,
@@ -115,7 +115,7 @@ pub struct MethodPlan {
 /// resolves the binding and writes one stable Zend ABI projection after return;
 /// no Rust frame/borrow survives projection or registration.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_method(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_method(
     cursor: *mut MethodCursor,
     kind: u32,
     capabilities: u8,

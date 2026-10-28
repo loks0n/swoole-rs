@@ -42,44 +42,36 @@ its sub-issues. It may reprioritise or close any ticket.
 
 ## Executor agents
 
-Interchangeable and disposable: no special environment, authentication or setup
-beyond a checkout, `gh` with `GH_TOKEN`, and the toolchain. Executors run in cloud
-environments by default (`.devcontainer/` provides everything, `gh` included; see
-docs/development.md); a local machine runs the goal agent and at most one reviewer,
-so no laptop fills its disk with many agents' builds. Each executor loops:
+Interchangeable and disposable: a checkout, `gh` with `GH_TOKEN` and the
+toolchain are all you need. Executors run in cloud environments by default
+(`.devcontainer/`; see docs/development.md). For Linux-only phases elsewhere, use
+`python3 tools/dev.py docker -- <lane> …` rather than `docker` directly.
 
-1. Claim the first issue `python3 tools/ci.py next` prints: the highest-priority,
-   oldest unblocked `status:ready` issue without `needs:decision` (see Tickets).
-   Check again before each new PR: a ticket that
-   takes several PRs doesn't outrank higher-priority work filed since.
-2. Branch from `main`, commit. The pre-commit hook runs quick checks (~5s warm);
-   enable the hooks with `git config core.hooksPath .githooks`. Never pass
-   `--no-verify`; fix what the hook reports.
-3. Push and open a PR whose body says `Closes #n`. The PR tier runs unit and
-   integration CI (target: under 3 minutes).
-4. Run `gh pr merge --auto --squash <pr>`. GitHub squash-merges it once the
-   required checks (`rust`, `tooling`, about a minute) pass on its head; `main`'s
-   ruleset refuses anything else, including direct pushes. `hybrid` and `gates`
-   keep running but don't block the merge: watch the whole PR tier with
-   `python3 tools/ci.py wait --workflow pr.yml --commit <branch>` (in the
-   background; a branch auto-merge deleted still resolves). If one of them fails because of your change, fix it in a
-   follow-up PR straight away, even if your PR already merged; otherwise the merge
-   tier's red-main rule picks it up. If the PR conflicts, merge `origin/main` and
-   push.
-5. The merge tier runs on `main`: everything above plus every gate, application
-   and original PHPT for all modules. Watch it with `python3 tools/ci.py wait
-   --pr <pr>`, which waits for the merge and then for the merge tier on its merge
-   commit, in the background, and claim the next issue meanwhile;
-   finish steps 5 and 6 when it reports. If that run was cancelled (exit 3), a
-   later run covers your commit; nothing to do. If it failed, handle its **new
-   failures** as described under *Red main* (CI).
-6. Validate the change where it lands, comment what was checked on the issue,
-   and close it. If it delivers only part of what an issue it blocks needs,
-   make the follow-up block that issue too.
-7. File follow-ups as `status:ready` issues with a priority and
-   `follow-up of #n`, as sub-issues of the same goal. Executor follow-ups usually find real issues; they are not
-   gated behind the goal agent.
-8. Repeat.
+You own the ticket you claim, end to end, and you're trusted to use your
+judgment: choose the approach, size each PR, fix what you trip over on the way,
+and file what you find. Decisions on an issue are the goal agent's best guess; when
+the code says otherwise, do what's right and explain it in the PR. Be bold. The
+migration moves fastest when a PR moves a group of state together with the
+operations over it and deletes their upstream bodies, and it only ever moves into
+Rust.
+
+1. Claim the first issue `python3 tools/ci.py next` prints (see Tickets).
+2. Branch from `main` and commit; `git config core.hooksPath .githooks` enables
+   the quick pre-commit checks.
+3. Push, open a PR whose body says `Closes #n`, and run
+   `gh pr merge --auto --squash <pr>`. GitHub merges it once `rust`, `tooling`
+   and `hybrid` pass. `gates` and the merge tier keep running: watch them in the
+   background with `python3 tools/ci.py wait --pr <pr>` and start on the next
+   issue meanwhile. If they show you broke something, fixing it comes next.
+4. Close the issue with a note of what you checked, file follow-ups as
+   `status:ready` sub-issues of the same goal, and repeat.
+
+Nobody needs to approve your next step, so keep the loop going on your own. When
+a question comes up, gather the data (read upstream, reproduce, measure) and make
+the call yourself; you're trusted to choose well, and the PR is where you explain
+the choice. `needs:decision` is only for exceptional cases: changing project policy,
+or a choice that's hard to undo and that the data can't settle. Then add your
+recommendation and work on something else until it's answered.
 
 **Upstream security bugs stay private.** This repo is public. A memory-safety bug
 or other likely vulnerability in upstream Swoole (or any dependency) never goes in
@@ -88,34 +80,6 @@ private `loks0n/swoole-rs-security` repository with the upstream location, cause
 and impact (the reproducer stays local), then carry on; a person handles
 disclosure. Public code, comments and test exclusions don't mark where upstream
 misbehaves either.
-
-Executors never ask the person running them: no question tool, no question or
-answer buttons when wrapping up a turn, and no turn that ends waiting for an
-answer; end each turn with the next wakeup scheduled. Routine next steps (merge on green, close, file
-follow-ups) need no one. For an open question, resolve it yourself first:
-reread the issue, its goal and earlier decisions, and gather data (reproduce,
-measure both engines, read upstream). Only when that can't settle it, add
-`needs:decision` with the evidence and the options, release the claim, and take
-another issue. Size is never a reason to skip a ticket or stop the loop. The
-loop ends only when nothing is claimable.
-
-A decision on an issue is final. If what you find doesn't fit it, implement the
-closest version and say how it differs in the PR. Don't ask again. A turn ends
-with a commit pushed, not a plan: write analysis on the issue only when it
-changes the ticket. A turn's closing message is one line of status for the log:
-no options, no offers and no "say so".
-
-Migration moves code into Rust, never back. Restoring upstream C++ in place of
-Rust needs a goal decision on the issue first; to drop a step machine, move the
-whole operation into Rust.
-
-Migration PRs are large. Each one moves a whole unit: a group of state together
-with every operation over it, or a family of functions, so that their upstream
-bodies are deleted. One function or one decision per PR is too small, and a
-decision moved without its effect deletes nothing. Aim for 500 or more upstream
-lines deleted per PR, and state the count in the PR: `python3 tools/badges.py
---source target/upstream/src --output target/badges` on `main` and on the branch.
-Verify once per PR, not per function.
 
 ## Reviewer agents
 
@@ -150,10 +114,9 @@ Use GitHub's own relationships, not comments or labels:
   of the blocker>`). An issue is blocked while any blocker is open and is
   unblocked by GitHub the moment the last one closes. Claimable issues, in claim
   order: `python3 tools/ci.py next`.
-- **Waiting on a decision:** add `needs:decision` and comment the question (a
-  policy change, an open design choice), after trying to settle it with data.
-  Whoever decides, the goal agent or a person, answers on the issue and removes
-  the label.
+- **Waiting on a decision:** rare (see Executor agents). Add `needs:decision`
+  with the evidence and a recommendation; the goal agent or a person answers on
+  the issue and removes the label.
 - **Waiting on a CI run or measurement:** make the issue that produces it the
   blocker, or file one.
 - **Goals:** a `kind:goal` issue's children are its sub-issues (`gh api -X POST
@@ -185,10 +148,12 @@ ad-hoc scripts, `gh run watch`).
 
 Three tiers: the pre-commit hook (~5s warm), the PR tier (`pr.yml`, under 3 minutes
 warm) and the merge tier (`merge.yml`, on `main`). `main`'s ruleset requires a
-pull request and the PR tier's `rust` and `tooling` checks, so renaming those jobs
-means updating the ruleset in the same PR. `hybrid` (all-modules build, about 20
-minutes) and `gates` are informative, so merging stays fast; breakage they miss
-is caught by the merge tier and the red-main rule. Keep them cached and audit
+pull request and the PR tier's `rust`, `tooling` and `hybrid` checks, so renaming
+those jobs means updating the ruleset in the same PR. `hybrid` (the all-modules
+build, extension load and corpus, a few minutes cached) runs only when a PR
+touches patches, `native/`, the build tools, `.github/` or `.devcontainer/`, and
+is skipped, which counts as passing, otherwise. `gates` is informative; breakage
+it misses is caught by the merge tier and the red-main rule. Keep them cached and audit
 them regularly for waste and duplicate steps; slow or flaky CI is a ticket.
 
 The merge tier runs one at a time, latest wins: while a run is in progress, each

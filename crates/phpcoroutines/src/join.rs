@@ -2,14 +2,14 @@
 use std::cell::UnsafeCell;
 use std::sync::atomic::{AtomicUsize, Ordering, fence};
 
-pub struct JoinOwner {
+pub(crate) struct JoinOwner {
     references: AtomicUsize,
     tokens: UnsafeCell<Vec<usize>>,
     canceled: UnsafeCell<bool>,
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phpcoroutines_join_try_new() -> *mut JoinOwner {
+pub(crate) extern "C" fn swr_v1_phpcoroutines_join_try_new() -> *mut JoinOwner {
     crate::allocation::try_owned(JoinOwner {
         references: AtomicUsize::new(1),
         tokens: UnsafeCell::new(Vec::new()),
@@ -21,7 +21,7 @@ pub extern "C" fn swr_v1_phpcoroutines_join_try_new() -> *mut JoinOwner {
 /// Native capture copies/drops may overlap; payload access may not. Failed
 /// refcount admission leaves ownership unchanged and executes no Native effect.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_join_clone(owner: *const JoinOwner) -> u8 {
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_join_clone(owner: *const JoinOwner) -> u8 {
     // SAFETY: the caller holds a live strong reference for this call.
     let references = unsafe { &(*owner).references };
     u8::from(
@@ -39,7 +39,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_clone(owner: *const JoinOwner
 /// reference. Final drop frees Rust metadata only, never token referents. Native
 /// lifetime/capture validity is authoritative, as for the original `shared_ptr`.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_join_drop(owner: *const JoinOwner) {
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_join_drop(owner: *const JoinOwner) {
     // SAFETY: the caller consumes one live strong reference here.
     if unsafe { (*owner).references.fetch_sub(1, Ordering::Release) } == 1 {
         fence(Ordering::Acquire);
@@ -54,7 +54,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_drop(owner: *const JoinOwner)
 /// interpreted, dereferenced or converted into a pointer in Rust. Ordering is
 /// the qualified Native uintptr_t/pointer-order correspondence on supported ABIs.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_join_try_insert(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_join_try_insert(
     owner: *const JoinOwner,
     token: usize,
 ) -> u8 {
@@ -74,7 +74,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_try_insert(
 /// Same live/serial payload contract as insertion. Erase precedes the returned
 /// emptiness decision, including missing-token/empty-set behavior.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_join_erase_empty(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_join_erase_empty(
     owner: *const JoinOwner,
     token: usize,
 ) -> u8 {
@@ -90,7 +90,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_erase_empty(
 /// # Safety
 /// Owner is held live, payload reads are serial with writes as in Native.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_join_empty(owner: *const JoinOwner) -> u8 {
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_join_empty(owner: *const JoinOwner) -> u8 {
     // SAFETY: the caller holds a live strong reference for this call.
     let owner = unsafe { &*owner };
     // SAFETY: payload reads are serial with writes.
@@ -102,7 +102,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_empty(owner: *const JoinOwner
 /// mutation occurs during traversal. Empty leaves cursor/output untouched.
 /// Iteration does not erase membership before Native clears `on_close` fields.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_join_next(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_join_next(
     owner: *const JoinOwner,
     cursor: *mut usize,
     output: *mut usize,
@@ -128,7 +128,9 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_next(
 /// Native stack-set scope has ended; subsequent captures access only the flag.
 /// Release capacity without dropping token referents or cancellation custody.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_join_release_membership(owner: *const JoinOwner) {
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_join_release_membership(
+    owner: *const JoinOwner,
+) {
     // SAFETY: the caller holds a live strong reference for this call.
     let owner = unsafe { &*owner };
     // SAFETY: membership access is serial and exclusive here.
@@ -138,7 +140,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_release_membership(owner: *co
 /// Owner is held live with original Native serial canceled-flag access. This
 /// publication occurs only after Native callback-field cleanup completes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_join_cancel(owner: *const JoinOwner) {
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_join_cancel(owner: *const JoinOwner) {
     // SAFETY: the caller holds a live strong reference for this call.
     let owner = unsafe { &*owner };
     // SAFETY: canceled-flag access is serial, as in Native.
@@ -148,7 +150,9 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_join_cancel(owner: *const JoinOwne
 /// Owner is held live with original Native serial canceled-flag access. Native
 /// resumes only after this decision returns; no Rust frame/borrow spans resume.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_join_can_resume(owner: *const JoinOwner) -> u8 {
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_join_can_resume(
+    owner: *const JoinOwner,
+) -> u8 {
     // SAFETY: the caller holds a live strong reference for this call.
     let owner = unsafe { &*owner };
     // SAFETY: canceled-flag access is serial, as in Native.

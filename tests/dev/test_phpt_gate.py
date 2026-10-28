@@ -103,6 +103,25 @@ class PhptGate(unittest.TestCase):
         self.assertEqual(recheck(['slow'], rechecked), (['slow'], [], [], []))
         self.assertEqual(pending(['slow'], [row('slow', 'upstream', 'failed')], 'hybrid', results), ['slow'])
 
+    def test_a_mixed_hybrid_gets_more_upstream_reruns(self):
+        def row(test, engine, status):
+            return {'test': test, 'family': 'a', 'engine': engine, 'status': status, 'category': 'other'}
+        tests = ['mixed', 'broken', 'clean']
+        rechecked = [row(t, 'upstream', 'passed') for t in tests for _ in range(3)]
+        rechecked += [row('mixed', 'hybrid', 'passed'), row('mixed', 'hybrid', 'failed')]
+        rechecked += [row('broken', 'hybrid', 'failed')] * 3 + [row('clean', 'hybrid', 'passed')] * 3
+        # Only the hybrid that both passed and failed earns upstream re-runs past three.
+        self.assertEqual(pending(tests, rechecked, 'upstream'), [])
+        self.assertEqual(pending(tests, rechecked, 'upstream-extended'), ['mixed'])
+        self.assertEqual(recheck(['mixed'], rechecked), (['mixed'], [], [], []))
+        # An upstream failure among them makes it flaky on both; nine clean passes keep the regression.
+        racy = rechecked + [row('mixed', 'upstream', 'passed'), row('mixed', 'upstream', 'failed')]
+        self.assertEqual(pending(['mixed'], racy, 'upstream-extended'), [])
+        self.assertEqual(recheck(['mixed'], racy), ([], ['mixed'], [], []))
+        solid = rechecked + [row('mixed', 'upstream', 'passed')] * 6
+        self.assertEqual(pending(['mixed'], solid, 'upstream-extended'), [])
+        self.assertEqual(recheck(['mixed'], solid), (['mixed'], [], [], []))
+
     def test_the_runner_abort_is_inconclusive_on_either_engine(self):
         abort = 'PASS x [tests/x.phpt]\n...\ncorrupted double-linked list\nAborted (core dumped)\n'
         with tempfile.TemporaryDirectory() as temp:

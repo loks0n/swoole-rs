@@ -62,7 +62,7 @@ def main():
     cpp.write_text(prelude+facade.replace('BODY_NAMESPACE','native').replace('// ACTUAL_PORT',native_port).replace('// ACTUAL_BODY',native)+facade.replace('BODY_NAMESPACE','rust').replace('// ACTUAL_PORT',selected_port).replace('// ACTUAL_BODY',rust)+driver)
     exe=out/'actual_resolv';flags=['-fsanitize=address,undefined','-fno-omit-frame-pointer'] if a.sanitize else []
     gate.run(['c++','-std=c++17','-O1',*flags,'-I',ROOT/'native/clients',cpp,archive,'-lpthread','-ldl','-lm','-o',exe]);cases=int(gate.run([exe,out/'private-resolv.conf']).strip())
-    report=dict(passed=True,cases=cases,scope=__doc__,pin=gate.PIN,excluded_native_undefined=['Original32-byte endpoint copy overflow and16-byte config token copy overflow/null strtok are excluded. Rust bounds failures are defensive outcomes, never native parity cases.'],native_sanitized=a.sanitize,rust_sanitized=a.rust_sanitized)
+    report=dict(passed=True,cases=cases,scope=__doc__,pin=gate.PIN,not_compared=['Endpoints and config tokens beyond their fixed sizes are outside the compared domain; Rust stops at bounds there.'],native_sanitized=a.sanitize,rust_sanitized=a.rust_sanitized)
     a.output.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 
 if __name__=='__main__':main()

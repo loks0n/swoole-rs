@@ -2,7 +2,7 @@
 use std::ffi::c_char;
 
 #[repr(C)]
-pub struct SwrPhpInitStep {
+pub(crate) struct SwrPhpInitStep {
     index: u32,
     name: *const c_char,
     length: usize,
@@ -22,7 +22,7 @@ const FUNCTIONS: [&[u8]; 6] = [
 /// Returned names are immutable static bytes. Native registration, lookups and
 /// handler capture/replacement execute after Rust returns, in this exact order.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phphelpers_init_next(
+pub(crate) unsafe extern "C" fn swr_v1_phphelpers_init_next(
     cursor: *mut usize,
     step: *mut SwrPhpInitStep,
 ) -> u32 {
@@ -58,7 +58,7 @@ pub unsafe extern "C" fn swr_v1_phphelpers_init_next(
 }
 
 #[repr(C)]
-pub struct SwrPhpWrapper {
+pub(crate) struct SwrPhpWrapper {
     name: *const c_char,
     length: usize,
     position: i32,
@@ -68,7 +68,10 @@ pub struct SwrPhpWrapper {
 /// Output is aligned writable native storage. Name is immutable static bytes;
 /// native function-table caching and invocation execute after this returns.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phphelpers_wrapper(index: u32, output: *mut SwrPhpWrapper) -> u8 {
+pub(crate) unsafe extern "C" fn swr_v1_phphelpers_wrapper(
+    index: u32,
+    output: *mut SwrPhpWrapper,
+) -> u8 {
     if output.is_null() {
         return 0;
     }
