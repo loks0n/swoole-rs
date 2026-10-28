@@ -244,14 +244,14 @@ index 26c1f52..d1f983a 100644
 +    RETURN_STRING(llhttp_method_name((enum llhttp_method)(ctx->parser).method));
  }
 diff --git a/ext-src/swoole_http_response.cc b/ext-src/swoole_http_response.cc
-index d8cad30..0942ac4 100644
+index 7f299a3..d0baaa1 100644
 --- a/ext-src/swoole_http_response.cc
 +++ b/ext-src/swoole_http_response.cc
-@@ -46,3 +46,2 @@ namespace HttpServer = swoole::http_server;
+@@ -45,3 +45,2 @@ namespace HttpServer = swoole::http_server;
  zend_class_entry *swoole_http_response_ce;
 -static zend_object_handlers swoole_http_response_handlers;
  
-@@ -68,13 +67,4 @@ String *HttpContext::get_write_buffer() {
+@@ -67,13 +66,4 @@ String *HttpContext::get_write_buffer() {
  
 -struct HttpResponseObject {
 -    HttpContext *ctx;
@@ -266,7 +266,7 @@ index d8cad30..0942ac4 100644
 -    return http_response_fetch_object(Z_OBJ_P(zobject))->ctx;
 +    return static_cast<HttpContext *>(swr_v1_phphttp_context(Z_OBJ_P(zobject)));
  }
-@@ -82,58 +72,21 @@ HttpContext *php_swoole_http_response_get_context(const zval *zobject) {
+@@ -81,58 +71,21 @@ HttpContext *php_swoole_http_response_get_context(const zval *zobject) {
  void php_swoole_http_response_set_context(const zval *zobject, HttpContext *ctx) {
 -    http_response_fetch_object(Z_OBJ_P(zobject))->ctx = ctx;
 -}
@@ -341,7 +341,7 @@ index d8cad30..0942ac4 100644
 +PHP_METHOD(swoole_http_response, detach);
 +PHP_METHOD(swoole_http_response, create);
  /**
-@@ -141,11 +94,11 @@ static PHP_METHOD(swoole_http_response, create);
+@@ -140,11 +93,11 @@ static PHP_METHOD(swoole_http_response, create);
   */
 -static PHP_METHOD(swoole_http_response, upgrade);
 -static PHP_METHOD(swoole_http_response, push);
@@ -362,7 +362,7 @@ index d8cad30..0942ac4 100644
 +PHP_METHOD(swoole_http_response, status);
 +PHP_METHOD(swoole_http_response, disconnect);
  SW_EXTERN_C_END
-@@ -186,21 +139,15 @@ const zend_function_entry swoole_http_response_methods[] =
+@@ -185,21 +138,15 @@ const zend_function_entry swoole_http_response_methods[] =
  
 +static_assert(SW_ERROR_PHP_FATAL_ERROR == 503 && SW_ERROR_PHP_RUNTIME_NOTICE == 510 && SW_ERROR_SESSION_CLOSED == 1004 &&
 +                  SW_ERROR_HTTP_CONTEXT_UNAVAILABLE == 7106 && SW_ERROR_SERVER_IS_NOT_REGULAR_FILE == 9013 &&
@@ -394,7 +394,7 @@ index d8cad30..0942ac4 100644
 +    if (message && (always || SWOOLE_G(display_errors))) {
 +        php_error_docref(nullptr, E_WARNING, "%s", message);
      }
-@@ -208,14 +155,57 @@ void php_swoole_http_response_rshutdown() {
+@@ -207,14 +154,57 @@ void php_swoole_http_response_rshutdown() {
  
 -static PHP_METHOD(swoole_http_response, write) {
 -    zend_string *sdata;
@@ -420,7 +420,7 @@ index d8cad30..0942ac4 100644
 +        ctx->detached = 1;
 +    } else if (flag == SWR_PHPHTTP_SEND_TRAILER) {
 +        ctx->send_trailer_ = 1;
-+    }
+     }
 +}
 +
 +void swr_http_host_response_free(void *context) {
@@ -440,7 +440,7 @@ index d8cad30..0942ac4 100644
 +    ctx->response.zobject = nullptr;
 +    ctx->free();
 +}
-+
+ 
 +static void http_response_after(HttpContext *ctx) {
 +    if (ctx->onAfterResponse) {
 +        ctx->onAfterResponse(ctx);
@@ -454,17 +454,17 @@ index d8cad30..0942ac4 100644
 +    if (date_cache.date) {
 +        zend_string_release(date_cache.date);
 +        date_cache = {};
-     }
++    }
 +}
- 
++
 +void swr_http_host_write(void *context, zend_string *sdata, zval *return_value) {
 +    auto *ctx = static_cast<HttpContext *>(context);
  #ifdef SW_HAVE_COMPRESSION
-@@ -229,3 +219,2 @@ static PHP_METHOD(swoole_http_response, write) {
+@@ -228,3 +218,2 @@ static PHP_METHOD(swoole_http_response, write) {
  #endif
 -
      ctx->write(sdata, return_value);
-@@ -614,46 +603,21 @@ bool HttpContext::compress(const char *data, size_t length) {
+@@ -613,46 +602,21 @@ bool HttpContext::compress(const char *data, size_t length) {
  
 -static PHP_METHOD(swoole_http_response, initHeader) {
 -    HttpContext *ctx = http_response_get_and_check_context(ZEND_THIS);
@@ -526,7 +526,7 @@ index d8cad30..0942ac4 100644
 +    auto *ctx = static_cast<HttpContext *>(context);
 +    http_response_after(ctx);
      ctx->end(sdata, return_value);
-@@ -927,104 +891,23 @@ bool HttpContext::set_header(const char *k, size_t klen, zval *zvalue, bool form
+@@ -926,334 +890,77 @@ bool HttpContext::set_header(const char *k, size_t klen, zval *zvalue, bool form
  
 -static PHP_METHOD(swoole_http_response, sendfile) {
 -    HttpContext *ctx = http_response_get_and_check_context(ZEND_THIS);
@@ -586,23 +586,6 @@ index d8cad30..0942ac4 100644
 -        swoole_call_hook((enum swGlobalHookType) PHP_SWOOLE_HOOK_AFTER_RESPONSE, ctx);
 -    }
 -    RETURN_BOOL(ctx->send_file(file, offset, length));
--}
--
--static bool inline http_response_create_cookie(HttpCookie *cookie, zval *zobject) {
--    HttpContext *ctx = http_response_get_and_check_context(zobject);
--
--    zend_string *cookie_str = cookie->toString();
--    if (!cookie_str) {
--        cookie->reset();
--        return false;
--    }
--
--    add_next_index_str(
--        swoole_http_init_and_read_property(
--            swoole_http_response_ce, ctx->response.zobject, &ctx->response.zcookie, SW_ZSTR_KNOWN(SW_ZEND_STR_COOKIE)),
--        cookie_str);
--
--    return true;
 +bool swr_http_host_send_file(void *context, zend_string *file, zend_long offset, zend_long length) {
 +    auto *ctx = static_cast<HttpContext *>(context);
 +    http_response_after(ctx);
@@ -614,7 +597,6 @@ index d8cad30..0942ac4 100644
 -    zend_string *value = nullptr, *path = nullptr, *domain = nullptr, *sameSite = nullptr, *priority = nullptr;
 -    zend_long expires = 0;
 -    zend_bool secure = false, httpOnly = false, partitioned = false;
--    bool result;
 -
 -    ZEND_PARSE_PARAMETERS_START(1, 10)
 -    Z_PARAM_ZVAL(name_or_object)
@@ -630,44 +612,24 @@ index d8cad30..0942ac4 100644
 -    Z_PARAM_BOOL(partitioned)
 -    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
 -
-+zend_string *swr_http_host_cookie(zval *name_or_object,
-+                                  bool encode,
-+                                  zend_string *value,
-+                                  zend_long expires,
-+                                  zend_string *path,
-+                                  zend_string *domain,
-+                                  bool secure,
-+                                  bool http_only,
-+                                  zend_string *same_site,
-+                                  zend_string *priority,
-+                                  bool partitioned) {
-+    HttpCookie local(encode);
-+    HttpCookie *cookie = &local;
-     if (ZVAL_IS_STRING(name_or_object)) {
--        HttpCookie cookie(encode);
--        (&cookie)
--            ->withName(Z_STR_P(name_or_object))
-+        cookie->withName(Z_STR_P(name_or_object))
-             ->withValue(value)
-@@ -1034,250 +917,85 @@ static void http_response_set_cookie(INTERNAL_FUNCTION_PARAMETERS, const bool en
-             ->withSecure(secure)
--            ->withHttpOnly(httpOnly)
--            ->withSameSite(sameSite)
-+            ->withHttpOnly(http_only)
-+            ->withSameSite(same_site)
-             ->withPriority(priority)
-             ->withPartitioned(partitioned);
--        result = http_response_create_cookie(&cookie, ZEND_THIS);
--    } else if (ZVAL_IS_OBJECT(name_or_object)) {
--        HttpCookie *cookie = php_swoole_http_get_cooke_safety(name_or_object);
--        result = http_response_create_cookie(cookie, ZEND_THIS);
-     } else {
+-    if (!ZVAL_IS_STRING(name_or_object) && !ZVAL_IS_OBJECT(name_or_object)) {
 -        php_swoole_error(E_WARNING, "The first argument must be a string or an cookie object");
--        result = false;
-+        cookie = php_swoole_http_get_cooke_safety(name_or_object);
-     }
--
--    RETURN_BOOL(result);
+-        RETURN_FALSE;
+-    }
+-    HttpContext *ctx = http_response_get_and_check_context(ZEND_THIS);
+-    // The Set-Cookie line (crates/httpbindings), or null after a warning.
+-    zend_string *cookie_str = ZVAL_IS_STRING(name_or_object)
+-        ? swr_v1_httpbindings_cookie_line(encode, Z_STR_P(name_or_object), value, expires, path, domain,
+-                                          secure, httpOnly, sameSite, priority, partitioned)
+-        : swr_v1_httpbindings_cookie_object_line(name_or_object);
+-    if (!cookie_str) {
+-        RETURN_FALSE;
+-    }
+-    add_next_index_str(
+-        swoole_http_init_and_read_property(
+-            swoole_http_response_ce, ctx->response.zobject, &ctx->response.zcookie, SW_ZSTR_KNOWN(SW_ZEND_STR_COOKIE)),
+-        cookie_str);
+-    RETURN_TRUE;
 -}
 -
 -static PHP_METHOD(swoole_http_response, cookie) {
@@ -692,13 +654,8 @@ index d8cad30..0942ac4 100644
 -    HttpContext *ctx = http_response_get_and_check_context(ZEND_THIS);
 -    if (UNEXPECTED(!ctx)) {
 -        RETURN_FALSE;
-+    zend_string *cookie_str = cookie->toString();
-+    if (!cookie_str) {
-+        cookie->reset();
-     }
-+    return cookie_str;
-+}
- 
+-    }
+-
 -    ctx->response.status = http_status;
 +void swr_http_host_status(void *context, zend_long status, const char *reason, size_t reason_len) {
 +    auto *ctx = static_cast<HttpContext *>(context);
@@ -846,14 +803,14 @@ index d8cad30..0942ac4 100644
 -    } else {
 -        php_swoole_fatal_error(E_WARNING, "only supports websocket or http2 client");
 -        RETURN_FALSE;
-     }
+-    }
 -}
 -
 -static PHP_METHOD(swoole_http_response, goaway) {
 -    HttpContext *ctx = http_response_get_and_check_context(ZEND_THIS);
 -    if (UNEXPECTED(!ctx)) {
 -        RETURN_FALSE;
--    }
+     }
 -    if (UNEXPECTED(!ctx->http2)) {
 -        php_swoole_fatal_error(E_WARNING, "fd[%ld] is not a HTTP2 conncetion", ctx->fd);
 +    String *buffer = ctx->get_write_buffer();
@@ -949,7 +906,7 @@ index d8cad30..0942ac4 100644
 +    auto *ctx = static_cast<HttpContext *>(context);
 +    return ctx->close(ctx);
  }
-@@ -1441,20 +1159,4 @@ void WebSocket::recv_frame(const WebSocketSettings &settings,
+@@ -1417,20 +1124,4 @@ void WebSocket::recv_frame(const WebSocketSettings &settings,
  
 -static PHP_METHOD(swoole_http_response, recv) {
 -    HttpContext *ctx = php_swoole_http_response_get_context(ZEND_THIS);
@@ -972,7 +929,7 @@ index d8cad30..0942ac4 100644
 +void swr_http_host_recv(void *context, double timeout, zval *return_value) {
 +    auto *ctx = static_cast<HttpContext *>(context);
      WebSocket::recv_frame(
-@@ -1470,16 +1172,5 @@ static PHP_METHOD(swoole_http_response, recv) {
+@@ -1446,16 +1137,5 @@ static PHP_METHOD(swoole_http_response, recv) {
  
 -static PHP_METHOD(swoole_http_response, detach) {
 -    HttpContext *ctx = http_response_get_and_check_context(ZEND_THIS);
@@ -990,7 +947,7 @@ index d8cad30..0942ac4 100644
      zval *zsocket = nullptr;
 -    zend_long fd = -1;
      Server *serv = nullptr;
-@@ -1487,8 +1178,2 @@ static PHP_METHOD(swoole_http_response, create) {
+@@ -1463,8 +1143,2 @@ static PHP_METHOD(swoole_http_response, create) {
  
 -    ZEND_PARSE_PARAMETERS_START(1, 2)
 -    Z_PARAM_ZVAL(zobject)
@@ -999,7 +956,7 @@ index d8cad30..0942ac4 100644
 -    ZEND_PARSE_PARAMETERS_END_EX(RETURN_FALSE);
 -
      if (ZVAL_IS_OBJECT(zobject)) {
-@@ -1572,24 +1257,5 @@ static PHP_METHOD(swoole_http_response, create) {
+@@ -1548,24 +1222,5 @@ static PHP_METHOD(swoole_http_response, create) {
  
 -static PHP_METHOD(swoole_http_response, redirect) {
 -    zval *zurl;

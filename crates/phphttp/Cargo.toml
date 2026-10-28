@@ -8,10 +8,17 @@ description = "PHP Swoole\\Http\\Request and Swoole\\Http\\Response classes over
 
 [features]
 # Needs PHP headers (swoole-rs-zend-sys); without it the crate is empty.
-php = ["dep:swoole-rs-zend", "swoole-rs-zend/php", "dep:libc"]
+php = [
+    "dep:swoole-rs-zend",
+    "swoole-rs-zend/php",
+    "dep:libc",
+    "dep:swoole-rs-httpbindings",
+    "swoole-rs-httpbindings/php",
+]
 
 [dependencies]
 libc = { version = "=0.2.191", optional = true }
+swoole-rs-httpbindings = { path = "../httpbindings", optional = true }
 swoole-rs-zend = { path = "../zend", optional = true }
 
 [lints]

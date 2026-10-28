@@ -85,7 +85,7 @@ fn get_content(call: &Call) {
         return call.set_empty_string();
     }
     // SAFETY: the context's body holds `length` bytes for this call.
-    call.set_string(unsafe { slice::from_raw_parts(body.cast(), length) });
+    call.set_bytes(unsafe { slice::from_raw_parts(body.cast(), length) });
 }
 
 fn get_data(call: &Call) {

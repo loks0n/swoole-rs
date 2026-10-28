@@ -4,19 +4,23 @@ use crate::{
     host::{
         self, CO_SOCKET, COOKIE, Context, DETACHED, END, HEADER, HEADER_KEY_SIZE,
         HTTP_CONTEXT_UNAVAILABLE, HTTP2, SEND_CHUNKED, SEND_TRAILER, SERVER_IS_NOT_REGULAR_FILE,
-        SESSION_CLOSED, TRAILER, UPGRADE, WEBSOCKET, swr_http_host_close, swr_http_host_cookie,
-        swr_http_host_disconnect, swr_http_host_end, swr_http_host_goaway, swr_http_host_mark,
-        swr_http_host_ping, swr_http_host_push, swr_http_host_recv, swr_http_host_redirect,
+        SESSION_CLOSED, TRAILER, UPGRADE, WEBSOCKET, swr_http_host_close, swr_http_host_disconnect,
+        swr_http_host_end, swr_http_host_goaway, swr_http_host_mark, swr_http_host_ping,
+        swr_http_host_push, swr_http_host_recv, swr_http_host_redirect,
         swr_http_host_response_create, swr_http_host_response_free,
         swr_http_host_response_property, swr_http_host_send_file, swr_http_host_set_header,
         swr_http_host_status, swr_http_host_upgrade, swr_http_host_write,
     },
 };
 use std::{ffi::CStr, mem::MaybeUninit, ptr};
+use swoole_rs_httpbindings::{
+    swr_v1_httpbindings_cookie_line, swr_v1_httpbindings_cookie_object_line,
+    swr_v1_httpbindings_file_range,
+};
 use swoole_rs_zend::{
     Call, Class, Invalid, bytes, declare_long, declare_null, handlers, push_string, set_key,
     sys::{IS_OBJECT, IS_STRING, zend_class_entry, zend_function_entry, zend_object, zend_string},
-    type_of,
+    type_of, value_of,
 };
 
 static RESPONSE: Class = Class::new();
@@ -193,7 +197,7 @@ fn send_file(call: &Call) {
         let parsed = call
             .arity(1, 3)
             .and_then(|()| Ok((call.str(1)?, call.long(2, 0)?, call.long(3, 0)?)));
-        let (Some(file), offset, mut length) = parsed.ok()? else {
+        let (Some(file), offset, requested) = parsed.ok()? else {
             return None;
         };
         // SAFETY: a parsed string argument lives for the call.
@@ -210,21 +214,25 @@ fn send_file(call: &Call) {
             host::report(SERVER_IS_NOT_REGULAR_FILE, false, message);
             return None;
         }
-        let size = stat.st_size;
-        if size < offset {
-            host::notice(&format!(
-                "parameter $offset[{offset}] exceeds the file size"
-            ));
-            return None;
-        }
-        if length > size - offset {
-            host::notice(&format!(
-                "parameter $length[{length}] exceeds the file size"
-            ));
-            return None;
-        }
-        if length == 0 {
-            length = size - offset;
+        let mut length = 0;
+        // SAFETY: a writable local.
+        match unsafe {
+            swr_v1_httpbindings_file_range(stat.st_size, offset, requested, &raw mut length)
+        } {
+            0 => {}
+            1 | 3 => {
+                host::notice(&format!(
+                    "parameter $offset[{offset}] exceeds the file size"
+                ));
+                return None;
+            }
+            2 => {
+                host::notice(&format!(
+                    "parameter $length[{requested}] exceeds the file size"
+                ));
+                return None;
+            }
+            _ => return None,
         }
         // SAFETY: a live context and the checked file range.
         call.set_bool(unsafe { swr_http_host_send_file(ctx, file, offset, length) });
@@ -276,21 +284,31 @@ fn set_cookie(call: &Call, encode: bool) {
     let Some(ctx) = checked(call) else {
         return call.set_bool(false);
     };
-    // SAFETY: the parsed arguments of this call.
-    let cookie = unsafe {
-        swr_http_host_cookie(
-            name,
-            encode,
-            nullable(value),
-            expires,
-            nullable(path),
-            nullable(domain),
-            secure,
-            http_only,
-            nullable(same_site),
-            nullable(priority),
-            partitioned,
-        )
+    // The Set-Cookie line (crates/httpbindings), or null after a warning.
+    let cookie = if kind == IS_STRING {
+        // SAFETY: a passed argument is a live zval.
+        let name = unsafe { value_of(name) };
+        // SAFETY: a string argument holds `str_`.
+        let name = unsafe { name.str_ };
+        // SAFETY: the parsed arguments of this call.
+        unsafe {
+            swr_v1_httpbindings_cookie_line(
+                u8::from(encode),
+                name,
+                nullable(value),
+                expires,
+                nullable(path),
+                nullable(domain),
+                u8::from(secure),
+                u8::from(http_only),
+                nullable(same_site),
+                nullable(priority),
+                u8::from(partitioned),
+            )
+        }
+    } else {
+        // SAFETY: an object argument; a non-Cookie one is reported by httpbindings.
+        unsafe { swr_v1_httpbindings_cookie_object_line(name) }
     };
     if cookie.is_null() {
         return call.set_bool(false);

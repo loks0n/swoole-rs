@@ -81,19 +81,6 @@ unsafe extern "C" {
         code: *mut zval,
         return_value: *mut zval,
     );
-    pub(crate) fn swr_http_host_cookie(
-        name_or_object: *mut zval,
-        encode: bool,
-        value: *mut zend_string,
-        expires: zend_long,
-        path: *mut zend_string,
-        domain: *mut zend_string,
-        secure: bool,
-        http_only: bool,
-        same_site: *mut zend_string,
-        priority: *mut zend_string,
-        partitioned: bool,
-    ) -> *mut zend_string;
     pub(crate) fn swr_http_host_status(
         context: *mut Context,
         status: zend_long,

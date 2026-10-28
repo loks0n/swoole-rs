@@ -16,10 +16,10 @@ Check the selected C++ constructor/queue bodies against a Cargo archive:
 
 ```
 python3 tests/modules/memory/fixed_native_construction.py \
-  --source PINNED_TREE --archive ACTUAL_FFI_ARCHIVE --output UNIQUE_JSON
+  --archive HYBRID_BUILD/rust-prefix/lib/libswoole_rs_ffi.a --output UNIQUE_JSON
 ```
 
-It compiles under C++14/17 against the pinned header with model allocation effects
+It compiles the hybrid build's bodies under C++14/17 against its header with model allocation effects
 (no libc interposition) and checks 24 owned and 60 borrowed cases: counts, physical
 size, queue order, payload writes, padding, release choice and canaries. Native
 ASan/UBSan does not instrument the linked Rust archive. Native allocator failure,

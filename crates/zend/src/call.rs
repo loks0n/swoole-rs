@@ -5,10 +5,10 @@ use crate::{
         _zend_expected_type_Z_EXPECTED_ARRAY, _zend_expected_type_Z_EXPECTED_BOOL,
         _zend_expected_type_Z_EXPECTED_DOUBLE, _zend_expected_type_Z_EXPECTED_LONG,
         _zend_expected_type_Z_EXPECTED_STRING, _zend_expected_type_Z_EXPECTED_STRING_OR_NULL,
-        _zval_struct__bindgen_ty_1, IS_ARRAY, IS_DOUBLE, IS_FALSE, IS_LONG, IS_NULL, IS_STRING,
-        IS_TRUE, ZPP_ERROR_WRONG_ARG, add_assoc_long_ex, swr_zend_array_init, swr_zval_copy,
-        swr_zval_empty_string, swr_zval_stringl, zend_execute_data, zend_expected_type,
-        zend_object, zend_parse_arg_bool_slow, zend_parse_arg_double_slow,
+        _zval_struct__bindgen_ty_1, IS_ARRAY, IS_DOUBLE, IS_FALSE, IS_LONG, IS_NULL, IS_OBJECT_EX,
+        IS_STRING, IS_TRUE, ZPP_ERROR_WRONG_ARG, add_assoc_long_ex, swr_zend_array_init,
+        swr_zval_copy, swr_zval_empty_string, swr_zval_str, swr_zval_stringl, zend_execute_data,
+        zend_expected_type, zend_object, zend_parse_arg_bool_slow, zend_parse_arg_double_slow,
         zend_parse_arg_long_slow, zend_parse_arg_str_slow, zend_string, zend_update_property_long,
         zend_value, zend_wrong_parameter_error, zend_wrong_parameters_count_error, zval,
     },
@@ -314,6 +314,25 @@ impl Call {
         unsafe { *self.value = value };
     }
 
+    /// `RETVAL_STR(string)`: the return slot takes over the reference.
+    /// # Safety
+    /// `string` is a live string carrying a reference the caller gives up.
+    pub unsafe fn set_string(&self, string: *mut zend_string) {
+        // SAFETY: the return slot is live for the handler; per the caller,
+        // `string` carries a reference.
+        unsafe { swr_zval_str(self.value, string) };
+    }
+
+    /// `RETURN_ZVAL(ZEND_THIS, 1, 0)`: return `$this` with a new reference.
+    pub fn set_this(&self) {
+        let this = self.this();
+        // SAFETY: a method's live `$this`.
+        unsafe { (*this).gc.refcount += 1 };
+        // SAFETY: the return slot is live for the handler.
+        unsafe { (*self.value).value = zend_value { obj: this } };
+        self.set(IS_OBJECT_EX);
+    }
+
     /// `RETVAL_NULL`.
     #[inline]
     pub fn set_null(&self) {
@@ -351,7 +370,7 @@ impl Call {
 
     /// `RETVAL_STRINGL`: a copy of `bytes`.
     #[inline]
-    pub fn set_string(&self, bytes: &[u8]) {
+    pub fn set_bytes(&self, bytes: &[u8]) {
         // SAFETY: the return slot is live; Zend copies the bytes.
         unsafe { swr_zval_stringl(self.value, bytes.as_ptr().cast(), bytes.len()) };
     }
