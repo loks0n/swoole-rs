@@ -217,11 +217,12 @@ def phase_changes(result):
         if previous:
             # A phase the previous run didn't have is new too: it was added and fails on its first run.
             new = [name for name in result['failed_phases'] if previous.get(name) is not False]
-            # A job with no phases of its own (phpt-gate) fails without any failed phase:
-            # it's new when it succeeded in the previous run.
+            # A job with no phases of its own (phpt-gate) fails without any failed phase.
+            # Like a phase, it's new unless it already failed in the previous run; the
+            # full-gates shards are left out, since their phases speak for them.
             before = job_conclusions(run['databaseId'])
             for job in sorted(job['name'] for job in result.get('jobs', []) if job['state'] == 'failure'):
-                if before.get(job) == 'success':
+                if job.split(' (')[0] != PHASES_JOB and before.get(job) != 'failure':
                     regressed = gate_regressions(result['run']) if job == GATE_JOB else []
                     new.append(f"{job} job" + (f" ({', '.join(regressed)})" if regressed else ''))
             return {**result, 'previous_run': run['url'], 'new_failures': new,

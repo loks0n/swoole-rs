@@ -155,6 +155,15 @@ class Ci(unittest.TestCase):
         # full-gates and tooling were already failing; phpt-gate passed in run 4.
         self.assertEqual(result['new_failures'], ['phpt-gate job (tests/a/one.phpt, tests/b/two.phpt)'])
 
+    def test_full_gates_shards_speak_through_their_phases_and_unseen_jobs_are_new(self):
+        history = [{'databaseId': 7, 'conclusion': 'failure', 'url': 'u7'}, {'databaseId': 4, 'conclusion': 'success', 'url': 'u4'}]
+        phases = {'7': [['timer-model', False]], '4': [['timer-model', True]]}
+        jobs = {'7': [['full-gates (1)', 'failure'], ['brand-new', 'failure']], '4': [['full-gates (1)', 'success']]}
+        code, result, _ = self.ci('status', runs={'c' * 40: ['failure']}, history=history, phases=phases, jobs=jobs)
+        # One breakage, one entry: the shard's failure is its phase; a job the previous run
+        # didn't have is new, as a phase would be.
+        self.assertEqual(result['new_failures'], ['timer-model', 'brand-new job'])
+
     def test_runs_without_phases_keep_the_log_tail(self):
         code, result, _ = self.ci('status', runs={'c' * 40: ['failure']})
         self.assertNotIn('failed_phases', result)
