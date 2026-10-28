@@ -36,8 +36,6 @@ and untested.
 cargo test --locked -p swoole-rs-memory construction_sequences_normal_storage_effects_before_single_publication
 cargo test --locked -p swoole-rs-memory factory_sequences_actual_modes_and_initializes_only_after_native_tokens
 cargo build --locked --release -p swoole-rs-memory
-cc -std=c11 -Wall -Wextra -Werror -Inative/memory tests/modules/memory/table_construction.c \
-  target/release/libswoole_rs_memory.a -lpthread -ldl -lm -o OUT/construction
 OUT/construction
 python3 tests/modules/memory/table_v2_compat.py --source /pinned/reference --output OUT/syntax.json
 ```

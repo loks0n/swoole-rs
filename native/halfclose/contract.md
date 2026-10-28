@@ -51,12 +51,6 @@ error, popping the file chunk so the close marker could be reached after only
 the HTTP header. A negative result with errno EINTR now returns to the write loop
 with the same chunk and offset. EAGAIN and fatal handling are unchanged.
 
-`tests/modules/halfclose/sendfile_interrupt.py --source PATCHED_TREE --output
-REPORT` compiles the extracted method, error classifier, chunk helper and OS
-implementation under ASan/UBSan. Linux also interrupts a real blocking sendfile
-with SIGALRM (no `SA_RESTART`): 5 cases / 15 checks. macOS retries EINTR inside
-its OS wrapper, so only 4 cases / 11 checks run there.
-
 ## Open issues
 
 - Suspended-coroutine HTTP responses lose their output on early FIN (see

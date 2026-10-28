@@ -98,5 +98,4 @@ root. Options:
 
 See also: [kernel.md](kernel.md), [hybrid.md](hybrid.md),
 [FORK.md](FORK.md), [bailout.md](bailout.md),
-[destructor_bailout.md](destructor_bailout.md),
-[oom_observer.md](oom_observer.md).
+[destructor_bailout.md](destructor_bailout.md).

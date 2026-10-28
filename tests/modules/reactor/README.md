@@ -61,7 +61,5 @@ required. Cargo intermediates go in a keyed cache beside `--target` (or under
 
     cd tests/modules/reactor && python3 -m unittest test_*.py
 
-`test_staging.py` checks that overlays apply identically inside an ignored Git
-parent and an independent directory (skipped without `target/upstream/src`).
 `test_buffer_typed_identity.py` and `test_sockets_source.py` read historical
 commits with `git show` and fail in checkouts that lack them.

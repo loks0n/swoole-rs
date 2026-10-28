@@ -60,10 +60,6 @@ private ASan-instrumented Rust module; `--archive EXACT --sanitize --rust-asan`
 instead checks ASan imports in a supplied archive. Rust std, Zend and system
 libraries stay uninstrumented, and Rust ASan does not work on macOS.
 
-`common_positive.py --source PINNED --output UNIQUE.json` runs the complete
-merge/call bodies with positive inert effect recorders (8 merges, 4 calls) at
-C++14/17, with and without ASan/UBSan.
-
 `async_gate.py --source PINNED --output UNIQUE.json [--archive FFI.a]`
 (`phphelpers-async`) runs the original and selected `php_swoole_async` bodies with
 inert recorders (8 dispatch cases), the C11 `async_abi.c` consumer, and C++14/17

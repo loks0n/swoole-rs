@@ -38,10 +38,3 @@ callback is a stub.
 
 ## Suspended coroutine responses (open)
 
-`pipeline_concurrency.py` sends two pipelined requests; the first callback waits
-on a channel value from the second. Both responses arrive in order, which shows
-that serializing requests per connection would deadlock this pattern. With
-`--probe-early-fin` both callbacks finish but both `end()` calls return false and
-the client receives zero bytes. This failure is the suspended-response lifetime
-gap; fixing it needs the worker-terminal contract in
-`docs/http-response-lifetime.md` and [worker-terminal.md](worker-terminal.md).

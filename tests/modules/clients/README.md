@@ -58,27 +58,7 @@ using private peers on ephemeral ports. Families: `lifecycle`, `http`, `dns`,
 `pool`, `pool_fork`, `resolver`, `http_connection`, `http_format`, `coro`,
 `async`, `coro_io`.
 
-```sh
-python3 tests/modules/clients/php_http.py --build-manifest BUILD_MANIFEST \
-  --source-ref HEAD --engine native=/path/native.so --engine hybrid=/path/selected.so \
-  --php-extension curl --php-extension sockets --output target/clients-php-http.json
-```
-
-`php_attestation.py` refuses to run unless the selected extension matches the
-build manifest and the frozen patch section for that family's destination matches
-the current overlay; the extension hash must also stay unchanged across the run.
-`php_lifecycle.py` takes no `--source-ref`. `--native-only` (all except `http`
-and `dns`) runs native controls and reports `passed: false`. `php_dns.py`
-rejects c-ares builds, which bypass the converted codec. `php_async.py` bailout
-mode expects exit 43 on PHP 8.2 and 0 on 8.5; other versions are unsupported.
-`php_pool_fork.py` needs pcntl.
-
 ## Production TU compilation
-
-```sh
-python3 tests/modules/clients/php_tu.py --source /path/to/pinned-git \
-  --sdk FROZEN_CONFIGURED_HEADERS --output target/clients-tu.json [--include PATH]
-```
 
 Rebuilds the five selected PHP destinations from the overlay with a private
 pinned header mirror and the SDK `config.h`, then checks each compiles with

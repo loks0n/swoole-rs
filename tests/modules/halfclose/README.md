@@ -22,10 +22,6 @@ python3 tests/modules/halfclose/pause.py --engine fixed=/absolute/modules/swoole
 python3 tests/modules/halfclose/pause.py --engine fixed=/absolute/modules/swoole.so --coroutines
 python3 tests/modules/halfclose/pause.py --engine fixed=/absolute/modules/swoole.so \
   --tls-cert /absolute/server.crt --tls-key /absolute/server.key --tls-version 1.2
-python3 tests/modules/halfclose/pipeline_concurrency.py --engine fixed=/absolute/modules/swoole.so \
-  --output /absolute/report.json
-python3 tests/modules/halfclose/worker_terminal.py --engine fixed=/absolute/modules/swoole.so \
-  --output /absolute/report.json
 ```
 
 - `gate.py`: queued graceful close for stream/file/end responses, FIN and reset,
@@ -37,9 +33,6 @@ python3 tests/modules/halfclose/worker_terminal.py --engine fixed=/absolute/modu
   close, normal or coroutine callbacks. With `--tls-cert/--tls-key` every case
   requires the full payload and a strict close_notify; unexpected EOF fails.
   `--immediate-close-only` runs the empty-application-queue boundary.
-- `pipeline_concurrency.py`: two pipelined requests whose callbacks must run
-  concurrently; serializing them fails.
-- `worker_terminal.py`: normal response control under PROCESS workers.
 
 ## Original PHPTs
 
@@ -50,11 +43,6 @@ python3 corpus/upstream/run.py --manifest tests/modules/halfclose/pause-original
   --engine fixed=/absolute/modules/swoole.so --require-all
 ```
 
-`normal-originals.json` and `tls-originals.json` select the normal-operation and
-TLS originals the same way. `original-coverage.json` maps each unchanged
-assertion to its limits; see the
-[coverage review](../../../native/halfclose/original-coverage.md).
-
 ## Native method checks
 
 These compile method bodies extracted from a prepared source tree with C++
@@ -62,14 +50,11 @@ ASan/UBSan and drive them through minimal adapters.
 
 ```sh
 python3 tests/modules/halfclose/stale_read.py --source /absolute/prepared/source --output /absolute/report.json
-python3 tests/modules/halfclose/sendfile_interrupt.py --source /absolute/prepared/source --output /absolute/report.json
 python3 tests/modules/halfclose/tls_shutdown.py --source /absolute/prepared/source \
   --cert /absolute/server.crt --key /absolute/server.key --output /absolute/report.json
 ```
 
 - `stale_read.py`: `ReactorThread_onRead` with a cached EOF after close queued.
-- `sendfile_interrupt.py`: `handle_sendfile`/`catch_error` with injected EINTR,
-  EAGAIN and EPIPE. Linux also interrupts a real blocking sendfile with SIGALRM.
 - `tls_shutdown.py`: TLS shutdown/close methods over real OpenSSL memory BIOs and
   nonblocking socketpairs (ordering, one-way, peer-first, quiet shutdown,
   backpressure retry, peer death) plus five injected error results. On Mac add
@@ -83,10 +68,6 @@ These probes exit nonzero on purpose. Do not count them as passing:
   still reset or time out.
 - `prequeue.py --probe-coroutines` and `--probe-unordered`: suspended coroutine
   responses and non-ordered dispatch are outside the fix.
-- `pipeline_concurrency.py --probe-early-fin`: fails on both hosts.
-- `worker_terminal.py --probe-worker-kill`, `--probe-retiring-worker-kill`,
-  `--probe-worker-exit-zero`: worker death with an in-flight response leaves the
-  client hanging. `--probe-worker-drain` is the graceful control.
 
 Suspended HTTP response ownership is blocked on the worker-generation contract in
 [http-response-lifetime.md](../../../docs/http-response-lifetime.md).

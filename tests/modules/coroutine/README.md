@@ -32,7 +32,6 @@ python3 tests/modules/coroutine/{tokens,stack,timing,scheduler}.py --source PINN
 python3 tests/modules/coroutine/{creation,entry}.py --source PINNED_TREE --archive ARCHIVE --report OUT.json
 python3 tests/modules/coroutine/production_stack.py --source PINNED_TREE --source-ref REF \
   --selected-export SELECTED/export.json --native-export NATIVE/export.json --output OUT.json
-python3 tests/modules/coroutine/thread_context_audit.py --source PINNED_TREE --output OUT.json
 ```
 
 - `compile_gate.py` compiles original, patched and disabled `base`, `channel`,
@@ -57,8 +56,6 @@ python3 tests/modules/coroutine/thread_context_audit.py --source PINNED_TREE --o
   `std::unordered_map`: its iteration order is unspecified upstream (#357).
 - `production_stack.py` builds the Context constructor/destructor/query into a
   private PHP addon against each engine's SDK and checks marker observations.
-- `thread_context_audit.py` runs the pinned thread-context baton bodies with an
-  error-checking mutex; it exits non-zero if the diagnostic fails.
 
 ## Benchmarks
 
@@ -81,8 +78,7 @@ verifies the prepared binary/library hashes and runs alternating timed trials.
 - `channel_state_sdk.py --backend ucontext` fails on the native unused-`sp`
   `-Werror` warning.
 - Optional thread-context is unsupported; `core.py` rejects a config defining
-  `SW_USE_THREAD_CONTEXT`, and `thread_context_audit.py` reports the expected
-  ownership violations.
+  `SW_USE_THREAD_CONTEXT`.
 - Not covered: real Coroutine creation/switching through Rust paths, callbacks,
   lifetime and allocation failure, ZTS, Linux runtime, and performance.
 

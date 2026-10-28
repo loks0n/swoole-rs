@@ -55,8 +55,3 @@ address of its private `rewrite_rules` field.
 
 No Rust borrow or pointer into live form storage crosses a native effect.
 
-Tests: `tests/modules/http/request_v2_compat.py` (C++14/17 SDK compile in legacy,
-HTTP-only, Ports-only, paired and capability-off modes) and `request_v2_model.py`
-(extracted facade/method bodies against the Rust owner, original Request metadata
-comparisons, plus the C11 upload/snapshot consumer). Parser, IO and active-resource
-paths are not executed by these models.

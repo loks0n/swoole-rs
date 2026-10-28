@@ -48,9 +48,6 @@ python3 tests/modules/locks/gate.py --source target/upstream/src \
 - `threads.py --engine ... --php-extension sockets`: real ZTS threads with a
   barrier, 20,000 increments per Thread Atomic width and 2,000 mutex-protected
   updates. Requires ZTS engines; also used by `tests/modules/integration/zts.py`.
-- `order.py --source S --engine ...`: instrumented admission/acquisition/receipt
-  traces for the `coroutine_lock/lock.phpt` topology (`order.php`), modes
-  `parallel` and `two-first`.
 - `constructor.py --source S --archive A --output R [--sanitize] [--rust-asan]`:
   lock constructors with faults injected at the native pthread init/attribute/
   pshared boundaries; checks no leaked storage, attribute cleanup, exception

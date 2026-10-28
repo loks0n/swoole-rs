@@ -53,10 +53,6 @@ bytes, return values and published state.
 - `queue_calls.py`: send and queue cleanup, `std::queue` against the Rust
   `VecDeque`, including short/negative IO, nested sends and draining error
   callbacks.
-- `queue_failure_calls.py`: builds a `cfg(test)` Rust archive with an allocator
-  that fails at chosen owner/growth calls, then runs the queue functions, the C++
-  retry/handler wrapper and `Client::send`/cleanup. This is allocator-boundary
-  coverage, not real system OOM.
 - `window_calls.py`: server/client parser prefixes, WINDOW_UPDATE bodies and
   receive-flow fragments, with IO doubles that mutate window state.
 - `receive_calls.py`: the server DATA case, including buffer-limit rejection,
@@ -75,8 +71,6 @@ bytes, return values and published state.
 - `send_calls.py`: server `send_header`/`send_body` and client `send_data`,
   including frame limits, chunk bytes and page-size splits.
 - `connection_calls.py`: client `connect` and `close`.
-- `decompression_calls.py`: client decompression with real zlib, both gzip
-  levels, fragments and corrupt input.
 - `file_calls.py`: file/range responses and the shared completion adapter.
 - `syntax_gate.py`: syntax-checks all three production TUs with Rust on and off,
   using pinned headers exported into a private tree so untracked checkout

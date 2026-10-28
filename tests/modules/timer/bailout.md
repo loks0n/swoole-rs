@@ -37,8 +37,7 @@ python3 -m pytest tests/modules/timer/test_bailout.py -k test_callback \
 
 - macOS PHP 8.5: 32/32 pass.
 - Linux PHP 8.2: 30 cases match; the noncoroutine uncleared repeating OOM case
-  times out on both original and candidate, so the gate fails. See
-  [oom_observer.md](oom_observer.md).
+  times out on both original and candidate, so the gate fails.
 
 Captured-object destructor bailouts are covered by
 [destructor_bailout.md](destructor_bailout.md).

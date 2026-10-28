@@ -31,10 +31,6 @@ upstream sources; run it directly to rewrite `migration/patches/wrappers/`.
 
 ## Other gates
 
-- `disposition.py` and `event_init.py` take the same arguments as
-  `response.py` and reuse its runner with a different extracted body:
-  multipart header-value disposition decoding (41,025 cases) and
-  `swoole_event_init` ordering/admission (16,436 cases).
 - `core.py --source S --config CONFIG_H --archive A --build-root DIR --output R [--library-only] [--openssl-root P]`:
   builds upstream and wrappers-only native trees with CMake and runs the
   unchanged reactor/timer GTests and the four HTTP wrapper tests (parser1,
@@ -44,22 +40,6 @@ upstream sources; run it directly to rewrite `migration/patches/wrappers/`.
   Server/Context/SyncClient application against both native libraries,
   comparing response bytes, public maps, form/file content and file cleanup
   over five scenarios. Each run verifies the loaded library path and hash.
-- `diagnose.py --source S --core-root DIR --observations NATIVE_REPORT --output R`:
-  same scenarios with the reference's two uninitialized pointers initialized;
-  must match the Rust observations from a `native.py` report.
-- `fdopen.py --source S --core-root DIR --output R --scenario stream|map-registration|success|write|short-write [--fail-at N]`:
-  multipart upload callbacks with faults injected at fdopen, map-registration
-  allocation and fwrite; checks fd closure, temp-file removal, errno and the
-  files map.
-- `disposition_loaded.py --selected EXPORT_DIR --output R [--php P] [--ffi-extension FFI_SO]`:
-  calls the loaded DSO's disposition function via PHP FFI (1,216 cases); the
-  DSO must match `export.json`.
-- `header_transfer_model.py --core CONFIGURED_SRC --output R [--include DIR]`:
-  test-only Rust ordered-header store handing off into the real public
-  `std::unordered_map`, built as C++14 and C++17 under ASan/UBSan.
-- `sockets_build.py --output R --module wrappers --dev --jobs 2` (or
-  `--backend upstream --dev --jobs 2`): runs the shared hybrid builder with
-  `--enable-sockets` and checks `SW_SOCKETS` is defined.
 - `benchmark.py --prepare DIR --core-root CORE [--openssl-root P]`, then
   `benchmark.py --prepared DIR [--output R]`: event add/update consumer.
   Preparation verifies loaded images without reading the clock; `--prepared`
@@ -77,11 +57,6 @@ python3 tests/modules/wrappers/response.py --source target/upstream/src \
 
 ## Known failures
 
-- `native.py`: the pristine reference SIGSEGVs on the GET, empty-query and
-  urlencoded-form scenarios (uninitialized `mt_parser`/`form_data_buffer` in
-  upstream `ContextImpl`); multipart and file pass and match Rust. The paired
-  gate fails. `diagnose.py` shows all five match Rust once those pointers are
-  initialized.
 - `core.py` on macOS: the upstream HTTP test unit uses Linux `stat.st_mtim`
   and does not compile; only `--library-only` works there.
 - On Linux Docker bind mounts, libtool's install copy can fail with
