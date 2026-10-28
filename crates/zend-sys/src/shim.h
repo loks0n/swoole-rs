@@ -20,4 +20,19 @@ zend_class_entry *swr_zend_register_class(const char *name, size_t length,
  * depends on the PHP version. */
 void swr_zend_class_set_create_object(zend_class_entry *ce,
                                       zend_object *(*create)(zend_class_entry *ce));
+
+/* emalloc and efree (macros taking file and line in debug builds). */
+void *swr_zend_emalloc(size_t size);
+void swr_zend_efree(void *ptr);
+
+/* Z_TRY_ADDREF_P and Z_TRY_DELREF_P. */
+void swr_zval_try_addref(zval *value);
+void swr_zval_try_delref(zval *value);
+
+/* array_init. */
+void swr_zend_array_init(zval *value);
+
+/* Swoole's sw_zend_register_class_alias for a name without a leading
+ * backslash: a lowercased, interned, persistent alias. */
+int swr_zend_register_class_alias(const char *name, size_t length, zend_class_entry *ce);
 #endif

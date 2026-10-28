@@ -7,7 +7,6 @@ extern "C" {
 #endif
 /* Copied metadata only. No allocation, callback, native storage, Zend value or
  * suspension crosses these calls. Return before observing further native facts. */
-intptr_t swr_v1_phpcollections_capacity(intptr_t);
 uint32_t swr_v1_phpcollections_kind(int64_t);
 uint8_t swr_v1_phpcollections_string_invalid(int64_t, int64_t);
 uint8_t swr_v1_phpcollections_key_warning(size_t, size_t);
@@ -21,20 +20,28 @@ uint32_t swr_v1_phpcollections_write_action(int64_t kind, uint8_t initialize, ui
 double swr_v1_phpcollections_float_update(double value, double amount, uint8_t subtract);
 /* Returns0 without writing on null output/undefined signed overflow domain. */
 uint8_t swr_v1_phpcollections_integer_update(long value, long amount, uint8_t subtract, long *output);
-enum SwrCollectionChannelAction {
-    SWR_COLLECTION_INVALID=0, SWR_COLLECTION_RETAIN=1, SWR_COLLECTION_DUP=2,
-    SWR_COLLECTION_PUSH=3, SWR_COLLECTION_OK=4, SWR_COLLECTION_ERROR=5,
-    SWR_COLLECTION_TRUE=6, SWR_COLLECTION_RELEASE=7, SWR_COLLECTION_FREE=8,
-    SWR_COLLECTION_FALSE=9, SWR_COLLECTION_POP=10, SWR_COLLECTION_RESULT=11,
-    SWR_COLLECTION_DONE=12
+/* Swoole\Coroutine\Channel (Rust): C++ lends the coroutine Channel's
+ * operations; Rust registers the class and its zim_swoole_channel_coro_*
+ * methods are the table's handlers. */
+struct _zend_function_entry;
+struct swr_v1_phpcollections_channel_ops {
+    void *(*create)(size_t capacity);
+    void (*destroy)(void *chan);
+    uint8_t (*push)(void *chan, void *data, double timeout);
+    void *(*pop)(void *chan, double timeout);
+    void *(*pop_data)(void *chan);
+    int32_t (*error)(void *chan);
+    uint8_t (*close)(void *chan);
+    size_t (*length)(void *chan);
+    uint8_t (*is_empty)(void *chan);
+    uint8_t (*is_full)(void *chan);
+    size_t (*consumers)(void *chan);
+    size_t (*producers)(void *chan);
+    void (*unconstructed)(void);
 };
-/* operation push=1/pop=2; stage0 initially. Increment only after native action.
- * success is freshly observed at PUSH/POP; never query channel error on success. */
-uint32_t swr_v1_phpcollections_channel_next(uint32_t operation, uint32_t stage, uint8_t success);
-/* Packed action bytes, least significant first; phase0 initial, phase1 freshly
- * observed push/pop result. Native consumes the plan after Rust returns and
- * refreshes it only after PUSH/POP. Zero/unknown actions are invariant failures. */
-uint64_t swr_v1_phpcollections_channel_plan(uint32_t operation, uint32_t phase, uint8_t success);
+void swr_v1_phpcollections_channel_minit(const struct _zend_function_entry *methods, int32_t module_number,
+                                         uint8_t use_shortname,
+                                         const struct swr_v1_phpcollections_channel_ops *ops);
 /* Copied whole value-operation sequence.1 scalar read,2 array read,3 write.
  * Low byte first; row/Zend effects execute only after return. */
 enum SwrCollectionValueAction {
