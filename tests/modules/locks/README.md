@@ -1,9 +1,10 @@
 # Locks validation
 
 Opt-in Rust implementations (feature bit 1024) cover mutex, reader/writer,
-spin, barrier and coroutine-lock policy. PHP Lock, Thread Lock, Atomic/Long and
-Thread Atomic/Long keep their native Zend facades and call Rust through the
-real classes and atomic exports. See
+spin, barrier and coroutine-lock policy. PHP Lock and Thread Lock keep their
+native Zend facades and call Rust through the real classes. Atomic/Long and
+Thread Atomic/Long are Rust classes (`crates/phplocks`, see
+[docs/zend.md](../../../docs/zend.md)) over the same atomic words. See
 [native/locks/contract.md](../../../native/locks/contract.md) for geometry,
 ownership, timeout, ordering, fork and coroutine contracts, and
 [PLATFORMS.md](PLATFORMS.md) for the macOS/Linux platform guard.
