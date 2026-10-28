@@ -100,6 +100,7 @@ typedef struct {
     uint8_t close_wait;
     uint8_t nonblock;
     uint8_t ssl_send;
+    uint8_t send_wait;
 } swr_v1_socket_output;
 typedef struct {
     const uint8_t *data;
@@ -214,12 +215,26 @@ size_t swr_v1_reactor_registry_count(const swr_v1_reactor_registry *);
 int swr_v1_reactor_registry_foreach(const swr_v1_reactor_registry *, void *context, void (*visit)(void *, int fd, void *socket));
 /* Rebuilds the snapshot from the registry; the entry count. */
 int swr_v1_reactor_poll_fill(swr_v1_reactor_poll_snapshot *, const swr_v1_reactor_registry *);
-typedef struct { uint32_t phase; } swr_v1_reactor_flush_state;
 typedef struct { int64_t seconds, nanoseconds; uint32_t finite; } swr_v1_reactor_kqueue_timeout_result;
 // Independent zero state; requests10running/11EINTR/12uring-handler/13once.
 swr_v1_reactor_kqueue_timeout_result swr_v1_reactor_kqueue_timeout(int32_t, uint32_t);
-// Independent zero-initialized workflow states; effects1..7, observations10..15.
-int32_t swr_v1_reactor_flush_workflow(swr_v1_reactor_flush_state *, int32_t);
+/* Reactor::_writable_callback and drain_write_buffer over the socket's block and its
+ * output queue (null when there's none); the native effects below. drain also needs
+ * wait_writable and removed. */
+typedef struct {
+    void *context;
+    int (*front_kind)(void *); /* typed_front().kind or front()->type */
+    int (*handle_send)(void *);
+    int (*handle_sendfile)(void *);
+    int (*close)(void *);
+    int (*trigger_close)(void *);
+    void (*delete_timer)(void *); /* swoole_timer_del(send_timer) */
+    void (*remove_write_event)(void *);
+    int (*wait_writable)(void *);
+    bool (*removed)(void *);
+} swr_v1_reactor_flush_ops;
+int swr_v1_reactor_flush(swr_v1_socket_output *output, swr_v1_buffer *buffer, const swr_v1_reactor_flush_ops *ops);
+void swr_v1_reactor_drain(swr_v1_socket_output *output, swr_v1_buffer *buffer, const swr_v1_reactor_flush_ops *ops);
 typedef struct { uint32_t offset, length, close_wait; } swr_v1_stream_view_action;
 int32_t swr_v1_stream_prepare(uint8_t *, size_t);
 int32_t swr_v1_stream_length(const uint8_t *, size_t);
@@ -358,7 +373,6 @@ static_assert(sizeof(swr_v1_reactor_builtin_reply) == 8, "reactor builtin reply 
 static_assert(sizeof(swr_v1_reactor_init_state) == 4, "reactor init state ABI");
 static_assert(sizeof(swr_v1_reactor_backend_plan) == 12, "reactor backend plan ABI");
 static_assert(sizeof(swr_v1_stream_view_action) == 12, "stream view ABI");
-static_assert(sizeof(swr_v1_reactor_flush_state) == 4, "flush state ABI");
 #include <functional>
 namespace swoole {
 class Reactor;
