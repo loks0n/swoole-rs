@@ -19,12 +19,14 @@ mod interfaces;
 use std::{ffi::c_char, ptr, sync::OnceLock};
 use swoole_rs_zend::{
     Class,
-    sys::{zend_array, zend_ce_error, zend_ce_exception, zend_class_entry, zval},
+    sys::{
+        zend_array, zend_ce_error, zend_ce_exception, zend_class_entry, zend_object_handlers, zval,
+    },
 };
 
 /// What only C++ can reach (`swr_v1_phpswoole_ops`).
 #[repr(C)]
-pub struct Ops {
+pub struct HostOps {
     /// `swoole_get_last_error()`.
     last_error: unsafe extern "C" fn() -> i32,
     /// `swoole_set_last_error(code)`.
@@ -67,17 +69,18 @@ pub struct Ops {
     ),
 }
 
-static OPS: OnceLock<&'static Ops> = OnceLock::new();
+static OPS: OnceLock<&'static HostOps> = OnceLock::new();
 static EXCEPTION: Class = Class::new();
 static ERROR: Class = Class::new();
 
-fn ops() -> &'static Ops {
+fn ops() -> &'static HostOps {
     // Functions run only after MINIT stored the table.
     OPS.get().copied().unwrap_or_else(|| std::process::abort())
 }
 
 /// MINIT: the global constants, then `Swoole\Exception` and `Swoole\Error`,
-/// whose entries are written to `exception` and `error` for C++.
+/// whose entries (and `Swoole\Exception`'s handlers, which its subclasses
+/// copy) are written to the C++ globals.
 /// # Safety
 /// Called once, at MINIT, with the module's number, a static operations table
 /// and writable class-entry globals.
@@ -85,8 +88,9 @@ fn ops() -> &'static Ops {
 pub unsafe extern "C" fn swr_v1_phpswoole_minit(
     module_number: i32,
     flags: u32,
-    ops: *const Ops,
+    ops: *const HostOps,
     exception: *mut *mut zend_class_entry,
+    exception_handlers: *mut zend_object_handlers,
     error: *mut *mut zend_class_entry,
 ) {
     // SAFETY: per the caller, a static table.
@@ -99,6 +103,10 @@ pub unsafe extern "C" fn swr_v1_phpswoole_minit(
     let parent = unsafe { zend_ce_exception };
     // SAFETY: MINIT, extending Exception, with no methods.
     unsafe { EXCEPTION.register_child(c"Swoole\\Exception", ptr::null(), parent, |_, _| {}) };
+    // SAFETY: registered above, so its handlers are set.
+    let handlers = unsafe { *EXCEPTION.handlers() };
+    // SAFETY: per the caller, a writable global; subclasses copy it.
+    unsafe { exception_handlers.write(handlers) };
     // SAFETY: Zend registers Error before any extension's MINIT.
     let parent = unsafe { zend_ce_error };
     // SAFETY: MINIT, extending Error, with no methods.

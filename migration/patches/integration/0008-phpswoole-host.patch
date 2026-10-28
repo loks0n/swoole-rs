@@ -1,5 +1,5 @@
 diff --git a/ext-src/php_swoole.cc b/ext-src/php_swoole.cc
-index 6aaf4c5..1feee46 100644
+index 6aaf4c5..074ac6d 100644
 --- a/ext-src/php_swoole.cc
 +++ b/ext-src/php_swoole.cc
 @@ -56,5 +56,2 @@ END_EXTERN_C()
@@ -58,14 +58,11 @@ index 6aaf4c5..1feee46 100644
 +PHP_FUNCTION(swoole_substr_json_decode);
 +PHP_FUNCTION(swoole_internal_call_user_shutdown_begin);
  static PHP_FUNCTION(swoole_implicit_fn);
-@@ -335,6 +328,3 @@ zend_module_entry swoole_module_entry = {
- zend_class_entry *swoole_exception_ce;
--zend_object_handlers swoole_exception_handlers;
--
+@@ -338,3 +331,2 @@ zend_object_handlers swoole_exception_handlers;
  zend_class_entry *swoole_error_ce;
 -zend_object_handlers swoole_error_handlers;
  
-@@ -607,2 +597,40 @@ int sw_module_number() {
+@@ -607,2 +599,40 @@ int sw_module_number() {
  
 +static const swr_v1_phpswoole_ops phpswoole_ops = {
 +    [] { return (int32_t) swoole_get_last_error(); },
@@ -106,7 +103,7 @@ index 6aaf4c5..1feee46 100644
 +};
 +
  static void sw_after_fork(void *args) {
-@@ -749,343 +777,35 @@ PHP_MINIT_FUNCTION(swoole) {
+@@ -749,343 +779,36 @@ PHP_MINIT_FUNCTION(swoole) {
  
 -    // clang-format off
 -    // MUST be on the same line for the inspection tool to recognize correctly
@@ -193,8 +190,7 @@ index 6aaf4c5..1feee46 100644
 -    SW_REGISTER_LONG_CONSTANT("SWOOLE_TLSv1_2_METHOD", SW_TLSv1_2_METHOD);
 -    SW_REGISTER_LONG_CONSTANT("SWOOLE_TLSv1_2_SERVER_METHOD", SW_TLSv1_2_SERVER_METHOD);
 -    SW_REGISTER_LONG_CONSTANT("SWOOLE_TLSv1_2_CLIENT_METHOD", SW_TLSv1_2_CLIENT_METHOD);
-+    flags |= SWR_PHPSWOOLE_BROTLI;
- #endif
+-#endif
 -
 -#ifdef SW_SUPPORT_DTLS
 -    SW_REGISTER_LONG_CONSTANT("SWOOLE_DTLS_SERVER_METHOD", SW_DTLS_SERVER_METHOD);
@@ -214,7 +210,8 @@ index 6aaf4c5..1feee46 100644
 -     */
 -#ifdef HAVE_SSL3
 -    SW_REGISTER_LONG_CONSTANT("SWOOLE_SSL_SSLv3", SW_SSL_SSLv3);
--#endif
++    flags |= SWR_PHPSWOOLE_BROTLI;
+ #endif
 -    SW_REGISTER_LONG_CONSTANT("SWOOLE_SSL_TLSv1", SW_SSL_TLSv1);
  #ifdef TLS1_1_VERSION
 -    SW_REGISTER_LONG_CONSTANT("SWOOLE_SSL_TLSv1_1", SW_SSL_TLSv1_1);
@@ -465,9 +462,10 @@ index 6aaf4c5..1feee46 100644
  #endif
 -
 -    // clang-format on
-+    swr_v1_phpswoole_minit(module_number, flags, &phpswoole_ops, &swoole_exception_ce, &swoole_error_ce);
++    swr_v1_phpswoole_minit(
++        module_number, flags, &phpswoole_ops, &swoole_exception_ce, &swoole_exception_handlers, &swoole_error_ce);
  
-@@ -1108,8 +828,2 @@ PHP_MINIT_FUNCTION(swoole) {
+@@ -1108,8 +831,2 @@ PHP_MINIT_FUNCTION(swoole) {
  
 -    SW_INIT_CLASS_ENTRY_EX2(
 -        swoole_exception, "Swoole\\Exception", nullptr, nullptr, zend_ce_exception, zend_get_std_object_handlers());
@@ -476,7 +474,7 @@ index 6aaf4c5..1feee46 100644
 -        swoole_error, "Swoole\\Error", nullptr, nullptr, zend_ce_error, zend_get_std_object_handlers());
 -
      /** <Sort by dependency> **/
-@@ -1597,178 +1311,2 @@ PHP_RSHUTDOWN_FUNCTION(swoole) {
+@@ -1597,178 +1314,2 @@ PHP_RSHUTDOWN_FUNCTION(swoole) {
  
 -static PHP_FUNCTION(swoole_version) {
 -    RETURN_STRING(SWOOLE_VERSION);
@@ -655,7 +653,7 @@ index 6aaf4c5..1feee46 100644
 -    RETURN_LONG(errno);
 -}
  
-@@ -1783,217 +1321,2 @@ PHP_FUNCTION(swoole_set_process_name) {
+@@ -1783,217 +1324,2 @@ PHP_FUNCTION(swoole_set_process_name) {
  
 -static PHP_FUNCTION(swoole_get_local_ip) {
 -    struct ifaddrs *ipaddrs;
@@ -873,11 +871,3 @@ index 6aaf4c5..1feee46 100644
 -}
 -
  /**
-diff --git a/ext-src/php_swoole_private.h b/ext-src/php_swoole_private.h
-index 3b1bd5c..8c8a553 100644
---- a/ext-src/php_swoole_private.h
-+++ b/ext-src/php_swoole_private.h
-@@ -187,3 +187,2 @@ extern zend_class_entry *swoole_server_port_ce;
- extern zend_class_entry *swoole_exception_ce;
--extern zend_object_handlers swoole_exception_handlers;
- extern zend_class_entry *swoole_error_ce;

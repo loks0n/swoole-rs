@@ -212,6 +212,7 @@ enum {
 struct _zval_struct;
 struct _zend_array;
 struct _zend_class_entry;
+struct _zend_object_handlers;
 typedef struct swr_v1_phpswoole_ops {
     int32_t (*last_error)(void);
     void (*set_last_error)(int32_t code);
@@ -234,7 +235,8 @@ typedef struct swr_v1_phpswoole_ops {
     void (*json_decode)(struct _zval_struct *value, const char *str, size_t length, int64_t options, int64_t depth);
 } swr_v1_phpswoole_ops;
 void swr_v1_phpswoole_minit(int32_t module_number, uint32_t flags, const swr_v1_phpswoole_ops *ops,
-                            struct _zend_class_entry **exception, struct _zend_class_entry **error);
+                            struct _zend_class_entry **exception, struct _zend_object_handlers *exception_handlers,
+                            struct _zend_class_entry **error);
 
 #ifdef __cplusplus
 }
