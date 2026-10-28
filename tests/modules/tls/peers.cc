@@ -236,11 +236,11 @@ static void listen_empty_and_malformed() {
         BIO *bio = BIO_new(swoole::dtls::BIO_get_methods());require(bio);
         BIO_set_data(bio, &session);BIO_set_init(bio, 1);SSL_set_bio(socket.ssl, bio, bio);
         bool empty = session.listen();
-        std::cout << "dtls-empty " << empty << ' ' << session.listened << ' ' << session.rxqueue.size() << '\n';
+        std::cout << "dtls-empty " << empty << ' ' << session.listened << ' ' << !swoole::dtls::BIO_ctrl(bio, BIO_CTRL_EOF, 0, nullptr) << '\n';
         require(empty && !session.listened);
         session.append("malformed-M21-record", 20);
         bool malformed = session.listen();
-        std::cout << "dtls-malformed " << malformed << ' ' << session.listened << ' ' << session.rxqueue.size() << '\n';
+        std::cout << "dtls-malformed " << malformed << ' ' << session.listened << ' ' << !swoole::dtls::BIO_ctrl(bio, BIO_CTRL_EOF, 0, nullptr) << '\n';
         session.listened = true;
         require(!session.listen());
         std::cout << "dtls-already-listened 0\n";

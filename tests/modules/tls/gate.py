@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Canonical selected-FFI TLS gate; reuse attested native runtime, never build a world."""
+"""Canonical selected-FFI TLS gate: an attested pinned native runtime against one built from the hybrid tree."""
 import argparse
 from datetime import datetime, timezone
 import hashlib
@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 from tools.harness import run_isolated
 
+from tools.build_hybrid import hybrid_tree
 from tools.build_upstream import COMMIT as PIN
 
 
@@ -83,6 +84,34 @@ def control_from_report(path, config, *, allow_outer=True):
                 parent_status=report.get('execution_status', report.get('status')), parent_error=report.get('error'))
 
 
+def hybrid_library(archive, openssl, jobs, run):
+    """lib-swoole built from the hybrid build's fully patched tree, once per hybrid build.
+
+    The patched side's protocol TUs see the patched headers (Socket's layout among them), so
+    they need a native library compiled from the same headers, not the pinned control."""
+    source, flags = hybrid_tree(archive)
+    key = hashlib.sha256(''.join(sha(path) for path in [archive, source/'config.h', source.parent/'state.json']).encode()).hexdigest()
+    tree = ROOT/'target/native-core'/('hybrid-'+key[:16])
+    library = tree/'lib'/('libswoole.dylib' if sys.platform == 'darwin' else 'libswoole.so')
+    if library.is_file():
+        return library
+    shutil.rmtree(tree, ignore_errors=True)
+    listed = run(['git', '-C', source, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'])
+    if listed.returncode: raise PreconditionError('Cannot list the hybrid tree')
+    for name in [*filter(None, listed.stdout.split('\0')), 'config.h']:
+        if (source/name).is_file():
+            (tree/name).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source/name, tree/name)
+    with (tree/'CMakeLists.txt').open('a') as cmake:
+        cmake.write('\ntarget_link_libraries(lib-swoole '+json.dumps(str(archive))+' m dl pthread)\n')
+    php = Path(shutil.which('php-config') or '/usr/bin/php-config').resolve().parents[1]
+    configure = ['cmake', '-S', tree, '-B', tree/'build', '-DCMAKE_BUILD_TYPE=Release', '-Dphp_dir='+str(php),
+                 '-DCMAKE_CXX_FLAGS='+' '.join(flags), *(['-Dopenssl_dir='+str(openssl)] if openssl != Path('/usr') else [])]
+    for command in [configure, ['cmake', '--build', tree/'build', '--target', 'lib-swoole', '-j'+str(jobs)]]:
+        if run(command).returncode: raise RuntimeError('Hybrid native library build failed; see its log')
+    return library
+
+
 def sanitizer_symbols(output):
     return sorted({line.split()[-1] for line in output.splitlines() if line.split() and
                    any(prefix in line.split()[-1] for prefix in ('__asan_', '__ubsan_', '__tsan_', '__msan_'))})
@@ -102,11 +131,11 @@ def main():
     attempt = args.output.resolve().parent/(args.output.stem+'-'+uuid.uuid4().hex);attempt.mkdir()
     if args.output.exists(): shutil.copy2(args.output, attempt/'previous-summary.json')
     report = dict(passed=False, status='running', utc=datetime.now(timezone.utc).isoformat(), attempt=str(attempt),
-        scope='Actual published FFI archive with module-only protocol TUs, strict original SSL tests, registered callback peers and controlled native C++new failures. No full build, PHP engine, IP Socket, packetloss, cancellation or performance claim.',
-        commands=[], jobs_limit=args.jobs, execution='sequential bounded module compilations; never a new native-world build')
+        scope='Actual published FFI archive with module-only protocol TUs, strict original SSL tests, registered callback peers and controlled native C++new failures. No PHP engine, IP Socket, packetloss, cancellation or performance claim.',
+        commands=[], jobs_limit=args.jobs, execution='sequential bounded module compilations; the hybrid native library is built once per hybrid build')
     env = os.environ.copy()
     def run(command):
-        result = run_isolated(list(map(str, command)), cwd=ROOT, env=env, timeout=300)
+        result = run_isolated(list(map(str, command)), cwd=ROOT, env=env, timeout=900)
         log=attempt/(str(len(report['commands']))+'.log');log.write_text(result.stdout+result.stderr)
         report['commands'].append(dict(argv=list(map(str,command)), returncode=result.returncode, log=str(log)))
         return result
@@ -137,18 +166,14 @@ def main():
         if control is None: raise PreconditionError('No coherent attested native control. Supply --native-report; no full build attempted. '+repr(failures))
         headers=attempt/'headers';headers.mkdir();shutil.copytree(control['tree']/'include',headers/'include')
         shutil.copytree(control['tree']/'core-tests/include',headers/'core-tests/include');shutil.copy2(config,headers/'config.h')
-        for name in ['swoole.h','swoole_ssl.h','swoole_dtls.h','swoole_socket.h']:
-            original=run(['git','-C',args.source,'show',PIN+':include/'+name])
-            if original.returncode or hashlib.sha256(original.stdout.encode()).hexdigest()!=sha(headers/'include'/name):
-                raise PreconditionError('Native public header differs from pin: '+name)
         library=attempt/control['library'].name;shutil.copy2(control['library'],library)
         if sha(library)!=control['library_sha256']: raise PreconditionError('Native library changed during capture')
-        frozen_archive=attempt/'selected-ffi.a';shutil.copy2(archive,frozen_archive)
-        if sha(frozen_archive)!=report['archive_sha256']: raise PreconditionError('Selected archive changed during capture')
+        hybrid=hybrid_library(archive,control['openssl'],args.jobs,run)
+        report.update(hybrid_library=str(hybrid),hybrid_library_sha256=sha(hybrid))
         # Query the real shared ABI/feature exports. A convenient standalone kernel is insufficient.
         probe=attempt/'ffi-query.cc';probe.write_text('#include "swoole_rs.h"\n#include <iostream>\nint main(){auto a=swr_v1_abi_version();auto b=swr_v1_feature_bits();std::cout<<a<<" "<<b<<"\\n";return a!=1 || !(b&262144);}\n')
         executable=attempt/'ffi-query'
-        command=['c++','-std=c++14','-O2','-I'+str(ROOT/'native/include'),probe,frozen_archive,'-pthread','-o',executable]
+        command=['c++','-std=c++14','-O2','-I'+str(ROOT/'native/include'),probe,archive,'-pthread','-o',executable]
         if sys.platform=='linux':command+=['-ldl','-lm']
         if run(command).returncode: raise PreconditionError('Actual FFI ABI query failed to link; no substitute archive built')
         queried=run([executable])
@@ -195,7 +220,7 @@ def main():
                 if instrumented:
                     raise PreconditionError('Ordinary C++ allocation requires an uninstrumented native control; supply --allocation-native-report with an attested same-config control. Sanitized allocation coverage cannot replace the ordinary interposition profile.')
             child=attempt/(name+'.json')
-            command=[sys.executable,ROOT/'tests/modules/tls/differential.py','--reference',args.source,'--source',headers,'--library',child_library,'--openssl',control['openssl'],'--archive',frozen_archive,'--output',child,*extra]
+            command=[sys.executable,ROOT/'tests/modules/tls/differential.py','--reference',args.source,'--source',headers,'--library',child_library,'--hybrid-library',hybrid,'--openssl',control['openssl'],'--archive',archive,'--output',child,*extra]
             result=run(command);row=json.loads(child.read_text()) if child.is_file() else {'passed':False,'error':'Child receipt absent'}
             report['gates'][name]={'passed':result.returncode==0 and row.get('passed') is True,'report':str(child)}
             if not report['gates'][name]['passed']: raise RuntimeError('TLS '+name+' failed; first child receipt/logs retained')

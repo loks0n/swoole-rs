@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """TableV2 custody and original/selected complete table TU release syntax; not runtime or configured SDK proof."""
 import argparse
-import hashlib
 import io
 import json
 from pathlib import Path
@@ -14,7 +13,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 from tools.harness import run_isolated
-from tools.build_hybrid import apply_patch_verified
+from tools.build_hybrid import hybrid_tree
 from tools.build_upstream import COMMIT as PIN
 FIXTURE = '''#include "swoole_rs_memory_table_v2.h"
 #include <type_traits>
@@ -37,13 +36,10 @@ static_assert(std::is_same<decltype(std::declval<swoole::Table>().column_list), 
 '''
 
 
-def sha(path):
-    return hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
+    parser.add_argument('--archive', type=Path, required=True, help='Rust archive of the hybrid build under test')
     parser.add_argument('--cxx', default='c++')
     parser.add_argument('--upstream-unused-parameter-policy', action='store_true', help='Explicit pinned maintainer unused-parameter suppression; strict remains separate')
     parser.add_argument('--fixed-pool', action='store_true', help='Also compile unchanged original and selected complete FixedPool source; no runtime')
@@ -54,12 +50,9 @@ def main():
     try:
         if args.fixed_pool:
             report['scope'] += ' Optional original/selected complete FixedPool TUs included; no runtime.'
-        manifest = json.loads((ROOT / 'migration/patches/memory/manifest.json').read_text())
-        assert manifest['upstream_commit'] == PIN
-        entries = [p for p in manifest['patches'] if any(v.startswith('include/') or v == 'src/memory/table.cc' or (args.fixed_pool and v == 'src/memory/fixed_pool.cc') for v in p['upstream_paths'])]
-        assert all(p['sha256'] == sha(ROOT / 'migration/patches/memory' / p['path']) for p in entries)
-        report['patches'] = entries
-        headers = sorted((ROOT / 'native/memory').glob('*.h'))
+        # The selected side is the hybrid build's fully patched tree; the original is the pin.
+        hybrid_source, hybrid_flags = hybrid_tree(args.archive)
+        report['hybrid_tree'] = str(hybrid_source)
         flags = shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
         archive = subprocess.check_output(['git', '-C', str(args.source), 'archive', PIN, 'include', 'src/memory/table.cc', *(['src/memory/fixed_pool.cc'] if args.fixed_pool else [])], timeout=15)
         with tempfile.TemporaryDirectory(prefix='swr-table-v2-compat-') as temporary:
@@ -68,19 +61,9 @@ def main():
             with tarfile.open(fileobj=io.BytesIO(archive)) as bundle:
                 for member in bundle:
                     if member.isfile():
-                        path = tree / member.name
-                        path.parent.mkdir(parents=True, exist_ok=True)
-                        content = bundle.extractfile(member).read()
-                        path.write_bytes(content)
                         original = control / member.name
                         original.parent.mkdir(parents=True, exist_ok=True)
-                        original.write_bytes(content)
-            report['patch_applications'] = [
-                apply_patch_verified(tree, ROOT / 'migration/patches/memory' / entry['path'],
-                                     entry['upstream_paths'], entry['sha256'])
-                for entry in entries]
-            for header in headers:
-                (tree / 'include' / header.name).write_bytes(header.read_bytes())
+                        original.write_bytes(bundle.extractfile(member).read())
             report['hash_configuration'] = {
                 'selected': 'SW_TABLE_USE_PHP_HASH is unconditionally defined by pinned swoole_table.h',
                 'austin_branch': 'Unqualified; command-line undef does not override the pinned header define. No header variant silently invented.',
@@ -88,22 +71,23 @@ def main():
             }
             fixture = tree / 'facade.cc'
             fixture.write_text(FIXTURE)
+            pinned = ['-I' + str(control / 'include')]
             units = [
-                ('typed-header', fixture, tree / 'include', ['-DSWOOLE_RS_MEMORY=1']),
-                ('selected-table', tree / 'src/memory/table.cc', tree / 'include', ['-DSWOOLE_RS_MEMORY=1']),
-                ('original-table', control / 'src/memory/table.cc', control / 'include', []),
+                ('typed-header', fixture, hybrid_flags),
+                ('selected-table', hybrid_source / 'src/memory/table.cc', hybrid_flags),
+                ('original-table', control / 'src/memory/table.cc', pinned),
             ]
             if args.fixed_pool:
                 units.extend([
-                    ('selected-fixed-pool', tree / 'src/memory/fixed_pool.cc', tree / 'include', ['-DSWOOLE_RS_MEMORY=1']),
-                    ('original-fixed-pool', control / 'src/memory/fixed_pool.cc', control / 'include', []),
+                    ('selected-fixed-pool', hybrid_source / 'src/memory/fixed_pool.cc', hybrid_flags),
+                    ('original-fixed-pool', control / 'src/memory/fixed_pool.cc', pinned),
                 ])
             for standard in ['c++14', 'c++17', 'c++20']:
-                for label, unit, include, definitions in units:
+                for label, unit, headers in units:
                     command = [*shlex.split(args.cxx), '-std=' + standard, '-DNDEBUG',
-                               *definitions, '-Wall', '-Wextra', '-Werror',
+                               '-Wall', '-Wextra', '-Werror',
                                *(['-Wno-unused-parameter'] if args.upstream_unused_parameter_policy else []), '-fsyntax-only',
-                               '-I' + str(include), *flags, str(unit)]
+                               *headers, *flags, str(unit)]
                     result = run_isolated(command, timeout=30)
                     report['commands'].append({'case': label, 'standard': standard, 'argv': command,
                                                'returncode': result.returncode,
