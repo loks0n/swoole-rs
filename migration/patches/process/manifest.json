@@ -114,6 +114,17 @@
       "upstream_paths": [
         "ext-src/swoole_process_pool.cc"
       ]
+    },
+    {
+      "path": "0012-php-thread.patch",
+      "sha256": "7ba499bf220999a5cdf476a2149ed62bba3c892f18f785ce8db0e9f298a39d7b",
+      "upstream_paths": [
+        "ext-src/php_swoole_thread.h",
+        "ext-src/swoole_thread.cc",
+        "ext-src/swoole_thread_arraylist.cc",
+        "ext-src/swoole_thread_map.cc",
+        "ext-src/swoole_thread_queue.cc"
+      ]
     }
   ]
 }
