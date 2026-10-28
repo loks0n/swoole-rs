@@ -82,6 +82,24 @@
         "src/server/process.cc",
         "src/server/thread.cc"
       ]
+    },
+    {
+      "path": "0009-worker-id-field.patch",
+      "sha256": "d3c202759f557eeab78a8c3575ee5cc362da026954bcd7c219f38f43414ce1ef",
+      "upstream_paths": [
+        "ext-src/swoole_admin_server.cc",
+        "ext-src/swoole_process.cc",
+        "ext-src/swoole_process_pool.cc",
+        "ext-src/swoole_server.cc",
+        "include/swoole_process_pool.h",
+        "src/os/process_pool.cc",
+        "src/server/master.cc",
+        "src/server/process.cc",
+        "src/server/reactor_process.cc",
+        "src/server/task_worker.cc",
+        "src/server/thread.cc",
+        "src/server/worker.cc"
+      ]
     }
   ]
 }

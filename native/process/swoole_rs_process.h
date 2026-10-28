@@ -122,6 +122,8 @@ uint8_t swr_v1_worker_type(const swr_v1_worker_record *);
 void swr_v1_worker_set_type(swr_v1_worker_record *, uint8_t kind);
 int swr_v1_worker_pid(const swr_v1_worker_record *);
 void swr_v1_worker_set_pid(swr_v1_worker_record *, int pid);
+uint32_t swr_v1_worker_id(const swr_v1_worker_record *);
+void swr_v1_worker_set_id(swr_v1_worker_record *, uint32_t id);
 #ifdef __cplusplus
 }
 #endif

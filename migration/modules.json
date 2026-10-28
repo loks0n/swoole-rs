@@ -262,7 +262,8 @@
         "src/server/master.cc",
         "ext-src/swoole_process_pool.cc",
         "include/swoole_server.h",
-        "ext-src/swoole_process.cc"
+        "ext-src/swoole_process.cc",
+        "ext-src/swoole_admin_server.cc"
       ],
       "abi_contract": "docs/process-abi-v1.md",
       "feature_bit_reserved": 524288
