@@ -115,13 +115,13 @@ uint32_t swr_http_host_flags(const void *context);
 int64_t swr_http_host_fd(const void *context);
 void swr_http_host_mark(void *context, uint32_t flag);
 void swr_http_host_request_free(void *context);
-void swr_http_host_request_create(struct _zval_struct *return_value, struct _zval_struct *options);
+bool swr_http_host_request_create(struct _zval_struct *return_value, struct _zval_struct *options);
 
 /* The request parser (crates/phphttp/src/parse.rs): llhttp and multipart
  * callbacks over swoole::http::ContextState, whose layout state.rs mirrors.
  * `context` is a swoole::http::Context. MINIT passes the codecs built in
  * (1 zlib, 2 brotli, 4 zstd, 8 any). */
-enum { SWR_PHPHTTP_PARSE_SIZE = 144, SWR_PHPHTTP_STATE_SIZE = 544 };
+enum { SWR_PHPHTTP_PARSE_SIZE = 144, SWR_PHPHTTP_STATE_SIZE = 680 };
 void swr_v1_phphttp_parse_minit(uint32_t codecs);
 size_t swr_v1_phphttp_parse(void *context, const char *data, size_t length);
 void swr_v1_phphttp_parse_free(void *context);
@@ -138,21 +138,40 @@ int swr_http_host_websocket_connection(void *context);
 const char *swr_http_host_upload_tmp_dir(const void *context);
 int swr_http_host_tmpfile(char *path);
 const char *swr_http_host_http2_data(void *context, size_t *length);
-void swr_http_host_response_free(void *context);
+
+/* The response header, trailer and body compression (crates/phphttp/src/header.rs).
+ * The header and trailer are Rust's thread-local bytes until the next call. */
+const char *swr_v1_phphttp_build_header(void *context, const char *body, size_t length, size_t *header_length);
+const char *swr_v1_phphttp_build_trailer(const void *context, size_t *length);
+bool swr_v1_phphttp_compress(void *context, const char *data, size_t length);
+/* What they ask of the context: brotli/zstd (1 done, 0 failed, -1 not built),
+ * the zlib_buffer, whether a content type is compressible (a null type asks
+ * whether the server lists types) and the cached Date. */
+int swr_http_host_compress_other(void *context, int method, const char *data, size_t length);
+char *swr_http_host_compression_buffer(void *context, size_t size);
+void swr_http_host_compressed(void *context, size_t length);
+size_t swr_http_host_compressed_length(const void *context);
+bool swr_http_host_compression_type(const void *context, const char *type, size_t length);
+struct _zend_string *swr_http_host_date(void);
+/* Calls that can run user code (a value's __toString while building the
+ * response, exit() in it) trap a Zend bailout in C++: request_create,
+ * response_free, write, end, redirect and push return true, send_file and
+ * upgrade -1, when one happened, and Rust re-raises it (docs/zend.md). */
+bool swr_http_host_response_free(void *context);
 void swr_http_host_response_create(struct _zval_struct *object, int64_t fd, struct _zval_struct *return_value);
 struct _zval_struct *swr_http_host_response_property(void *context, int which);
-void swr_http_host_write(void *context, struct _zend_string *data, struct _zval_struct *return_value);
-void swr_http_host_end(void *context, struct _zend_string *data, struct _zval_struct *return_value);
-bool swr_http_host_send_file(void *context, struct _zend_string *file, int64_t offset, int64_t length);
-void swr_http_host_redirect(void *context, struct _zval_struct *url, struct _zval_struct *code, struct _zval_struct *return_value);
+bool swr_http_host_write(void *context, struct _zend_string *data, struct _zval_struct *return_value);
+bool swr_http_host_end(void *context, struct _zend_string *data, struct _zval_struct *return_value);
+int swr_http_host_send_file(void *context, struct _zend_string *file, int64_t offset, int64_t length);
+bool swr_http_host_redirect(void *context, struct _zval_struct *url, struct _zval_struct *code, struct _zval_struct *return_value);
 void swr_http_host_status(void *context, int64_t status, const char *reason, size_t reason_length);
 bool swr_http_host_set_header(void *context, const char *key, size_t key_length, struct _zval_struct *value, bool format);
 void swr_http_host_disconnect(void *context, int64_t code, struct _zend_string *reason, struct _zval_struct *return_value);
-void swr_http_host_push(void *context, struct _zval_struct *data, int64_t opcode, struct _zval_struct *flags,
+bool swr_http_host_push(void *context, struct _zval_struct *data, int64_t opcode, struct _zval_struct *flags,
     struct _zval_struct *return_value);
 void swr_http_host_ping(void *context, struct _zend_string *data, struct _zval_struct *return_value);
 bool swr_http_host_goaway(void *context, int64_t code, struct _zend_string *debug);
-bool swr_http_host_upgrade(void *context);
+int swr_http_host_upgrade(void *context);
 bool swr_http_host_close(void *context);
 void swr_http_host_recv(void *context, double timeout, struct _zval_struct *return_value);
 #ifdef __cplusplus
