@@ -185,16 +185,14 @@ pub unsafe extern "C" fn swr_v2_http_context_new(
     capacity: usize,
 ) -> *mut HttpStaticContext {
     // SAFETY: the caller lends `length` initialized bytes at `url` (null only when empty).
-    let input = match unsafe { bytes(url, length) } {
-        Ok(input) => input,
-        Err(_) => return std::ptr::null_mut(),
+    let Ok(input) = (unsafe { bytes(url, length) }) else {
+        return std::ptr::null_mut();
     };
     if capacity == 0 || capacity > isize::MAX as usize {
         return std::ptr::null_mut();
     }
-    let original = match copied(input) {
-        Ok(value) => value,
-        Err(_) => return std::ptr::null_mut(),
+    let Ok(original) = copied(input) else {
+        return std::ptr::null_mut();
     };
     let mut filename = Vec::new();
     if filename.try_reserve_exact(capacity).is_err() {

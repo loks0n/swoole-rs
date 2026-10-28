@@ -141,12 +141,11 @@ pub unsafe extern "C" fn swr_v2_http_directory_insert(
     if owner.pending {
         return INVALID;
     }
-    let index = match owner
+    let Err(index) = owner
         .names
         .binary_search_by(|entry| entry.as_slice().cmp(name))
-    {
-        Ok(_) => return 0,
-        Err(index) => index,
+    else {
+        return 0;
     };
     let mut copy = Vec::new();
     if owner.names.try_reserve(1).is_err() || copy.try_reserve(name.len()).is_err() {

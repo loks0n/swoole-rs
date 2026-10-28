@@ -81,33 +81,37 @@ pub unsafe extern "C" fn swr_v1_reactor_run(ops: *const WaitOps) -> i32 {
         let mut entries: c_int = 0;
         // SAFETY: the native kernel wait accepts `context` and a live entry count.
         let ready = unsafe { (ops.wait)(context, &raw mut entries) };
-        if ready < 0 {
-            // SAFETY: the native effect accepts `context` and reads this thread's errno.
-            if unsafe { (ops.catch_error)(context) } == 0 {
-                // SAFETY: the native effect accepts `context`.
-                unsafe { (ops.wait_failed)(context) };
-                return if ops.backend == POLL { 0 } else { -1 };
-            }
-            if let (Some(interrupted), Some(interrupt)) = (ops.interrupted, ops.interrupt) {
-                // SAFETY: both native effects accept `context`.
-                if unsafe { interrupted(context) } != 0 {
+        match ready.cmp(&0) {
+            core::cmp::Ordering::Less => {
+                // SAFETY: the native effect accepts `context` and reads this thread's errno.
+                if unsafe { (ops.catch_error)(context) } == 0 {
                     // SAFETY: the native effect accepts `context`.
-                    unsafe { interrupt(context) };
+                    unsafe { (ops.wait_failed)(context) };
+                    return if ops.backend == POLL { 0 } else { -1 };
+                }
+                if let (Some(interrupted), Some(interrupt)) = (ops.interrupted, ops.interrupt) {
+                    // SAFETY: both native effects accept `context`.
+                    if unsafe { interrupted(context) } != 0 {
+                        // SAFETY: the native effect accepts `context`.
+                        unsafe { interrupt(context) };
+                    }
                 }
             }
-        } else if ready == 0 {
-            // SAFETY: the native effect accepts `context`.
-            unsafe { (ops.end)(context, 1) };
-            // SAFETY: the field pointer stays readable for the call.
-            if unsafe { ops.once.read() } {
-                break;
+            core::cmp::Ordering::Equal => {
+                // SAFETY: the native effect accepts `context`.
+                unsafe { (ops.end)(context, 1) };
+                // SAFETY: the field pointer stays readable for the call.
+                if unsafe { ops.once.read() } {
+                    break;
+                }
+                continue;
             }
-            continue;
-        } else {
-            let count = if ops.backend == POLL { entries } else { ready };
-            for index in 0..count.unsigned_abs() as usize {
-                // SAFETY: the kernel filled the first `count` entries of `events`.
-                unsafe { entry(ops, index) };
+            core::cmp::Ordering::Greater => {
+                let count = if ops.backend == POLL { entries } else { ready };
+                for index in 0..count.unsigned_abs() as usize {
+                    // SAFETY: the kernel filled the first `count` entries of `events`.
+                    unsafe { entry(ops, index) };
+                }
             }
         }
         // SAFETY: the native effect accepts `context`.

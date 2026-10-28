@@ -333,18 +333,16 @@ pub unsafe extern "C" fn swr_v1_httpbindings_cookie(
                 if fields[4].is_empty() {
                     *phase = Phase::PriorityPrefix as u32;
                     continue;
-                } else {
-                    literal(APPEND, b"; SameSite=")
                 }
+                literal(APPEND, b"; SameSite=")
             }
             Phase::SameSite => append(input.fields[4]),
             Phase::PriorityPrefix => {
                 if fields[5].is_empty() {
                     *phase = Phase::Partitioned as u32;
                     continue;
-                } else {
-                    literal(APPEND, b"; Priority=")
                 }
+                literal(APPEND, b"; Priority=")
             }
             Phase::Priority => append(input.fields[5]),
             Phase::Partitioned => {

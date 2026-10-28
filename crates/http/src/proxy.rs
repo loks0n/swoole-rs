@@ -315,9 +315,8 @@ pub unsafe extern "C" fn swr_v1_http_proxy_pack(
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_http_proxy_handshake(data: *const u8, length: usize) -> i32 {
     // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
-    let input = match unsafe { bytes(data, length) } {
-        Ok(v) => v,
-        Err(_) => return INVALID,
+    let Ok(input) = (unsafe { bytes(data, length) }) else {
+        return INVALID;
     };
     if input.len() < b"HTTP/1.1 200 Connection established\r\n".len() {
         return 0;

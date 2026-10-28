@@ -88,7 +88,11 @@ mod tests {
     use super::digest;
 
     fn hex(bytes: &[u8; 20]) -> String {
-        bytes.iter().map(|b| format!("{b:02x}")).collect()
+        bytes
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<Vec<_>>()
+            .concat()
     }
 
     #[test]

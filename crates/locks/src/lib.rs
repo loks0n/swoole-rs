@@ -489,6 +489,7 @@ pub unsafe extern "C" fn swr_v1_locks_wait(word: *mut u32, timeout: f64) -> i32 
     }
     #[expect(
         clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
         reason = "upstream's split of the seconds; Rust's float casts saturate where C's are undefined"
     )]
     let duration = timespec {

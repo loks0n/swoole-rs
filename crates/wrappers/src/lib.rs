@@ -175,7 +175,7 @@ pub extern "C" fn swr_v1_wrappers_request_new() -> *mut Request {
         reason = "alloc honours Layout::new::<Request>()"
     )]
     // SAFETY: `Request` is not zero-sized; null is handled below.
-    let p = unsafe { alloc(Layout::new::<Request>()) as *mut Request };
+    let p = unsafe { alloc(Layout::new::<Request>()).cast::<Request>() };
     if !p.is_null() {
         // SAFETY: `p` is a fresh, non-null allocation with `Request`'s layout.
         unsafe { p.write(Request::default()) };
@@ -549,7 +549,7 @@ mod allocation_failures {
                 swr_v1_wrappers_body_append(p, larger.as_ptr(), larger.len()),
                 -1
             );
-            assert!((*p).body.is_empty());
+            assert_eq!((*p).body, [] as [u8; 0]);
             assert_eq!(
                 swr_v1_wrappers_body_append(p, larger.as_ptr(), larger.len()),
                 0

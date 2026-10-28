@@ -310,6 +310,7 @@ pub extern "C" fn swr_v1_socket_sendfile_chunk(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::fd::AsRawFd;
 
     fn pair() -> [c_int; 2] {
         let mut fds = [0; 2];
@@ -445,7 +446,6 @@ mod tests {
                 end,
             )
         };
-        use std::os::fd::AsRawFd;
         let fd = file.as_raw_fd();
         assert_eq!(range(fd, 0, 0), (0, 10), "whole file");
         assert_eq!(range(fd, 4, 6), (0, 10), "tail");
