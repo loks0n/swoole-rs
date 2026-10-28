@@ -8,7 +8,7 @@ from count import main
 import overlay
 
 
-def zend_map(folder, args):
+def zend_map(folder, args, read):
     php=subprocess.check_output([args.php_config,'--php-binary'],text=True).strip()
     # Read exactly the exported 256-byte initialized immutable Zend table.
     script='$f=FFI::cdef("extern const unsigned char zend_tolower_map[256];");$s="";for($i=0;$i<256;$i++)$s.=chr($f->zend_tolower_map[$i]);echo json_encode(["php"=>PHP_VERSION,"zts"=>PHP_ZTS,"hex"=>bin2hex($s)]);'
@@ -16,6 +16,7 @@ def zend_map(folder, args):
     assert not p.stderr,p.stderr
     facts=json.loads(p.stdout);data=bytes.fromhex(facts['hex'])
     assert data==bytes(c+32 if 65<=c<=90 else c for c in range(256))
+    # The pinned event catalog is the oracle on both sides: the hybrid tree moved it to Rust.
     header=overlay.original('ext-src/php_swoole_server.h');start=header.index('enum php_swoole_server_port_callback_type {');end=header.index('};',start)+2
     native=overlay.original('ext-src/swoole_server_port.cc');a=native.index('struct ServerPortEvent {');b=native.index('// clang-format on',a)
     (folder/'events.inc').write_text(header[start:end]+'\n'+native[a:b])

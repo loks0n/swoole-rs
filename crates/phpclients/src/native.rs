@@ -3,7 +3,7 @@
 //! `Socket` class (`SocketImpl`) is still C++, so each operation a method needs
 //! is one call over its opaque pointer, plus Swoole's PHP error reporting.
 use libc::{c_char, c_int, iovec, size_t, ssize_t};
-use swoole_rs_zend::sys::{zend_object, zval};
+use swoole_rs_zend::sys::{zend_object, zend_string, zval};
 
 /// A `SocketImpl *`.
 pub(crate) type Socket = *mut libc::c_void;
@@ -63,8 +63,13 @@ unsafe extern "C" {
         length: size_t,
         timeout: f64,
     ) -> ssize_t;
-    /// `recv_packet(timeout)`; an empty packet clears the read buffer.
-    pub(crate) fn swoole_socket_coro_recv_packet(socket: Socket, timeout: f64) -> ssize_t;
+    /// `recv_packet(timeout)`; with `clear_empty`, an empty packet clears the
+    /// read buffer.
+    pub(crate) fn swoole_socket_coro_recv_packet(
+        socket: Socket,
+        timeout: f64,
+        clear_empty: bool,
+    ) -> ssize_t;
     /// `pop_packet()`: the `ZSTR_VAL` of the packet's string, or null after
     /// `set_err(ENOMEM)`.
     pub(crate) fn swoole_socket_coro_pop_packet(socket: Socket) -> *mut c_char;
@@ -113,6 +118,45 @@ unsafe extern "C" {
     ) -> bool;
     pub(crate) fn swoole_socket_coro_cancel(socket: Socket, event: c_int) -> bool;
     pub(crate) fn swoole_socket_coro_ssl_handshake(socket: Socket) -> bool;
+    /// `php_swoole_check_reactor()`.
+    pub(crate) fn swoole_rs_check_reactor();
+    /// `swoole_set_last_error(code)`.
+    pub(crate) fn swoole_rs_set_last_error(code: c_int);
+    /// `client_coro_create_socket`: a `Coroutine\Socket` for the client's
+    /// `type`, published in its `socket` and `fd` properties; null on failure,
+    /// with errCode/errMsg set.
+    pub(crate) fn swoole_client_coro_create_socket(object: *mut zend_object, kind: i64) -> Socket;
+    /// `php_swoole_socket_set(socket, settings)`.
+    pub(crate) fn swoole_client_coro_apply(socket: Socket, settings: *const zval) -> bool;
+    /// Merge `settings` into the client's `setting` property.
+    pub(crate) fn swoole_client_coro_merge_setting(object: *mut zend_object, settings: *const zval);
+    /// The client's `setting` property.
+    pub(crate) fn swoole_client_coro_setting(object: *mut zend_object) -> *mut zval;
+    /// `zval_get_long` of the client's `type` property.
+    pub(crate) fn swoole_client_coro_type_property(object: *mut zend_object) -> i64;
+    /// `set_timeout(timeout, SW_TIMEOUT_CONNECT)`, then `connect(host, port, flags)`.
+    pub(crate) fn swoole_client_coro_connect(
+        socket: Socket,
+        host: *const c_char,
+        port: i64,
+        timeout: f64,
+        flags: i64,
+    ) -> bool;
+    /// `set_timeout(timeout, SW_TIMEOUT_RDWR)`.
+    pub(crate) fn swoole_client_coro_rdwr_timeout(socket: Socket, timeout: f64);
+    pub(crate) fn swoole_client_coro_close(socket: Socket) -> bool;
+    pub(crate) fn swoole_client_coro_is_tcp(socket: Socket) -> bool;
+    pub(crate) fn swoole_client_coro_type(socket: Socket) -> c_int;
+    /// `open_length_check || open_eof_check`.
+    pub(crate) fn swoole_client_coro_packet_mode(socket: Socket) -> bool;
+    pub(crate) fn swoole_client_coro_is_connected(socket: Socket) -> bool;
+    pub(crate) fn swoole_client_coro_has_ssl(socket: Socket) -> bool;
+    /// Encrypt a plain socket, applying the `setting` SSL options: 0, or the
+    /// errno to report (EISCONN).
+    pub(crate) fn swoole_client_coro_enable_ssl(object: *mut zend_object, socket: Socket) -> c_int;
+    /// The peer certificate as a new string, or null.
+    pub(crate) fn swoole_client_coro_peer_cert(socket: Socket) -> *mut zend_string;
+    pub(crate) fn swoole_client_coro_verify_peer(socket: Socket, allow_self_signed: bool) -> bool;
     /// `php_swoole_socket_set_protocol(socket, settings)`.
     pub(crate) fn swoole_socket_coro_set_protocol(socket: Socket, settings: *const zval) -> bool;
 }

@@ -6,9 +6,12 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#ifdef PORTS_DRIVER
 #include "swoole_rs_ports.h"
+#endif
 #include "bounds.inc"
-static std::ostringstream trace;
+// One instance shared by both translation units.
+inline std::ostringstream trace;
 using zend_long=int64_t;
 struct HashTable;
 struct zval {HashTable *array=nullptr;std::string key,bytes;int64_t number=0;bool truth=false,is_null=false;};
@@ -47,29 +50,29 @@ struct TlsPort {
     void set_ssl_ecdh_curve(const std::string &v){text("ecdh",v);}
     void set_ssl_dhparam(const std::string &v){text("dhparam",v);}
 };
-#ifndef SWR_PORTS_TLS_MODEL_ONLY
-namespace Original {
-#include "original.inc"
+namespace original { std::string run(HashTable input); }
+namespace selected { std::string run(HashTable input); }
+// Each side's body in its own translation unit; the selected one also holds the driver.
+namespace PORTS_SIDE {
+#include "body.inc"
+std::string run(HashTable input){
+    trace.str("");trace.clear();TlsPort port;auto *context=port.get_ssl_context();
+    bool result=php_swoole_server_set_ssl_option(&input,context);
+    assert(result);
+    tls_prefix(&port,&input);
+    return trace.str();
 }
-namespace Selected {
-#include "selected.inc"
 }
+#ifdef PORTS_DRIVER
 static uint32_t seed=0x735291;
 static uint32_t random_word(){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;return seed;}
 static const char *keys[]={"ssl_cert_file","ssl_key_file","ssl_compress","ssl_protocols","ssl_verify_peer","ssl_allow_self_signed","ssl_client_cert_file","ssl_cafile","ssl_capath","ssl_verify_depth","ssl_prefer_server_ciphers","ssl_ciphers","ssl_ecdh_curve","ssl_dhparam"};
-static std::string run(bool selected,HashTable input){
-    trace.str("");trace.clear();TlsPort port;auto *context=port.get_ssl_context();
-    bool result=selected?Selected::php_swoole_server_set_ssl_option(&input,context):Original::php_swoole_server_set_ssl_option(&input,context);
-    assert(result);
-    if(selected)Selected::tls_prefix(&port,&input);else Original::tls_prefix(&port,&input);
-    return trace.str();
-}
 int main(){
     size_t cases=0;
     for(unsigned sample=0;sample<4096;sample++){
         HashTable input;
         for(const char *key:keys){auto word=random_word();if((word&3)==0)continue;zval v;v.key=key;v.bytes="fixture-"+v.key+"-"+std::to_string(sample);v.is_null=(word&15)==1;v.truth=(word&32)!=0;const int64_t values[]={INT64_MIN,-1,0,1,255,256,INT64_MAX};v.number=values[(word>>8)%7];input.emplace(key,v);}
-        auto expected=run(false,input),actual=run(true,input);
+        auto expected=original::run(input),actual=selected::run(input);
         if(expected!=actual){fprintf(stderr,"TLS frontend model mismatch sample=%u\n",sample);return 1;}cases++;
     }
     for(uint32_t group:{0u,1u})for(size_t index=0;index<16;index++){
@@ -89,5 +92,4 @@ int main(){
     printf("%zu successful TLS frontend model/metadata/scalar comparisons passed; no crypto or IO\n",cases);
     return 0;
 }
-
 #endif

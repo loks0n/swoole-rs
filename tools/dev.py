@@ -532,7 +532,8 @@ def plan(args, reports):
     if 'framing' in modules:
         script('framing-native', 'tests/modules/framing/gate.py', '--archive',
                manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report('framing-native'))
-        script('framing-traces', 'tests/modules/framing/trace.py', *report('framing-traces'))
+        script('framing-traces', 'tests/modules/framing/trace.py', '--archive',
+               manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('framing-traces'))
         if integrate:
             script('framing-versioned-expectation', 'corpus/upstream/versioned.py',
                    '--source', ROOT / 'target/upstream/src', '--case', 'tests/swoole_server/wrong_eof_setting.phpt',
