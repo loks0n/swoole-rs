@@ -43,7 +43,8 @@ def prove_lifecycle(library, selected, prefix, include_fork=False, include_init=
         facades += [('swoole_set_task_tmpdir(', '_Z22swoole_set_task_tmpdir')]
     paths = {}
     for readable, mangled in facades:
-        matches = [name for name in bodies if '@plt' not in name and (name == readable or name.lstrip('_') == mangled.lstrip('_')
+        # GCC can split a function's unlikely blocks into a "[clone .cold]" body; the facade is the hot one.
+        matches = [name for name in bodies if '@plt' not in name and '[clone ' not in name and (name == readable or name.lstrip('_') == mangled.lstrip('_')
                    or (readable.endswith('(') and (name.startswith(readable) or name.lstrip('_').startswith(mangled.lstrip('_')))))]
         if len(matches) != 1:
             raise ValueError('Missing/ambiguous lifecycle facade: ' + readable)
