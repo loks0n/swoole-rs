@@ -90,7 +90,7 @@ fn constructed(call: &Call) -> Option<&'static mut Held> {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_phplocks_lock_minit(
     methods: *const zend_function_entry,
-    module: i32,
+    module_number: i32,
     kinds: u32,
     capabilities: u32,
     exception: *mut zend_class_entry,
@@ -122,7 +122,7 @@ pub unsafe extern "C" fn swr_v1_phplocks_lock_minit(
     unsafe { LOCK.property_long(c"errCode", 0) };
     for (_, name, kind) in types.iter().filter(|(_, _, kind)| enabled(*kind)) {
         // SAFETY: MINIT, with the module's number.
-        unsafe { register_long_constant(name, *kind, module) };
+        unsafe { register_long_constant(name, *kind, module_number) };
     }
 }
 
