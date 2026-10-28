@@ -144,11 +144,7 @@ fn poll_now(fds: &[Cell<PollFd>]) -> bool {
             revents: 0,
         })
         .collect();
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "a poll set never exceeds nfds_t"
-    )]
-    let count = list.len() as libc::nfds_t;
+    let count = libc::nfds_t::try_from(list.len()).unwrap_or(libc::nfds_t::MAX);
     // SAFETY: `list` holds `count` pollfds.
     let ready = unsafe { libc::poll(list.as_mut_ptr(), count, 0) };
     if ready > 0 {
@@ -237,7 +233,7 @@ pub unsafe extern "C" fn swr_v1_hook_poll(
         &mut []
     } else {
         // SAFETY: the caller passes `nfds` pollfds.
-        unsafe { std::slice::from_raw_parts_mut(fds, nfds as usize) }
+        unsafe { std::slice::from_raw_parts_mut(fds, usize::try_from(nfds).unwrap_or(0)) }
     };
     let mut first = Vec::new();
     let mut rows: Vec<PollFd> = Vec::new();
@@ -456,5 +452,69 @@ mod tests {
                 "resume"
             ]
         );
+    }
+
+    /// The ordered gate's former scenarios 643..931: upstream's
+    /// `socket_poll_trigger_event` transcribed, against `swr_v1_hook_poll_ready`.
+    #[test]
+    fn ported_trigger_matrix() {
+        let requested = [0, READ, WRITE, READ | WRITE, ERROR, ERROR | READ];
+        let received = [0, READ, WRITE, ERROR];
+        let events = [READ, WRITE, ERROR];
+        for k in 0..288 {
+            let (wait, timer) = ((k / 72) % 2 == 1, (k / 144) % 2 == 1);
+            // Upstream: revents |= error && !(requested & error) ? requested & rw : event;
+            // then the first wait claims success, deletes the timer and defers.
+            let mut expected = Vec::new();
+            let (mut revents, mut waiting, mut success, mut pending) =
+                (received[(k / 6) % 4], wait, false, timer);
+            for event in [events[(k / 24) % 3], READ] {
+                let row = requested[k % 6];
+                revents |= if event == ERROR && row & ERROR == 0 {
+                    row & (READ | WRITE)
+                } else {
+                    event
+                };
+                if waiting {
+                    waiting = false;
+                    success = true;
+                    if pending {
+                        pending = false;
+                        expected.push("timer_del".to_string());
+                    }
+                    expected.push("defer".to_string());
+                }
+                expected.push(format!("{revents} {waiting} {success}"));
+            }
+            let row = Cell::new(PollFd {
+                fd: 77,
+                events: requested[k % 6],
+                revents: received[(k / 6) % 4],
+            });
+            let task = Task {
+                fds: std::slice::from_ref(&row),
+                sockets: Vec::new(),
+                co: std::ptr::null_mut(),
+                timer: Cell::new(if timer {
+                    std::ptr::dangling_mut()
+                } else {
+                    std::ptr::null_mut()
+                }),
+                success: Cell::new(false),
+                wait: Cell::new(wait),
+                ops: &OPS,
+            };
+            let ptr = (&raw const task).cast_mut().cast::<c_void>();
+            for event in [events[(k / 24) % 3], READ] {
+                unsafe { swr_v1_hook_poll_ready(ptr, 77, event) };
+                log(format!(
+                    "{} {} {}",
+                    row.get().revents,
+                    task.wait.get(),
+                    task.success.get()
+                ));
+            }
+            assert_eq!(take(), expected, "scenario {}", k + 643);
+        }
     }
 }
