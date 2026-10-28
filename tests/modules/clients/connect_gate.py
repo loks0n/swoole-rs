@@ -31,7 +31,7 @@ def main():
     for mode in ['sync','async']:
         signature=f'static int Client_tcp_connect_{mode}(Client *cli, const char *host, int port, double timeout, int nonblock) {{'
         before=gate.body(original,signature);after=gate.body(selected,signature)
-        if before==after or 'swr_v1_clients_connect_next' not in after:raise ValueError('No actual selected Rust connect caller')
+        if before==after or 'swr_v1_clients_connect' not in after:raise ValueError('No actual selected Rust connect caller')
         native+=before+'\n';rust+=after+'\n'
     template=(Path(__file__).with_name('connect_witness.cpp')).read_text()
     prelude,facade=template.split('// DECLARATIONS')
@@ -43,7 +43,7 @@ def main():
         if(expected!=actual){std::cerr<<"mismatch "<<bits<<":"<<scenario<<":"<<outcome<<":"<<mode<<"\n"<<expected<<"\n"<<actual<<"\n";return 1;}++count;
       }std::cout<<count<<"\n";
     }'''
-    cpp.write_text(prelude+facade.replace('BODY_NAMESPACE','native').replace('// ACTUAL_BODY',native)+facade.replace('BODY_NAMESPACE','rust').replace('// ACTUAL_BODY',rust)+driver)
+    cpp.write_text(prelude+facade.replace('BODY_NAMESPACE','native').replace('// ACTUAL_BODY',native)+'#define SELECTED_STATE\n'+facade.replace('BODY_NAMESPACE','rust').replace('// ACTUAL_BODY',rust)+driver)
     exe=out/'actual_connect';flags=['-fsanitize=address,undefined','-fno-omit-frame-pointer'] if a.sanitize else []
     gate.run(['c++','-std=c++17','-O1',*flags,'-I',ROOT/'native/clients',cpp,archive,'-lpthread','-ldl','-lm','-o',exe]);cases=int(gate.run([exe]).strip())
     report=dict(passed=True,cases=cases,scope=__doc__,pin=gate.PIN,native_sanitized=a.sanitize,rust_sanitized=a.rust_sanitized)
