@@ -503,7 +503,7 @@ fn option(options: *mut zend_array, key: &std::ffi::CStr) -> Option<*mut zval> {
 }
 
 fn set(call: &Call) {
-    let Ok(Some(options)) = call.arity(1, 1).and_then(|()| call.array(1)) else {
+    let Ok(Some(options)) = call.arity(1, 1).and_then(|()| call.array_table(1)) else {
         call.set_bool(false);
         return;
     };
@@ -536,11 +536,11 @@ fn on(call: &Call) {
         call.set_bool(false);
         return;
     }
-    let Ok(name) = call.arity(2, 2).and_then(|()| call.bytes(1)) else {
+    let Ok(name) = call.arity(2, 2).and_then(|()| call.string(1, b"")) else {
         call.set_bool(false);
         return;
     };
-    let callback = call.arg(2);
+    let callback = call.zval(2);
     let slot = match name.to_ascii_lowercase().as_slice() {
         b"workerstart" => &mut this.on_worker_start,
         b"message" => {
@@ -602,7 +602,7 @@ fn listen(call: &Call) {
     }
     let parsed = call
         .arity(1, 3)
-        .and_then(|()| Ok((call.bytes(1)?, call.long(2, 0)?, call.long(3, 2048)?)));
+        .and_then(|()| Ok((call.string(1, b"")?, call.long(2, 0)?, call.long(3, 2048)?)));
     let Ok((address, port, backlog)) = parsed else {
         call.set_bool(false);
         return;
@@ -619,7 +619,7 @@ fn listen(call: &Call) {
 }
 
 fn write(call: &Call) {
-    let Ok(data) = call.arity(1, 1).and_then(|()| call.bytes(1)) else {
+    let Ok(data) = call.arity(1, 1).and_then(|()| call.string(1, b"")) else {
         call.set_bool(false);
         return;
     };
@@ -649,7 +649,7 @@ fn send_message(call: &Call) {
     }
     let parsed = call
         .arity(2, 2)
-        .and_then(|()| Ok((call.bytes(1)?, call.long(2, 0)?)));
+        .and_then(|()| Ok((call.string(1, b"")?, call.long(2, 0)?)));
     let Ok((data, worker)) = parsed else {
         call.set_bool(false);
         return;
