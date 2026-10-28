@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_client.cc b/ext-src/swoole_client.cc
-index e340dc2..e857b88 100644
+index e340dc2..83bcdc9 100644
 --- a/ext-src/swoole_client.cc
 +++ b/ext-src/swoole_client.cc
 @@ -17,2 +17,7 @@
@@ -20,11 +20,17 @@ index e340dc2..e857b88 100644
 -static std::unordered_map<std::string, std::queue<Client *> *> long_connections;
 +static SwooleRustClientPool long_connections;
  
-@@ -108,3 +111,3 @@ Client *php_swoole_client_get_cli_safe(const zval *zobject) {
+@@ -108,7 +111,7 @@ Client *php_swoole_client_get_cli_safe(const zval *zobject) {
      if (cli && cli->socket) {
 -        if (cli->active) {
 +        if (cli->is_active()) {
              return cli;
+         }
+-        if (cli->async_connect) {
+-            cli->async_connect = false;
++        if (cli->flag(SWR_CLIENTS_ASYNC_CONNECT)) {
++            cli->set_flag(SWR_CLIENTS_ASYNC_CONNECT, false);
+             int error = -1;
 @@ -116,3 +119,3 @@ Client *php_swoole_client_get_cli_safe(const zval *zobject) {
                  if (error == 0) {
 -                    cli->active = true;
@@ -197,6 +203,11 @@ index e340dc2..e857b88 100644
 -    } else if (cli->active == 1) {
 +    } else if (cli->is_active()) {
          php_swoole_fatal_error(E_WARNING, "connection to the server has already been established");
+@@ -685,3 +700,3 @@ static PHP_METHOD(swoole_client, connect) {
+         // async connect
+-        if (cli->async_connect) {
++        if (cli->flag(SWR_CLIENTS_ASYNC_CONNECT)) {
+             RETURN_TRUE;
 @@ -756,3 +771,3 @@ static PHP_METHOD(swoole_client, sendto) {
          }
 -        cli->active = true;
@@ -1731,7 +1742,7 @@ index e959b5e..fe217f5 100644
 -    return result;
  }
 diff --git a/include/swoole_client.h b/include/swoole_client.h
-index 3be52ce..8856915 100644
+index 3be52ce..3c97a4e 100644
 --- a/include/swoole_client.h
 +++ b/include/swoole_client.h
 @@ -23,2 +23,3 @@
@@ -1743,7 +1754,10 @@ index 3be52ce..8856915 100644
 -    bool active = false;
 -    bool async = false;
      bool keep = false;
-@@ -49,7 +48,3 @@ class Client {
+@@ -46,13 +45,6 @@ class Client {
+     bool sleep_ = false;
+-    bool wait_dns = false;
+     bool dns_completed = false;
      bool host_preseted = false;
 -    bool shutdown_rw = false;
 -    bool shutdown_read = false;
@@ -1751,7 +1765,10 @@ index 3be52ce..8856915 100644
      bool remove_delay = false;
 -    bool closed = false;
      bool high_watermark = false;
-@@ -113,2 +108,9 @@ class Client {
+-    bool async_connect = false;
+-    bool onerror_called = false;
+ 
+@@ -113,2 +105,11 @@ class Client {
  
 +    // active, closed and async live in Rust (#439).
 +    std::unique_ptr<swr_v1_clients_state, decltype(&swr_v1_clients_state_free)> state_;
@@ -1759,9 +1776,11 @@ index 3be52ce..8856915 100644
 +    void set_active(bool value) { swr_v1_clients_set_flag(state_.get(), SWR_CLIENTS_ACTIVE, value); }
 +    bool is_closed() const { return swr_v1_clients_flag(state_.get(), SWR_CLIENTS_CLOSED); }
 +    bool is_async() const { return swr_v1_clients_flag(state_.get(), SWR_CLIENTS_ASYNC); }
++    bool flag(uint32_t name) const { return swr_v1_clients_flag(state_.get(), name); }
++    void set_flag(uint32_t name, bool value) { swr_v1_clients_set_flag(state_.get(), name, value); }
 +
      Socket *get_socket() const {
-@@ -331,3 +333,3 @@ class SyncClient {
+@@ -331,3 +332,3 @@ class SyncClient {
      bool close() {
 -        if (!created || client.closed) {
 +        if (!created || client.is_closed()) {
@@ -1928,7 +1947,7 @@ index 04e0462..de48820 100644
 +        return swr_v1_clients_loopback(6, addr.inet_v6.sin6_addr.s6_addr);
      }
 diff --git a/src/network/client.cc b/src/network/client.cc
-index 56678c7..2f78626 100644
+index 56678c7..aa3001f 100644
 --- a/src/network/client.cc
 +++ b/src/network/client.cc
 @@ -25,2 +25,7 @@
@@ -2065,11 +2084,14 @@ index 56678c7..2f78626 100644
      }
 +    return result;
  }
-@@ -324,3 +316,3 @@ static int Client_inet_addr(Client *cli, const char *host, int port) {
+@@ -324,5 +316,5 @@ static int Client_inet_addr(Client *cli, const char *host, int port) {
  
 -    if (!cli->server_addr.assign(cli->socket->socket_type, host, port, !cli->async)) {
 +    if (!cli->server_addr.assign(cli->socket->socket_type, host, port, !cli->is_async())) {
          if (!cli->dns_completed && swoole_get_last_error() == SW_ERROR_BAD_HOST_ADDR) {
+-            cli->wait_dns = true;
++            cli->set_flag(SWR_CLIENTS_WAIT_DNS, true);
+         } else {
 @@ -336,21 +328,22 @@ static int Client_inet_addr(Client *cli, const char *host, int port) {
  Client::~Client() {
 -    if (!socket) {
@@ -2112,7 +2134,7 @@ index 56678c7..2f78626 100644
 +        }
 +        stage = plan.stage;
      }
-@@ -362,114 +355,122 @@ Client::~Client() {
+@@ -362,114 +355,131 @@ Client::~Client() {
   */
 +// Rust runs the close; onClose may delete the client, so only the saved socket is read after it.
  int Client::close() {
@@ -2255,6 +2277,11 @@ index 56678c7..2f78626 100644
 +                return false;
              }
 -        }
+-
+-        if (cli->open_ssl && cli->ssl_handshake() < 0) {
+-            return SW_ERR;
+-        }
+-    }
 +        },
 +        [](void *c) -> bool { return static_cast<Context *>(c)->saved->object == nullptr; },
 +        [](void *c) -> int32_t {
@@ -2271,74 +2298,80 @@ index 56678c7..2f78626 100644
 +    return result;
 +}
  
--        if (cli->open_ssl && cli->ssl_handshake() < 0) {
--            return SW_ERR;
-+static int Client_tcp_connect_sync(Client *cli, const char *host, int port, double timeout, int nonblock) {
-+    uint32_t stage = 0;
-+    int result = 0;
-+    ssize_t io_result = 0;
-+    ssize_t received = 0;
-+    bool handshake_ok = false;
-+    String *recv_buf = nullptr;
-+    Socks5Proxy *socks = nullptr;
-+    while (true) {
-+        uint32_t facts = 0;
-+        switch (stage) {
-+        case 1: facts = timeout > 0; break;
-+        case 3: facts = io_result < 0; break;
-+        case 4: facts = nonblock != 0; break;
-+        case 5: facts = result == SW_READY ? 1u : (result == SW_WAIT ? 2u : 0u); break;
-+        case 6: facts = result < 0; break;
-+        case 7: facts = cli->socks5_proxy != nullptr; break;
-+        case 8: case 15: case 21: facts = io_result < 0; break;
-+        case 10: facts = received > 0; break;
-+        case 11: case 17: facts = handshake_ok; break;
-+        case 12: facts = cli->socks5_proxy->state == SW_SOCKS5_STATE_READY; break;
-+        case 14: facts = cli->http_proxy != nullptr; break;
-+        case 16: facts = received <= 0; break;
-+        case 20: facts = cli->open_ssl; break;
-+        }
-+        const auto plan = swr_v1_clients_connect_next(stage, facts);
-+        switch (plan.action) {
-+        case SWR_CLIENTS_CONNECT_ADVANCE: break;
-+        case SWR_CLIENTS_CONNECT_SET_TIMEOUT: cli->set_timeout(timeout); break;
-+        case SWR_CLIENTS_CONNECT_KERNEL_TIMEOUT: cli->socket->set_kernel_timeout(timeout); break;
-+        case SWR_CLIENTS_CONNECT_ADDRESS: io_result = Client_inet_addr(cli, host, port); break;
-+        case SWR_CLIENTS_CONNECT_NONBLOCKING: result = cli->socket->connect_async(cli->server_addr); break;
-+        case SWR_CLIENTS_CONNECT_BLOCKING: result = cli->socket->connect_sync(cli->server_addr); break;
-+        case SWR_CLIENTS_CONNECT_ASYNC_PENDING: cli->async_connect = true; return SW_ERR;
-+        case SWR_CLIENTS_CONNECT_ACTIVATE: cli->set_active(true); recv_buf = sw_tg_buffer(); break;
-+        case SWR_CLIENTS_CONNECT_SOCKS_SEND: {
-+            socks = cli->socks5_proxy.get();
-+            const auto length = socks->pack_negotiate_request();
-+            io_result = cli->send(socks->buf, length);
-+            break;
-+        }
-+        case SWR_CLIENTS_CONNECT_SOCKS_PUBLISH: socks->state = SW_SOCKS5_STATE_HANDSHAKE; break;
-+        case SWR_CLIENTS_CONNECT_SOCKS_RECEIVE: received = cli->recv(recv_buf->str, recv_buf->size, 0); break;
-+        case SWR_CLIENTS_CONNECT_SOCKS_HANDSHAKE: handshake_ok = cli->socks5_handshake(recv_buf->str, received); break;
-+        case SWR_CLIENTS_CONNECT_HTTP_SEND: {
-+            auto target_host = cli->get_http_proxy_host_name();
-+            const size_t length = cli->http_proxy->pack(recv_buf, target_host);
-+            io_result = cli->send(recv_buf->str, length, 0);
-+            break;
-         }
-+        case SWR_CLIENTS_CONNECT_HTTP_RECEIVE: received = cli->recv(recv_buf->str, recv_buf->size, 0); break;
-+        case SWR_CLIENTS_CONNECT_HTTP_HANDSHAKE:
-+            recv_buf->length = received;
-+            handshake_ok = cli->http_proxy->handshake(recv_buf);
-+            break;
-+        case SWR_CLIENTS_CONNECT_SSL_HANDSHAKE: io_result = cli->ssl_handshake(); break;
-+        case SWR_CLIENTS_CONNECT_RETURN_RESULT: return result;
-+        case SWR_CLIENTS_CONNECT_SUCCESS: return SW_OK;
-+        default: return SW_ERR;
-+        }
-+        stage = plan.stage;
-     }
--
 -    return ret;
++static int Client_tcp_connect_sync(Client *cli, const char *host, int port, double timeout, int nonblock) {
++    struct Context {
++        Client *cli;
++        const char *host;
++        int port;
++        double timeout;
++        String *recv_buf;
++        Socks5Proxy *socks;
++    } context{cli, host, port, timeout, nullptr, nullptr};
++    const swr_v1_clients_connect_ops ops{
++        &context,
++        cli->state_.get(),
++        timeout,
++        nonblock != 0,
++        [](void *c) {
++            auto *ctx = static_cast<Context *>(c);
++            ctx->cli->set_timeout(ctx->timeout);
++        },
++        [](void *c) {
++            auto *ctx = static_cast<Context *>(c);
++            ctx->cli->socket->set_kernel_timeout(ctx->timeout);
++        },
++        [](void *c) -> int32_t {
++            auto *ctx = static_cast<Context *>(c);
++            return Client_inet_addr(ctx->cli, ctx->host, ctx->port);
++        },
++        [](void *c) -> int32_t {
++            Client *cli = static_cast<Context *>(c)->cli;
++            const int result = cli->socket->connect_async(cli->server_addr);
++            return result == SW_READY ? SWR_CLIENTS_CONNECT_READY : (result == SW_WAIT ? SWR_CLIENTS_CONNECT_WAIT : 0);
++        },
++        [](void *c) -> int32_t {
++            Client *cli = static_cast<Context *>(c)->cli;
++            return cli->socket->connect_sync(cli->server_addr);
++        },
++        [](void *c) { static_cast<Context *>(c)->recv_buf = sw_tg_buffer(); },
++        [](void *c) -> bool { return static_cast<Context *>(c)->cli->socks5_proxy != nullptr; },
++        [](void *c) -> ssize_t {
++            auto *ctx = static_cast<Context *>(c);
++            ctx->socks = ctx->cli->socks5_proxy.get();
++            const auto length = ctx->socks->pack_negotiate_request();
++            return ctx->cli->send(ctx->socks->buf, length);
++        },
++        [](void *c) { static_cast<Context *>(c)->socks->state = SW_SOCKS5_STATE_HANDSHAKE; },
++        [](void *c) -> ssize_t {
++            auto *ctx = static_cast<Context *>(c);
++            return ctx->cli->recv(ctx->recv_buf->str, ctx->recv_buf->size, 0);
++        },
++        [](void *c, ssize_t received) -> bool {
++            auto *ctx = static_cast<Context *>(c);
++            return ctx->cli->socks5_handshake(ctx->recv_buf->str, received);
++        },
++        [](void *c) -> bool {
++            return static_cast<Context *>(c)->cli->socks5_proxy->state == SW_SOCKS5_STATE_READY;
++        },
++        [](void *c) -> bool { return static_cast<Context *>(c)->cli->http_proxy != nullptr; },
++        [](void *c) -> ssize_t {
++            auto *ctx = static_cast<Context *>(c);
++            auto target_host = ctx->cli->get_http_proxy_host_name();
++            const size_t length = ctx->cli->http_proxy->pack(ctx->recv_buf, target_host);
++            return ctx->cli->send(ctx->recv_buf->str, length, 0);
++        },
++        [](void *c, ssize_t received) -> bool {
++            auto *ctx = static_cast<Context *>(c);
++            ctx->recv_buf->length = received;
++            return ctx->cli->http_proxy->handshake(ctx->recv_buf);
++        },
++        [](void *c) -> bool { return static_cast<Context *>(c)->cli->open_ssl; },
++        [](void *c) -> int32_t { return static_cast<Context *>(c)->cli->ssl_handshake(); },
++    };
++    return swr_v1_clients_connect(&ops);
  }
-@@ -488,60 +489,44 @@ static int Client_dns_lookup(Client *cli) {
+@@ -488,60 +498,71 @@ static int Client_dns_lookup(Client *cli) {
  static int Client_tcp_connect_async(Client *cli, const char *host, int port, double timeout, int nonblock) {
 -    int ret;
 -
@@ -2379,43 +2412,67 @@ index 56678c7..2f78626 100644
 -                cli->timer = swoole_timer_add(timeout, false, Client_onTimeout, cli);
 -                if (!cli->timer) {
 -                    return SW_ERR;
--                }
-+    uint32_t stage = 100;
-+    int result = 0;
-+    while (true) {
-+        uint32_t facts = 0;
-+        switch (stage) {
-+        case 100: facts = cli->onConnect && cli->onError && cli->onClose && cli->onReceive; break;
-+        case 101: facts = cli->buffer == nullptr; break;
-+        case 102: facts = cli->onBufferFull && cli->buffer_high_watermark == 0; break;
-+        case 104: facts = result < 0; break;
-+        case 105: facts = cli->wait_dns; break;
-+        case 106: facts = result < 0 && errno == EINTR; break;
-+        case 107: facts = (result < 0 && errno == EINPROGRESS) || result == 0; break;
-+        case 108: facts = result < 0 && timeout > 0; break;
-+        case 109: facts = cli->timer != nullptr; break;
-+        }
-+        const auto plan = swr_v1_clients_connect_next(stage, facts);
-+        switch (plan.action) {
-+        case SWR_CLIENTS_CONNECT_ADVANCE: break;
-+        case SWR_CLIENTS_CONNECT_WARN_CALLBACKS:
-+            swoole_warning("onConnect/onError/onReceive/onClose callback have not set");
-+            return SW_ERR;
-+        case SWR_CLIENTS_CONNECT_SET_TIMEOUT: cli->set_timeout(timeout); break;
-+        case SWR_CLIENTS_CONNECT_ALLOCATE_BUFFER: cli->buffer = new String(cli->input_buffer_size); break;
-+        case SWR_CLIENTS_CONNECT_WATERMARK: cli->buffer_high_watermark = cli->socket->buffer_size * 0.8; break;
-+        case SWR_CLIENTS_CONNECT_ADDRESS: result = Client_inet_addr(cli, host, port); break;
-+        case SWR_CLIENTS_CONNECT_DNS_LOOKUP: return Client_dns_lookup(cli);
-+        case SWR_CLIENTS_CONNECT_ASYNC_CONNECT: result = cli->socket->connect(cli->server_addr); break;
-+        case SWR_CLIENTS_CONNECT_ADD_TIMER: cli->timer = swoole_timer_add(timeout, false, Client_onTimeout, cli); break;
-+        case SWR_CLIENTS_CONNECT_ADD_EVENT: return swoole_event_add(cli->socket, SW_EVENT_WRITE);
-+        case SWR_CLIENTS_CONNECT_FAIL_CALLBACK:
-+            cli->set_active(false);
-+            cli->socket->removed = 1;
-+            cli->close();
-+            if (cli->onError) {
-+                cli->onerror_called = true;
-+                cli->onError(cli);
++    struct Context {
++        Client *cli;
++        const char *host;
++        int port;
++        double timeout;
++        std::exception_ptr thrown;
++    } context{cli, host, port, timeout, nullptr};
++    const swr_v1_clients_async_connect_ops ops{
++        &context,
++        cli->state_.get(),
++        timeout,
++        [](void *c) -> bool {
++            Client *cli = static_cast<Context *>(c)->cli;
++            return cli->onConnect && cli->onError && cli->onClose && cli->onReceive;
++        },
++        [](void *) { swoole_warning("onConnect/onError/onReceive/onClose callback have not set"); },
++        [](void *c) {
++            auto *ctx = static_cast<Context *>(c);
++            ctx->cli->set_timeout(ctx->timeout);
++        },
++        [](void *c) {
++            Client *cli = static_cast<Context *>(c)->cli;
++            if (cli->buffer == nullptr) {
++                cli->buffer = new String(cli->input_buffer_size);
++            }
++        },
++        [](void *c) {
++            Client *cli = static_cast<Context *>(c)->cli;
++            if (cli->onBufferFull && cli->buffer_high_watermark == 0) {
++                cli->buffer_high_watermark = cli->socket->buffer_size * 0.8;
++            }
++        },
++        [](void *c) -> int32_t {
++            auto *ctx = static_cast<Context *>(c);
++            return Client_inet_addr(ctx->cli, ctx->host, ctx->port);
++        },
++        [](void *c) -> int32_t { return Client_dns_lookup(static_cast<Context *>(c)->cli); },
++        [](void *c) -> int32_t {
++            Client *cli = static_cast<Context *>(c)->cli;
++            return cli->socket->connect(cli->server_addr);
++        },
++        [](void *c) -> bool {
++            auto *ctx = static_cast<Context *>(c);
++            ctx->cli->timer = swoole_timer_add(ctx->timeout, false, Client_onTimeout, ctx->cli);
++            return ctx->cli->timer != nullptr;
++        },
++        [](void *c) -> int32_t { return swoole_event_add(static_cast<Context *>(c)->cli->socket, SW_EVENT_WRITE); },
++        [](void *c) -> bool {
++            auto *ctx = static_cast<Context *>(c);
++            Client *cli = ctx->cli;
++            try {
++                cli->socket->removed = 1;
++                cli->close();
++                if (cli->onError) {
++                    cli->set_flag(SWR_CLIENTS_ONERROR_CALLED, true);
++                    cli->onError(cli);
+                 }
++                return true;
++            } catch (...) {
++                ctx->thrown = std::current_exception();
++                return false;
              }
 -            /**
 -             * Regardless of whether the connection has been successfully established or is still in progress,
@@ -2429,17 +2486,20 @@ index 56678c7..2f78626 100644
 -        if (cli->onError) {
 -            cli->onerror_called = true;
 -            cli->onError(cli);
-+            return result;
-+        default: return SW_ERR;
-         }
+-        }
 -        break;
 -    } while (true);
 -
 -    return ret;
-+        stage = plan.stage;
++        },
++    };
++    const int result = swr_v1_clients_connect_async(&ops);
++    if (context.thrown) {
++        std::rethrow_exception(context.thrown);
 +    }
++    return result;
  }
-@@ -549,17 +534,24 @@ static int Client_tcp_connect_async(Client *cli, const char *host, int port, dou
+@@ -549,17 +570,24 @@ static int Client_tcp_connect_async(Client *cli, const char *host, int port, dou
  static ssize_t Client_tcp_send_async(Client *cli, const char *data, size_t length, int flags) {
 +    uint32_t stage = 100;
      ssize_t n = length;
@@ -2476,7 +2536,7 @@ index 56678c7..2f78626 100644
 -    }
 -    return n;
  }
-@@ -603,89 +595,61 @@ static ssize_t Client_tcp_recv_sync(Client *cli, char *data, size_t len, int fla
+@@ -603,89 +631,61 @@ static ssize_t Client_tcp_recv_sync(Client *cli, char *data, size_t len, int fla
  static int Client_udp_connect(Client *cli, const char *host, int port, double timeout, int udp_connect) {
 -    cli->set_timeout(timeout);
 -    if (!cli->async && timeout > 0) {
@@ -2536,7 +2596,7 @@ index 56678c7..2f78626 100644
 +        case 1: facts = !cli->is_async() && timeout > 0; break;
 +        case 4: case 13: case 19: case 22: facts = result < 0; break;
 +        case 5: facts = cli->is_async() && !cli->onReceive; break;
-+        case 6: facts = cli->wait_dns && cli->is_async(); break;
++        case 6: facts = cli->flag(SWR_CLIENTS_WAIT_DNS) && cli->is_async(); break;
 +        case 7: facts = bool(cli->onError); break;
 +        case 11: facts = timeout > 0; break;
 +        case 12: facts = cli->socket->socket_type == SW_SOCK_UNIX_DGRAM; break;
@@ -2605,7 +2665,7 @@ index 56678c7..2f78626 100644
 +        case SWR_CLIENTS_TRANSPORT_CONNECT_CALLBACK: execute_onConnect(cli); break;
 +        case SWR_CLIENTS_TRANSPORT_SSL_HANDSHAKE: result = cli->ssl_handshake(); break;
 +        case SWR_CLIENTS_TRANSPORT_FAIL_CLOSE: cli->set_active(false); cli->socket->removed = 1; cli->close(); break;
-+        case SWR_CLIENTS_TRANSPORT_ERROR_CALLBACK: cli->onerror_called = true; cli->onError(cli); return SW_ERR;
++        case SWR_CLIENTS_TRANSPORT_ERROR_CALLBACK: cli->set_flag(SWR_CLIENTS_ONERROR_CALLED, true); cli->onError(cli); return SW_ERR;
 +        case SWR_CLIENTS_TRANSPORT_SUCCESS: return SW_OK;
 +        default: return SW_ERR;
          }
@@ -2621,7 +2681,7 @@ index 56678c7..2f78626 100644
 -        return SW_ERR;
 +        stage = plan.stage;
      }
-@@ -694,8 +658,4 @@ static int Client_udp_connect(Client *cli, const char *host, int port, double ti
+@@ -694,8 +694,4 @@ static int Client_udp_connect(Client *cli, const char *host, int port, double ti
  static ssize_t Client_udp_send(Client *cli, const char *data, size_t len, int flags) {
 -    ssize_t n = cli->socket->sendto(cli->server_addr, data, len, 0);
 -    if (n < 0 || n < (ssize_t) len) {
@@ -2632,12 +2692,12 @@ index 56678c7..2f78626 100644
 +    const ssize_t result = cli->socket->sendto(cli->server_addr, data, len, 0);
 +    return swr_v1_clients_datagram_send(result, static_cast<ssize_t>(len));
  }
-@@ -703,3 +663,3 @@ static ssize_t Client_udp_send(Client *cli, const char *data, size_t len, int fl
+@@ -703,3 +699,3 @@ static ssize_t Client_udp_send(Client *cli, const char *data, size_t len, int fl
  static ssize_t Client_udp_recv(Client *cli, char *data, size_t length, int flags) {
 -    if (cli->async) {
 +    if (cli->is_async()) {
          return cli->socket->recvfrom_sync(data, length, flags, &cli->remote_addr);
-@@ -717,112 +677,78 @@ static int Client_onPackage(const Protocol *proto, Socket *conn, const RecvData
+@@ -717,112 +713,78 @@ static int Client_onPackage(const Protocol *proto, Socket *conn, const RecvData
  static int Client_onStreamRead(Reactor *reactor, Event *event) {
 -    ssize_t n;
      auto *cli = (Client *) event->socket->object;
@@ -2820,12 +2880,12 @@ index 56678c7..2f78626 100644
 -    }
 -    return SW_OK;
  }
-@@ -844,3 +770,3 @@ static int Client_onError(Reactor *reactor, Event *event) {
+@@ -844,3 +806,3 @@ static int Client_onError(Reactor *reactor, Event *event) {
      auto *cli = (Client *) event->socket->object;
 -    if (cli->active) {
 +    if (cli->is_active()) {
          return cli->close();
-@@ -859,8 +785,8 @@ static void Client_onTimeout(Timer *timer, TimerNode *tnode) {
+@@ -859,8 +821,8 @@ static void Client_onTimeout(Timer *timer, TimerNode *tnode) {
      if (cli->open_ssl && cli->socket->ssl_state != SW_SSL_STATE_READY) {
 -        cli->active = false;
 +        cli->set_active(false);
@@ -2837,7 +2897,22 @@ index 56678c7..2f78626 100644
 -        cli->active = false;
 +        cli->set_active(false);
      }
-@@ -904,77 +830,74 @@ static int Client_onWrite(Reactor *reactor, Event *event) {
+@@ -877,3 +839,3 @@ static void Client_onResolveCompleted(AsyncEvent *event) {
+     auto *cli = static_cast<Client *>(event->object);
+-    cli->wait_dns = false;
++    cli->set_flag(SWR_CLIENTS_WAIT_DNS, false);
+     cli->dns_completed = true;
+@@ -887,3 +849,3 @@ static void Client_onResolveCompleted(AsyncEvent *event) {
+         if (cli->connect(req->addr.c_str(), cli->server_port, timeout, cli->sock_flags_) == SW_ERR &&
+-            !cli->onerror_called) {
++            !cli->flag(SWR_CLIENTS_ONERROR_CALLED)) {
+             goto _error;
+@@ -896,3 +858,3 @@ static void Client_onResolveCompleted(AsyncEvent *event) {
+         if (cli->onError) {
+-            cli->onerror_called = true;
++            cli->set_flag(SWR_CLIENTS_ONERROR_CALLED, true);
+             cli->onError(cli);
+@@ -904,77 +866,74 @@ static int Client_onWrite(Reactor *reactor, Event *event) {
      auto *cli = (Client *) event->socket->object;
 -    Socket *_socket = cli->socket;
 -    int ret;
