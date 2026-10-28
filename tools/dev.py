@@ -473,14 +473,6 @@ def plan(args, reports):
             script('phpcoroutines-sdk', 'tests/modules/phpcoroutines/sdk.py', '--source', ROOT / 'target/upstream/src',
                    '--sdk-report', reports / 'phphelpers-sdk.json', *report('phpcoroutines-sdk'))
         if integrate:
-            script('phpcoroutines-statistics', 'tests/modules/integration/php_statistics.py', *php,
-                   '--engine', f'hybrid={selected_export / "swoole.so"}',
-                   '--engine', f'upstream={native_export / "swoole.so"}',
-                   '--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-                   '--source-ref', 'HEAD',
-                   '--selected-export', selected_export / 'export.json', '--native-export', native_export / 'export.json',
-                   *report('phpcoroutines-statistics'))
-        if integrate:
             for suffix, profile in [('idle-queries', 'idle-queries'), ('frontend-statistics', 'statistics'), ('startup', 'startup'), ('configuration', 'configuration')]:
                 phase = 'phpcoroutines-' + suffix
                 script(phase, 'tests/modules/phpcoroutines/stats_runtime.py',

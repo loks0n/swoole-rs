@@ -27,12 +27,6 @@ lane's `abi` phase uses it, and the integrate lane runs every test.
 
 ## Other gates
 
-- `php_statistics.py --engine hybrid=SO --engine upstream=SO --build-manifest M
-  --archive A --source-ref REF --selected-export export.json --native-export
-  export.json --output R` (dev.py phase `phpcoroutines-statistics`). It verifies
-  both exports and the selected build's source attestation, then requires that
-  `tests/modules/phpcoroutines/statistics.php` gives identical read-only
-  Coroutine statistics in the native and selected DSOs.
 - `zts.py --checkout DIR --source S --rust-export export.json --output R` needs
   Linux with a ZTS PHP. It builds native and selected ZTS extensions from a
   verified Rust export and checks startup, ZTS, feature bits and the
