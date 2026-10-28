@@ -17,7 +17,7 @@
     },
     {
       "path": "0003-timer-php.patch",
-      "sha256": "e87c28e21ad19dbd006bcd49a4175b358539c9dfe4010ecf575b799befd8e7f1",
+      "sha256": "c3a6ff3bbd7d63c675ed1108206ae7156a60259e13a4055ab5d39ce466dde79c",
       "upstream_paths": [
         "ext-src/swoole_timer.cc"
       ]

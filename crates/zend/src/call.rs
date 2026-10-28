@@ -77,7 +77,7 @@ impl Call {
 
     /// `ZEND_CALL_ARG(execute_data, n)`, 1-based; `n` is at most `num_args()`.
     #[inline]
-    fn arg(&self, n: u32) -> *mut zval {
+    pub(crate) fn arg(&self, n: u32) -> *mut zval {
         self.frame
             .cast::<zval>()
             .wrapping_add(FRAME_SLOT + n as usize - 1)

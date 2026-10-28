@@ -140,7 +140,7 @@ def rust_sources(modules, extra=()):
     """Hash selected first-party Cargo manifests/source trees, including path dependencies."""
     command = ['cargo', 'metadata', '--locked', '--offline', '--format-version', '1',
                '--manifest-path', str(ROOT / 'crates/ffi/Cargo.toml'), '--no-default-features']
-    if features := [module for module in modules if module not in GRADUATED] + list(extra):
+    if features := [module for module in modules if module not in GRADUATED] + ['php'] + list(extra):
         command += ['--features', ','.join(features)]
     metadata = json.loads(subprocess.check_output(command, cwd=ROOT, text=True))
     packages = {package['id']: package for package in metadata['packages']}
@@ -172,7 +172,7 @@ def rust_archive(modules, php_config='php-config', extra=()):
     zend-sys binds the headers of the PHP the extension is built for (PHP_CONFIG)."""
     command = ['cargo', 'build', '--locked', '--release', '--no-default-features', '-p', 'swoole-rs-ffi',
                '--message-format=json-render-diagnostics']
-    if features := [module for module in modules if module not in GRADUATED] + list(extra):
+    if features := [module for module in modules if module not in GRADUATED] + ['php'] + list(extra):
         command += ['--features', ','.join(features)]
     result = subprocess.run(command, cwd=ROOT, stdout=subprocess.PIPE, text=True,
                             env={**os.environ, 'PHP_CONFIG': php_config})

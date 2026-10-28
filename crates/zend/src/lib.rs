@@ -16,19 +16,23 @@
 mod access;
 pub mod bailout;
 mod call;
+mod callable;
 mod class;
 mod error;
+mod function;
 mod object;
 pub mod string;
 pub mod value;
 
 pub use access::{declare_null, push_string, set_key, string_of, to_long, value_of};
 pub use call::{Call, Invalid, type_of};
+pub use callable::Callable;
 pub use class::{
     Class, class_name, declare_bool, declare_long, declare_string, register_double_constant,
     register_long_constant, unset_property_deny,
 };
 pub use error::{throw_constructed_twice, throw_error, throw_exception};
+pub use function::create_object_deny;
 pub use object::{Object, init_object, set_object};
 pub use swoole_rs_zend_sys as sys;
 

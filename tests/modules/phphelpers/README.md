@@ -79,8 +79,8 @@ inline bodies and 10 verbatim macros against the pinned header. Missing optional
 packages (for example libpq) keep their error but do not drop other flags. Its
 report (per-command dependency hashes, `selected_header_sha256`, the native public
 header hash) is the input for `entrypoint.py`, `facade_runtime.py`,
-`async_optional_sdk.py`, `prepare_php_benchmark.py`,
-`tests/modules/phpevents/` and `tests/modules/phpcoroutines/sdk.py`.
+`async_optional_sdk.py`, `prepare_php_benchmark.py` and
+`tests/modules/phpcoroutines/sdk.py`.
 
 `async_optional_sdk.py --source PINNED --sdk-report SDK.json --provider sqlite|odbc
 --output UNIQUE.json` compiles the unchanged optional SQLite or ODBC consumer TU
@@ -151,7 +151,7 @@ All five phases are kept, none deleted:
   consumer, and C++14/17 builds with and without sanitizers.
 - `phphelpers-sdk`: the only full-file compiles (24 profiles), the class layout
   witnesses and the Rust import checks. Its report is also the input that
-  `phpevents-sdk`, `phpcoroutines-sdk` and the stdext loaded checks read.
+  `phpcoroutines-sdk` and the stdext loaded checks read.
 - `phphelpers-async-sqlite-sdk`, `phphelpers-async-odbc-sdk`: the only builds of
   the optional SQLite and ODBC consumers with their feature enabled.
 

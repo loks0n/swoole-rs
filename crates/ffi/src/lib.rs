@@ -83,6 +83,9 @@ pub use swoole_rs_phplocks::*;
 #[cfg(feature = "wrappers")]
 pub use swoole_rs_wrappers::*;
 
+#[cfg(feature = "php")]
+pub use swoole_rs_phptimer::*;
+
 pub use swoole_rs_framing::{
     swr_v1_framing_default, swr_v1_framing_hton64, swr_v1_framing_mime_count,
     swr_v1_framing_mime_entry, swr_v1_framing_mime_fallback, swr_v1_framing_mime_suffix,
