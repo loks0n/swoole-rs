@@ -19,9 +19,13 @@ if a.report.exists():raise ValueError('Choose a unique receipt path')
 fixed=ROOT/'migration/patches/halfclose/0003-send-tls-close-notify.patch'
 fixed_sha=next(e['sha256'] for e in json.loads((fixed.parent/'manifest.json').read_text())['patches'] if e['path']==fixed.name)
 manifest=ROOT/'migration/patches/reactor/manifest.json';dest='src/network/socket.cc'
-# Every reactor patch up to the last that touches socket.cc, with the files they touch.
+# The reactor patches up to the last that touches socket.cc that touch it or the socket
+# header, plus every earlier patch to a file those touch, so each applies on its base.
 entries=json.loads(manifest.read_text())['patches'];last=max(i for i,e in enumerate(entries) if dest in e['upstream_paths'])
-stack=[e for e in entries[:last+1] if set(e['upstream_paths'])&{dest,'include/swoole_socket.h'}]
+touched={dest,'include/swoole_socket.h'}
+for e in entries[last::-1]:
+ if set(e['upstream_paths'])&touched:touched|=set(e['upstream_paths'])
+stack=[e for e in entries[:last+1] if set(e['upstream_paths'])&touched]
 paths=sorted({path for e in stack for path in e['upstream_paths']}|{dest})
 fixture_name='forwarding' if a.forwarding else 'iov_progress' if a.iov_progress else 'output'
 report=dict(scope=('Whole file/event forwarding positive source effects; clean syntax/pure Rust only, Native clean unexecuted' if a.forwarding else 'Genuine IOVector complete progression; Native vs Rust-owned descriptor storage, unchanged public class; no kernel/loaded production or error/fault/lifetime qualification' if a.iov_progress else __doc__),pin=PIN,patch_application=[],syntax=[],commands=[],results=[],passed=False)
