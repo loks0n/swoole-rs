@@ -68,6 +68,7 @@
  "error-unit": 1,
  "format": 1,
  "framing-native": 3,
+ "framing-native-originals": 22,
  "framing-traces": 11,
  "framing-unit": 1,
  "hooks-async-policy": 5,

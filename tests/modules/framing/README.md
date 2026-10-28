@@ -7,8 +7,8 @@ Default activation is not claimed.
 
 ## Gates
 
-`tools/dev.py` runs `gate.py` (framing-native), `trace.py` (framing-traces) and,
-.
+`tools/dev.py` runs `gate.py` (framing-native), `trace.py` (framing-traces), `core.py`
+(framing-native-originals, Linux) and the versioned `wrong_eof_setting.phpt` expectation.
 
 ```sh
 mkdir -p target/reports
@@ -34,12 +34,6 @@ python3 tests/modules/framing/gate.py --archive target/libframing.a \
   separately. Any error, skip or missing outcome fails. `--inventory-only`
   lists the tests without building.
 - Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` jobs), which runs every pinned PHPT on upstream and the all-modules hybrid. To attribute a gate regression to this module, see *Attributing a regression* in [corpus/upstream/README.md](../../../corpus/upstream/README.md).
-- `benchmark.py --prepare DIR --core-root ROOT` compiles the native consumers
-  and runs an untimed `check` for both engines. `benchmark.py --prepared DIR`
-  then runs five alternating trials each of length dispatch, EOF split (8-byte
-  and 64KiB packets), MIME lookup and unpack. Benchmarks need an idle host.
-  IO, PHP and whole-server throughput are excluded. No measurements have been
-  recorded.
 
 ## Known failures
 
