@@ -255,7 +255,8 @@
         "src/os/process_pool.cc",
         "src/os/pipe.cc",
         "src/os/signal.cc",
-        "src/os/wait.cc"
+        "src/os/wait.cc",
+        "include/swoole_process_pool.h"
       ],
       "abi_contract": "docs/process-abi-v1.md",
       "feature_bit_reserved": 524288
