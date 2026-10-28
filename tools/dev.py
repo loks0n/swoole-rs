@@ -529,7 +529,7 @@ def plan(args, reports):
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                    '--source-ref', utility_source, '--' + family + '-originals', *report(name))
         script('utilities-logger-owned-state', 'tests/modules/utilities/logger_state.py', '--source', ROOT / 'target/upstream/src',
-               '--native-export', native_export, '--selected-export', selected_export,
+               '--native-export', native_export,
                '--sdk-ref', utility_source,
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('utilities-logger-owned-state'))
         script('utilities-lowercase-sdk', 'tests/modules/utilities/lowercase_sdk.py',

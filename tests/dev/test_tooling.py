@@ -574,7 +574,7 @@ class Lanes(unittest.TestCase):
         self.assertIn('--archive', commands['reactor-backend-storage'])
         self.assertIn('--report', commands['reactor-backend-storage'])
         self.assertIn('--archive', commands['phpcoroutines-policy'])
-        self.assertIn('--selected-export', commands['utilities-logger-owned-state'])
+        self.assertIn('--archive', commands['utilities-logger-owned-state'])
         self.assertIn('--sdk-ref', commands['utilities-logger-owned-state'])
         for family in ['logger', 'hash', 'inline', 'global-logger', 'redirect']:
             command = commands['utilities-' + family + '-originals']
