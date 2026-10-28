@@ -1,6 +1,6 @@
 //! System frontend path admission and platform-provided file mode selection.
 #[repr(C)]
-pub struct FileConfig {
+pub(crate) struct FileConfig {
     pub lock: i32,
     pub append_mask: i32,
     pub base_open: i32,
@@ -9,7 +9,7 @@ pub struct FileConfig {
 }
 
 #[repr(C)]
-pub struct FilePlan {
+pub(crate) struct FilePlan {
     pub accepted: u8,
     pub lock: i32,
     pub open: i32,
@@ -18,7 +18,7 @@ pub struct FilePlan {
 /// # Safety
 /// `config` is readable for this call. It carries this native platform's constants.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_system_file(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_system_file(
     nonempty: u8,
     flags: i64,
     config: *const FileConfig,
@@ -43,14 +43,14 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_system_file(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phpcoroutines_system_sleep(seconds: f64, minimum: f64) -> u8 {
+pub(crate) extern "C" fn swr_v1_phpcoroutines_system_sleep(seconds: f64, minimum: f64) -> u8 {
     // Preserve the original comparison, including its unordered (NaN) behavior.
     u8::from(seconds >= minimum || seconds.is_nan() || minimum.is_nan())
 }
 
 /// Ordered hostname/family admission; platform address-family values stay native.
 #[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phpcoroutines_system_address(
+pub(crate) extern "C" fn swr_v1_phpcoroutines_system_address(
     length: usize,
     family: i64,
     ipv4: i64,
@@ -66,12 +66,12 @@ pub extern "C" fn swr_v1_phpcoroutines_system_address(
 }
 
 #[repr(C)]
-pub struct ResultState {
+pub(crate) struct ResultState {
     pub index: usize,
     pub started: u8,
 }
 #[repr(C)]
-pub struct ResultPlan {
+pub(crate) struct ResultPlan {
     pub action: u32,
     pub key: *const std::ffi::c_char,
     pub index: usize,
@@ -85,7 +85,7 @@ pub struct ResultPlan {
 /// For scalar kinds (0..=3), state may be null. Facts are refreshed after each
 /// requested native effect. No native payload pointer enters Rust.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_system_complete(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_system_complete(
     kind: u32,
     state: *mut ResultState,
     result: i64,

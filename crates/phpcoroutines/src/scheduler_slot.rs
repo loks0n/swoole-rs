@@ -8,7 +8,7 @@ use crate::{SchedulerQueue, SchedulerTask};
 /// Native Scheduler owner. Failure leaves the cell unchanged; Native throws only
 /// after return. No borrow/frame spans cache persistence, callbacks or Zend.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_prepare_slot(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_prepare_slot(
     slot: *mut *mut SchedulerQueue,
 ) -> u8 {
     // SAFETY: per this function's `# Safety` contract, `slot` is live, aligned and initialized.
@@ -29,7 +29,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_prepare_slot(
 /// exclusive cell contract. Observe it freshly after Native cache/parameter
 /// persistence, as the original caller did. Allocation failure publishes no task.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_try_push_slot(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_try_push_slot(
     slot: *mut *mut SchedulerQueue,
     token: usize,
     count: i64,
@@ -46,7 +46,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_try_push_slot(
 /// nonaliasing with the slot/queue. Absent/empty leave output untouched. The task
 /// is removed before returning to Native payload/cache/coroutine effects.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_next_slot(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_next_slot(
     slot: *mut *mut SchedulerQueue,
     output: *mut SchedulerTask,
 ) -> u32 {
@@ -70,7 +70,9 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_next_slot(
 /// precedes this call in start. Drop Rust metadata then clear its sole cell at the
 /// original publication point; null is a no-op. No Zend/payload destructor runs.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_drop_slot(slot: *mut *mut SchedulerQueue) {
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_drop_slot(
+    slot: *mut *mut SchedulerQueue,
+) {
     // SAFETY: per this function's `# Safety` contract, `slot` is live, aligned and initialized.
     let queue = unsafe { slot.read() };
     if !queue.is_null() {

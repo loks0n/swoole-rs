@@ -3,7 +3,7 @@
 /// `phase` is exclusive writable POD initially zeroed. Native effects run only
 /// after return; scalar observations describe the preceding requested fact.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_create(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_create(
     phase: *mut u32,
     observation: u64,
     maximum: u64,
@@ -46,7 +46,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_create(
 
 /// Sole repeat-loop metadata for the existing Native kernel test frontend.
 #[repr(C)]
-pub struct RepeatState {
+pub(crate) struct RepeatState {
     count: i64,
     index: i64,
     pending: u8,
@@ -56,7 +56,7 @@ pub struct RepeatState {
 /// Call only initially or after the preceding Native sleep returns. The original
 /// loop increments AFTER the effect; no Rust borrow/frame spans sleep/yield.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_repeat(state: *mut RepeatState) -> u8 {
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_repeat(state: *mut RepeatState) -> u8 {
     // SAFETY: per this function's `# Safety` contract, `state` is live, aligned and exclusive.
     let state = unsafe { &mut *state };
     if state.pending != 0 {

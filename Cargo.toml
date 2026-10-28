@@ -10,6 +10,10 @@ panic = "abort"
 panic = "abort"
 
 # Lint levels live here only; see AGENTS.md "Rust lints".
+[workspace.lints.rust]
+# `pub` only where another crate uses it, so dead_code sees the rest (#159).
+unreachable_pub = "deny"
+
 [workspace.lints.clippy]
 # Silent truncation, sign flips and misaligned casts at the FFI boundary (#157).
 cast_possible_truncation = "deny"

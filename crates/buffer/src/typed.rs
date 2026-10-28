@@ -16,7 +16,7 @@ pub(super) struct Cursor {
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-pub struct Front {
+pub(crate) struct Front {
     pub kind: u32,
     pub length: u32,
     pub offset: u32,
@@ -27,7 +27,7 @@ pub struct Front {
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
-pub struct Detached {
+pub(crate) struct Detached {
     pub token: *mut c_void,
     pub dispose: Dispose,
 }
@@ -36,7 +36,10 @@ pub struct Detached {
 /// # Safety
 /// The output is aligned, writable and disjoint, as for the legacy create API.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_buffer_typed_create(size: u32, out: *mut *mut Buffer) -> i32 {
+pub(crate) unsafe extern "C" fn swr_v1_buffer_typed_create(
+    size: u32,
+    out: *mut *mut Buffer,
+) -> i32 {
     // SAFETY: forwards the caller's aligned, writable, disjoint output.
     unsafe {
         create_buffer(
@@ -55,7 +58,7 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_create(size: u32, out: *mut *mut Bu
 /// Exclusive typed handle, unique native token and nonthrowing disposer; Rust
 /// stores the function address without invoking it. Custody transfers on OK only.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_buffer_typed_push(
+pub(crate) unsafe extern "C" fn swr_v1_buffer_typed_push(
     buffer: *mut Buffer,
     kind: u32,
     value: *mut c_void,
@@ -91,7 +94,10 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_push(
 /// Live typed handle and writable aligned disjoint output. DATA remains owned
 /// by the queue until detach; callers must not mutate/reenter it during effects.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_buffer_typed_front(buffer: *const Buffer, out: *mut Front) -> i32 {
+pub(crate) unsafe extern "C" fn swr_v1_buffer_typed_front(
+    buffer: *const Buffer,
+    out: *mut Front,
+) -> i32 {
     if out.is_null() {
         return INVALID;
     }
@@ -132,7 +138,7 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_front(buffer: *const Buffer, out: *
 /// Live exclusive typed handle; identity/offset are copied observations. This
 /// updates only the cursor, retaining full queued-byte accounting until detach.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_buffer_typed_consume(
+pub(crate) unsafe extern "C" fn swr_v1_buffer_typed_consume(
     buffer: *mut Buffer,
     generation: u64,
     offset: u32,
@@ -164,7 +170,10 @@ pub unsafe extern "C" fn swr_v1_buffer_typed_consume(
 /// Exclusive typed handle and aligned writable disjoint output. Native caller
 /// assumes token custody and invokes any disposer outside every Rust frame.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_buffer_typed_pop(buffer: *mut Buffer, out: *mut Detached) -> i32 {
+pub(crate) unsafe extern "C" fn swr_v1_buffer_typed_pop(
+    buffer: *mut Buffer,
+    out: *mut Detached,
+) -> i32 {
     if out.is_null() {
         return INVALID;
     }

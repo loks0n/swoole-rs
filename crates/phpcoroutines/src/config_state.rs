@@ -4,7 +4,7 @@
 use std::mem::offset_of;
 
 #[repr(C)]
-pub struct ConfigState {
+pub(crate) struct ConfigState {
     pub max_num: u64,
     pub hook_flags: u32,
     pub preemptive: u8,
@@ -24,7 +24,7 @@ fn field<T>(state: *mut ConfigState, offset: usize) -> *mut T {
 /// writes racing reads/writes of that same field remain outside the original
 /// defined native contract. No Zend memory or borrow enters this operation.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_config(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_config(
     state: *mut ConfigState,
     operation: u32,
     value: u64,

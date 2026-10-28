@@ -70,7 +70,7 @@ const STRINGS: [&[u8]; 64] = [
 ];
 
 #[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phphelpers_known_count() -> usize {
+pub(crate) extern "C" fn swr_v1_phphelpers_known_count() -> usize {
     STRINGS.len()
 }
 
@@ -79,7 +79,7 @@ pub extern "C" fn swr_v1_phphelpers_known_count() -> usize {
 /// Cursor is initialized; returned bytes are immutable static NUL-terminated data.
 /// Zend allocation/interning and publication happen after Rust returns.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phphelpers_known_next(
+pub(crate) unsafe extern "C" fn swr_v1_phphelpers_known_next(
     cursor: *mut usize,
     length: *mut usize,
 ) -> *const c_char {

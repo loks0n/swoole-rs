@@ -1,13 +1,13 @@
 //! Source-local autoload waiter queue. Tokens remain native stack/context custody.
 use std::collections::VecDeque;
 
-pub struct AutoloadQueue {
+pub(crate) struct AutoloadQueue {
     owner: usize,
     waiters: VecDeque<usize>,
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phpcoroutines_autoload_new() -> *mut AutoloadQueue {
+pub(crate) extern "C" fn swr_v1_phpcoroutines_autoload_new() -> *mut AutoloadQueue {
     Box::into_raw(Box::new(AutoloadQueue {
         owner: 0,
         waiters: VecDeque::new(),
@@ -17,7 +17,7 @@ pub extern "C" fn swr_v1_phpcoroutines_autoload_new() -> *mut AutoloadQueue {
 /// # Safety
 /// `queue` is a live exclusive handle; token referents are never accessed here.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_push(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_autoload_push(
     queue: *mut AutoloadQueue,
     token: usize,
 ) {
@@ -28,7 +28,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_push(
 /// # Safety
 /// `queue` is live and exclusive; `token` is writable and does not alias it.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_pop(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_autoload_pop(
     queue: *mut AutoloadQueue,
     token: *mut usize,
 ) -> u8 {
@@ -46,7 +46,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_pop(
 /// # Safety
 /// Consume the owned handle once. Only metadata drops; no native token cleanup.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_drop(queue: *mut AutoloadQueue) {
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_autoload_drop(queue: *mut AutoloadQueue) {
     // SAFETY: the owned handle from `try_owned`, consumed exactly once.
     unsafe { drop(Box::from_raw(queue)) };
 }
@@ -57,7 +57,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_drop(queue: *mut Autoload
 /// State is exclusive writable native stack POD, initially zero; observations
 /// belong only to the previously requested native fact.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_policy(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_autoload_policy(
     stage: *mut u32,
     observation: u8,
 ) -> u32 {
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_policy(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phpcoroutines_autoload_try_new() -> *mut AutoloadQueue {
+pub(crate) extern "C" fn swr_v1_phpcoroutines_autoload_try_new() -> *mut AutoloadQueue {
     crate::allocation::try_owned(AutoloadQueue {
         owner: 0,
         waiters: VecDeque::new(),
@@ -103,7 +103,7 @@ pub extern "C" fn swr_v1_phpcoroutines_autoload_try_new() -> *mut AutoloadQueue 
 /// # Safety
 /// Handle is live/exclusive. Failure publishes no new waiter; no referent is read.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_try_push(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_autoload_try_push(
     queue: *mut AutoloadQueue,
     token: usize,
 ) -> u8 {
@@ -119,7 +119,9 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_try_push(
 /// Own the autoload owner identity and waiter FIFO together. The integer is an
 /// opaque Native identity only; Rust never reads its referent or calls Native.
 #[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phpcoroutines_autoload_owner_try_new(owner: usize) -> *mut AutoloadQueue {
+pub(crate) extern "C" fn swr_v1_phpcoroutines_autoload_owner_try_new(
+    owner: usize,
+) -> *mut AutoloadQueue {
     crate::allocation::try_owned(AutoloadQueue {
         owner,
         waiters: VecDeque::new(),
@@ -129,7 +131,7 @@ pub extern "C" fn swr_v1_phpcoroutines_autoload_owner_try_new(owner: usize) -> *
 /// Queue is live and exclusively observed for this call. Owner is an opaque
 /// identity token; no borrow survives a Native classloader/yield/resume effect.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_autoload_is_owner(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_autoload_is_owner(
     queue: *const AutoloadQueue,
     owner: usize,
 ) -> u8 {

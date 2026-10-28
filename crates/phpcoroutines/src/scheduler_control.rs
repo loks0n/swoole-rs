@@ -1,6 +1,6 @@
 //! Whole remaining Scheduler control; Native Zend/resolver/Callable effects only.
 #[repr(C)]
-pub struct SchedulerConstants {
+pub(crate) struct SchedulerConstants {
     pub success: i64,
     pub false_tag: i64,
     pub php_resolver: i64,
@@ -11,7 +11,7 @@ pub struct SchedulerConstants {
 /// requested fresh Native scalar fact. No Callable, resolver, `HashTable`, zval,
 /// reactor or callback pointer enters Rust. Native effects run after return.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_control(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_scheduler_control(
     stage: *mut u32,
     kind: u32,
     observation: i64,

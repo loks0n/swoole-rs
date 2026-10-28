@@ -88,11 +88,11 @@ impl Drop for Scope {
 }
 
 #[no_mangle]
-pub extern "C" fn sw_rs_http2_test_queue_failure_after(remaining: usize) {
+pub(crate) extern "C" fn sw_rs_http2_test_queue_failure_after(remaining: usize) {
     STATE.with(|cell| cell.set(State { remaining, ..IDLE }));
 }
 #[repr(C)]
-pub struct Http2TestQueueFaultState {
+pub(crate) struct Http2TestQueueFaultState {
     site: u32,
     failed_site: u32,
     attempts: u32,
@@ -101,7 +101,9 @@ pub struct Http2TestQueueFaultState {
 /// # Safety
 /// `out` points to writable fixture state storage. This export exists only with cfg(test).
 #[no_mangle]
-pub unsafe extern "C" fn sw_rs_http2_test_queue_fault_state(out: *mut Http2TestQueueFaultState) {
+pub(crate) unsafe extern "C" fn sw_rs_http2_test_queue_fault_state(
+    out: *mut Http2TestQueueFaultState,
+) {
     STATE.with(|cell| {
         let state = cell.get();
         out.write(Http2TestQueueFaultState {
