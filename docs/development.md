@@ -125,6 +125,9 @@ manual setup:
   `candidate`/`integrate` unless the command names its own
 - adds `--with-prerequisites` to a `--phase` selection, so the builds and reports a
   phase needs run first
+- runs a repository script instead of a lane when the first argument ends in `.py`,
+  for example `dev.py docker -- benchmarks/callgrind.py --engine … --profiles DIR`
+  (the image has valgrind)
 
 It warns when the disk has less than 20 GB free. `dev.py prune` also removes
 `target/worktrees/*` older than its window and dev images other than the current
