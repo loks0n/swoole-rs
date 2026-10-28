@@ -20,7 +20,7 @@ extern "C" {
 size_t swr_v1_locks_size(int32_t kind);
 size_t swr_v1_locks_align(int32_t kind);
 int32_t swr_v1_locks_init(void *, int32_t kind, int32_t shared);
-int32_t swr_v1_locks_lock(void *, int32_t kind, int32_t operation, int32_t timeout_msec, uint32_t capabilities);
+int32_t swr_v1_locks_lock(void *, int32_t kind, int32_t operation, int32_t timeout, uint32_t capabilities);
 int32_t swr_v1_locks_unlock(void *, int32_t kind);
 void swr_v1_locks_destroy(void *, int32_t kind);
 /* operation: load=0, store=1, add-fetch=2, sub-fetch=3, CAS=4. */
@@ -32,7 +32,7 @@ int32_t swr_v1_locks_pthread_barrier(void *, size_t, void *, size_t, uint32_t op
 #ifdef __linux__ /* matches the Rust cfg(target_os = "linux") */
 /* Futex wait/wake; non-futex builds use upstream's C++ registry. */
 int32_t swr_v1_locks_wait(uint32_t *, double timeout);
-int32_t swr_v1_locks_wakeup(uint32_t *, int32_t count);
+int32_t swr_v1_locks_wakeup(uint32_t *, int32_t n);
 #endif
 int32_t swr_v1_locks_coroutine_try(uint32_t *, uintptr_t held_cookie, int64_t held_cid, uintptr_t current_cookie, int64_t current_cid, uint8_t blocking);
 int32_t swr_v1_locks_coroutine_release(uint32_t *);

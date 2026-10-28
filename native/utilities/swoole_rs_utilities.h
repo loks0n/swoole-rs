@@ -54,7 +54,7 @@ enum SwrUtilsRedirectAction {
     SWR_UTILS_REDIRECT_RESTORE_OUT_FAILED = 25, SWR_UTILS_REDIRECT_RESTORE_ERR_FAILED = 26
 };
 uint32_t swr_v1_utils_redirect_step(uint32_t *phase, uint8_t enable, uint8_t opened,
-                                     uint8_t redirected, int32_t previous_result);
+                                     uint8_t redirected, int32_t result);
 /* Logger file operations open=0, close=1, reopen=2. Scalar facts only; phase=0.
  * All IO, allocation, warning and field writes execute after Rust returns. */
 enum SwrUtilsLogFileAction {
@@ -164,7 +164,7 @@ uint32_t swr_v1_utils_log_state_emit_step(const struct SwrUtilsLogState *, uint3
  * Native RAII retains scope; exact allocation/exception topology is unqualified. */
 struct SwrUtilsLogPath;
 uint32_t swr_v1_utils_log_path_create(const struct SwrUtilsLogState *, uint32_t operation,
-    const uint8_t *file, size_t length, struct SwrUtilsLogPath **);
+    const uint8_t *input, size_t length, struct SwrUtilsLogPath **);
 /* Complete captured file+dot+date after calendar return, atomically on success. */
 uint32_t swr_v1_utils_log_path_rotate(struct SwrUtilsLogPath *, const uint8_t *date, size_t date_length);
 const char *swr_v1_utils_log_path_get(const struct SwrUtilsLogPath *, size_t *length);
