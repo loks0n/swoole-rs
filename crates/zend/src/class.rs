@@ -1,7 +1,10 @@
 //! Internal classes registered at MINIT, with their object handlers.
 use crate::sys::{
-    std_object_handlers, swr_zend_register_class, zend_class_entry, zend_function_entry,
-    zend_hash_find, zend_object, zend_object_handlers, zend_string, zend_throw_error,
+    CONST_PERSISTENT, ZEND_ACC_PUBLIC, std_object_handlers, swr_zend_register_class,
+    zend_class_entry, zend_declare_class_constant_long, zend_declare_property_long,
+    zend_declare_property_null, zend_function_entry, zend_hash_find, zend_long, zend_object,
+    zend_object_handlers, zend_register_double_constant, zend_register_long_constant, zend_string,
+    zend_throw_error,
 };
 use std::{
     ffi::{CStr, c_char, c_void},
@@ -65,10 +68,92 @@ impl Class {
         self.entry.load(Ordering::Acquire)
     }
 
+    /// `zend_declare_class_constant_long`.
+    /// # Safety
+    /// At MINIT, after `register`.
+    pub unsafe fn constant_long(&self, name: &CStr, value: zend_long) {
+        // SAFETY: per the caller; Zend copies the name.
+        unsafe {
+            zend_declare_class_constant_long(
+                self.entry(),
+                name.as_ptr(),
+                name.count_bytes(),
+                value,
+            );
+        }
+    }
+
+    /// `zend_declare_property_long(..., ZEND_ACC_PUBLIC)`.
+    /// # Safety
+    /// At MINIT, after `register`.
+    pub unsafe fn property_long(&self, name: &CStr, value: zend_long) {
+        #[expect(clippy::cast_possible_wrap, reason = "a small flag")]
+        // SAFETY: per the caller; Zend copies the name.
+        unsafe {
+            zend_declare_property_long(
+                self.entry(),
+                name.as_ptr(),
+                name.count_bytes(),
+                value,
+                ZEND_ACC_PUBLIC as i32,
+            );
+        }
+    }
+
+    /// `zend_declare_property_null(..., ZEND_ACC_PUBLIC)`.
+    /// # Safety
+    /// At MINIT, after `register`.
+    pub unsafe fn property_null(&self, name: &CStr) {
+        #[expect(clippy::cast_possible_wrap, reason = "a small flag")]
+        // SAFETY: per the caller; Zend copies the name.
+        unsafe {
+            zend_declare_property_null(
+                self.entry(),
+                name.as_ptr(),
+                name.count_bytes(),
+                ZEND_ACC_PUBLIC as i32,
+            );
+        }
+    }
+
     /// The handlers this class's objects use (null before MINIT).
     #[must_use]
     pub fn handlers(&self) -> *const zend_object_handlers {
         self.handlers.get().map_or(ptr::null(), ptr::from_ref)
+    }
+}
+
+/// `SW_REGISTER_LONG_CONSTANT`: a persistent global constant.
+/// # Safety
+/// At MINIT, with the extension's module number.
+pub unsafe fn register_long_constant(name: &CStr, value: zend_long, module: i32) {
+    #[expect(clippy::cast_possible_wrap, reason = "a small flag")]
+    // SAFETY: per the caller; Zend copies the name.
+    unsafe {
+        zend_register_long_constant(
+            name.as_ptr(),
+            name.count_bytes(),
+            value,
+            CONST_PERSISTENT as i32,
+            module,
+        );
+    }
+}
+
+/// `SW_REGISTER_DOUBLE_CONSTANT`: a persistent global constant.
+/// # Safety
+/// At MINIT, with the extension's module number.
+pub unsafe fn register_double_constant(name: &CStr, value: f64, module: i32) {
+    #[expect(clippy::cast_possible_wrap, reason = "a small flag")]
+    // SAFETY: per the caller; Zend copies the name.
+    unsafe {
+        zend_register_double_constant(
+            name.as_ptr(),
+            name.count_bytes(),
+            value,
+            CONST_PERSISTENT as i32,
+            module,
+        );
     }
 }
 

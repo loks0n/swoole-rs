@@ -112,9 +112,9 @@ build's `libswoole_rs_ffi.a`.
 
 ```
 python3 tests/modules/memory/channel_compat.py --source /absolute/pinned/upstream \
-  --output target/reports/memory/channel-compat.json
+  --archive /absolute/libswoole_rs_ffi.a --output target/reports/memory/channel-compat.json
 python3 tests/modules/memory/table_v2_compat.py --source /absolute/pinned/upstream \
-  [--fixed-pool] [--upstream-unused-parameter-policy] \
+  --archive /absolute/libswoole_rs_ffi.a [--fixed-pool] [--upstream-unused-parameter-policy] \
   --output target/reports/memory/table-v2-compat.json
 python3 tests/modules/memory/fixed_native_construction.py --source /absolute/pinned/upstream \
   --archive /absolute/libswoole_rs_ffi.a --output target/reports/memory/fixed-construction.json
@@ -122,9 +122,13 @@ python3 tests/modules/memory/mapping_operation.py --source /absolute/pinned/upst
   --archive /absolute/libswoole_rs_ffi.a --output target/reports/memory/mapping-operation.json
 ```
 
-- `channel_compat.py`: original and overlaid `swoole_channel.h` must both accept
+The selected side always compiles against the hybrid build's fully patched
+headers (`<build>/src/include`, its Rust ABI headers and its module switches),
+the original side against the pin.
+
+- `channel_compat.py`: original and selected `swoole_channel.h` must both accept
   flat (C++14/17/20) and designated (C++20) aggregate initialization of
-  `Channel`; the overlay must reject a build without the memory feature and
+  `Channel`; the selected headers must reject a build without the memory feature and
   accept one configured via `config.h`.
 - `table_v2_compat.py`: compiles the `TableV2` structural assertions plus the
   original and selected `table.cc` (and `fixed_pool.cc` with `--fixed-pool`) at

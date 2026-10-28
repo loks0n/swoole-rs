@@ -631,7 +631,7 @@ class Lanes(unittest.TestCase):
         self.assertNotIn('httpbindings-codec-0', commands)
         self.assertIn('--archive', commands['phpcollections-policy'])
         self.assertIn('--source', commands['memory-source-compatibility'])
-        self.assertNotIn('--archive', commands['memory-source-compatibility'])
+        self.assertIn('--archive', commands['memory-source-compatibility'])
         self.assertIn('--build-manifest', commands['phpcollections-runtime'])
         self.assertIn('--archive', commands['phpcollections-runtime'])
         for phase in ['ports-count', 'ports-settings']:

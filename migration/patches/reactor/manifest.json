@@ -115,6 +115,13 @@
         "src/network/socket.cc",
         "src/reactor/base.cc"
       ]
+    },
+    {
+      "path": "0015-server-reactor-thread.patch",
+      "sha256": "518f5abfa10f32068b462b4b046553d4c5c1e221fe5ca5e82c0cecb6286c9df3",
+      "upstream_paths": [
+        "src/server/reactor_thread.cc"
+      ]
     }
   ]
 }

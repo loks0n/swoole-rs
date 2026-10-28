@@ -21,7 +21,8 @@ mod value;
 
 pub use call::{Call, Invalid};
 pub use class::{Class, class_name, unset_property_deny};
-pub use error::{throw_error, throw_exception};
+pub use class::{register_double_constant, register_long_constant};
+pub use error::{throw_constructed_twice, throw_error, throw_exception};
 pub use object::{Object, init_object, set_object};
 pub use swoole_rs_zend_sys as sys;
 pub use value::{
@@ -29,12 +30,13 @@ pub use value::{
     update_long, value_of,
 };
 
-/// Export method handlers under Zend's names (`zim_<class>_<method>`), each
-/// running a body that takes the parsed `Call`.
+/// Export Zend handlers under Zend's own names (`zim_<class>_<method>` for
+/// methods, `zif_<function>` for functions) so upstream's tables name them
+/// unchanged; each runs `body(&Call)`.
 #[macro_export]
 macro_rules! handlers {
-    ($($name:ident => $body:expr;)*) => {$(
-        /// A Zend method handler.
+    ($($name:ident => $body:path;)*) => {$(
+        /// A Zend handler.
         /// # Safety
         /// Called by Zend with a live frame and return slot.
         #[unsafe(no_mangle)]
@@ -43,8 +45,7 @@ macro_rules! handlers {
             value: *mut $crate::sys::zval,
         ) {
             // SAFETY: per Zend's handler contract.
-            let call = unsafe { $crate::Call::new(frame, value) };
-            $body(&call);
+            $body(&unsafe { $crate::Call::new(frame, value) });
         }
     )*};
 }

@@ -25,6 +25,10 @@ template<class F> static void workload(const char *name, uint64_t count, uint64_
 }
 
 #ifdef SW_SUPPORT_DTLS
+static void peek_mode(BIO *bio, bool on) {
+    require(::BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_PEEK_MODE, on, nullptr) == 1);
+}
+
 static void datagram_reads(const char *name, int requested, bool peek) {
     constexpr uint64_t count = 20000;
     swoole::network::Socket socket{};
@@ -34,7 +38,7 @@ static void datagram_reads(const char *name, int requested, bool peek) {
     BIO *bio = BIO_new(swoole::dtls::BIO_get_methods());require(bio);
     BIO_set_data(bio, &session);BIO_set_init(bio, 1);
     char warm[64] = {};
-    if (peek) { session.peek_mode = true;require(::BIO_read(bio, warm, requested) == requested);session.peek_mode = false; }
+    if (peek) { peek_mode(bio, true);require(::BIO_read(bio, warm, requested) == requested);peek_mode(bio, false); }
     require(::BIO_read(bio, warm, requested) == requested);
     const uint64_t unit = requested + (unsigned char)'x';
     workload(name, count, count * unit * (peek ? 2 : 1), [&] {
@@ -42,17 +46,17 @@ static void datagram_reads(const char *name, int requested, bool peek) {
         char output[64] = {};
         for (uint64_t i = 0; i < count; ++i) {
             if (peek) {
-                session.peek_mode = true;
+                peek_mode(bio, true);
                 int length = ::BIO_read(bio, output, requested);
                 checksum += length + (unsigned char)output[requested - 1];
-                session.peek_mode = false;
+                peek_mode(bio, false);
             }
             int length = ::BIO_read(bio, output, requested);
             checksum += length + (unsigned char)output[requested - 1];
         }
         return checksum;
     });
-    require(session.rxqueue.empty());BIO_free(bio);
+    require(::BIO_ctrl(bio, BIO_CTRL_EOF, 0, nullptr) == 1);BIO_free(bio);
 }
 
 static void datagram_controls() {
@@ -73,7 +77,7 @@ static void datagram_controls() {
         }
         return checksum;
     });
-    require(session.rxqueue.size() == 8);BIO_free(bio);
+    require(::BIO_ctrl(bio, BIO_CTRL_PENDING, 0, nullptr) == 256);BIO_free(bio);
 }
 #endif
 

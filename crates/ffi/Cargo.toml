@@ -24,6 +24,8 @@ corebase = ["dep:swoole-rs-corebase"]
 coroutine = ["dep:swoole-rs-coroutine"]
 
 hooks = ["dep:swoole-rs-hooks"]
+# Not a module: the hybrid adds it when configured with --enable-iouring.
+iouring = ["hooks", "swoole-rs-hooks/iouring"]
 
 ossupport = ["dep:swoole-rs-ossupport"]
 tls = ["dep:swoole-rs-tls"]

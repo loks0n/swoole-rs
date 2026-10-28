@@ -7,18 +7,21 @@ Session and BIO method table.
 
 ## differential.py
 
-Compiles the complete pinned and patched `src/protocol/ssl.cc` and `dtls.cc`
-into a driver, links both against one matching native full-core library and
-compares their output. The patched tree gets its own Git root so `git apply`
-cannot be silently skipped; the patched driver must contain definitions and
-call instructions for every `swr_v1_tls_*` function it uses, the reference none. Loader
-output, the native library and the loaded libssl/libcrypto are checked to be
-unchanged across the run.
+Compiles the complete pinned `src/protocol/ssl.cc` and `dtls.cc` against the
+pinned headers and links them to the pinned native core library; compiles the
+hybrid build's fully patched copies against its patched headers (the tree of
+`--archive`) and links them to a native core library built from that same tree.
+Then it compares their output. The patched driver must contain definitions and
+call instructions for every `swr_v1_tls_*` function it uses, the reference none.
+Loader output, both native libraries and the loaded libssl/libcrypto are checked
+to be unchanged across the run. Drivers reach DTLS state only through public
+calls (`Session::append`, the BIO callbacks), never `Session`'s queue or peek mode.
 
 ```sh
 python3 tests/modules/tls/differential.py --reference PINNED_GIT \
   --source CONFIGURED_HEADER_TREE --library NATIVE_LIBSWOOLE \
-  --openssl OPENSSL_PREFIX --output R [--archive FFI_ARCHIVE] [--sanitize] \
+  --hybrid-library HYBRID_LIBSWOOLE --archive HYBRID_FFI_ARCHIVE \
+  --openssl OPENSSL_PREFIX --output R [--sanitize] \
   [--gtest-prefix PREFIX] [--peers | --allocation | --crypto-allocation | --benchmark-check]
 ```
 
@@ -40,7 +43,7 @@ python3 tests/modules/tls/differential.py --reference PINNED_GIT \
   are formatted in Rust).
 - `--crypto-allocation --crypto-operation client-ca|dhparam|curve|dtls-init`
   (`crypto_allocation.cc`): OpenSSL allocator-hook single-failure sweep.
-- `--benchmark-check --archive A` (`benchmark.cc`): prepares six fixed optimized
+- `--benchmark-check` (`benchmark.cc`): prepares six fixed optimized
   workloads and verifies their checksums without timing anything.
 - `--sanitize` adds ASan/UBSan to the native TUs and driver only (not Rust, the
   native DSO or OpenSSL); leak detection is off.
@@ -56,8 +59,9 @@ python3 tests/modules/tls/gate.py --source PINNED_GIT --config SELECTED_CONFIG_H
 Runs `differential.py` against the supplied FFI archive in three children:
 sanitized setup with original GTests, sanitized peers, and ordinary
 allocation. It first checks the archive exports ABI 1 with TLS feature bit
-262144 and that the public headers match the pin. It never builds a native
-runtime: the native library comes from an existing successful build report
+262144, then builds `lib-swoole` from the archive's hybrid tree with CMake
+(cached in `target/native-core/hybrid-*`, keyed by the archive, the tree's
+`config.h` and its patch state). The pinned native library comes from an existing successful build report
 (the coroutine `core.py` report, a `tools/native_core.py` report, or a corebase
 outer report wrapping one) whose library and compiled config must match.
 Without `--native-report` it tries `coroutine-native-originals.json` next to

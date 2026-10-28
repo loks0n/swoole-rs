@@ -33,14 +33,6 @@ traces. `--archive FILE` uses an existing combined archive instead of building
 the crate. `--sanitizers` applies ASan/UBSan to the C++ witness frames only.
 Registered in `tools/dev.py` as `phpcollections-policy`.
 
-## SDK syntax check (`sdk.py`)
-
-`sdk.py --source PINNED --sdk-export FILE --output FILE` copies an exported
-`config.h` and a clean pinned-header mirror plus the M12 headers, then
-syntax-checks native and selected full translation units and expects the selected
-units to refuse compilation without the feature define. Only the mirror's M27
-define is removed so per-command `-D`/`-U` selects the variant.
-
 ## Loaded PHP runtime (`php_runtime.py`)
 
 ```sh
