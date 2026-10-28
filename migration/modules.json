@@ -155,6 +155,7 @@
         "src/network/socket.cc",
         "include/swoole_socket.h",
         "src/server/base.cc",
+        "src/server/reactor_process.cc",
         "src/server/reactor_thread.cc"
       ],
       "abi_contract": "docs/reactor-abi-v1.md",

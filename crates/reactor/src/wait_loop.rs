@@ -1,5 +1,6 @@
 //! Each backend's whole wait loop in one call (#336, #391). Rust owns the loop and the readiness
 //! order; native code supplies the kernel wait and the effects upstream reaches through `Reactor`.
+use crate::handlers::{self, Handlers};
 use std::ffi::{c_int, c_void};
 
 pub const POLL: u32 = 0;
@@ -30,12 +31,15 @@ pub struct WaitOps {
     pub wait_failed: unsafe extern "C" fn(*mut c_void),
     /// Fill the native `Event` for `socket`; `fd` is poll's entry fd (-1: the socket's own),
     /// and a nonzero `hup` marks `event_hup`.
-    pub prepare: unsafe extern "C" fn(*mut c_void, *mut c_void, c_int, c_int),
+    /// Fill the event for a socket; returns its fd type.
+    pub prepare: unsafe extern "C" fn(*mut c_void, *mut c_void, c_int, c_int) -> c_int,
     /// `socket->removed`, and `socket->events & SW_EVENT_ONCE`.
     pub removed: unsafe extern "C" fn(*mut c_void) -> c_int,
     pub oneshot: unsafe extern "C" fn(*mut c_void) -> c_int,
-    /// Run the read (0), write (1) or error (2) handler for the prepared event.
-    pub handle: unsafe extern "C" fn(*mut c_void, u32) -> c_int,
+    /// The reactor's handler tables; each handler runs as `handler(reactor, event)`.
+    pub handlers: *const Handlers,
+    pub reactor: *mut c_void,
+    pub event: *mut c_void,
     pub handler_failed: unsafe extern "C" fn(*mut c_void, u32),
     pub remove: unsafe extern "C" fn(*mut c_void, *mut c_void),
     /// kqueue only: dispatch a signal entry, and warn about an unknown filter.
@@ -185,12 +189,11 @@ unsafe fn entry(ops: &WaitOps, index: usize) {
 fn ready(ops: &WaitOps, socket: *mut c_void, fd: c_int, mask: u32) {
     let context = ops.context;
     // SAFETY: `socket` is the registered native socket; the effect accepts it.
-    unsafe { (ops.prepare)(context, socket, fd, c_int::from(mask & HANGUP != 0)) };
+    let fd_type = unsafe { (ops.prepare)(context, socket, fd, c_int::from(mask & HANGUP != 0)) };
     // SAFETY: `socket` stays live while its handlers run.
     let live = || unsafe { (ops.removed)(socket) } == 0;
     for (kind, bit) in [(0, READ), (1, WRITE)] {
-        // SAFETY: the native effect accepts `context` and the prepared event.
-        if mask & bit != 0 && live() && unsafe { (ops.handle)(context, kind) } < 0 {
+        if mask & bit != 0 && live() && handle(ops, kind, fd_type) < 0 {
             // SAFETY: the native effect accepts `context` and the prepared event.
             unsafe { (ops.handler_failed)(context, kind) };
         }
@@ -200,8 +203,7 @@ fn ready(ops: &WaitOps, socket: *mut c_void, fd: c_int, mask: u32) {
         if mask & (READ | WRITE) != 0 {
             return;
         }
-        // SAFETY: the native effect accepts `context` and the prepared event.
-        if unsafe { (ops.handle)(context, 2) } < 0 {
+        if handle(ops, 2, fd_type) < 0 {
             // SAFETY: the native effect accepts `context` and the prepared event.
             unsafe { (ops.handler_failed)(context, 2) };
         }
@@ -224,15 +226,14 @@ fn kqueue(ops: &WaitOps, udata: *mut c_void, filter: c_int) {
     }
     if filter == c_int::from(libc::EVFILT_READ) || filter == c_int::from(libc::EVFILT_WRITE) {
         // SAFETY: `udata` is the registered native socket; the effect accepts it.
-        unsafe { (ops.prepare)(context, udata, -1, 0) };
+        let fd_type = unsafe { (ops.prepare)(context, udata, -1, 0) };
         // SAFETY: `udata` stays live while its handler runs.
         let live = || unsafe { (ops.removed)(udata) } == 0;
         if !live() {
             return;
         }
         let kind = u32::from(filter != c_int::from(libc::EVFILT_READ));
-        // SAFETY: the native effect accepts `context` and the prepared event.
-        if unsafe { (ops.handle)(context, kind) } < 0 {
+        if handle(ops, kind, fd_type) < 0 {
             // SAFETY: the native effect accepts `context` and the prepared event.
             unsafe { (ops.handler_failed)(context, kind) };
         }
@@ -246,6 +247,23 @@ fn kqueue(ops: &WaitOps, udata: *mut c_void, filter: c_int) {
         // SAFETY: the native effect accepts `context`.
         unsafe { unknown(context, filter) };
     }
+}
+
+/// Runs the prepared event's read (0), write (1) or error (2) handler, as upstream's
+/// `get_handler`/`get_error_handler`; a missing handler fails like one returning
+/// `SW_ERR` rather than calling null.
+fn handle(ops: &WaitOps, kind: u32, fd_type: c_int) -> c_int {
+    let kind = match kind {
+        0 => handlers::READ,
+        1 => handlers::WRITE,
+        _ => handlers::ERROR,
+    };
+    // SAFETY: the native reactor's tables stay live while it waits.
+    let Some(handler) = (unsafe { &*ops.handlers }).dispatch(kind, fd_type) else {
+        return -1;
+    };
+    // SAFETY: a native `ReactorHandler`, given its reactor and the prepared event.
+    unsafe { handler(ops.reactor, ops.event) }
 }
 
 fn oneshot(ops: &WaitOps, socket: *mut c_void, live: impl Fn() -> bool) {
