@@ -100,7 +100,7 @@ def main():
     def verify_calls(executable, selected):
         nm=run(['nm','-g',executable]).stdout
         disassembly=run(['otool','-tvV',executable] if system=='Darwin' else ['objdump','-d','-C',executable]).stdout
-        names=['context','setup','read','control','listen','password']
+        names=['init','error','context_create','set_capath','set_ciphers','set_client_certificate','set_ecdh_curve','set_dhparam','read','control','listen']
         calls={name:bool(re.search(r'\b(?:bl|callq?|b|jmpq?)\s+[^\n]*\b_?swr_v1_tls_'+name+r'\b',disassembly)) for name in names}
         definitions={name:bool(re.search(r'\b[Tt] _?swr_v1_tls_'+name+r'\s*$',nm,re.M)) for name in names}
         if selected and (not all(calls.values()) or not all(definitions.values())):
@@ -140,7 +140,7 @@ def main():
             if digest(path)!=p['sha256']: raise ValueError('Patch hash mismatch')
             run(['git','apply','--check',path],cwd=patched)
             run(['git','apply',path],cwd=patched)
-        for name, required in [('ssl.cc',['context','setup']),('dtls.cc',['read','control','listen'])]:
+        for name, required in [('ssl.cc',['context_create','set_capath']),('dtls.cc',['read','control','listen'])]:
             old=original/'src/protocol'/name;new=patched/'src/protocol'/name
             if old.read_bytes()==new.read_bytes() or any('swr_v1_tls_'+fn+'(' not in new.read_text() for fn in required):
                 raise ValueError('Overlay skipped or missing actual caller: '+name)
