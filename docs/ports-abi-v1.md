@@ -5,10 +5,13 @@ Feature value 8388608 (`--module ports`). Upstream targets:
 [policy/effect split](abi-v1.md#policyeffect-split).
 
 Rust owns callback-free policy: native defaults, protocol selection,
-listener/option/setup policy and PHP Port settings. Sockets, socket options,
-OpenSSL (including SNI name matching and DTLS), Zend conversion, object/property
-custody, allocation, logging and callbacks stay native, as do the callback, SNI,
-session and connection containers. Return values, errno, warnings, partial
+listener/option/setup policy and PHP Port settings. TLS setup (context creation,
+SNI registration and selection, SNI wildcard matching with libc case folding,
+per-socket TLS), socket import and `close` are whole Rust operations
+(`swr_v1_ports_run`, `crates/ports/src/lifecycle.rs`) over the same op call as
+the receive callbacks. Sockets, socket options, OpenSSL calls, DTLS sessions,
+Zend conversion, object/property custody, allocation, logging and callbacks stay
+native, as do the callback, SNI, session and connection containers. Return values, errno, warnings, partial
 publication and cleanup order match upstream.
 
 The receive callbacks (`readable_callback_*`: raw, length, EOF, Redis and HTTP)
