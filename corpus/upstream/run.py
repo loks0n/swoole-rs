@@ -66,6 +66,10 @@ RACY = {'tests/swoole_websocket_server/send_close_frame.phpt':
         'tests/swoole_coroutine/dnslookup_ipv6.phpt':
         "the verdict depends on the runner's resolver reply, and both engines fail on some "
         'replies (#428)',
+        'tests/swoole_process_pool/getprocess_4.phpt':
+        'worker 0 gives the pool a fixed 100 ms to restart the SIGTERMed worker 1 before '
+        'getProcess(1); on a loaded runner both engines miss it (upstream failed re-runs in 3 '
+        'merge-tier runs, #703)',
         'tests/swoole_server/shutdown_in_master.phpt':
         'shutdown() from onStart, before the random 1-4 workers are up, sometimes hangs until '
         'the deadline on both engines (upstream 2/8, hybrid 3/8, #438)',
