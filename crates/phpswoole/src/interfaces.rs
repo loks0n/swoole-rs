@@ -157,11 +157,13 @@ fn add_address(call: &Call, name: &[u8], address: &[u8]) {
 
 #[cfg(target_os = "linux")]
 fn local_mac(call: &Call) {
-    use std::mem::{size_of, zeroed};
+    use std::mem::{size_of, size_of_val, zeroed};
     // The requests as `ioctl` takes them (an int on musl).
     const SIOCGIFCONF: libc::Ioctl = 0x8912;
     const SIOCGIFFLAGS: libc::Ioctl = 0x8913;
     const SIOCGIFHWADDR: libc::Ioctl = 0x8927;
+    // Upstream's 4096-byte buffer, as whole requests.
+    const REQUESTS: usize = 4096 / size_of::<libc::ifreq>();
 
     // SAFETY: plain socket creation.
     let sock = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0) };
@@ -170,17 +172,18 @@ fn local_mac(call: &Call) {
         call.set_bool(false);
         return;
     }
-    let mut buffer = [0 as c_char; 4096];
     // SAFETY: plain data; all-zero is valid.
+    let mut buffer: [libc::ifreq; REQUESTS] = unsafe { zeroed() };
+    // SAFETY: as above.
     let mut conf: libc::ifconf = unsafe { zeroed() };
     #[expect(
         clippy::cast_possible_truncation,
         clippy::cast_possible_wrap,
-        reason = "4096"
+        reason = "under 4096 bytes"
     )]
-    let length = buffer.len() as c_int;
+    let length = size_of_val(&buffer) as c_int;
     conf.ifc_len = length;
-    conf.ifc_ifcu.ifcu_buf = buffer.as_mut_ptr();
+    conf.ifc_ifcu.ifcu_req = buffer.as_mut_ptr();
     // SAFETY: a socket and an ifconf over a live buffer.
     if unsafe { libc::ioctl(sock, SIOCGIFCONF, &raw mut conf) } < 0 {
         sys_warning("ioctl SIOCGIFCONF failed");
@@ -191,10 +194,7 @@ fn local_mac(call: &Call) {
     }
     call.set_array();
     let count = usize::try_from(conf.ifc_len).unwrap_or(0) / size_of::<libc::ifreq>();
-    let requests = buffer.as_ptr().cast::<libc::ifreq>();
-    for index in 0..count {
-        // SAFETY: the kernel filled `count` requests into the buffer; read unaligned.
-        let entry = unsafe { requests.add(index).read_unaligned() };
+    for entry in buffer.iter().take(count) {
         // SAFETY: plain data; all-zero is valid.
         let mut request: libc::ifreq = unsafe { zeroed() };
         let end = libc::IFNAMSIZ - 1;
@@ -212,8 +212,7 @@ fn local_mac(call: &Call) {
         if unsafe { libc::ioctl(sock, SIOCGIFHWADDR, &raw mut request) } == 0 {
             // SAFETY: SIOCGIFHWADDR filled the hardware address.
             let data = unsafe { request.ifr_ifru.ifru_hwaddr.sa_data };
-            #[expect(clippy::cast_sign_loss, reason = "the address's bytes")]
-            let bytes = data.map(|byte| byte as u8);
+            let bytes = data.map(|byte| byte.to_ne_bytes()[0]);
             // SAFETY: the name is NUL-terminated within IFNAMSIZ.
             let name = unsafe { CStr::from_ptr(request.ifr_name.as_ptr()) };
             add_address(call, name.to_bytes(), &bytes);
