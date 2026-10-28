@@ -22,6 +22,14 @@
         "include/swoole_string.h",
         "src/core/string.cc"
       ]
+    },
+    {
+      "path": "0004-buffer-handle.patch",
+      "sha256": "9d79880409b6bdfba155f3ede1a807119b170afdf2986baaefd9b0008bb9fda8",
+      "upstream_paths": [
+        "include/swoole_buffer.h",
+        "src/core/buffer.cc"
+      ]
     }
   ]
 }

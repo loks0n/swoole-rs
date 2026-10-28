@@ -12,7 +12,7 @@ Most gates take the pinned upstream source and a Rust FFI archive:
 
 `NAME` is one of `output`, `wait`, `callbacks`, `callback_queues`,
 `initialize`, `builtins`, `backend_storage`, `flush`, `poll_snapshot`,
-`write_gate`, `stream_gate` and `iov_owned`. Each extracts the original and patched function
+`stream_gate` and `iov_owned`. Each extracts the original and patched function
 bodies from upstream after applying `migration/patches/reactor/` (patch
 checksums must match the manifest), compiles them against native facades and the
 archive, and checks that both variants behave the same. `output.py` also takes
