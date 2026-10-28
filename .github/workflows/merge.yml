@@ -98,7 +98,7 @@ jobs:
       - id: install
         uses: ./.github/actions/install
         with:
-          packages: unixodbc-dev
+          packages: unixodbc-dev firebird-dev
           php: latest
       - id: upstream
         uses: actions/cache@v4
@@ -115,7 +115,7 @@ jobs:
       - run: cargo fetch --locked
       - run: |
           # Database hooks as upstream's own CI builds them (scripts/docker-compile.sh).
-          services="--configure=--enable-swoole-pgsql --configure=--enable-mysqlnd --configure=--with-swoole-odbc=unixODBC,/usr"
+          services="--configure=--enable-swoole-pgsql --configure=--enable-mysqlnd --configure=--with-swoole-odbc=unixODBC,/usr --configure=--with-swoole-firebird"
           python3 tools/build_hybrid.py --backend upstream --php-sockets $services | tee upstream.log
           python3 tools/build_hybrid.py --php-sockets $services $(python3 -c 'from tools.build_hybrid import SELECTABLE; print(*(f"--module {m}" for m in SELECTABLE))') | tee hybrid.log
           mkdir -p target/phpt
@@ -265,13 +265,23 @@ jobs:
         image: redis:7.4
         ports: ['6379:6379']
         options: --health-cmd "redis-cli ping" --health-interval 2s --health-retries 30
+      # Creates /var/lib/firebird/data/test.fdb, the database FIREBIRD_DSN names.
+      firebirdsql:
+        image: firebirdsql/firebird
+        env:
+          FIREBIRD_ROOT_PASSWORD: root
+          FIREBIRD_USER: test
+          FIREBIRD_PASSWORD: test
+          FIREBIRD_DATABASE: test.fdb
+          FIREBIRD_DATABASE_DEFAULT_CHARSET: UTF8
+        ports: ['3050:3050']
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/install
         with:
-          packages: php-gmp php-bcmath php-mysql php-pgsql unixodbc odbc-mariadb
+          packages: php-gmp php-bcmath php-mysql php-pgsql unixodbc odbc-mariadb libfbclient2
           php: ${{ needs.phpt-build.outputs.php }}
-      - run: echo '127.0.0.1 httpbin pgsql mysql redis' | sudo tee -a /etc/hosts
+      - run: echo '127.0.0.1 httpbin pgsql mysql redis firebirdsql' | sudo tee -a /etc/hosts
       # The ODBC driver and the mysql-test DSN, as upstream's tests/init writes them, with the
       # driver's full path (Ubuntu installs it outside the loader's default directories).
       - run: |
