@@ -11,7 +11,8 @@ use swoole_rs_http::{
     swr_v1_http_url_encode,
 };
 use swoole_rs_oracle::{
-    base64 as upstream, clients, framing as upstream_framing, http as upstream_http,
+    base64 as upstream, clients, framing as upstream_framing, framing_stream,
+    http as upstream_http,
     http_frame::{self, CANDIDATE, Engine, UPSTREAM},
     http_range, protocols, websocket as upstream_ws,
 };
@@ -738,4 +739,71 @@ pub fn http_range(bytes: &[u8]) {
         capacity,
     );
     assert_eq!(got, want, "range for {bytes:?}");
+}
+
+/// One engine's receive-loop log for a stream case (see `framing_stream::Run`).
+fn stream_log(run: framing_stream::Run, stream: &framing_stream::Stream) -> Vec<u8> {
+    let mut out = vec![0_u8; 1 << 16];
+    // SAFETY: the case's pointers outlive the call; `out` has its capacity.
+    let length = unsafe { run(stream, out.as_mut_ptr(), out.len()) };
+    out.truncate(length.min(out.len()));
+    out
+}
+
+/// The stream receive loops (`recv_with_length_protocol`, `recv_with_eof_protocol`
+/// and `recv_split_by_eof`) from upstream and from the candidate (a step loop over
+/// the Rust framing state machine), over the same stream in the same chunks: every
+/// call's result, every packet and the final buffer must match.
+pub fn framing_stream(bytes: &[u8]) {
+    let Some((
+        &[
+            mode,
+            eof_len,
+            flags,
+            length_size,
+            offset,
+            body,
+            max,
+            chunk_count,
+        ],
+        rest,
+    )) = bytes.split_first_chunk::<8>()
+    else {
+        return;
+    };
+    let mode = mode % 3;
+    let eof_len = (eof_len % 4).max(1);
+    let chunk_count = usize::from(chunk_count % 16);
+    if rest.len() < usize::from(eof_len) + chunk_count {
+        return;
+    }
+    let (eof, rest) = rest.split_at(usize::from(eof_len));
+    let (sizes, data) = rest.split_at(chunk_count);
+    // The configurations compared: chunk sizes 1..=64, length headers of 1..=4
+    // bytes at offsets 0..8 with body offsets 1..=8, a 64-byte length buffer, and an
+    // EOF buffer of the maximum length. A stream past the chunks waits (or closes).
+    let chunks: Vec<u16> = sizes.iter().map(|&size| u16::from(size % 64) + 1).collect();
+    let stream = framing_stream::Stream {
+        mode,
+        eof_len,
+        close_at_end: flags & 1,
+        length_size: length_size % 4 + 1,
+        length_offset: u16::from(offset % 8),
+        body_offset: u16::from(body % 8) + 1,
+        // At least the EOF, and small enough that the limit is reached.
+        max_length: u32::from(max % 64) + u32::from(eof_len) + 1,
+        buffer_size: 64,
+        eof: eof.as_ptr(),
+        data: data.as_ptr(),
+        length: data.len(),
+        chunks: chunks.as_ptr(),
+        chunk_count: chunks.len(),
+    };
+    let want = stream_log(framing_stream::UPSTREAM, &stream);
+    let got = stream_log(framing_stream::CANDIDATE, &stream);
+    assert_eq!(
+        String::from_utf8_lossy(&want),
+        String::from_utf8_lossy(&got),
+        "mode {mode} for {bytes:?}"
+    );
 }

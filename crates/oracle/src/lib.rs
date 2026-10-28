@@ -230,6 +230,54 @@ pub mod http_frame {
     };
 }
 
+pub mod framing_stream {
+    /// One fuzz case for the stream receive loops: `mode` 0 is the length
+    /// protocol, 1 EOF and 2 EOF split; each recv returns at most the next of
+    /// `chunk_count` chunk sizes of the `length` stream bytes, then EAGAIN (or the
+    /// peer's close when `close_at_end`).
+    #[repr(C)]
+    pub struct Stream {
+        pub mode: u8,
+        pub eof_len: u8,
+        pub close_at_end: u8,
+        pub length_size: u8,
+        pub length_offset: u16,
+        pub body_offset: u16,
+        pub max_length: u32,
+        pub buffer_size: u32,
+        pub eof: *const u8,
+        pub data: *const u8,
+        pub length: usize,
+        pub chunks: *const u16,
+        pub chunk_count: usize,
+    }
+
+    /// Runs one engine's receive loop over the stream until it fails or the
+    /// chunks are drained, writing each call's result (`R<n>;`), each packet
+    /// (`P<len>:` and its bytes) and the final buffer length and offset to `out`.
+    /// Returns the log's full length. `upstream` is the pinned base.cc,
+    /// `candidate` the one with the framing overlay patch, which calls the Rust
+    /// exports (the caller's binary must link them).
+    pub type Run =
+        unsafe extern "C" fn(stream: *const Stream, out: *mut u8, capacity: usize) -> usize;
+
+    unsafe extern "C" {
+        fn swr_oracle_framing_stream_upstream(
+            stream: *const Stream,
+            out: *mut u8,
+            capacity: usize,
+        ) -> usize;
+        fn swr_oracle_framing_stream_candidate(
+            stream: *const Stream,
+            out: *mut u8,
+            capacity: usize,
+        ) -> usize;
+    }
+
+    pub const UPSTREAM: Run = swr_oracle_framing_stream_upstream;
+    pub const CANDIDATE: Run = swr_oracle_framing_stream_candidate;
+}
+
 pub mod http_range {
     use std::ffi::c_char;
 
