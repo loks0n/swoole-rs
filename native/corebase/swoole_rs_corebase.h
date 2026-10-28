@@ -134,7 +134,7 @@ enum swr_v1_corebase_random_action {
     SWR_COREBASE_RANDOM_STORE_NUL = 10, SWR_COREBASE_RANDOM_STORE_DONE = 11
 };
 uint32_t swr_v1_corebase_random_next(struct swr_v1_corebase_random_state *state,
-    uint32_t mode, uint32_t flags, size_t length, uint32_t random, int32_t min, int32_t max);
+    uint32_t mode, uint32_t flags, size_t length, uint32_t random, int32_t _min, int32_t _max);
 /* Whole host operations; native code keeps only the warnings. */
 /* Read end of the command's pipe; -1 when pipe() fails, -2 when fork() fails
  * (errno kept). */
@@ -153,7 +153,7 @@ int swr_v1_corebase_rand(int min, int max);
 /* Sets *read_failed (errno kept) and returns -1 on a short read. */
 int swr_v1_corebase_system_random(int min, int max, bool *read_failed);
 /* errors[0], errors[1]: errno of dup2 onto stdout, stderr; 0 on success. */
-void swr_v1_corebase_redirect_stdout(int new_fd, int errors[2]);
+void swr_v1_corebase_redirect_stdout(int new_fd, int *errors);
 #ifdef __cplusplus
 }
 #endif
