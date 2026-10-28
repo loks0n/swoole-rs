@@ -87,19 +87,19 @@ misbehaves either.
 
 ## Reviewer agents
 
-Interchangeable and disposable, like executors, but they change no code. Each
-picks an area (a module, a tool, a CI tier, recently merged PRs) and checks that
-the work already there is right: bugs, inconsistencies between code, tests and
-docs, and gaps inside work that claims to be complete.
+Interchangeable and disposable, like executors. Each picks an area (a module, a
+tool, a CI tier, recently merged PRs) and checks that the work already there is
+right: bugs, inconsistencies between code, tests and docs, and gaps inside work
+that claims to be complete.
 
 Judge work against what it set out to do: the issue, the PR description, the
 module's entry in `migration/modules.json`. Work that is explicitly not done,
 out of scope, or already tracked by an open issue is not a finding.
 
-Verify each finding before filing it: a failing test, a command and its output,
-or the exact lines that disagree. Search open and closed issues for duplicates,
-then file it as a `status:ready` issue with a priority, a kind and the evidence.
-Executors fix it.
+Verify each finding before fixing it: a failing test, a command and its output,
+or the exact lines that disagree. Then fix it straight away, as an executor
+would (steps 2 to 6), in a PR that states the evidence. Only a finding that
+needs a decision becomes an issue, with `needs:decision`.
 
 ## Tickets
 
