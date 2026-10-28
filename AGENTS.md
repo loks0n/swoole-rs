@@ -58,8 +58,8 @@ Rust.
 2. Branch from `main` and commit; `git config core.hooksPath .githooks` enables
    the quick pre-commit checks.
 3. Push, open a PR whose body says `Closes #n`, and run
-   `gh pr merge --auto --squash <pr>`. GitHub merges it once `rust` and `tooling`
-   pass. `hybrid`, `gates` and the merge tier keep running: watch them in the
+   `gh pr merge --auto --squash <pr>`. GitHub merges it once `rust`, `tooling`
+   and `hybrid` pass. `gates` and the merge tier keep running: watch them in the
    background with `python3 tools/ci.py wait --pr <pr>` and start on the next
    issue meanwhile. If they show you broke something, fixing it comes next.
 4. Close the issue with a note of what you checked, file follow-ups as
@@ -147,10 +147,12 @@ ad-hoc scripts, `gh run watch`).
 
 Three tiers: the pre-commit hook (~5s warm), the PR tier (`pr.yml`, under 3 minutes
 warm) and the merge tier (`merge.yml`, on `main`). `main`'s ruleset requires a
-pull request and the PR tier's `rust` and `tooling` checks, so renaming those jobs
-means updating the ruleset in the same PR. `hybrid` (all-modules build, about 20
-minutes) and `gates` are informative, so merging stays fast; breakage they miss
-is caught by the merge tier and the red-main rule. Keep them cached and audit
+pull request and the PR tier's `rust`, `tooling` and `hybrid` checks, so renaming
+those jobs means updating the ruleset in the same PR. `hybrid` (the all-modules
+build, extension load and corpus, a few minutes cached) runs only when a PR
+touches patches, `native/`, the build tools, `.github/` or `.devcontainer/`, and
+is skipped, which counts as passing, otherwise. `gates` is informative; breakage
+it misses is caught by the merge tier and the red-main rule. Keep them cached and audit
 them regularly for waste and duplicate steps; slow or flaky CI is a ticket.
 
 The merge tier runs one at a time, latest wins: while a run is in progress, each

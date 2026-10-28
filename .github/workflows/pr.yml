@@ -36,9 +36,31 @@ jobs:
       - run: python3 tools/check_migration.py
       - run: tests/dev/run.sh
 
+  # Whether this PR touches what the hybrid build compiles or installs with.
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      hybrid: ${{ steps.paths.outputs.hybrid }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: paths
+        run: |
+          changed=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD")
+          echo "$changed"
+          if echo "$changed" | grep -qE '^(migration/patches/|native/|tools/build_(hybrid|upstream)\.py$|\.github/|\.devcontainer/)'; then
+            echo hybrid=true >> "$GITHUB_OUTPUT"
+          fi
+
   # The all-modules hybrid with the halfclose repair, so no module's native code
-  # merges without being compiled into the extension next to the others.
+  # merges without being compiled into the extension next to the others. Required
+  # (main's ruleset); a PR that touches none of `changes`' paths skips it, which
+  # GitHub counts as passing.
   hybrid:
+    needs: changes
+    if: needs.changes.outputs.hybrid == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
