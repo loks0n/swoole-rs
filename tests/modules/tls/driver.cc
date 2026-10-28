@@ -211,22 +211,20 @@ int main(int argc, char **argv) {
                 swoole::dtls::Session session(&socket, {});
                 std::string input(length, 'x');
                 session.append(input.data(), input.size());
-                session.peek_mode = peek;
                 BIO *bio = BIO_new(swoole::dtls::BIO_get_methods());
                 BIO_set_data(bio, &session);BIO_set_init(bio, 1);
+                swoole::dtls::BIO_ctrl(bio, BIO_CTRL_DGRAM_SET_PEEK_MODE, peek, nullptr);
                 char bytes[128];std::memset(bytes, 0x55, sizeof(bytes));
                 int n = swoole::dtls::BIO_read(bio, bytes, requested);
+                // One datagram was queued, so "not at EOF" is the queue's length.
                 std::cout << "read " << length << ' ' << requested << ' ' << peek << ' ' << n
-                          << ' ' << session.rxqueue.size() << ' ' << session.get_buffer_length()
+                          << ' ' << !swoole::dtls::BIO_ctrl(bio, BIO_CTRL_EOF, 0, nullptr) << ' ' << session.get_buffer_length()
                           << ' ' << BIO_should_retry(bio) << ' ';
                 for (int i = 0; i < 128; ++i) std::cout << (int)(unsigned char)bytes[i] << ',';
                 std::cout << '\n';BIO_free(bio);
             }
         }
     }
-    swoole::dtls::Session session(&socket, {});
-    session.append("abc", 3);session.append("defgh", 5);
-    BIO *bio = BIO_new(swoole::dtls::BIO_get_methods());BIO_set_data(bio, &session);BIO_set_init(bio, 1);
     int commands[] = {BIO_CTRL_EOF, BIO_CTRL_GET_CLOSE, BIO_CTRL_SET_CLOSE, BIO_CTRL_WPENDING,
         BIO_CTRL_PENDING, BIO_CTRL_FLUSH, BIO_CTRL_DGRAM_SET_CONNECTED, BIO_CTRL_DGRAM_SET_PEER,
         BIO_CTRL_DGRAM_GET_PEER, BIO_CTRL_DGRAM_QUERY_MTU, BIO_CTRL_DGRAM_GET_FALLBACK_MTU,
@@ -243,14 +241,23 @@ int main(int argc, char **argv) {
         -12345};
     for (int cmd : commands) {
         for (long value : {-1L, 0L, 1L, 2147483648L}) {
+            swoole::dtls::Session session(&socket, {});
+            session.append("abc", 3);session.append("defgh", 5);
+            BIO *bio = BIO_new(swoole::dtls::BIO_get_methods());BIO_set_data(bio, &session);BIO_set_init(bio, 1);
             swoole::network::Address address{};
             long result = swoole::dtls::BIO_ctrl(bio, cmd, value, &address);
+            // The peek mode shows in a read: a peeked datagram stays queued.
+            char byte = 0;
+            int n = swoole::dtls::BIO_read(bio, &byte, 1);
             std::cout << "ctrl " << cmd << ' ' << value << ' ' << result << ' '
-                      << BIO_get_shutdown(bio) << ' ' << session.peek_mode << ' '
+                      << BIO_get_shutdown(bio) << ' ' << n << ' ' << (int) byte << ' '
+                      << swoole::dtls::BIO_ctrl(bio, BIO_CTRL_PENDING, 0, nullptr) << ' '
                       << address.addr.inet_v4.sin_family << ' ' << address.addr.inet_v4.sin_port << '\n';
+            BIO_free(bio);
         }
     }
-    while (!session.rxqueue.empty()) {sw_free(session.rxqueue.front());session.rxqueue.pop_front();}
+    swoole::dtls::Session session(&socket, {});
+    BIO *bio = BIO_new(swoole::dtls::BIO_get_methods());BIO_set_data(bio, &session);BIO_set_init(bio, 1);
     char byte = 0;
     int n = swoole::dtls::BIO_read(bio, &byte, 1);
     std::cout << "empty " << n << ' ' << BIO_should_read(bio) << ' ' << BIO_should_retry(bio) << '\n';

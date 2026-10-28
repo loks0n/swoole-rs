@@ -7,8 +7,9 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from source import definition
+from source import definition, rust_declarations
 sys.path.insert(0,str(Path(__file__).resolve().parents[3]))
+from tools.build_hybrid import hybrid_tree
 from tools.harness import ROOT,run_isolated,write_report
 from tools.build_upstream import COMMIT as PIN
 WRAPPERS=r'''
@@ -17,25 +18,22 @@ int header(const std::string&name){return http_response_parse_header_name(name.d
 
 def main():
  parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--source',type=Path,required=True)
- group=parser.add_mutually_exclusive_group(required=True);group.add_argument('--archive',type=Path);group.add_argument('--rust-sanitize',action='store_true')
+ parser.add_argument('--archive',type=Path,required=True,help='Rust archive of the hybrid build under test')
  parser.add_argument('--native-libc',action='store_true');parser.add_argument('--locale',default='C');parser.add_argument('--without-compression',action='store_true');parser.add_argument('--output',type=Path,required=True);args=parser.parse_args();local=Path(__file__).resolve().parent
- report={'pin':PIN,'scope':__doc__,'limitations':'Header-name classification only; build_header itself is upstream\'s (#366). Not Zend/codec/GC/lifetime proof; not called original PHPT passes.','native_sanitizers':not args.native_libc,'rust_instrumented':args.rust_sanitize,'locale':args.locale,'compression_compiled':not args.without_compression,'passed':False}
+ report={'pin':PIN,'scope':__doc__,'limitations':'Header-name classification only; build_header itself is upstream\'s (#366). Not Zend/codec/GC/lifetime proof; not called original PHPT passes.','native_sanitizers':not args.native_libc,'rust_instrumented':False,'locale':args.locale,'compression_compiled':not args.without_compression,'passed':False}
  with tempfile.TemporaryDirectory(prefix='swr-httpbindings-response-')as temp:
   tree=Path(temp)
-  if args.rust_sanitize:
-   args.archive=tree/'rust.a';cmd=['rustc','--edition=2024','-Zsanitizer=address','--crate-type=staticlib','-C','opt-level=3','-C','panic=abort',str(ROOT/'crates/httpbindings/src/lib.rs'),'-o',str(args.archive)]
-   r=run_isolated(cmd,timeout=60,env={**os.environ,'RUSTC_BOOTSTRAP':'1'});report['rust_compile']={'command':cmd,'returncode':r.returncode,'stdout':r.stdout,'stderr':r.stderr}
-   if r.returncode:write_report(args.output,report);return 1
-  original={n:subprocess.check_output(['git','-C',str(args.source),'show',PIN+':'+n]).decode()for n in ['ext-src/swoole_http_response.cc','ext-src/php_swoole_http.h','include/swoole.h','src/core/base.cc']}
-  for n,text in original.items():p=tree/n;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text)
-  patch=ROOT/'migration/patches/httpbindings/0003-response-policy.patch'
-  subprocess.run(['git','apply','--check',str(patch)],cwd=tree,check=True);subprocess.run(['git','apply',str(patch)],cwd=tree,check=True)
-  enums=original['ext-src/php_swoole_http.h'];a=enums.index('enum swHttpHeaderFlag {');b=enums.index('};',a)+2
-  helpers=enums[a:b]+'\nstatic constexpr int HTTP_HEAD=2,HTTP_POST=3;\n'+definition(original['include/swoole.h'],'static inline unsigned int swoole_strcaseeq(')+'\n'+definition(original['src/core/base.cc'],'int swoole_itoa(')
-  for name,source in [('upstream_response',original['ext-src/swoole_http_response.cc']),('candidate_response',(tree/'ext-src/swoole_http_response.cc').read_text())]:
+  # Upstream side from the pin, candidate side from the hybrid build's fully patched tree.
+  hybrid_source,hybrid_flags=hybrid_tree(args.archive);names=['ext-src/swoole_http_response.cc','ext-src/php_swoole_http.h','include/swoole.h','src/core/base.cc']
+  original={n:subprocess.check_output(['git','-C',str(args.source),'show',PIN+':'+n]).decode()for n in names}
+  selected={n:(hybrid_source/n).read_text()for n in names}
+  for name,texts in [('upstream_response',original),('candidate_response',selected)]:
+   enums=texts['ext-src/php_swoole_http.h'];a=enums.index('enum swHttpHeaderFlag {');b=enums.index('};',a)+2
+   helpers=enums[a:b]+'\nstatic constexpr int HTTP_HEAD=2,HTTP_POST=3;\n'+definition(texts['include/swoole.h'],'static inline unsigned int swoole_strcaseeq(')+'\n'+definition(texts['src/core/base.cc'],'int swoole_itoa(')
+   source=texts['ext-src/swoole_http_response.cc']
    parts=[definition(source,'static int http_response_parse_header_name(')]
-   p=tree/(name+'.cc');p.write_text('#include "response_oracle.h"\nnamespace '+name+' {\n'+helpers+'\n'+'\n'.join(parts)+'\n'+WRAPPERS+'\n}\n')
-  binary=tree/'gate';cmd=['c++','-std=c++14','-O1','-g','-fsanitize=address,undefined','-fno-sanitize-recover=all','-I'+str(local),'-I'+str(ROOT/'native/httpbindings'),str(tree/'upstream_response.cc'),str(tree/'candidate_response.cc'),str(local/'response_gate.cc'),str(args.archive.resolve()),'-lm','-o',str(binary)]
+   p=tree/(name+'.cc');p.write_text('#include "response_oracle.h"\n'+rust_declarations(helpers,hybrid_flags)+'namespace '+name+' {\n'+helpers+'\n'+'\n'.join(parts)+'\n'+WRAPPERS+'\n}\n')
+  binary=tree/'gate';cmd=['c++','-std=c++14','-O1','-g','-fsanitize=address,undefined','-fno-sanitize-recover=all','-I'+str(local),'-I'+str(ROOT/'native/httpbindings'),*hybrid_flags,str(tree/'upstream_response.cc'),str(tree/'candidate_response.cc'),str(local/'response_gate.cc'),str(args.archive.resolve()),'-lm','-o',str(binary)]
   if args.native_libc:cmd=[arg for arg in cmd if not arg.startswith('-fsanitize=')and arg!='-fno-sanitize-recover=all']
   if args.without_compression:cmd.append('-DRESPONSE_NO_COMPRESSION')
   if sys.platform.startswith('linux'):cmd+=['-ldl','-lpthread','-lrt','-lutil']
