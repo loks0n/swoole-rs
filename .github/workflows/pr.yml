@@ -48,6 +48,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       hybrid: ${{ steps.paths.outputs.hybrid }}
+      iouring: ${{ steps.paths.outputs.iouring }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,6 +59,9 @@ jobs:
           echo "$changed"
           if echo "$changed" | grep -qE '^(migration/patches/|native/|tools/build_(hybrid|upstream)\.py$|\.github/|\.devcontainer/)'; then
             echo hybrid=true >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$changed" | grep -qE '^(migration/patches/hooks/|crates/(hooks|uring[^/]*)/|\.github/workflows/iouring\.yml$|\.devcontainer/install\.sh$)'; then
+            echo iouring=true >> "$GITHUB_OUTPUT"
           fi
 
   # The all-modules hybrid with the halfclose repair, so no module's native code
@@ -113,6 +117,12 @@ jobs:
         with:
           name: pr-reports
           path: target/reports/
+
+  # The io_uring build variant (merge tier), when a PR touches io_uring code. Informative.
+  iouring:
+    needs: changes
+    if: needs.changes.outputs.iouring == 'true'
+    uses: ./.github/workflows/iouring.yml
 
   # Candidate-lane gates of the modules this PR touches (every module for shared
   # build inputs); prints "No module touched" and passes otherwise. Advisory until
