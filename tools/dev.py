@@ -183,8 +183,6 @@ def plan(args, reports):
     script('abi', 'tests/modules/integration/test_bridge.py', *php_for('sockets'), '--hybrid', hybrid, '--reference', reference,
            *([] if integrate else ['--startup-only']))
     if integrate:
-        script('abi-startup', 'tests/modules/integration/test_bridge.py', *php_for('sockets'), '--hybrid', hybrid,
-               '--reference', reference, '--startup-only')
         script('api-surface', 'tools/capability_inventory.py', '--source', ROOT / 'target/upstream/src',
                *php_for('curl', 'sockets', 'tokenizer'), *engines, '--require-same-api', *report('api-surface'))
     if integrate and {'base64', 'crc32'} & set(modules):

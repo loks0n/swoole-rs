@@ -571,7 +571,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('websocket-close',commands)
         self.assertIn('--export', commands['reference-build'])
         self.assertIn('--reference', commands['abi'])
-        self.assertIn('--startup-only', commands['abi-startup'])
         self.assertNotIn('--startup-only', commands['abi'])
         self.assertIn('--sanitize', commands['buffer-posix-iovec'])
         self.assertIn('--archive', commands['http-multipart-headers'])
