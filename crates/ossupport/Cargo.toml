@@ -8,5 +8,8 @@ license = "Apache-2.0"
 name = "swoole_rs_ossupport"
 crate-type = ["rlib"]
 
+[dependencies]
+libc = "=0.2.191"
+
 [lints]
 workspace = true
