@@ -204,8 +204,8 @@ fn error_log_ex(call: &Call) {
                 int(error),
                 message.as_ptr().cast(),
                 message.len(),
-            )
-        };
+            );
+        }
     }
 }
 
