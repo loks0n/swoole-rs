@@ -26,6 +26,8 @@ pub mod stdio;
 pub mod transfer;
 #[cfg(feature = "iouring")]
 pub mod uring;
+#[cfg(feature = "iouring")]
+pub mod uring_tls;
 pub mod vector;
 pub mod wait_event;
 pub mod wait_signal;

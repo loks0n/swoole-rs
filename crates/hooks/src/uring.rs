@@ -260,32 +260,58 @@ fn sq_used(engine: &Uring) -> u32 {
     engine.ring.sq.ring_entries - sq_space_left(engine)
 }
 
-/// Submit queued requests; below the batch size, only at the end of the loop.
-fn submit(engine: &mut Uring, immediately: bool) {
-    if !immediately
+/// The ring's side of a submit, so its order can be tested without one.
+trait Submitter {
+    fn event_running(&mut self) -> bool;
+    fn sq_used(&mut self) -> u32;
+    fn submit(&mut self) -> c_int;
+    fn sleep(&mut self);
+    fn failed(&mut self);
+}
+
+impl Submitter for Uring {
+    fn event_running(&mut self) -> bool {
         // SAFETY: the native callback has no preconditions.
-        && unsafe { (engine.host.event_running)() }
-        && sq_used(engine) < SQE_BATCH_SIZE
-    {
+        unsafe { (self.host.event_running)() }
+    }
+
+    fn sq_used(&mut self) -> u32 {
+        sq_used(self)
+    }
+
+    fn submit(&mut self) -> c_int {
+        // SAFETY: the ring is initialized.
+        unsafe { sys::io_uring_submit(&raw mut self.ring) }
+    }
+
+    fn sleep(&mut self) {
+        // SAFETY: usleep(3) has no preconditions.
+        unsafe { libc::usleep(10_000) };
+    }
+
+    fn failed(&mut self) {
+        // SAFETY: the native callback only logs.
+        unsafe { (self.host.submit_failed)() };
+    }
+}
+
+/// Submit queued requests; below the batch size, only at the end of the loop.
+fn submit(ring: &mut impl Submitter, immediately: bool) {
+    if !immediately && ring.event_running() && ring.sq_used() < SQE_BATCH_SIZE {
         return;
     }
     loop {
-        // SAFETY: the ring is initialized.
-        let ret = unsafe { sys::io_uring_submit(&raw mut engine.ring) };
+        let ret = ring.submit();
         if ret >= 0 {
             return;
         }
         match -ret {
             // Retried on the next submit.
             libc::EAGAIN => return,
-            libc::EBUSY => {
-                // SAFETY: usleep(3) has no preconditions.
-                unsafe { libc::usleep(10_000) };
-            }
+            libc::EBUSY => ring.sleep(),
             libc::EINTR => {}
             _ => {
-                // SAFETY: the native callback only logs.
-                unsafe { (engine.host.submit_failed)() };
+                ring.failed();
                 return;
             }
         }
@@ -1010,9 +1036,165 @@ pub unsafe extern "C" fn swr_v1_uring_poll(
     rc
 }
 
+/// A ring host for tests, shared with the TLS transport's.
+#[cfg(test)]
+pub(crate) mod testing {
+    use super::*;
+
+    // A host without coroutines: "suspending" drives the ring until the event
+    // completes, which is what the reactor and the scheduler do together.
+    thread_local! {
+        static ENGINE: std::cell::Cell<*mut Uring> = const { std::cell::Cell::new(ptr::null_mut()) };
+    }
+    unsafe extern "C" fn current() -> *mut c_void {
+        ptr::dangling_mut()
+    }
+    unsafe extern "C" fn instance() -> *mut Uring {
+        ENGINE.with(std::cell::Cell::get)
+    }
+    unsafe extern "C" fn suspend(_coroutine: *mut c_void, event: *mut c_void) {
+        let uring = ENGINE.with(std::cell::Cell::get);
+        let event = event.cast::<Event>();
+        // SAFETY: the test engine is live; the event is in the caller's frame.
+        unsafe {
+            swr_v1_uring_submit(uring);
+            while (*uring).task_num > 0 && !(*event).coroutine.is_null() {
+                let mut cqe = ptr::null_mut();
+                sys::io_uring_wait_cqes(
+                    &raw mut (*uring).ring,
+                    &raw mut cqe,
+                    1,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                );
+                swr_v1_uring_wakeup(uring);
+            }
+        }
+    }
+    unsafe extern "C" fn resume(_coroutine: *mut c_void) {}
+    unsafe extern "C" fn event_running() -> bool {
+        false
+    }
+    unsafe extern "C" fn submit_failed() {}
+    unsafe extern "C" fn timeout_full(_fd: c_int) {}
+    pub(crate) static HOST: Host = Host {
+        current,
+        instance,
+        suspend,
+        resume,
+        event_running,
+        submit_failed,
+        timeout_full,
+    };
+
+    pub(crate) fn with_engine(test: impl FnOnce()) {
+        // SAFETY: HOST is static.
+        let opened = unsafe { swr_v1_uring_open(Config::default(), &raw const HOST) };
+        assert_eq!(opened.status, 0, "io_uring is available");
+        ENGINE.with(|engine| engine.set(opened.uring));
+        test();
+        // SAFETY: nothing is in flight.
+        unsafe { swr_v1_uring_close(opened.uring) };
+        ENGINE.with(|engine| engine.set(ptr::null_mut()));
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::testing::{HOST, with_engine};
     use super::*;
+
+    #[derive(Default)]
+    struct Recorder {
+        running: bool,
+        used: u32,
+        results: Vec<c_int>,
+        trace: Vec<String>,
+    }
+
+    impl Submitter for Recorder {
+        fn event_running(&mut self) -> bool {
+            self.trace.push("running".into());
+            self.running
+        }
+        fn sq_used(&mut self) -> u32 {
+            self.trace.push("sq:used".into());
+            self.used
+        }
+        fn submit(&mut self) -> c_int {
+            self.trace.push("submit".into());
+            self.results.remove(0)
+        }
+        fn sleep(&mut self) {
+            self.trace.push("usleep:10000".into());
+        }
+        fn failed(&mut self) {
+            self.trace.push("submit:error".into());
+        }
+    }
+
+    fn submitted(running: bool, used: u32, results: &[c_int], immediately: bool) -> Vec<String> {
+        let mut ring = Recorder {
+            running,
+            used,
+            results: results.to_vec(),
+            ..Recorder::default()
+        };
+        submit(&mut ring, immediately);
+        ring.trace
+    }
+
+    // The hooks ordered gate's io_uring submit scenarios, against upstream's order.
+    #[test]
+    fn submit_batches_and_retries_in_upstream_order() {
+        let (busy, intr, again) = (-libc::EBUSY, -libc::EINTR, -libc::EAGAIN);
+        assert_eq!(
+            submitted(true, 16, &[0], false),
+            ["running", "sq:used", "submit"],
+            "a full batch"
+        );
+        assert_eq!(
+            submitted(true, 15, &[0], false),
+            ["running", "sq:used"],
+            "deferred"
+        );
+        assert_eq!(
+            submitted(false, 15, &[0], false),
+            ["running", "submit"],
+            "loop not running"
+        );
+        assert_eq!(
+            submitted(true, 16, &[again], true),
+            ["submit"],
+            "EAGAIN waits"
+        );
+        assert_eq!(
+            submitted(true, 16, &[busy, 1], true),
+            ["submit", "usleep:10000", "submit"],
+            "EBUSY sleeps"
+        );
+        assert_eq!(
+            submitted(true, 16, &[intr, 1], true),
+            ["submit", "submit"],
+            "EINTR retries"
+        );
+        assert_eq!(
+            submitted(true, 16, &[-libc::EINVAL], true),
+            ["submit", "submit:error"],
+            "other errors log"
+        );
+        assert_eq!(
+            submitted(true, 16, &[busy, intr, again], true),
+            ["submit", "usleep:10000", "submit", "submit"],
+            "retries end at EAGAIN"
+        );
+        assert_eq!(
+            submitted(true, 16, &[busy, intr, 2], true),
+            ["submit", "usleep:10000", "submit", "submit"],
+            "retries end at success"
+        );
+        assert_eq!(submitted(true, 16, &[0], true), ["submit"], "immediately");
+    }
 
     #[test]
     fn timespec_matches_double_to_timespec() {
@@ -1064,63 +1246,6 @@ mod tests {
         assert_eq!(errno(), libc::ETIMEDOUT, "cancelled reads as a timeout");
         assert_eq!(complete(-(libc::EBADF as isize)), -1, "failure is -1");
         assert_eq!(errno(), libc::EBADF, "other errors pass through");
-    }
-
-    // A host without coroutines: "suspending" drives the ring until the event
-    // completes, which is what the reactor and the scheduler do together.
-    thread_local! {
-        static ENGINE: std::cell::Cell<*mut Uring> = const { std::cell::Cell::new(ptr::null_mut()) };
-    }
-    unsafe extern "C" fn current() -> *mut c_void {
-        ptr::dangling_mut()
-    }
-    unsafe extern "C" fn instance() -> *mut Uring {
-        ENGINE.with(std::cell::Cell::get)
-    }
-    unsafe extern "C" fn suspend(_coroutine: *mut c_void, event: *mut c_void) {
-        let uring = ENGINE.with(std::cell::Cell::get);
-        let event = event.cast::<Event>();
-        // SAFETY: the test engine is live; the event is in the caller's frame.
-        unsafe {
-            swr_v1_uring_submit(uring);
-            while (*uring).task_num > 0 && !(*event).coroutine.is_null() {
-                let mut cqe = ptr::null_mut();
-                sys::io_uring_wait_cqes(
-                    &raw mut (*uring).ring,
-                    &raw mut cqe,
-                    1,
-                    ptr::null_mut(),
-                    ptr::null_mut(),
-                );
-                swr_v1_uring_wakeup(uring);
-            }
-        }
-    }
-    unsafe extern "C" fn resume(_coroutine: *mut c_void) {}
-    unsafe extern "C" fn event_running() -> bool {
-        false
-    }
-    unsafe extern "C" fn submit_failed() {}
-    unsafe extern "C" fn timeout_full(_fd: c_int) {}
-    static HOST: Host = Host {
-        current,
-        instance,
-        suspend,
-        resume,
-        event_running,
-        submit_failed,
-        timeout_full,
-    };
-
-    fn with_engine(test: impl FnOnce()) {
-        // SAFETY: HOST is static.
-        let opened = unsafe { swr_v1_uring_open(Config::default(), &raw const HOST) };
-        assert_eq!(opened.status, 0, "io_uring is available");
-        ENGINE.with(|engine| engine.set(opened.uring));
-        test();
-        // SAFETY: nothing is in flight.
-        unsafe { swr_v1_uring_close(opened.uring) };
-        ENGINE.with(|engine| engine.set(ptr::null_mut()));
     }
 
     #[test]

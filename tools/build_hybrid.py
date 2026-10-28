@@ -469,7 +469,7 @@ def build(args, parser):
                   'configure': configure, 'builder_sha256': digest(__file__), 'php_builder_sha256': digest(ROOT / 'tools/build_upstream.py'), 'extension': str(library), 'extension_sha256': digest(library),
                   'log': str(build / 'build.log'), 'migrated_feature_bits': sum(MODULES[name][1] for name in args.module)}
         write_report(record_path, record)
-    if args.backend == 'rust' and rust_sources(args.module) != rust_inputs:
+    if args.backend == 'rust' and rust_sources(args.module, cargo_extra) != rust_inputs:
         raise ValueError('Rust sources changed during native compilation; refusing to publish the extension')
     suffix = ('-halfclose' if getattr(args, 'fix_halfclose', False) else '') + profile_suffix(args)
     destination = ROOT / 'target/hybrid' / build_alias(args.backend, args.module, suffix, dev=args.dev)

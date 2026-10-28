@@ -977,7 +977,7 @@ index cffe31a..803879e 100644
 +
    public:
 diff --git a/include/swoole_iouring.h b/include/swoole_iouring.h
-index 060a261..ed29e56 100644
+index 060a261..577092d 100644
 --- a/include/swoole_iouring.h
 +++ b/include/swoole_iouring.h
 @@ -16,2 +16,3 @@
@@ -1013,12 +1013,11 @@ index 060a261..ed29e56 100644
 -    std::queue<IouringEvent *> waiting_tasks;
 +    swr_v1_uring *engine = nullptr;
      network::Socket *ring_socket = nullptr;
-@@ -47,21 +39,13 @@ class Iouring {
+@@ -47,23 +39,15 @@ class Iouring {
  
 -    IouringEvent *ready_events[SW_IOURING_QUEUE_SIZE];
 -    io_uring_cqe *cqes[SW_IOURING_QUEUE_SIZE];
-+    static const swr_v1_uring_host host;
- 
+-
      explicit Iouring(Reactor *reactor_);
 -    bool ready() const;
 -    void yield(IouringEvent *event);
@@ -1043,6 +1042,10 @@ index 060a261..ed29e56 100644
 +    static void submit();
 +    static void dispatch(int ring_fd);
  
+   public:
++    static const swr_v1_uring_host host;
++
+     ~Iouring();
 @@ -71,3 +55,3 @@ class Iouring {
      bool is_empty_waiting_tasks() const {
 -        return waiting_tasks.empty();
@@ -1083,6 +1086,36 @@ index 060a261..ed29e56 100644
  
 -    static std::unordered_map<std::string, int> list_all_opcode();
      static int callback(Reactor *reactor, Event *event);
+diff --git a/include/swoole_uring_socket.h b/include/swoole_uring_socket.h
+index 06e9f5b..7f49cb6 100644
+--- a/include/swoole_uring_socket.h
++++ b/include/swoole_uring_socket.h
+@@ -20,2 +20,3 @@
+ #include "swoole_coroutine_socket.h"
++#include "swoole_iouring.h"
+ 
+@@ -27,8 +28,15 @@ class UringSocket : public Socket {
+ 
+-    bool ssl_bio_write();
+-    bool ssl_bio_read();
+-    bool ssl_bio_prepare();
+-    bool ssl_bio_perform(int rc, const char *fn);
+-    ssize_t ssl_recv(void *_buf, size_t _n);
+-    ssize_t ssl_send(const void *_buf, size_t _n);
++#ifdef SW_USE_IOURING
++    // The TLS transport is Rust's (swoole_rs_uring.h); these apply its errors.
++    static const swr_v1_uring_tls_host tls_host;
++    static void tls_set_err(void *socket, int code);
++    static void tls_check_failure(void *socket);
++    static char *tls_buffer(void *socket, bool write, size_t *size);
++    static void ssl_bio_perform(void *socket, const char *fn, int error, unsigned long code);
++
++    swr_v1_uring_tls tls() {
++        return {&tls_host, this, socket->ssl, rbio, wbio, socket->get_fd(), socket->read_timeout, socket->write_timeout};
++    }
++#endif
++
+     ssize_t ssl_readv(network::IOVector *io_vector);
 diff --git a/src/coroutine/file.cc b/src/coroutine/file.cc
 index 587f524..aefc101 100644
 --- a/src/coroutine/file.cc
@@ -4557,7 +4590,7 @@ index e6ef9c2..32545c3 100644
 -    return true;
  }
 diff --git a/src/coroutine/uring_socket.cc b/src/coroutine/uring_socket.cc
-index 758765a..4c1f907 100644
+index 758765a..fc7ab8f 100644
 --- a/src/coroutine/uring_socket.cc
 +++ b/src/coroutine/uring_socket.cc
 @@ -20,2 +20,7 @@
@@ -4637,21 +4670,27 @@ index 758765a..4c1f907 100644
 -    write_co = nullptr;
 +    bind_co(SW_EVENT_WRITE, nullptr);
  
-@@ -217,3 +222,3 @@ ssize_t UringSocket::recv(void *_buf, size_t _n) {
+@@ -217,5 +222,5 @@ ssize_t UringSocket::recv(void *_buf, size_t _n) {
      ssize_t retval;
 -    read_co = Coroutine::get_current_safe();
 +    bind_co(SW_EVENT_READ, Coroutine::get_current_safe());
      if (is_ssl()) {
+-        retval = ssl_recv(_buf, _n);
++        retval = swr_v1_uring_tls_recv(tls(), _buf, _n);
+     } else {
 @@ -223,3 +228,3 @@ ssize_t UringSocket::recv(void *_buf, size_t _n) {
      }
 -    read_co = nullptr;
 +    bind_co(SW_EVENT_READ, nullptr);
  
-@@ -235,3 +240,3 @@ ssize_t UringSocket::send(const void *_buf, size_t _n) {
+@@ -235,5 +240,5 @@ ssize_t UringSocket::send(const void *_buf, size_t _n) {
      ssize_t retval;
 -    write_co = Coroutine::get_current_safe();
 +    bind_co(SW_EVENT_WRITE, Coroutine::get_current_safe());
      if (is_ssl()) {
+-        retval = ssl_send(_buf, _n);
++        retval = swr_v1_uring_tls_send(tls(), _buf, _n);
+     } else {
 @@ -241,3 +246,3 @@ ssize_t UringSocket::send(const void *_buf, size_t _n) {
      }
 -    write_co = nullptr;
@@ -4724,8 +4763,228 @@ index 758765a..4c1f907 100644
 -    return retval < 0 && total_bytes == 0 ? -1 : total_bytes;
 +    return swr_v1_hook_transfer_result(retval, total_bytes);
  }
-@@ -404,3 +411,3 @@ ssize_t UringSocket::writev_all(network::IOVector *io_vector) {
+@@ -404,116 +411,36 @@ ssize_t UringSocket::writev_all(network::IOVector *io_vector) {
      check_return_value(retval);
 -    return retval < 0 && total_bytes == 0 ? -1 : total_bytes;
 +    return swr_v1_hook_transfer_result(retval, total_bytes);
  }
+ 
+-bool UringSocket::ssl_bio_write() {
+-    auto buf = get_write_buffer();
+-
+-    while (true) {
+-        size_t pending = BIO_ctrl_pending(wbio);
+-        if (pending == 0) {
+-            break;
+-        }
+-
+-        int nread = BIO_read(wbio, buf->str, buf->size);
+-        if (nread <= 0) {
+-            set_err(SW_ERROR_SSL_BAD_PROTOCOL);
+-            return false;
+-        }
++const swr_v1_uring_tls_host UringSocket::tls_host = {
++    &Iouring::host, tls_set_err, tls_check_failure, tls_buffer, ssl_bio_perform, SW_ERROR_SSL_BAD_PROTOCOL, SW_ERROR_SSL_RESET};
+ 
+-        ssize_t written = 0;
+-        while (written < nread) {
+-            ssize_t n = uring_send(buf->str + written, nread - written);
+-            if (n > 0) {
+-                written += n;
+-            } else if (n == 0) {
+-                errno = SW_ERROR_SSL_RESET;
+-                return false;
+-            } else {
+-                if (errno == EINTR) {
+-                    continue;
+-                }
+-                set_err(errno);
+-                return false;
+-            }
+-        }
+-    }
+-
+-    return true;
++void UringSocket::tls_set_err(void *socket, int code) {
++    static_cast<UringSocket *>(socket)->set_err(code);
+ }
+ 
+-bool UringSocket::ssl_bio_read() {
+-    auto buf = get_read_buffer();
+-    ssize_t rv = uring_recv(buf->str, buf->size);
+-    if (rv > 0) {
+-        int written = BIO_write(rbio, buf->str, rv);
+-        if (written != rv) {
+-            set_err(SW_ERROR_SSL_BAD_PROTOCOL);
+-            return false;
+-        }
+-        return true;
+-    } else if (rv == 0) {
+-        set_err(SW_ERROR_SSL_RESET);
+-        return false;
+-    } else {
+-        if (errno == EINTR) {
+-            return ssl_bio_read();
+-        }
+-        set_err(errno);
+-        return false;
+-    }
++void UringSocket::tls_check_failure(void *socket) {
++    static_cast<UringSocket *>(socket)->check_return_value(-1);
+ }
+ 
+-bool UringSocket::ssl_bio_prepare() {
+-    if (BIO_ctrl_pending(wbio) > 0) {
+-        if (!ssl_bio_write()) {
+-            check_return_value(-1);
+-            return false;
+-        }
+-    }
+-    return true;
++char *UringSocket::tls_buffer(void *socket, bool write, size_t *size) {
++    auto self = static_cast<UringSocket *>(socket);
++    auto buf = write ? self->get_write_buffer() : self->get_read_buffer();
++    *size = buf->size;
++    return buf->str;
+ }
+ 
+-bool UringSocket::ssl_bio_perform(int rc, const char *fn) {
+-    if (!ssl_bio_prepare()) {
+-        return false;
+-    }
+-
+-    int error = SSL_get_error(socket->ssl, rc);
+-    if (error == SSL_ERROR_WANT_WRITE) {
+-        if (!ssl_bio_write()) {
+-        _error:
+-            check_return_value(-1);
+-            return false;
+-        }
+-        return true;
+-    } else if (error == SSL_ERROR_WANT_READ) {
+-        if (!ssl_bio_read()) {
+-            goto _error;
+-        }
+-        return true;
+-    } else if (error == SSL_ERROR_ZERO_RETURN) {
+-        swoole_debug("%s(fd=%d) return zero value", fn, socket->get_fd());
+-        error = SW_ERROR_SSL_RESET;
+-        goto _error;
+-    } else if (error == SSL_ERROR_SYSCALL) {
+-        goto _error;
+-    } else {
+-        ulong_t err_code = ERR_get_error();
+-        if (err_code) {
+-            char error_buf[512];
+-            ERR_error_string_n(err_code, error_buf, sizeof(error_buf));
+-            swoole_notice("%s(fd=%d) to server[%s:%d] failed. Error: %s[%d|%d]",
+-                          fn,
+-                          socket->get_fd(),
+-                          socket->info.get_addr(),
+-                          socket->info.get_port(),
+-                          error_buf,
+-                          error,
+-                          ERR_GET_REASON(err_code));
+-            set_err(SW_ERROR_SSL_BAD_PROTOCOL, error_buf);
+-        } else {
+-            set_err(SW_ERROR_SSL_BAD_PROTOCOL);
+-        }
+-        return false;
+-    }
++void UringSocket::ssl_bio_perform(void *_socket, const char *fn, int error, unsigned long err_code) {
++    auto self = static_cast<UringSocket *>(_socket);
++    char error_buf[512];
++    ERR_error_string_n(err_code, error_buf, sizeof(error_buf));
++    swoole_notice("%s(fd=%d) to server[%s:%d] failed. Error: %s[%d|%d]",
++                  fn,
++                  self->socket->get_fd(),
++                  self->socket->info.get_addr(),
++                  self->socket->info.get_port(),
++                  error_buf,
++                  error,
++                  ERR_GET_REASON(err_code));
++    self->set_err(SW_ERROR_SSL_BAD_PROTOCOL, error_buf);
+ }
+@@ -557,3 +484,3 @@ bool UringSocket::ssl_handshake() {
+         }
+-        if (ssl_bio_perform(rs, fn)) {
++        if (swr_v1_uring_tls_perform(tls(), rs, fn)) {
+             continue;
+@@ -578,3 +505,3 @@ ssize_t UringSocket::ssl_readv(network::IOVector *io_vector) {
+     do {
+-        retval = ssl_recv(io_vector->get_iterator()->iov_base, io_vector->get_iterator()->iov_len);
++        retval = swr_v1_uring_tls_recv(tls(), io_vector->get_iterator()->iov_base, io_vector->get_iterator()->iov_len);
+         total_bytes += retval > 0 ? retval : 0;
+@@ -590,3 +517,3 @@ ssize_t UringSocket::ssl_writev(network::IOVector *io_vector) {
+     do {
+-        retval = ssl_send(io_vector->get_iterator()->iov_base, io_vector->get_iterator()->iov_len);
++        retval = swr_v1_uring_tls_send(tls(), io_vector->get_iterator()->iov_base, io_vector->get_iterator()->iov_len);
+         total_bytes += retval > 0 ? retval : 0;
+@@ -598,32 +525,2 @@ ssize_t UringSocket::ssl_writev(network::IOVector *io_vector) {
+ 
+-ssize_t UringSocket::ssl_recv(void *_buf, size_t _n) {
+-    while (true) {
+-        int n = SSL_read(socket->ssl, _buf, _n);
+-        if (!ssl_bio_prepare()) {
+-            return -1;
+-        }
+-        if (n > 0) {
+-            return n;
+-        }
+-        if (!ssl_bio_perform(n, "ssl_recv")) {
+-            return -1;
+-        }
+-    }
+-}
+-
+-ssize_t UringSocket::ssl_send(const void *_buf, size_t _n) {
+-    while (true) {
+-        int n = SSL_write(socket->ssl, _buf, _n);
+-        if (!ssl_bio_prepare()) {
+-            return -1;
+-        }
+-        if (n > 0) {
+-            return n;
+-        }
+-        if (!ssl_bio_perform(n, "ssl_send")) {
+-            return -1;
+-        }
+-    }
+-}
+-
+ ssize_t UringSocket::ssl_sendfile(const File &file, off_t *offset, size_t size) {
+@@ -640,3 +537,3 @@ ssize_t UringSocket::ssl_sendfile(const File &file, off_t *offset, size_t size)
+ 
+-        ssize_t ret = ssl_send(buf, n);
++        ssize_t ret = swr_v1_uring_tls_send(tls(), buf, n);
+         if (ret > 0) {
+@@ -677,3 +574,3 @@ ssize_t UringSocket::send_once(const void *buf, size_t count) {
+ 
+-        if (!ssl_bio_prepare()) {
++        if (!swr_v1_uring_tls_prepare(tls())) {
+             return -1;
+@@ -681,3 +578,3 @@ ssize_t UringSocket::send_once(const void *buf, size_t count) {
+ 
+-        if (socket->ssl_want_read == 1 && !ssl_bio_read()) {
++        if (socket->ssl_want_read == 1 && !swr_v1_uring_tls_read(tls())) {
+             return -1;
+@@ -685,3 +582,3 @@ ssize_t UringSocket::send_once(const void *buf, size_t count) {
+ 
+-        if (socket->ssl_want_write == 1 && !ssl_bio_write()) {
++        if (socket->ssl_want_write == 1 && !swr_v1_uring_tls_write(tls())) {
+             return -1;
+@@ -706,3 +603,3 @@ ssize_t UringSocket::recv_once(void *buf, size_t count) {
+ 
+-        if (!ssl_bio_prepare()) {
++        if (!swr_v1_uring_tls_prepare(tls())) {
+             return -1;
+@@ -710,3 +607,3 @@ ssize_t UringSocket::recv_once(void *buf, size_t count) {
+ 
+-        if (socket->ssl_want_read == 1 && !ssl_bio_read()) {
++        if (socket->ssl_want_read == 1 && !swr_v1_uring_tls_read(tls())) {
+             return -1;
+@@ -714,3 +611,3 @@ ssize_t UringSocket::recv_once(void *buf, size_t count) {
+ 
+-        if (socket->ssl_want_write == 1 && !ssl_bio_write()) {
++        if (socket->ssl_want_write == 1 && !swr_v1_uring_tls_write(tls())) {
+             return -1;
