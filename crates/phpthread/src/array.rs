@@ -436,11 +436,14 @@ pub unsafe extern "C" fn swr_v1_phpthread_array_append(array: *mut c_void, value
 /// # Safety
 /// `array` is a live handle; in a request; `out` is writable and holds nothing.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpthread_array_to_array(array: *mut c_void, out: *mut zval) {
+pub unsafe extern "C" fn swr_v1_phpthread_array_to_array(
+    array: *mut c_void,
+    return_value: *mut zval,
+) {
     // SAFETY: per the caller.
     let array = unsafe { borrow(array) };
     // SAFETY: per the caller.
-    unsafe { array.to_array(out) };
+    unsafe { array.to_array(return_value) };
     finish();
 }
 

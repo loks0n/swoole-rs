@@ -1,6 +1,16 @@
 //! Arrays, conversions and object properties as Swoole's own helpers see them
 //! (`SW_HASHTABLE_FOREACH_START2`, `zend::String`, `sw_zend_read_property_ex`
-//! and friends), for the coroutine HTTP clients.
+//! and friends), for the coroutine HTTP and HTTP/2 clients.
+//!
+//! Without the `php` feature the crate is empty.
+#![cfg(feature = "php")]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
 use std::{ffi::CStr, marker::PhantomData, ptr};
 use swoole_rs_zend::{
     string::bytes,
@@ -20,14 +30,14 @@ use swoole_rs_zend::{
 const KEY_IS_STRING: i64 = 1;
 
 /// A string reference the holder owns (`zend::String`): released on drop.
-pub(crate) struct Owned(*mut zend_string);
+pub struct Owned(*mut zend_string);
 
 impl Owned {
     /// `zval_get_string(value)`: the value as a string, converting as PHP does.
     /// # Safety
     /// `value` is a live zval.
     #[must_use]
-    pub(crate) unsafe fn of(value: *mut zval) -> Self {
+    pub unsafe fn of(value: *mut zval) -> Self {
         // SAFETY: per the caller; Zend returns a new reference.
         Self(unsafe { swr_zval_get_string(value) })
     }
@@ -36,12 +46,12 @@ impl Owned {
     /// # Safety
     /// `string` is a live string carrying a reference the caller gives up.
     #[must_use]
-    pub(crate) unsafe fn from_raw(string: *mut zend_string) -> Self {
+    pub unsafe fn from_raw(string: *mut zend_string) -> Self {
         Self(string)
     }
 
     #[must_use]
-    pub(crate) fn bytes(&self) -> &[u8] {
+    pub fn bytes(&self) -> &[u8] {
         // SAFETY: the reference this holds keeps the string alive.
         unsafe { bytes(self.0) }
     }
@@ -59,7 +69,7 @@ impl Drop for Owned {
 /// `value` is a live zval.
 #[must_use]
 #[inline]
-pub(crate) unsafe fn long(value: *const zval) -> zend_long {
+pub unsafe fn long(value: *const zval) -> zend_long {
     // SAFETY: per the caller.
     if unsafe { type_of(value) } == swoole_rs_zend::sys::IS_LONG {
         // SAFETY: an int zval.
@@ -73,7 +83,7 @@ pub(crate) unsafe fn long(value: *const zval) -> zend_long {
 /// # Safety
 /// `value` is a live zval.
 #[must_use]
-pub(crate) unsafe fn double(value: *const zval) -> f64 {
+pub unsafe fn double(value: *const zval) -> f64 {
     // SAFETY: per the caller.
     unsafe { swr_zval_get_double(value) }
 }
@@ -82,7 +92,7 @@ pub(crate) unsafe fn double(value: *const zval) -> f64 {
 /// # Safety
 /// `value` is a live zval.
 #[must_use]
-pub(crate) unsafe fn truthy(value: *const zval) -> bool {
+pub unsafe fn truthy(value: *const zval) -> bool {
     // SAFETY: per the caller.
     unsafe { swr_zval_is_true(value) }
 }
@@ -92,7 +102,7 @@ pub(crate) unsafe fn truthy(value: *const zval) -> bool {
 /// `value` is null or a live zval.
 #[must_use]
 #[inline]
-pub(crate) unsafe fn is_array(value: *const zval) -> bool {
+pub unsafe fn is_array(value: *const zval) -> bool {
     // SAFETY: per the caller.
     !value.is_null() && unsafe { type_of(value) } == IS_ARRAY
 }
@@ -102,7 +112,7 @@ pub(crate) unsafe fn is_array(value: *const zval) -> bool {
 /// `value` is a live zval.
 #[must_use]
 #[inline]
-pub(crate) unsafe fn is_null(value: *const zval) -> bool {
+pub unsafe fn is_null(value: *const zval) -> bool {
     // SAFETY: per the caller.
     (unsafe { type_of(value) }) == IS_NULL
 }
@@ -111,7 +121,7 @@ pub(crate) unsafe fn is_null(value: *const zval) -> bool {
 /// # Safety
 /// `value` is a live zval, and the bytes are used while it holds that string.
 #[must_use]
-pub(crate) unsafe fn string_bytes<'a>(value: *const zval) -> Option<&'a [u8]> {
+pub unsafe fn string_bytes<'a>(value: *const zval) -> Option<&'a [u8]> {
     // SAFETY: per the caller.
     if unsafe { type_of(value) } != IS_STRING {
         return None;
@@ -126,7 +136,7 @@ pub(crate) unsafe fn string_bytes<'a>(value: *const zval) -> Option<&'a [u8]> {
 /// # Safety
 /// `array` is a live array zval.
 #[must_use]
-pub(crate) unsafe fn length(array: *const zval) -> u32 {
+pub unsafe fn length(array: *const zval) -> u32 {
     // SAFETY: per the caller.
     let table = unsafe { value::table(array) };
     // SAFETY: a live table.
@@ -137,7 +147,7 @@ pub(crate) unsafe fn length(array: *const zval) -> u32 {
 /// # Safety
 /// `array` is null or a live zval.
 #[must_use]
-pub(crate) unsafe fn length_safe(array: *const zval) -> u32 {
+pub unsafe fn length_safe(array: *const zval) -> u32 {
     // SAFETY: per the caller.
     if unsafe { is_array(array) } {
         // SAFETY: an array zval.
@@ -151,7 +161,7 @@ pub(crate) unsafe fn length_safe(array: *const zval) -> u32 {
 /// # Safety
 /// `array` is a live array zval.
 #[must_use]
-pub(crate) unsafe fn find(array: *const zval, key: &[u8]) -> *mut zval {
+pub unsafe fn find(array: *const zval, key: &[u8]) -> *mut zval {
     // SAFETY: per the caller.
     let table = unsafe { value::table(array) };
     // SAFETY: a live table; Zend reads `key` only.
@@ -162,7 +172,7 @@ pub(crate) unsafe fn find(array: *const zval, key: &[u8]) -> *mut zval {
 /// # Safety
 /// As `find`.
 #[must_use]
-pub(crate) unsafe fn get(array: *const zval, key: &[u8]) -> Option<*mut zval> {
+pub unsafe fn get(array: *const zval, key: &[u8]) -> Option<*mut zval> {
     // SAFETY: per the caller.
     let found = unsafe { find(array, key) };
     // SAFETY: a value Zend found.
@@ -171,7 +181,7 @@ pub(crate) unsafe fn get(array: *const zval, key: &[u8]) -> Option<*mut zval> {
 
 /// `SW_HASHTABLE_FOREACH_START2`: each element in order, with its string key
 /// (None for an integer key).
-pub(crate) struct Entries<'a> {
+pub struct Entries<'a> {
     table: *mut HashTable,
     position: HashPosition,
     life: PhantomData<&'a zval>,
@@ -181,7 +191,7 @@ pub(crate) struct Entries<'a> {
 /// # Safety
 /// `array` is a live array zval that no one changes while iterating.
 #[must_use]
-pub(crate) unsafe fn entries<'a>(array: *const zval) -> Entries<'a> {
+pub unsafe fn entries<'a>(array: *const zval) -> Entries<'a> {
     // SAFETY: per the caller.
     let table = unsafe { value::table(array) };
     let mut position = 0;
@@ -230,7 +240,7 @@ impl<'a> Iterator for Entries<'a> {
 /// # Safety
 /// `object` is live and declares `name`.
 #[must_use]
-pub(crate) unsafe fn property(object: *mut zend_object, name: &CStr) -> *mut zval {
+pub unsafe fn property(object: *mut zend_object, name: &CStr) -> *mut zval {
     // SAFETY: per the caller.
     unsafe { swr_zend_property_slot(object, name.as_ptr(), name.count_bytes()) }
 }
@@ -239,7 +249,7 @@ pub(crate) unsafe fn property(object: *mut zend_object, name: &CStr) -> *mut zva
 /// # Safety
 /// As `property`.
 #[must_use]
-pub(crate) unsafe fn property_not_null(object: *mut zend_object, name: &CStr) -> Option<*mut zval> {
+pub unsafe fn property_not_null(object: *mut zend_object, name: &CStr) -> Option<*mut zval> {
     // SAFETY: per the caller.
     let found = unsafe { swr_zend_property_not_null(object, name.as_ptr(), name.count_bytes()) };
     (!found.is_null()).then_some(found)
@@ -249,7 +259,7 @@ pub(crate) unsafe fn property_not_null(object: *mut zend_object, name: &CStr) ->
 /// # Safety
 /// `ce` is the object's class (or an ancestor declaring `name`) and `object` live.
 #[must_use]
-pub(crate) unsafe fn property_array(
+pub unsafe fn property_array(
     ce: *mut zend_class_entry,
     object: *mut zend_object,
     name: &CStr,
@@ -261,7 +271,7 @@ pub(crate) unsafe fn property_array(
 /// `zend_update_property(ce, object, name, value)`: Zend copies the value.
 /// # Safety
 /// As `property_array`; `value` is a live zval.
-pub(crate) unsafe fn update(
+pub unsafe fn update(
     ce: *mut zend_class_entry,
     object: *mut zend_object,
     name: &CStr,
@@ -274,7 +284,7 @@ pub(crate) unsafe fn update(
 /// `zend_update_property_null(ce, object, name)`.
 /// # Safety
 /// As `property_array`.
-pub(crate) unsafe fn update_null(ce: *mut zend_class_entry, object: *mut zend_object, name: &CStr) {
+pub unsafe fn update_null(ce: *mut zend_class_entry, object: *mut zend_object, name: &CStr) {
     // SAFETY: per the caller.
     unsafe { zend_update_property_null(ce, object, name.as_ptr(), name.count_bytes()) };
 }
@@ -282,7 +292,7 @@ pub(crate) unsafe fn update_null(ce: *mut zend_class_entry, object: *mut zend_ob
 /// `zend_update_property_stringl(ce, object, name, bytes)`.
 /// # Safety
 /// As `property_array`.
-pub(crate) unsafe fn update_bytes(
+pub unsafe fn update_bytes(
     ce: *mut zend_class_entry,
     object: *mut zend_object,
     name: &CStr,
@@ -305,7 +315,7 @@ pub(crate) unsafe fn update_bytes(
 /// `element`.
 /// # Safety
 /// `array` is a live, separated array zval; `element` a zval the caller gives up.
-pub(crate) unsafe fn add_or_merge(array: *mut zval, key: &[u8], element: *mut zval) {
+pub unsafe fn add_or_merge(array: *mut zval, key: &[u8], element: *mut zval) {
     // SAFETY: per the caller.
     unsafe { swr_zend_array_add_or_merge(array, key.as_ptr().cast(), key.len(), element) };
 }
@@ -313,7 +323,7 @@ pub(crate) unsafe fn add_or_merge(array: *mut zval, key: &[u8], element: *mut zv
 /// `add_next_index_zval(array, element)`: whether the array took `element`.
 /// # Safety
 /// `array` is a live, separated array zval; `element` a zval the caller gives up.
-pub(crate) unsafe fn push(array: *mut zval, element: *mut zval) -> bool {
+pub unsafe fn push(array: *mut zval, element: *mut zval) -> bool {
     // SAFETY: per the caller.
     let table = unsafe { value::table(array) };
     // SAFETY: per the caller.

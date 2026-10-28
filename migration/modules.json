@@ -633,6 +633,7 @@
       "owned_paths": [
         "crates/clients/",
         "crates/phpclients/",
+        "crates/phptable/",
         "native/clients/",
         "migration/patches/clients/",
         "tests/modules/clients/"
@@ -684,7 +685,8 @@
         "ext-src/swoole_http_cookie.cc",
         "ext-src/swoole_http_request.cc",
         "ext-src/swoole_http_response.cc",
-        "ext-src/swoole_http_server_coro.cc"
+        "ext-src/swoole_http_server_coro.cc",
+        "ext-src/swoole_http_server.cc"
       ],
       "abi_contract": "docs/http-bindings-abi-v1.md",
       "feature_bit_reserved": 2097152
@@ -707,6 +709,7 @@
       ],
       "owned_paths": [
         "crates/http2/",
+        "crates/phphttp2/",
         "native/http2/",
         "migration/patches/http2/",
         "tests/modules/http2/"
