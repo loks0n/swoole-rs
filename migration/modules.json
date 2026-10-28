@@ -239,8 +239,7 @@
       "owned_paths": [
         "crates/process/",
         "native/process/",
-        "migration/patches/process/",
-        "tests/modules/process/"
+        "migration/patches/process/"
       ],
       "phpt_families": [
         "swoole_process",

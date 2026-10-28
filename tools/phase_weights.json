@@ -202,7 +202,6 @@
  "ports-socket": 6,
  "ports-tls-settings": 7,
  "ports-unit": 1,
- "process-policy": 1,
  "process-unit": 1,
  "protocols-bailout": 8,
  "protocols-handlers": 1,

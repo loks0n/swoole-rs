@@ -64,8 +64,9 @@ which run after Rust returns.
   coroutine's Rust frame stays on its stack across the yield; no value with a
   destructor is live there, and no RefCell borrow spans a yield or resume.
 
-`python3 tests/modules/process/gate.py` builds the crate and runs the C++
-differential under ASan/UBSan; `--archive ARCHIVE` tests an existing archive.
+`cargo test -p swoole-rs-process` checks each worker, task, reload, exit-budget
+and result-flag decision against the upstream expression it replaces, and the
+C layout of the exit records.
 
 Not converted: the rest of startup/fork/worker/task/reload/exit/IPC/signal/wait
 lifecycle.
