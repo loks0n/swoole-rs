@@ -212,7 +212,6 @@ name = "swoole-rs-clients"
 version = "0.1.0"
 dependencies = [
  "libc",
- "libz-sys",
  "swoole-rs-base64",
 ]
 
@@ -255,6 +254,7 @@ dependencies = [
  "swoole-rs-http",
  "swoole-rs-http2",
  "swoole-rs-httpbindings",
+ "swoole-rs-inflate",
  "swoole-rs-locks",
  "swoole-rs-memory",
  "swoole-rs-ossupport",
@@ -299,6 +299,14 @@ version = "0.1.0"
 [[package]]
 name = "swoole-rs-httpbindings"
 version = "0.1.0"
+
+[[package]]
+name = "swoole-rs-inflate"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "libz-sys",
+]
 
 [[package]]
 name = "swoole-rs-locks"

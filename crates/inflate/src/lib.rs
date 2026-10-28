@@ -4,6 +4,14 @@
 //! the only live codec. Native owns the `body` buffer and appends what each chunk
 //! produces; the `z_stream`, the encoding and the raw-deflate retry are Rust's.
 
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::undocumented_unsafe_blocks,
+        clippy::multiple_unsafe_ops_per_block
+    )
+)]
+
 use std::ffi::c_int;
 
 use libz_sys::{inflate, inflateEnd, inflateInit2_, z_stream, zlibVersion};
