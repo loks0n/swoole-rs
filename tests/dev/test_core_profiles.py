@@ -17,13 +17,10 @@ class CoreProfiles(unittest.TestCase):
             with self.subTest(module=module, flag=flag), tempfile.TemporaryDirectory() as directory:
                 root = Path(directory).resolve(); prefix = root / 'prefix'; archive = prefix / 'lib/libswoole_rs_ffi.a'
                 archive.parent.mkdir(parents=True); archive.write_bytes(b'archive identity fixture')
-                header = Path('native/include') / ('swoole_rs_' + module + '.h')
-                (root / header).parent.mkdir(parents=True); (root / header).write_bytes(b'header identity fixture')
                 manifest = root / 'manifest.json'
                 manifest.write_text(json.dumps(dict(configure=['--with-swoole-rs=' + str(prefix)],
                     migrated_feature_bits=core_check.MODULES[module][1], inputs=dict(modules=[module],
-                    rust_archive_sha256=core_check.sha(archive), headers_sha256={str(header):core_check.sha(root/header)},
-                    patches=[]))))
+                    rust_archive_sha256=core_check.sha(archive)))))
                 argv = ['core_check.py', '--module', module, '--build-manifest', str(manifest),
                         '--output', str(root/'receipt.json'), '--sanitize', *([flag] if flag else [])]
                 with patch.object(core_check, 'ROOT', root), patch('sys.argv', argv), \

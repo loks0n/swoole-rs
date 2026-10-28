@@ -977,24 +977,29 @@ index cffe31a..803879e 100644
 +
    public:
 diff --git a/include/swoole_iouring.h b/include/swoole_iouring.h
-index 060a261..577092d 100644
+index 060a261..90fd428 100644
 --- a/include/swoole_iouring.h
 +++ b/include/swoole_iouring.h
 @@ -16,2 +16,3 @@
  
 +
  #pragma once
-@@ -21,3 +22,3 @@
+@@ -19,5 +20,8 @@
+ #include "swoole_coroutine.h"
++#ifndef SWOOLE_RS_HOOKS
++#error "Hooks overlay requires --enable-swoole-rs-hooks"
++#endif
+ 
  #ifdef SW_USE_IOURING
 -#include <liburing.h>
 +#include "swoole_rs_uring.h"
  
-@@ -27,3 +28,3 @@ enum swIouringFlag {
+@@ -27,3 +31,3 @@ enum swIouringFlag {
      SW_IOURING_DEFAULT = 0,
 -    SW_IOURING_SQPOLL = IORING_SETUP_SQPOLL,
 +    SW_IOURING_SQPOLL = 1U << 1,  // IORING_SETUP_SQPOLL
  };
-@@ -31,15 +32,6 @@ enum swIouringFlag {
+@@ -31,15 +35,6 @@ enum swIouringFlag {
  namespace swoole {
 -
 -struct IouringEvent;
@@ -1013,7 +1018,7 @@ index 060a261..577092d 100644
 -    std::queue<IouringEvent *> waiting_tasks;
 +    swr_v1_uring *engine = nullptr;
      network::Socket *ring_socket = nullptr;
-@@ -47,23 +39,15 @@ class Iouring {
+@@ -47,23 +42,15 @@ class Iouring {
  
 -    IouringEvent *ready_events[SW_IOURING_QUEUE_SIZE];
 -    io_uring_cqe *cqes[SW_IOURING_QUEUE_SIZE];
@@ -1046,12 +1051,12 @@ index 060a261..577092d 100644
 +    static const swr_v1_uring_host host;
 +
      ~Iouring();
-@@ -71,3 +55,3 @@ class Iouring {
+@@ -71,3 +58,3 @@ class Iouring {
      bool is_empty_waiting_tasks() const {
 -        return waiting_tasks.empty();
 +        return swr_v1_uring_waiting_num(engine) == 0;
      }
-@@ -75,15 +59,3 @@ class Iouring {
+@@ -75,15 +62,3 @@ class Iouring {
      uint64_t get_task_num() const {
 -        return task_num;
 -    }
@@ -1068,21 +1073,21 @@ index 060a261..577092d 100644
 -        return get_sq_capacity() - get_sq_space_left();
 +        return swr_v1_uring_task_num(engine);
      }
-@@ -91,3 +63,3 @@ class Iouring {
+@@ -91,3 +66,3 @@ class Iouring {
      size_t get_waiting_task_num() const {
 -        return waiting_tasks.size();
 +        return swr_v1_uring_waiting_num(engine);
      }
-@@ -95,3 +67,3 @@ class Iouring {
+@@ -95,3 +70,3 @@ class Iouring {
      float get_sq_usage_percent() const {
 -        return (float) get_sq_used() / get_sq_capacity() * 100.0f;
 +        return swr_v1_uring_sq_usage_percent(engine);
      }
-@@ -104,3 +76,2 @@ class Iouring {
+@@ -104,3 +79,2 @@ class Iouring {
      static int listen(int fd, int backlog);
 -    static int sleep(int tv_sec, int tv_nsec, int flags = 0);
      static int sleep(double seconds);
-@@ -144,3 +115,2 @@ class Iouring {
+@@ -144,3 +118,2 @@ class Iouring {
  
 -    static std::unordered_map<std::string, int> list_all_opcode();
      static int callback(Reactor *reactor, Event *event);

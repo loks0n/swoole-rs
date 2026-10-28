@@ -12,20 +12,20 @@ native-TU gates.
 
 ## Registered gates
 
-- `differential.py --source CONFIGURED_PINNED --output R [--archive A] [--sanitize] [--signed-char | --unsigned-char] [--include DIR]`
-  (`corebase-native`): compiles the complete original and patched `base.cc`
-  into separate binaries with `driver.cc`, feeds both the corpus from
+- `differential.py --source CONFIGURED_PINNED --archive A --output R [--sanitize] [--signed-char | --unsigned-char] [--include DIR]`
+  (`corebase-native`): compiles the complete original `base.cc` (pinned) and
+  the hybrid build's `base.cc` (the build `A` comes from, with its headers and
+  `config.h`) into separate binaries with `driver.cc`, feeds both the corpus from
   `cases.py` and requires identical output/errno, plus 934 independently
   expected values. It also runs eight extracted upstream `TEST(base, ...)`
   bodies (dec2hex, hex2dec, version_compare, common_divisor, common_multiple,
-  dirname, itoa, type_size) and the `allocator.cc` strndup interposer. Without
-  `--archive` it builds the crate offline with `itoa=1.0.18`. The patched
+  dirname, itoa, type_size) and the `allocator.cc` strndup interposer. The hybrid
   binary must contain real calls to each Rust helper; the original none.
   `--unsigned-char` also covers bytes 128..255.
 - `mkdir.py --source S --archive A --output R [--sanitize]` (`corebase-mkdir`):
   270 traced `swoole_mkdir_recursive` cases (30 paths x 9 syscall scenarios,
   through `mkdir-shim.h`/`mkdir-driver.h`) compared between original and
-  patched, plus real private-filesystem checks per engine.
+  the hybrid build's `base.cc`, plus real private-filesystem checks per engine.
 - `mkdir_startup.py --engine native=... --engine rust=... --output R`
   (`corebase-startup`): PHP startup through `sys_temp_dir` (create, repeated
   slashes, file parent), comparing warnings and `swoole_last_error`. The Rust

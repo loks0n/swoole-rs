@@ -1,8 +1,9 @@
 //! Internal classes registered at MINIT, with their object handlers.
 use crate::sys::{
     CONST_PERSISTENT, ZEND_ACC_PUBLIC, std_object_handlers, swr_zend_register_class,
-    zend_class_entry, zend_declare_class_constant_long, zend_declare_property_long,
-    zend_declare_property_null, zend_function_entry, zend_hash_find, zend_long, zend_object,
+    swr_zend_register_class_alias, zend_class_entry, zend_declare_class_constant_long,
+    zend_declare_property_bool, zend_declare_property_long, zend_declare_property_null,
+    zend_declare_property_string, zend_function_entry, zend_hash_find, zend_long, zend_object,
     zend_object_handlers, zend_register_double_constant, zend_register_long_constant, zend_string,
     zend_throw_error,
 };
@@ -50,10 +51,23 @@ impl Class {
         methods: *const zend_function_entry,
         configure: impl FnOnce(&mut zend_class_entry, &mut zend_object_handlers),
     ) {
+        // SAFETY: per the caller.
+        unsafe { self.register_child(name, methods, ptr::null_mut(), configure) };
+    }
+
+    /// `register`, extending `parent` (null for none).
+    /// # Safety
+    /// As `register`; `parent` is null or a registered class.
+    pub unsafe fn register_child(
+        &self,
+        name: &CStr,
+        methods: *const zend_function_entry,
+        parent: *mut zend_class_entry,
+        configure: impl FnOnce(&mut zend_class_entry, &mut zend_object_handlers),
+    ) {
         // SAFETY: MINIT, with a NUL-terminated name and the caller's static table.
-        let entry = unsafe {
-            swr_zend_register_class(name.as_ptr(), name.count_bytes(), methods, ptr::null_mut())
-        };
+        let entry =
+            unsafe { swr_zend_register_class(name.as_ptr(), name.count_bytes(), methods, parent) };
         // SAFETY: the standard handlers are initialised before any extension's MINIT.
         let mut handlers = unsafe { std_object_handlers };
         // SAFETY: Zend returned the registered entry, which nothing else uses yet.
@@ -116,10 +130,65 @@ impl Class {
         }
     }
 
+    /// Swoole's `SW_CLASS_ALIAS`: `name` (no leading backslash) names this class too.
+    /// # Safety
+    /// At MINIT, after `register`.
+    pub unsafe fn alias(&self, name: &CStr) {
+        // SAFETY: per the caller; Zend copies the name.
+        unsafe { swr_zend_register_class_alias(name.as_ptr(), name.count_bytes(), self.entry()) };
+    }
+
     /// The handlers this class's objects use (null before MINIT).
     #[must_use]
     pub fn handlers(&self) -> *const zend_object_handlers {
         self.handlers.get().map_or(ptr::null(), ptr::from_ref)
+    }
+}
+
+/// `ZEND_ACC_*` flags as the `int` the declare functions take.
+fn flags(value: u32) -> i32 {
+    i32::try_from(value).unwrap_or(i32::MAX)
+}
+
+/// `zend_declare_property_long` with `access` flags.
+/// # Safety
+/// MINIT, with a registered class.
+pub unsafe fn declare_long(ce: *mut zend_class_entry, name: &CStr, value: zend_long, access: u32) {
+    // SAFETY: per the caller.
+    unsafe {
+        zend_declare_property_long(ce, name.as_ptr(), name.count_bytes(), value, flags(access));
+    }
+}
+
+/// `zend_declare_property_string` with `access` flags.
+/// # Safety
+/// MINIT, with a registered class.
+pub unsafe fn declare_string(ce: *mut zend_class_entry, name: &CStr, value: &CStr, access: u32) {
+    // SAFETY: per the caller; Zend copies the value.
+    unsafe {
+        zend_declare_property_string(
+            ce,
+            name.as_ptr(),
+            name.count_bytes(),
+            value.as_ptr(),
+            flags(access),
+        );
+    }
+}
+
+/// `zend_declare_property_bool` with `access` flags.
+/// # Safety
+/// MINIT, with a registered class.
+pub unsafe fn declare_bool(ce: *mut zend_class_entry, name: &CStr, value: bool, access: u32) {
+    // SAFETY: per the caller.
+    unsafe {
+        zend_declare_property_bool(
+            ce,
+            name.as_ptr(),
+            name.count_bytes(),
+            zend_long::from(value),
+            flags(access),
+        );
     }
 }
 
