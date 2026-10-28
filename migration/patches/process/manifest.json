@@ -20,6 +20,13 @@
         "src/server/manager.cc",
         "src/server/process.cc"
       ]
+    },
+    {
+      "path": "0003-worker-kill.patch",
+      "sha256": "34ac8bc0a0abfe93a8eee390e49eaab9b46ee7fecc8ddf532ef98972cda39ec1",
+      "upstream_paths": [
+        "src/server/process.cc"
+      ]
     }
   ]
 }
