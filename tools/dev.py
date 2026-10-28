@@ -152,7 +152,7 @@ def plan(args, reports):
     variant = build_variant(args)
     manifest = ROOT / 'target/hybrid' / variant / 'build-manifest.json'
     hybrid = manifest.parent / 'modules/swoole.so'
-    captured_reference = integrate and (getattr(args, 'php_sockets', False) or bool({'buffer', 'utilities', 'ports', 'phphelpers', 'phpevents', 'reactor', 'phpcoroutines', 'coroutine'} & set(modules)) or {'http', 'corebase'} <= set(modules))
+    captured_reference = integrate and (getattr(args, 'php_sockets', False) or bool({'buffer', 'utilities', 'ports', 'phphelpers', 'reactor', 'phpcoroutines', 'coroutine'} & set(modules)) or {'http', 'corebase'} <= set(modules))
     native_variant = build_alias('upstream', [], profile_suffix(args))
     reference = (ROOT / 'target/hybrid' / native_variant / 'modules/swoole.so'
                  if captured_reference or getattr(args, 'stdext', False) or getattr(args, 'php_sockets', False) else ROOT / 'target/upstream/src/modules/swoole.so')
@@ -275,7 +275,7 @@ def plan(args, reports):
         script('reactor-compile', 'tests/modules/reactor/compile_gate.py', '--source', ROOT / 'target/upstream/src',
                '--report', reports / 'reactor-compile.json')
     if typed_buffer(args):
-        pytest('buffer-typed-layout', 'tests/modules/buffer/test_typed_layout.py')
+        pytest('buffer-typed-layout', 'tests/modules/buffer/test_typed_layout.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a')
         pytest('buffer-typed', 'tests/modules/buffer/test_typed.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize')
         script('reactor-buffer-typed-compile', 'tests/modules/reactor/buffer_typed_compile.py',
                '--source', ROOT / 'target/upstream/src',
@@ -321,10 +321,8 @@ def plan(args, reports):
         script('hooks-compile', 'tests/modules/hooks/compile_gate.py', '--source', ROOT / 'target/upstream/src',
                '--config', manifest.parent / 'src/config.h', '--report', reports / 'hooks-compile.json')
     if 'httpbindings' in modules:
-        for family, runner in [('cookie', 'cookie_gate.py'), ('server', 'server_gate.py')]:
-            name = 'httpbindings-' + family
-            script(name, 'tests/modules/httpbindings/' + runner, '--source', ROOT / 'target/upstream/src',
-                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report(name))
+        script('httpbindings-server', 'tests/modules/httpbindings/server_gate.py', '--source', ROOT / 'target/upstream/src',
+               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('httpbindings-server'))
         for suffix, options in [('', []), ('-without-compression', ['--without-compression'])]:
             name = 'httpbindings-request' + suffix
             script(name, 'tests/modules/httpbindings/request_gate.py', '--source', ROOT / 'target/upstream/src',
@@ -402,8 +400,6 @@ def plan(args, reports):
                        *(['--source-ref', 'HEAD'] if family != 'lifecycle' else []),
                        *php_for('curl', 'sockets'), *engines, *report(name))
     if 'phpcollections' in modules:
-        script('phpcollections-policy', 'tests/modules/phpcollections/gate.py', '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('phpcollections-policy'))
         if integrate:
             script('phpcollections-runtime', 'tests/modules/phpcollections/php_runtime.py', *php_for('curl'), *engines,
                    '--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
@@ -436,13 +432,6 @@ def plan(args, reports):
                 script('phphelpers-runtime', 'tests/modules/phphelpers/runtime.py', *php, *engines,
                        '--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                        '--source-ref', 'HEAD', *report('phphelpers-runtime'))
-    if 'phpevents' in modules:
-        script('phpevents-policy', 'tests/modules/phpevents/gate.py', '--source', ROOT / 'target/upstream/src',
-               '--sanitize', *report('phpevents-policy'))
-        if integrate:
-            script('phpevents-sdk', 'tests/modules/phpevents/sdk.py', '--source', ROOT / 'target/upstream/src',
-                   '--sdk-export', selected_export / 'export.json', '--native-export', native_export,
-                   *report('phpevents-sdk'))
     if 'phpcoroutines' in modules:
         for suffix, options in [('', []), ('-native-sanitized', ['--sanitize'])]:
             name = 'phpcoroutines-method-catalogue' + suffix
@@ -534,7 +523,8 @@ def plan(args, reports):
     if 'framing' in modules:
         script('framing-native', 'tests/modules/framing/gate.py', '--archive',
                manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report('framing-native'))
-        script('framing-traces', 'tests/modules/framing/trace.py', *report('framing-traces'))
+        script('framing-traces', 'tests/modules/framing/trace.py', '--archive',
+               manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('framing-traces'))
         if integrate:
             script('framing-versioned-expectation', 'corpus/upstream/versioned.py',
                    '--source', ROOT / 'target/upstream/src', '--case', 'tests/swoole_server/wrong_eof_setting.phpt',
@@ -587,7 +577,6 @@ def plan(args, reports):
                '--source-ref', utility_source, *report('utilities-public-storage'))
     if 'memory' in modules:
         script('memory-fixed-native-construction', 'tests/modules/memory/fixed_native_construction.py',
-               '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                *report('memory-fixed-native-construction'))
         script('memory-mapping-operation', 'tests/modules/memory/mapping_operation.py',

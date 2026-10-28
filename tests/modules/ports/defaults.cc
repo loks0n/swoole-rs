@@ -1,5 +1,7 @@
 // Exact constructor bodies; native initializers/storage/copy remain in C++.
+#ifdef PORTS_DRIVER
 #include "swoole_rs_ports.h"
+#endif
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -18,12 +20,13 @@ struct Protocol {
 };
 #define PORT_FIELDS uint16_t object_id; Protocol protocol{}; \
     bool open_length_check=false,open_eof_check=false; explicit ListenPort(Server *)
-namespace original { struct ListenPort { PORT_FIELDS; };
-#include "original.inc"
+namespace original { struct ListenPort { PORT_FIELDS; }; }
+namespace selected { struct ListenPort { PORT_FIELDS; }; }
+// Each side's body in its own translation unit; the selected one also holds the driver.
+namespace PORTS_SIDE {
+#include "body.inc"
 }
-namespace selected { struct ListenPort { PORT_FIELDS; };
-#include "selected.inc"
-}
+#ifdef PORTS_DRIVER
 int main() {
     static_assert(sizeof(SwrPortsDefaults)==24&&offsetof(SwrPortsDefaults,eof_length)==20,"constructor ABI");
     Server servers[16]{};uint64_t cases=0;
@@ -51,3 +54,4 @@ int main() {
         }
     std::cout<<"constructor-defaults "<<cases<<" exact-body/direct-ABI cases PASS\n";
 }
+#endif

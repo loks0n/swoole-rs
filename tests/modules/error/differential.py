@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compile pinned original/patched error.cc and compare through the actual Rust ABI."""
+"""Compile pinned error.cc and the hybrid build's error.cc and compare through the actual Rust ABI."""
 import argparse
 from datetime import datetime, timezone
 import hashlib
@@ -15,6 +15,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[3]
 import sys
 sys.path.insert(0, str(ROOT))
+from tools.build_hybrid import hybrid_tree
 from tools.build_upstream import COMMIT as PIN
 
 
@@ -22,13 +23,13 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--output', type=Path, default=ROOT / 'target/reports/error-differential.json')
-    parser.add_argument('--archive', type=Path, help='Use the exact published Cargo/FFI archive without recompiling Rust')
-    parser.add_argument('--allocator-faults', action='store_true', help='Compile unchanged Rust with a test allocator and check actual native bad_alloc translation')
+    parser.add_argument('--archive', type=Path, required=True, help='Rust archive of the hybrid build under test; its error.cc and headers are the Rust side')
+    parser.add_argument('--allocator-faults', action='store_true', help='Link unchanged Rust compiled with a test allocator instead of the archive and check actual native bad_alloc translation')
     parser.add_argument('--sanitize', action='store_true', help='Instrument the native oracle, adapter and driver with ASan/UBSan')
     parser.add_argument('--benchmark', action='store_true', help='Requires an explicit exclusive benchmark lease; seven matched optimized trials')
     parser.add_argument('--prepare-benchmark', type=Path, help='Retain a verified optimized executable without running timed trials')
     args = parser.parse_args()
-    if args.allocator_faults and (args.archive or args.benchmark or args.prepare_benchmark):
+    if args.allocator_faults and (args.benchmark or args.prepare_benchmark):
         parser.error('Allocator-fault artifacts are test-only, never published archives or benchmarks')
     if (args.benchmark or args.prepare_benchmark) and args.sanitize:
         parser.error('Benchmarks require an optimized unsanitized build')
@@ -74,19 +75,17 @@ def main():
         cases = re.findall(r'case (SW_ERROR_\w+):', original)
         names = list(dict.fromkeys(re.findall(r'\bSW_ERROR_\w+\b', header)))
         assert len(cases) == 130 and len(cases) == len(set(cases))
-        manifest = json.loads((ROOT / 'migration/patches/error/manifest.json').read_text())
-        assert manifest['upstream_commit'] == PIN and len(manifest['patches']) == 1
-        patch_entry = manifest['patches'][0]
-        assert patch_entry['upstream_paths'] == ['src/core/error.cc']
-        patch = ROOT / 'migration/patches/error' / patch_entry['path']
-        assert hashlib.sha256(patch.read_bytes()).hexdigest() == patch_entry['sha256']
+        hybrid, hybrid_flags = hybrid_tree(args.archive)
+        report['hybrid_tree'] = str(hybrid)
+        patched = (hybrid / 'src/core/error.cc').read_text()
         # The scratch source is deliberately outside every worktree, never the reference.
         with tempfile.TemporaryDirectory(prefix='swoole-error-') as temporary:
             work = Path(temporary)
-            (work / 'src/core').mkdir(parents=True)
-            (work / 'src/core/error.cc').write_text(original)
-            (work / 'original.cc').write_text(original)
-            (work / 'swoole_error.h').write_text(header)
+            upstream = work / 'upstream'
+            upstream.mkdir()
+            (upstream / 'original.cc').write_text(original)
+            (upstream / 'swoole_error.h').write_text(header)
+            (work / 'patched.cc').write_text(patched)
             stub = '''#pragma once
 #include <cstdio>
 #include <cstring>
@@ -100,39 +99,34 @@ void swoole_clear_last_error_msg();
 const char *swoole_get_last_error_msg();
 extern char sw_error[1024];
 '''
+            # The stub stands in for swoole.h on both sides. Its swoole_error.h is the pinned one in
+            # the upstream TU and the hybrid build's (through its flags) in the hybrid TUs.
+            (upstream / 'swoole.h').write_text(stub)
             (work / 'swoole.h').write_text(stub)
-            run(['git', 'apply', '--check', patch], work)
-            run(['git', 'apply', patch], work)
-            patched = (work / 'src/core/error.cc').read_text()
             assert 'switch (code)' not in patched and 'swr_v1_error_strerror(code, swr_system_error)' in patched
             assert patched.split('void swoole_throw_error')[1].split('void swoole_ignore_error')[0] == original.split('void swoole_throw_error')[1].split('void swoole_ignore_error')[0]
             assert patched.split('void swoole_clear_last_error_msg')[1] == original.split('void swoole_clear_last_error_msg')[1]
-            shutil.copyfile(ROOT / 'native/include/swoole_rs_error.h', work / 'swoole_rs_error.h')
-            shutil.copyfile(ROOT / 'native/error/swoole_rs_error_resolver.h', work / 'swoole_rs_error_resolver.h')
-            shutil.copyfile(ROOT / 'native/error/swoole_rs_error_state.h', work / 'swoole_rs_error_state.h')
-            rust = ROOT / 'crates/error/src/lib.rs'
-            archive = args.archive.resolve() if args.archive else work / 'liberror.a'
-            if args.archive:
-                report['published_archive'] = str(archive)
-                assert archive.is_file(), f'Missing published archive: {archive}'
-            else:
-                if args.allocator_faults:
-                    wrapper = (ROOT / 'tests/modules/error/allocator.rs').read_text()
-                    wrapper = wrapper.replace('/* ERROR_MODULE */', f'#[path = {json.dumps(str(rust))}] mod error;')
-                    (work / 'allocator.rs').write_text(wrapper)
-                    rust_input = work / 'allocator.rs'
-                else:
-                    rust_input = rust
+            archive = args.archive.resolve()
+            report['published_archive'] = str(archive)
+            assert archive.is_file(), f'Missing published archive: {archive}'
+            if args.allocator_faults:
+                rust = ROOT / 'crates/error/src/lib.rs'
+                wrapper = (ROOT / 'tests/modules/error/allocator.rs').read_text()
+                wrapper = wrapper.replace('/* ERROR_MODULE */', f'#[path = {json.dumps(str(rust))}] mod error;')
+                (work / 'allocator.rs').write_text(wrapper)
+                archive = work / 'liberror.a'
                 run(['rustc', '--edition=2024', '--crate-name', 'swoole_rs_error', '--crate-type', 'staticlib',
-                     '-C', 'opt-level=3', '-C', 'panic=abort', rust_input, '-o', archive])
+                     '-C', 'opt-level=3', '-C', 'panic=abort', work / 'allocator.rs', '-o', archive])
             rename = ['swoole_strerror', 'swoole_throw_error', 'swoole_ignore_error',
                       'swoole_is_ignored_error', 'swoole_clear_last_error_msg', 'swoole_get_last_error_msg']
-            flags = ['-std=c++17', '-O2', '-I', work]
+            common = ['-std=c++17', '-O2']
             if args.sanitize:
-                flags += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer']
-            run(['c++', *flags, '-Dswoole=reference_swoole',
-                 *[f'-D{name}=reference_{name}' for name in rename], '-c', work / 'original.cc', '-o', work / 'original.o'])
-            run(['c++', *flags, '-c', work / 'src/core/error.cc', '-o', work / 'patched.o'])
+                common += ['-fsanitize=address,undefined', '-fno-omit-frame-pointer']
+            run(['c++', *common, '-I', upstream, '-Dswoole=reference_swoole',
+                 *[f'-D{name}=reference_{name}' for name in rename], '-c', upstream / 'original.cc', '-o', work / 'original.o'])
+            # The hybrid TUs (its error.cc and the driver) use the hybrid build's headers.
+            flags = [*common, '-I', work, *hybrid_flags]
+            run(['c++', *flags, '-c', work / 'patched.cc', '-o', work / 'patched.o'])
             if args.allocator_faults:
                 run(['c++', *flags, ROOT / 'tests/modules/error/allocator.cc', work / 'patched.o',
                      archive, '-o', work / 'allocator-probe'])

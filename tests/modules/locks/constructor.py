@@ -9,6 +9,7 @@ import subprocess
 import overlay
 ROOT=Path(__file__).resolve().parents[3]
 sys.path.insert(0,str(ROOT))
+from tools.build_hybrid import hybrid_tree
 from tools.build_upstream import require_build_space
 from tools.harness import run_isolated,write_report
 
@@ -16,7 +17,7 @@ from tools.harness import run_isolated,write_report
 
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True);p.add_argument('--output',type=Path,required=True);p.add_argument('--sanitize',action='store_true');p.add_argument('--rust-asan',action='store_true');a=p.parse_args();overlay.SOURCE=a.source
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--source',type=Path,required=True);p.add_argument('--archive',type=Path,required=True,help='Rust archive of the hybrid build under test');p.add_argument('--output',type=Path,required=True);p.add_argument('--sanitize',action='store_true');p.add_argument('--rust-asan',action='store_true');a=p.parse_args();overlay.SOURCE=a.source
     if a.rust_asan and (not a.sanitize or '__asan_report_' not in subprocess.check_output(['nm','-u',str(a.archive)],text=True,stderr=subprocess.DEVNULL)):p.error('Rust ASan requires instrumented archive imports and native sanitizer flag')
     folder=a.output.resolve().with_suffix('');folder.mkdir(parents=True,exist_ok=True)
     support='''#pragma once
@@ -30,19 +31,33 @@ using sw_atomic_t=volatile uint32_t;
 struct Pool { void *alloc(size_t);void free(void *); };
 inline Pool *sw_mem_pool(){static Pool pool;return &pool;}
 '''
+    # Reference side from the pin, ported side from the hybrid build's fully patched tree.
+    hybrid_source,hybrid_flags=hybrid_tree(a.archive)
+    sides={'reference':overlay.original,'ported':lambda path:(hybrid_source/path).read_text()}
     (folder/'support.h').write_text(support)
-    header=overlay.original('include/swoole_lock.h').replace('#include "swoole_memory.h"','#include "support.h"')
-    (folder/'swoole_lock.h').write_text(header);(folder/'reference.h').write_text(header.replace('namespace swoole','namespace reference'))
-    base=overlay.original('src/core/base.cc');wait=base[base.index('bool sw_wait_for('):base.index('\nint swoole_itoa')]
-    upstream='namespace reference {\n'+wait+'}\n';ported='namespace swoole {\n'+wait+'}\n'
-    for name in ['mutex','rw_lock','spin_lock']:
-        path='src/lock/'+name+'.cc';upstream+=overlay.original(path).replace('#include "swoole_lock.h"','#include "reference.h"').replace('namespace swoole','namespace reference')+'\n';ported+=overlay.generated()[path]+'\n'
-    (folder/'original.inc').write_text(upstream);(folder/'ported.inc').write_text(ported)
-    command=['c++','-std=c++17','-O1','-UNDEBUG','-DHAVE_RWLOCK','-DSWOOLE_RS_LOCKS','-I'+str(folder),'-I'+str(ROOT/'native/locks'),str(Path(__file__).resolve().with_suffix('.cc')),str(a.archive.resolve()),'-lpthread','-ldl','-lm','-o',str(folder/'constructor')]
-    if sys.platform=='linux':command+=['-DHAVE_SPINLOCK','-lrt','-lutil']
-    if a.sanitize:command+=['-fsanitize=address,undefined','-fno-sanitize-recover=all']
-    report={'scope':__doc__,'pin':overlay.PIN,'compile':command,'passed':False,'native_baseline_passed':False,'full_original_gate_passed':False,'rust_instrumented':a.rust_asan,'native_instrumented':a.sanitize}
-    require_build_space(ROOT);r=run_isolated(command,timeout=90);report.update(compile_exit=r.returncode,compile_stderr=r.stderr)
+    for side,read in sides.items():
+        (folder/side).mkdir(exist_ok=True);namespace='reference' if side=='reference' else 'swoole'
+        header=read('include/swoole_lock.h').replace('#include "swoole_memory.h"','#include "support.h"')
+        base=read('src/core/base.cc')
+        # The fragment keeps the Rust ABI includes of the file it comes from.
+        text=''.join(line+'\n' for line in base.splitlines() if line.startswith('#include "swoole_rs_'))+'namespace '+namespace+' {\n'+base[base.index('bool sw_wait_for('):base.index('\nint swoole_itoa')]+'}\n'
+        for name in ['mutex','rw_lock','spin_lock']:
+            body=read('src/lock/'+name+'.cc');text+=(body.replace('#include "swoole_lock.h"','#include "reference.h"').replace('namespace swoole','namespace reference') if side=='reference' else body)+'\n'
+        if side=='reference':(folder/side/'reference.h').write_text(header.replace('namespace swoole','namespace reference'));(folder/side/'original.inc').write_text(text)
+        else:(folder/side/'swoole_lock.h').write_text(header);(folder/side/'ported.inc').write_text(text)
+    # Two translation units: the reference side sees only pinned text, the ported side and
+    # the driver the hybrid build's flags.
+    witness=str(Path(__file__).resolve().with_suffix('.cc'))
+    common=['c++','-std=c++17','-O1','-UNDEBUG','-DHAVE_RWLOCK','-I'+str(folder)]
+    if sys.platform=='linux':common+=['-DHAVE_SPINLOCK']
+    if a.sanitize:common+=['-fsanitize=address,undefined','-fno-sanitize-recover=all']
+    reference=[*common,'-c','-DLOCKS_REFERENCE','-I'+str(folder/'reference'),witness,'-o',str(folder/'reference.o')]
+    command=[*common,'-I'+str(folder/'ported'),*hybrid_flags,witness,str(folder/'reference.o'),str(a.archive.resolve()),'-lpthread','-ldl','-lm','-o',str(folder/'constructor')]
+    if sys.platform=='linux':command+=['-lrt','-lutil']
+    report={'scope':__doc__,'pin':overlay.PIN,'hybrid_tree':str(hybrid_source),'compile':[reference,command],'passed':False,'native_baseline_passed':False,'full_original_gate_passed':False,'rust_instrumented':a.rust_asan,'native_instrumented':a.sanitize}
+    require_build_space(ROOT);r=run_isolated(reference,timeout=90)
+    if not r.returncode:r=run_isolated(command,timeout=90)
+    report.update(compile_exit=r.returncode,compile_stderr=r.stderr)
     if not r.returncode:
         r=run_isolated([str(folder/'constructor')],timeout=30);report.update(exit=r.returncode,stdout=r.stdout,stderr=r.stderr)
         if not r.returncode:

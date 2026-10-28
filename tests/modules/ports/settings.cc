@@ -1,5 +1,7 @@
 // Complete original/selected setter bodies. No IO, callbacks or fault injection.
+#ifdef PORTS_DRIVER
 #include "swoole_rs_ports.h"
+#endif
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
@@ -8,7 +10,6 @@
 #include <limits>
 #include <string>
 #include <type_traits>
-#include "type-size.inc"
 
 struct Protocol {
     static int default_length_func() { return 42; }
@@ -21,19 +22,21 @@ struct Protocol {
     uint8_t package_length_size=4;
     uint16_t package_length_offset=123,package_body_offset=456;
 };
-namespace network { struct Stream { static void set_protocol(Protocol *); };
-#include "stream.inc"
-}
 #define PORT_FIELDS \
     Protocol protocol; bool open_eof_check=false,open_length_check=false; \
     void set_eof_protocol(const std::string &,bool); \
     void set_length_protocol(uint32_t,char,uint32_t); void set_stream_protocol()
-namespace original { struct ListenPort { PORT_FIELDS; };
-#include "original.inc"
+namespace original { struct ListenPort { PORT_FIELDS; }; }
+namespace selected { struct ListenPort { PORT_FIELDS; }; }
+// Each side's body in its own translation unit; the selected one also holds the driver.
+namespace PORTS_SIDE {
+#include "type-size.inc"
+namespace network { struct Stream { static void set_protocol(Protocol *); };
+#include "stream.inc"
 }
-namespace selected { struct ListenPort { PORT_FIELDS; };
-#include "selected.inc"
+#include "body.inc"
 }
+#ifdef PORTS_DRIVER
 static void equal(const original::ListenPort &a,const selected::ListenPort &b) {
     assert(a.protocol.get_package_length==b.protocol.get_package_length);
     assert(a.open_eof_check==b.open_eof_check&&a.open_length_check==b.open_length_check);
@@ -83,3 +86,4 @@ int main() {
     assert(!stream.length&&!stream.split&&!stream.length_offset);++cases;
     std::cout<<"framing-settings "<<cases<<" exact-body and direct-ABI cases PASS\n";
 }
+#endif

@@ -88,6 +88,19 @@ unsafe fn matches(row: *mut Row, key: &[u8]) -> bool {
         _ => (unsafe { slice::from_raw_parts(stored, length) }) == key,
     }
 }
+/// The key of a row.
+/// # Safety
+/// `row` is live (see the row invariant) and its key is not rewritten while the
+/// result is.
+#[must_use]
+pub unsafe fn row_key<'a>(row: *const Row) -> &'a [u8] {
+    let row = row.cast_mut();
+    // SAFETY: as above.
+    let length = unsafe { field::<u8>(row, mem::offset_of!(Row, key_len)).read_unaligned() };
+    let stored = field::<u8>(row, mem::offset_of!(Row, key)).cast_const();
+    // SAFETY: a live row holds `key_len` (<= 63) initialized key bytes.
+    unsafe { slice::from_raw_parts(stored, usize::from(length).min(63)) }
+}
 unsafe fn key<'a>(bytes: *const u8, length: u16) -> Option<&'a [u8]> {
     if length > 63 || bytes.is_null() && length != 0 {
         return None;

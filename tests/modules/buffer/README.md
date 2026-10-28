@@ -2,10 +2,10 @@
 
 Gates for the Rust `swoole::Buffer` queue (`crates/buffer`) and `swoole::String`
 storage (`crates/buffer/src/string`, gates in [string/](string/profiles.md)).
-Native runners extract sources from pinned upstream
-`c7e514509451beafd4d70ce5b78943d51e76381c` into a disposable tree, apply the
-patches from `migration/patches/buffer/manifest.json` (checksum and destinations
-checked by `staging.py`) and link a supplied Rust archive. They never rebuild the
+Native runners compile the upstream side from pinned upstream
+`c7e514509451beafd4d70ce5b78943d51e76381c`, extracted into a disposable tree, and
+the Rust side from the patched tree and headers of the hybrid build the supplied
+Rust archive comes from (`tools.build_hybrid.hybrid_tree`). They never rebuild the
 archive. The `test_*.py` gates run under pytest (`python3 -m pytest tests/modules/buffer/<file>`) with the
 shared options in `tests/conftest.py` and read sources from `target/upstream/src`. `--sanitize` adds C++ ASan/UBSan; the Rust archive is not instrumented
 unless built that way and declared with `--rust-asan` (see below).
@@ -20,7 +20,7 @@ unless built that way and declared with `--rust-asan` (see below).
 | `test_iovec.py --archive A [--sanitize]` | Twelve positive POSIX iovec append cases; native and selected layout and observation counts must match. |
 | `test_callbacks.py --archive A` | A throwing destroy callback must reach `std::terminate` (exit 77) for DATA pop, native-token pop and teardown in both engines. |
 | `test_typed.py --archive A [--sanitize]` | Typed queue facade compiled and run under C++14/17/20. |
-| `test_typed_layout.py` | `Buffer`/`BufferChunk` sizes and offsets under typed ON/omitted/zero; omitted and zero must preprocess to the same declaration as the control header. |
+| `test_typed_layout.py --archive A` | `Buffer`/`BufferChunk` sizes and offsets under typed ON/omitted/zero; omitted and zero must preprocess to the same declaration as the control header. |
 
 Run as `python3 tests/modules/buffer/<script>`; `S` is the pinned upstream
 checkout (`target/upstream/src`).

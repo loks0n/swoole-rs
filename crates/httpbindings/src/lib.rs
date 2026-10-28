@@ -1,4 +1,5 @@
-//! PHP HTTP policy. Native effects execute only after these functions return.
+//! PHP HTTP policy, whose native effects execute only after these functions
+//! return. The PHP classes over it live in crates/phphttp (docs/zend.md).
 #![deny(unsafe_op_in_unsafe_fn)]
 #![cfg_attr(
     not(test),
@@ -127,17 +128,17 @@ const PHASES: [Phase; 36] = [
     Phase::Done,
 ];
 
-const APPEND: u32 = 1;
-const WARN: u32 = 2;
-const ENCODE: u32 = 3;
-const APPEND_ENCODED: u32 = 4;
-const FREE_ENCODED: u32 = 5;
-const FORMAT_DATE: u32 = 6;
-const APPEND_DATE: u32 = 7;
-const FREE_DATE: u32 = 8;
-const READ_AGE: u32 = 9;
-const APPEND_AGE: u32 = 10;
-const DONE: u32 = 11;
+pub const APPEND: u32 = 1;
+pub const WARN: u32 = 2;
+pub const ENCODE: u32 = 3;
+pub const APPEND_ENCODED: u32 = 4;
+pub const FREE_ENCODED: u32 = 5;
+pub const FORMAT_DATE: u32 = 6;
+pub const APPEND_DATE: u32 = 7;
+pub const FREE_DATE: u32 = 8;
+pub const READ_AGE: u32 = 9;
+pub const APPEND_AGE: u32 = 10;
+pub const DONE: u32 = 11;
 const ILLEGAL: &[u8] = b",; \t\r\n\x0b\x0c";
 
 fn literal(kind: u32, bytes: &'static [u8]) -> Action {

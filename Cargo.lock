@@ -384,11 +384,15 @@ dependencies = [
  "swoole-rs-locks",
  "swoole-rs-memory",
  "swoole-rs-ossupport",
+ "swoole-rs-phpclients",
  "swoole-rs-phpcollections",
  "swoole-rs-phpcoroutines",
  "swoole-rs-phpevents",
  "swoole-rs-phphelpers",
+ "swoole-rs-phphttp",
  "swoole-rs-phplocks",
+ "swoole-rs-phpprocess",
+ "swoole-rs-phptimer",
  "swoole-rs-ports",
  "swoole-rs-process",
  "swoole-rs-protocols",
@@ -463,9 +467,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "swoole-rs-phpclients"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "swoole-rs-base64",
+ "swoole-rs-clients",
+ "swoole-rs-error",
+ "swoole-rs-inflate",
+ "swoole-rs-zend",
+]
+
+[[package]]
 name = "swoole-rs-phpcollections"
 version = "0.1.0"
 dependencies = [
+ "swoole-rs-memory",
  "swoole-rs-zend",
 ]
 
@@ -476,16 +493,43 @@ version = "0.1.0"
 [[package]]
 name = "swoole-rs-phpevents"
 version = "0.1.0"
+dependencies = [
+ "swoole-rs-zend",
+]
 
 [[package]]
 name = "swoole-rs-phphelpers"
 version = "0.1.0"
 
 [[package]]
+name = "swoole-rs-phphttp"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "swoole-rs-httpbindings",
+ "swoole-rs-zend",
+]
+
+[[package]]
 name = "swoole-rs-phplocks"
 version = "0.1.0"
 dependencies = [
  "swoole-rs-locks",
+ "swoole-rs-zend",
+]
+
+[[package]]
+name = "swoole-rs-phpprocess"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "swoole-rs-zend",
+]
+
+[[package]]
+name = "swoole-rs-phptimer"
+version = "0.1.0"
+dependencies = [
  "swoole-rs-zend",
 ]
 

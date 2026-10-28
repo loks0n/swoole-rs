@@ -2,6 +2,10 @@
 
 The ABI contract is in [docs/http-bindings-abi-v1.md](../../../docs/http-bindings-abi-v1.md).
 
+`Swoole\Http\Cookie` and the `Set-Cookie` line are Rust (`crates/httpbindings`,
+`php` feature); the pinned `swoole_http_cookie` and `swoole_http_response` PHPTs
+cover them.
+
 ## Native differential gates
 
 Each `*_gate.py` extracts the actual pinned and patched function bodies from
@@ -12,20 +16,20 @@ state and fault exits. Native code always runs under ASan/UBSan.
 ```sh
 rustc --edition 2024 --crate-type staticlib -C opt-level=2 \
   crates/httpbindings/src/lib.rs -o /private/target/libhttpbindings.a
-python3 tests/modules/httpbindings/cookie_gate.py --source /readonly/pinned/git \
-  --archive /private/target/libhttpbindings.a --output /private/target/cookie.json
+python3 tests/modules/httpbindings/request_gate.py --source /readonly/pinned/git \
+  --archive /private/target/libhttpbindings.a --output /private/target/request.json
 ```
 
 All gates take `--source`, `--output` and either `--archive PATH` or
 `--rust-sanitize` (Linux: build an ASan Rust archive privately; std stays
 uninstrumented). `request_gate.py`, `response_gate.py`, `payload_gate.py` and
-`server_gate.py` need `--archive` from a hybrid build: their candidate side,
+`server_gate.py` need `--archive` from a hybrid build, as does `emission_gate.py`
+(with `--rust-sanitize` it links a private ASan archive instead): their candidate side,
 including the `swoole.h`/`swoole_util.h` helpers they inline, comes from that
 build's fully patched tree, the upstream side from the pin.
 
 | Gate | Checks | Extra flags |
 |---|---|---|
-| `cookie_gate.py` | `HttpCookie::toString` field/flag/expiry/binary states, effect faults, warning reentry | |
 | `request_gate.py` | header/URL callbacks, token list, quote trim, response key formatting | `--without-compression` |
 | `server_gate.py` | coroutine handler routing, whole accept loop | |
 | `payload_gate.py` | body/completion callbacks, option assignment, compression method selection | `--capabilities 0..7`, `--native-libc --locale NAME` |

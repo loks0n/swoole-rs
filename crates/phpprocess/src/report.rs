@@ -1,0 +1,72 @@
+//! Swoole's PHP error macros (`php_swoole_private.h`).
+use crate::host::host;
+use std::ffi::CStr;
+use swoole_rs_zend::{E_ERROR, Message, php_error};
+
+pub(crate) const PHP_FATAL_ERROR: i32 = 503;
+pub(crate) const INVALID_PARAMS: i32 = 505;
+pub(crate) const OPERATION_NOT_SUPPORT: i32 = 507;
+pub(crate) const PHP_RUNTIME_NOTICE: i32 = 510;
+
+pub(crate) fn errno() -> i32 {
+    std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
+}
+
+/// Set `errno` (to 0 before a call whose -1 result is ambiguous).
+pub(crate) fn set_errno(value: i32) {
+    #[cfg(any(target_os = "linux", target_os = "android"))]
+    {
+        // SAFETY: the calling thread's errno slot.
+        let slot = unsafe { libc::__errno_location() };
+        // SAFETY: as above.
+        unsafe { *slot = value };
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    {
+        // SAFETY: the calling thread's errno slot.
+        let slot = unsafe { libc::__error() };
+        // SAFETY: as above.
+        unsafe { *slot = value };
+    }
+}
+
+/// `swoole_set_last_error`.
+pub(crate) fn set_last_error(error: i32) {
+    // SAFETY: C++'s setter of a thread-local int.
+    unsafe { (host().set_last_error)(error) };
+}
+
+/// `php_swoole_fatal_error`: always reported.
+pub(crate) fn fatal(level: i32, text: &Message) {
+    set_last_error(PHP_FATAL_ERROR);
+    // SAFETY: from a handler; the message lives on the caller's stack.
+    unsafe { php_error(level, text.as_cstr()) };
+}
+
+/// `php_swoole_error`: reported when `swoole.display_errors` is on.
+pub(crate) fn notice(level: i32, text: &Message) {
+    set_last_error(PHP_RUNTIME_NOTICE);
+    report(level, text);
+}
+
+/// `php_swoole_sys_error`: with `strerror(errno)` and errno appended.
+pub(crate) fn sys(level: i32, text: &Message) {
+    let error = errno();
+    set_last_error(error);
+    let mut full = *text;
+    full.push(b", Error: ");
+    // SAFETY: strerror has no preconditions.
+    let reason = unsafe { libc::strerror(error) };
+    // SAFETY: strerror returns a NUL-terminated message, as upstream reads it.
+    full.push(unsafe { CStr::from_ptr(reason) }.to_bytes());
+    full.push(format!("[{error}]").as_bytes());
+    report(level, &full);
+}
+
+fn report(level: i32, text: &Message) {
+    // SAFETY: C++'s reader of an ini flag.
+    if level == E_ERROR || unsafe { (host().display_errors)() } {
+        // SAFETY: from a handler; the message lives on the caller's stack.
+        unsafe { php_error(level, text.as_cstr()) };
+    }
+}

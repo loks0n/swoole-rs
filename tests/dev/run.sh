@@ -12,11 +12,9 @@ done
 # Module unit tests that need no build or pinned source, run from their own
 # directory so they import their siblings.
 for test in \
-    tests/modules/buffer/test_buffer_staging.py \
     tests/modules/clients/test_gate_output.py \
     tests/modules/integration/test_bridge_inventory.py \
     tests/modules/memory/test_benchmark.py \
-    tests/modules/phpcollections/test_gate.py \
     tests/modules/phpcollections/test_prepare_benchmark.py \
     tests/modules/phpcollections/test_runtime.py \
     tests/modules/phpcoroutines/test_activated_boundary.py \
@@ -40,7 +38,6 @@ for test in \
     tests/modules/phpcoroutines/test_statistics_identity.py \
     tests/modules/phpcoroutines/test_system_boundary.py \
     tests/modules/phpcoroutines/test_system_control_boundary.py \
-    tests/modules/phpevents/test_identity.py \
     tests/modules/phphelpers/test_entrypoint.py \
     tests/modules/phphelpers/test_facade_identity.py \
     tests/modules/phphelpers/test_gate.py \

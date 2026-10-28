@@ -33,14 +33,14 @@ callbacks or bailout enter Rust.
 ```sh
 cargo test -p swoole-rs-error
 cargo clippy -p swoole-rs-error --all-targets -- -D warnings
-python3 tests/modules/error/differential.py --source PINNED_REFERENCE --sanitize --output REPORT
-python3 tests/modules/error/differential.py --source PINNED_REFERENCE --archive PUBLISHED_ARCHIVE --sanitize --output REPORT
-python3 tests/modules/error/differential.py --source PINNED_REFERENCE --allocator-faults --sanitize --output REPORT
+python3 tests/modules/error/differential.py --source PINNED_REFERENCE --archive HYBRID_ARCHIVE --sanitize --output REPORT
+python3 tests/modules/error/differential.py --source PINNED_REFERENCE --archive HYBRID_ARCHIVE --allocator-faults --sanitize --output REPORT
 python3 tests/modules/error/php.py --source PINNED_REFERENCE --engine upstream=CONTROL --engine hybrid=CANDIDATE --output REPORT
 ```
 
-`differential.py` reads pinned Git objects, applies checksum-verified patches in
-a disposable tree and compiles the complete original and patched `error.cc`;
+`differential.py` compiles the complete pinned `error.cc` (from Git objects) and
+the hybrid build's `error.cc` with that build's headers (`HYBRID_ARCHIVE` is
+`<build>/rust-prefix/lib/libswoole_rs_ffi.a`);
 only dependency declarations and external buffer storage are stubbed. It checks
 all 130 messages, 10414 numeric inputs, the original exception/state
 assertions, concurrent lookups and reads, 20000 state operations, duplicates,
@@ -50,8 +50,8 @@ signed values, fork isolation and child destruction, plus full callback and
 `--allocator-faults` links the unchanged Rust module with a test global
 allocator against the native facade: bucket, handle and growth allocation
 failures must preserve membership and raise native `bad_alloc` after Rust
-returns; duplicates must not allocate and retries must succeed. It rejects
-`--archive` and benchmark preparation.
+returns; duplicates must not allocate and retries must succeed. It links that
+fixture in place of the archive and rejects benchmark preparation.
 
 `php.py` compares engines on 31221 `swoole_strerror` results, runs the original
 `swoole_strerror.phpt` and `swoole_error_log.phpt` through PHP's official runner,

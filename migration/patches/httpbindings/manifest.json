@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-cookie-policy.patch",
-      "sha256": "93b882404558c20159bcf87072779b3b9c14c620f4f2ae844d8f4e243c35efe8",
+      "sha256": "0d0704dbeeb160af5120e11494befa72ca15817b912ad30ae3f1151820b82651",
       "upstream_paths": [
         "ext-src/swoole_http_cookie.cc"
       ]
@@ -17,7 +17,7 @@
     },
     {
       "path": "0003-response-policy.patch",
-      "sha256": "138621e7eda6b0fb404721ccac147f551d514d59b449ef5d9a5b06f9ca7be246",
+      "sha256": "2ddf30dd0349477e8eff62b313616a38be90c1dcdca62118fb4134d95c690acf",
       "upstream_paths": [
         "ext-src/swoole_http_response.cc"
       ]
@@ -27,6 +27,21 @@
       "sha256": "be4121c846fa0c191a425334b8daaa103f34b78c71e5ce86af9d012bf71aa81a",
       "upstream_paths": [
         "ext-src/swoole_http_server_coro.cc"
+      ]
+    },
+    {
+      "path": "0006-http-header-cookie.patch",
+      "sha256": "9ecb3064668dcf126c1768383aabcf038c509e2cc56864f82ac1b4211c9ba47c",
+      "upstream_paths": [
+        "ext-src/php_swoole_http.h"
+      ]
+    },
+    {
+      "path": "0007-php-request-response.patch",
+      "sha256": "f48717b5483fceafa5455015688b06b925d271be29566124874e942c4e938ef8",
+      "upstream_paths": [
+        "ext-src/swoole_http_request.cc",
+        "ext-src/swoole_http_response.cc"
       ]
     }
   ]
