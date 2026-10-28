@@ -8,6 +8,15 @@ cover them.
 
 ## Native differential gates
 
+The response header and trailer and zlib body compression are Rust too
+(`crates/phphttp/src/header.rs`, `crates/deflate`), covered by the same PHPT
+families.
+
+The request parser (llhttp and multipart callbacks, header semantics, body and
+form handling) is Rust over the zend crates (`crates/phphttp/src/parse.rs`);
+the pinned `swoole_http_server`, `swoole_http_server_coro` and
+`swoole_http2_server` PHPTs cover it.
+
 Each `*_gate.py` extracts the actual pinned and patched function bodies from
 `ext-src/swoole_http_*.cc`, compiles both against shared native effect facades
 (`*_oracle.h`) and the Rust archive, and compares outputs, effect order, partial
@@ -16,39 +25,29 @@ state and fault exits. Native code always runs under ASan/UBSan.
 ```sh
 rustc --edition 2024 --crate-type staticlib -C opt-level=2 \
   crates/httpbindings/src/lib.rs -o /private/target/libhttpbindings.a
-python3 tests/modules/httpbindings/request_gate.py --source /readonly/pinned/git \
-  --archive /private/target/libhttpbindings.a --output /private/target/request.json
+python3 tests/modules/httpbindings/settings_gate.py --source /readonly/pinned/git \
+  --archive /private/target/libhttpbindings.a --output /private/target/settings.json
 ```
 
 All gates take `--source`, `--output` and either `--archive PATH` or
 `--rust-sanitize` (Linux: build an ASan Rust archive privately; std stays
-uninstrumented). `request_gate.py`, `response_gate.py`, `payload_gate.py` and
-`server_gate.py` need `--archive` from a hybrid build, as does `emission_gate.py`
+uninstrumented). `server_gate.py` needs `--archive` from a hybrid build, as does `emission_gate.py`
 (with `--rust-sanitize` it links a private ASan archive instead): their candidate side,
 including the `swoole.h`/`swoole_util.h` helpers they inline, comes from that
 build's fully patched tree, the upstream side from the pin.
 
 | Gate | Checks | Extra flags |
 |---|---|---|
-| `request_gate.py` | header/URL callbacks, token list, quote trim, response key formatting | `--without-compression` |
 | `server_gate.py` | coroutine handler routing, whole accept loop | |
-| `payload_gate.py` | body/completion callbacks, option assignment, compression method selection | `--capabilities 0..7`, `--native-libc --locale NAME` |
-| `response_gate.py` | known-header classifier (`build_header` is upstream's) | `--without-compression`, `--native-libc --locale NAME` |
-| `codec_gate.py` | `HttpContext::compress` dispatch, levels, backend errors, partial writes | `--capabilities 1..7` |
 | `settings_gate.py` | coroutine server startup settings body: alias order, null/false fallthrough, level clamp | `--without-compression` |
 | `emission_gate.py` | `HttpContext::write`/`end` chunk/trailer packetization and split sends | `--without-compression`, `--without-zlib` |
 | `file_gate.py` | `send_file` packetization and signed range validation | `--without-compression` |
-
-`--capabilities` toggles the zlib/Brotli/Zstd branches in both original and
-candidate. Capability 0 compiles the compression method out, so `codec_gate.py`
-reports unsupported and exits 2; dev.py runs it for 1..7 only (#316).
 
 Preserved native quirks (asserted by independent witnesses, not fixed): the
 pointer-size token fast path, shrinking quote-trim bound, leading-hyphen key
 formatting, case-sensitive substring and `q=0` encoding acceptance, uint32
 length truncation, a successful `end` return after a failed trailer send, and
-`parse_files=false` still publishing multipart files. `response_gate.py` keeps
-modeled native chunked-length assertion failures as failures. The native
+`parse_files=false` still publishing multipart files. The native
 `LONG_MIN` helper overflow and signed-subtraction overflow in range validation
 have no defined reference result and are excluded.
 

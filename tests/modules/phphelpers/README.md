@@ -71,10 +71,12 @@ with and without ASan/UBSan. It checks the native fallback is unchanged.
 python3 tests/modules/phphelpers/sdk.py --source PINNED --sdk-export IMMUTABLE/export.json --output SDK.json
 ```
 
-`sdk.py` (`phphelpers-sdk`) compiles 24 actual-TU profiles (native/M26-only/
-combined x stdext off/on x two `.cc` files x C++14/17), checks seven class
-size/alignment witnesses agree, compiles six optimized `php_swoole_async` caller
-objects and checks their Rust imports. It also compares declarations outside 68
+`sdk.py` (`phphelpers-sdk`) compiles 16 actual-TU profiles (native/hybrid x
+stdext off/on x two `.cc` files x C++14/17), checks seven class
+size/alignment witnesses agree, compiles four optimized `php_swoole_async` caller
+objects and checks their Rust imports. Native is the pin with every `SWOOLE_RS_*`
+switch off; hybrid is the export's own build tree (patched headers,
+`rust-prefix/include` and its switches). It also compares declarations outside 68
 inline bodies and 10 verbatim macros against the pinned header. Missing optional
 packages (for example libpq) keep their error but do not drop other flags. Its
 report (per-command dependency hashes, `selected_header_sha256`, the native public
@@ -84,7 +86,7 @@ header hash) is the input for `entrypoint.py`, `facade_runtime.py`,
 
 `async_optional_sdk.py --source PINNED --sdk-report SDK.json --provider sqlite|odbc
 --output UNIQUE.json` compiles the unchanged optional SQLite or ODBC consumer TU
-with its feature enabled (native/M26/combined x C++14/17, `-Werror`) and checks
+with its feature enabled (native/hybrid x C++14/17, `-Werror`) and checks
 the defined async wrappers and Rust imports. ODBC uses installed pkg-config flags
 and an explicit unixODBC configuration. Nothing is linked or executed.
 
@@ -101,8 +103,8 @@ All take `--engine native=DSO --engine selected=DSO`, `--build-manifest`,
   test-only extension from `entrypoint.cc` and checks named C++ entry results and
   child diagnostics (`entrypoint.php`, `entrypoint-child.php`).
 - `facade_runtime.py --sdk-report SDK.json [--prepare-only]`
-  (`phphelpers-facade-runtime`): builds native, M26-only-header and
-  combined-header helpers from `facade_entrypoint.cc`, requires all seven Rust
+  (`phphelpers-facade-runtime`): builds native and hybrid-header
+  helpers from `facade_entrypoint.cc`, requires all seven Rust
   facade imports in selected helpers and none in native, checks the production
   header/local ABI against the SDK, then runs `facade_entrypoint.php`. Header
   variants against one DSO are not separate production feature builds.

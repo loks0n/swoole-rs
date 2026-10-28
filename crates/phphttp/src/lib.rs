@@ -17,11 +17,22 @@
 
 mod context;
 mod cookie;
+mod header;
 mod host;
+mod parse;
 mod request;
 mod response;
+mod state;
 
 pub use context::{swr_v1_phphttp_context, swr_v1_phphttp_set_context};
 pub use cookie::*;
+pub use header::{
+    swr_v1_phphttp_build_header, swr_v1_phphttp_build_trailer, swr_v1_phphttp_compress,
+};
+pub use parse::{
+    swr_v1_phphttp_compression_method, swr_v1_phphttp_multipart_boundary,
+    swr_v1_phphttp_multipart_init, swr_v1_phphttp_multipart_parse, swr_v1_phphttp_parse,
+    swr_v1_phphttp_parse_free, swr_v1_phphttp_parse_minit,
+};
 pub use request::*;
 pub use response::*;
