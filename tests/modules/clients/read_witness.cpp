@@ -49,6 +49,8 @@ struct Reactor {};
 // DECLARATIONS
 namespace BODY_NAMESPACE {
 struct Client {
+    // The patched bodies reach the flags through the Client accessors (#447).
+    bool is_active() const{return active;} void set_active(bool v){active=v;} bool is_closed() const{return closed;}
     Socket *socket=nullptr;Buffer *buffer=nullptr;Protocol protocol;
     bool active=true,open_ssl=false,open_eof_check=false,open_length_check=false,closed=false,remove_delay=false;
     Proxy *http_proxy=nullptr,*socks5_proxy=nullptr;

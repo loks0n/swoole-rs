@@ -126,6 +126,7 @@ def main():
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <iostream>
 #include <fstream>
 #include <unordered_map>
@@ -158,10 +159,22 @@ struct Address {
     bool assign(const std::string &url);
     bool assign(int kind,const std::string&host,int port) { type=kind;seen_host=host;seen_port=port;return accept; }
 };
+#ifdef SW_USE_RUST_CLIENTS
+// The selected Client's flags are Rust's (#439); the driver sets and reads them the same way.
 struct Client {
-    Socket *socket=nullptr;bool closed=false,shutdown_read=false,shutdown_write=false,shutdown_rw=false;
+    Socket *socket=nullptr;std::unique_ptr<swr_v1_clients_state, decltype(&swr_v1_clients_state_free)> state_{swr_v1_clients_state_new(false), swr_v1_clients_state_free};
+    bool flag(uint32_t f) const{return swr_v1_clients_flag(state_.get(),f);}
+    void set(uint32_t f,bool v){swr_v1_clients_set_flag(state_.get(),f,v);}
     int shutdown(int _how);
 };
+#else
+struct Client {
+    Socket *socket=nullptr;bool closed=false,shutdown_read=false,shutdown_write=false,shutdown_rw=false;
+    bool flag(uint32_t f) const{return f==SWR_CLIENTS_CLOSED?closed:f==SWR_CLIENTS_SHUTDOWN_READ?shutdown_read:f==SWR_CLIENTS_SHUTDOWN_WRITE?shutdown_write:false;}
+    void set(uint32_t f,bool v){if(f==SWR_CLIENTS_CLOSED)closed=v;if(f==SWR_CLIENTS_SHUTDOWN_READ)shutdown_read=v;if(f==SWR_CLIENTS_SHUTDOWN_WRITE)shutdown_write=v;}
+    int shutdown(int _how);
+};
+#endif
 '''
     funcs = [('address', 'bool Address::verify_port('), ('address', 'bool Address::assign(const std::string &url)'), ('client', 'int Client::shutdown('), ('dns', 'std::string get_ip_by_hosts(')]
     extracted = {}
@@ -193,13 +206,15 @@ int main(int argc, char **argv) {
     for(const auto&url:urls)for(bool accept:{false,true}) {auto a=native::trace(url,accept),b=rust::trace(url,accept);if(a!=b) {std::cerr<<"URL mismatch size "<<url.size()<<"\n";return 1;}}
     size_t count=urls.size()*2;
     for(int port=-3;port<=65538;port++)for(bool connect:{false,true}) {if(native::Address::verify_port(port,connect)!=rust::Address::verify_port(port,connect))return 2;++count;}
-    for(unsigned flags=0;flags<8;flags++)for(bool live:{false,true})for(bool closed:{false,true})for(int how:{SHUT_RD,SHUT_WR,SHUT_RDWR,-1})for(int result:{-1,0,1}) {
+    // Upstream never sets shutdown_rw, so only read/write shutdown states are reachable.
+    for(unsigned flags=0;flags<4;flags++)for(bool live:{false,true})for(bool closed:{false,true})for(int how:{SHUT_RD,SHUT_WR,SHUT_RDWR,-1})for(int result:{-1,0,1}) {
         Socket socket;native::Client a;rust::Client b;
-        a.socket=b.socket=live?&socket:nullptr;a.closed=b.closed=closed;
-        a.shutdown_read=b.shutdown_read=flags&1;a.shutdown_write=b.shutdown_write=flags&2;a.shutdown_rw=b.shutdown_rw=flags&4;
+        a.socket=b.socket=live?&socket:nullptr;a.set(SWR_CLIENTS_CLOSED,closed);b.set(SWR_CLIENTS_CLOSED,closed);
+        a.set(SWR_CLIENTS_SHUTDOWN_READ,flags&1);b.set(SWR_CLIENTS_SHUTDOWN_READ,flags&1);
+        a.set(SWR_CLIENTS_SHUTDOWN_WRITE,flags&2);b.set(SWR_CLIENTS_SHUTDOWN_WRITE,flags&2);
         effect_result=result;calls=0;last_error=0;effect_how=0;int ar=a.shutdown(how),ac=calls,ae=last_error,ah=effect_how;
         calls=0;last_error=0;effect_how=0;int br=b.shutdown(how);
-        if(ar!=br||ac!=calls||ae!=last_error||ah!=effect_how||a.shutdown_read!=b.shutdown_read||a.shutdown_write!=b.shutdown_write||a.shutdown_rw!=b.shutdown_rw)return 3;
+        if(ar!=br||ac!=calls||ae!=last_error||ah!=effect_how||a.flag(SWR_CLIENTS_SHUTDOWN_READ)!=b.flag(SWR_CLIENTS_SHUTDOWN_READ)||a.flag(SWR_CLIENTS_SHUTDOWN_WRITE)!=b.flag(SWR_CLIENTS_SHUTDOWN_WRITE))return 3;
         ++count;
     }
     struct ExtraWhitespace : std::ctype<char> {

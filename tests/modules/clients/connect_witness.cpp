@@ -61,6 +61,8 @@ template<typename Function,typename Client>static TimerNode *swoole_timer_add(do
 // DECLARATIONS
 namespace BODY_NAMESPACE {
 struct Client {
+    // The patched bodies reach the flags through the Client accessors (#447).
+    bool is_active() const{return active;} void set_active(bool v){active=v;}
     Socket *socket=nullptr;String *buffer=nullptr;Address server_addr;
     ProxyPtr socks5_proxy,http_proxy;
     bool active=false,async_connect=false,wait_dns=false,onerror_called=false;

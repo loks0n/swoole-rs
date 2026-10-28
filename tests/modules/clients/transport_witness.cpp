@@ -52,6 +52,8 @@ static int swoole_event_write(Socket*,const char*,size_t length){observe("event-
 // DECLARATIONS
 namespace BODY_NAMESPACE {
 struct Client {
+    // The patched bodies reach the flags through the Client accessors (#447).
+    bool is_active() const{return active;} void set_active(bool v){active=v;} bool is_async() const{return async;}
     Socket *socket=nullptr;Address server_addr;
     bool async=false,wait_dns=false,active=false,open_ssl=false,onerror_called=false,high_watermark=false;
     int sock_flags_=9;size_t buffer_high_watermark=4;

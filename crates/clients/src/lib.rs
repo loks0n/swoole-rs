@@ -19,6 +19,7 @@ pub mod object;
 pub mod pool;
 pub mod resolver;
 mod sha1;
+pub mod state;
 pub mod ws;
 
 #[repr(C)]
@@ -101,22 +102,6 @@ pub unsafe extern "C" fn swr_v1_clients_url(data: *const u8, length: usize) -> U
 #[unsafe(no_mangle)]
 pub extern "C" fn swr_v1_clients_port(port: i32, for_connect: u8) -> u8 {
     u8::from((0..=65535).contains(&port) && (port != 0 || for_connect == 0))
-}
-
-/// Request tags:0 read,1 write,2 both,other invalid. Flags:read1/write2/both4.
-/// Actions:0 reject,1 call read,2 call write,3 call both,4 set EINVAL.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_clients_shutdown(live: u8, flags: u32, request: u32) -> u32 {
-    if live == 0 {
-        return 0;
-    }
-    match request {
-        0 if flags & 5 == 0 => 1,
-        1 if flags & 6 == 0 => 2,
-        2 if flags & 4 == 0 => 3,
-        0..=2 => 0,
-        _ => 4,
-    }
 }
 
 #[repr(C)]
@@ -344,56 +329,6 @@ pub unsafe extern "C" fn swr_v1_clients_domain_decode(
     1
 }
 
-#[repr(u32)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CloseAction {
-    Reject = 0,
-    PublishClosed = 1,
-    SslClose = 2,
-    Unlink = 3,
-    EventDelete = 4,
-    TimerDelete = 5,
-    OnClose = 6,
-    Deactivate = 7,
-    Advance = 8,
-    CloseFd = 9,
-    Success = 10,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ClosePlan {
-    pub action: CloseAction,
-    pub stage: u32,
-}
-
-/// Caller-stack cursor; facts are observed fresh only at the requested stage.
-/// No Client/Socket/callback pointer enters Rust, and native effects run after return.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_clients_close_next(stage: u32, facts: u32) -> ClosePlan {
-    use CloseAction::{
-        Advance, CloseFd, Deactivate, EventDelete, OnClose, PublishClosed, Reject, SslClose,
-        Success, TimerDelete, Unlink,
-    };
-    let (action, next) = match stage {
-        0 if facts & 1 == 0 || facts & 2 != 0 => (Reject, 0),
-        0 => (PublishClosed, 1),
-        1 => (if facts != 0 { SslClose } else { Advance }, 2),
-        2 => (if facts != 0 { Unlink } else { Advance }, 3),
-        3 if facts == 0 => (Deactivate, 8),
-        3 => (Advance, 4),
-        4 => (if facts == 0 { EventDelete } else { Advance }, 5),
-        5 => (if facts != 0 { TimerDelete } else { Advance }, 6),
-        6 => (if facts != 0 { OnClose } else { Advance }, 8),
-        8 => (if facts != 0 { Success } else { CloseFd }, 8),
-        _ => (Reject, stage),
-    };
-    ClosePlan {
-        action,
-        stage: next,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -420,14 +355,10 @@ mod tests {
         }
     }
     #[test]
-    fn port_and_shutdown() {
+    fn port() {
         assert_eq!(swr_v1_clients_port(0, 0), 1);
         assert_eq!(swr_v1_clients_port(0, 1), 0);
         assert_eq!(swr_v1_clients_port(65536, 0), 0);
-        assert_eq!(swr_v1_clients_shutdown(0, 0, 9), 0);
-        assert_eq!(swr_v1_clients_shutdown(1, 1, 0), 0);
-        assert_eq!(swr_v1_clients_shutdown(1, 1, 2), 3);
-        assert_eq!(swr_v1_clients_shutdown(1, 0, 9), 4);
     }
 }
 

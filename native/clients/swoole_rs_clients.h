@@ -40,9 +40,6 @@ struct swr_v1_clients_url_plan {
 /* Kinds0 invalid,1 IPv4/hostname,2 IPv6,3 Unix. Digit classification stays native. */
 struct swr_v1_clients_url_plan swr_v1_clients_url(const uint8_t *, size_t);
 uint8_t swr_v1_clients_port(int32_t port, uint8_t for_connect);
-/* Request0 read/1 write/2 both/other invalid; flags read1/write2/both4.
- * Actions0 reject/1 call read/2 call write/3 call both/4 set EINVAL. */
-uint32_t swr_v1_clients_shutdown(uint8_t live, uint32_t flags, uint32_t request);
 struct swr_v1_clients_host_match { uint32_t found; size_t offset, length; };
 /* Line already has its first '#' replaced by NUL, as in the pinned caller.
  * spaces points to256 native locale classification bytes; no pointer retained. */
@@ -65,16 +62,37 @@ void swr_v1_clients_http_inflate_free(void *handle);
 /* Caller-owned bounded DNS codec buffers; no native execution or retained state. */
 int32_t swr_v1_clients_domain_encode(const uint8_t *, size_t, uint8_t *, size_t);
 uint8_t swr_v1_clients_domain_decode(uint8_t *, size_t, uint8_t signed_char);
-enum swr_v1_clients_close_action {
-    SWR_CLIENTS_CLOSE_REJECT=0, SWR_CLIENTS_CLOSE_PUBLISH=1,
-    SWR_CLIENTS_CLOSE_SSL=2, SWR_CLIENTS_CLOSE_UNLINK=3,
-    SWR_CLIENTS_CLOSE_EVENT=4, SWR_CLIENTS_CLOSE_TIMER=5,
-    SWR_CLIENTS_CLOSE_CALLBACK=6, SWR_CLIENTS_CLOSE_DEACTIVATE=7,
-    SWR_CLIENTS_CLOSE_ADVANCE=8, SWR_CLIENTS_CLOSE_FD=9,
-    SWR_CLIENTS_CLOSE_SUCCESS=10
+/* network::Client's connection state, Rust-owned behind an opaque handle (#439).
+ * Flags for swr_v1_clients_flag/set_flag. */
+typedef struct swr_v1_clients_state swr_v1_clients_state;
+enum {
+    SWR_CLIENTS_ACTIVE = 0,
+    SWR_CLIENTS_CLOSED = 1,
+    SWR_CLIENTS_ASYNC = 2,
+    SWR_CLIENTS_SHUTDOWN_READ = 3,
+    SWR_CLIENTS_SHUTDOWN_WRITE = 4,
 };
-struct swr_v1_clients_close_plan { uint32_t action, stage; };
-struct swr_v1_clients_close_plan swr_v1_clients_close_next(uint32_t stage, uint32_t facts);
+swr_v1_clients_state *swr_v1_clients_state_new(bool is_async);
+void swr_v1_clients_state_free(swr_v1_clients_state *state);
+bool swr_v1_clients_flag(const swr_v1_clients_state *state, uint32_t flag);
+void swr_v1_clients_set_flag(swr_v1_clients_state *state, uint32_t flag, bool value);
+/* Client::shutdown(how): 0, -1, or -2 for native to set EINVAL. live is socket != nullptr;
+ * syscall is shutdown(2) on fd. */
+int32_t swr_v1_clients_shutdown(swr_v1_clients_state *state, bool live, int32_t fd, int32_t how,
+                                int32_t (*syscall)(int32_t, int32_t));
+/* Client::close(). on_close returns false when it threw; the client may be gone after it,
+ * so only orphaned (over the socket saved by socket()) and close_fd run afterwards. */
+typedef struct {
+    void *context;
+    swr_v1_clients_state *state;
+    void *(*socket)(void *);
+    void (*release)(void *);
+    void (*detach)(void *);
+    bool (*on_close)(void *);
+    bool (*orphaned)(void *);
+    int32_t (*close_fd)(void *);
+} swr_v1_clients_close_ops;
+int32_t swr_v1_clients_close(const swr_v1_clients_close_ops *ops);
 enum swr_v1_clients_write_action {
     SWR_CLIENTS_WRITE_ADVANCE=0, SWR_CLIENTS_WRITE_HANDSHAKE=1,
     SWR_CLIENTS_WRITE_WRITABLE=2, SWR_CLIENTS_WRITE_GET_OPTION=3,
