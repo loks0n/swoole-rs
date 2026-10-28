@@ -122,8 +122,6 @@ tests/modules/ports/sni_settings.py
 tests/modules/process/activation.py
 tests/modules/process/reload_callers.py
 tests/modules/reactor/lifetime.php
-tests/modules/reactor/sockets_gnu_source.cc
-tests/modules/reactor/sockets_gnu_source.py
 tests/modules/reactor/stream_gate.py
 tests/modules/reactor/test_staging.py
 tests/modules/timer/oom_observer.py
