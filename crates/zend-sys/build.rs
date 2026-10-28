@@ -37,6 +37,8 @@ mod php {
             "src/shim.c",
             "src/shim_clients.h",
             "src/shim_clients.c",
+            "src/callable.h",
+            "src/callable.c",
         ] {
             println!("cargo::rerun-if-changed={file}");
         }
@@ -44,9 +46,10 @@ mod php {
         let out = PathBuf::from(env::var("OUT_DIR").expect("zend-sys: OUT_DIR"));
         bindgen::Builder::default()
             .header("src/shim.h")
+            .header("src/callable.h")
             .generate_comments(false)
             .clang_args(includes.iter().map(|dir| format!("-I{}", dir.display())))
-            .allowlist_function("(_?zend_|object_properties_init|php_error_docref|php_url_encode|php_format_date|php_time|swr_zend_|swr_zval_|zval_|add_assoc_|add_next_index_|add_index_).*")
+            .allowlist_function("(_?zend_|object_properties_init|object_init_ex|php_error_docref|php_url_encode|php_format_date|php_time|swr_zend_|swr_zval_|zval_|add_assoc_|add_next_index_|add_index_).*")
             .allowlist_type("(_?zend_|_?zval).*")
             .allowlist_var(
                 "(std_object_handlers|module_registry|zend_ce_.*|ZEND_ACC_.*|IS_.*|_IS_BOOL|E_.*|ZPP_ERROR_.*|CONST_.*)",
@@ -63,6 +66,7 @@ mod php {
         cc::Build::new()
             .file("src/shim.c")
             .file("src/shim_clients.c")
+            .file("src/callable.c")
             .includes(&includes)
             .warnings(true)
             .compile("swoole_rs_zend_shim");
