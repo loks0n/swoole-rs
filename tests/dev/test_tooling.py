@@ -613,17 +613,6 @@ class Lanes(unittest.TestCase):
             self.assertNotEqual(command[command.index('--source-ref') + 1], 'HEAD')
         self.assertLess(list(commands).index('phphelpers-sdk'), list(commands).index('phpcoroutines-sdk'))
         self.assertIn('--core', commands['ports-flags'])
-        for consumer in ['random', 'storage', 'metadata', 'facade', 'copy', 'split', 'integer', 'ownership', 'allocation', 'format', 'compatibility']:
-            command = commands['string-production-' + consumer]
-            self.assertEqual(command[command.index('--consumer') + 1], consumer)
-            self.assertIn('--borrow-immutable-exports', command)
-            export = 'legacy-buffer-export' if consumer in ('facade', 'storage') else 'selected-export'
-            self.assertTrue(any(export + '/swoole.so' in arg for arg in command))
-            self.assertTrue(any('native-export/swoole.so' in arg for arg in command))
-            self.assertIn('--selected-export', command)
-            self.assertIn('--native-export', command)
-            self.assertEqual(command.count('--engine'), 2)
-        self.assertLess(list(commands).index('buffer-legacy-build'), list(commands).index('string-production-facade'))
         self.assertLess(list(stdext).index('phphelpers-sdk'), list(stdext).index('phphelpers-facade-runtime'))
         self.assertNotIn('--prepare-only', stdext['phphelpers-facade-runtime'])
         self.assertEqual(stdext['phphelpers-facade-runtime'].count('--engine'), 2)
@@ -636,11 +625,8 @@ class Lanes(unittest.TestCase):
         self.assertIn('--require-same-api', commands['api-surface'])
         self.assertEqual(commands['api-surface'].count('--engine'), 2)
         self.assertLess(list(commands).index('build'), list(commands).index('api-surface'))
-        self.assertIn('--archive', commands['buffer-facade'])
-        self.assertIn('--sanitize', commands['buffer-facade'])
         self.assertIn('--original-only', commands['string-originals'])
         self.assertIn('--split-only', commands['string-split'])
-        self.assertIn('integer', commands['string-production-integer'])
         self.assertIn('memory-table-v2-compatibility', commands)
         self.assertIn('--core', commands['wrappers-listener'])
         self.assertIn('--sanitize', commands['wrappers-listener'])
@@ -902,7 +888,7 @@ class Lanes(unittest.TestCase):
         self.assertLess(list(commands).index('stdext-reference-build'), list(commands).index('build'))
         engines = [command for command in commands.values() if any(str(a).startswith('upstream=') for a in command)]
         self.assertTrue(engines)
-        # Graduated buffer's string-production gates borrow the stdext reference build's export.
+        # Upstream engines come from the stdext reference build or its export.
         references = {'upstream=' + str(ROOT / 'target/hybrid/upstream-stdext/modules/swoole.so'),
                       'upstream=' + str(ROOT / 'target/reports/stdext-profiles/native-export/swoole.so')}
         for command in engines:

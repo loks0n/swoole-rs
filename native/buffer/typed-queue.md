@@ -15,8 +15,8 @@ token and CLOSE entries. Exports: `create`, `push`, `front`, `consume` (cursor) 
   mutable legacy front, `alloc` of DATA and legacy sendfile are not available on
   typed handles; the legacy front API rejects them. External native code that
   mutates Buffer internals (`front()->offset`, `alloc(TYPE_DATA/TYPE_CLOSE)`) is
-  supported only on Buffer-only builds, where the `string-production-facade` and
-  `-storage` consumers run (#207).
+  supported only on Buffer-only builds; `buffer-model` and `buffer-native` drive
+  that legacy facade (#207).
 - Ordinary CLOSE markers and sendfile ownership allocate nothing. The optional
   native close repair still calls `alloc(TYPE_CLOSE)`. It gets a real native
   `BufferChunk`, which is pushed into the same Rust queue with a native disposer.

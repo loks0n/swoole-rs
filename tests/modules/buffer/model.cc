@@ -174,15 +174,9 @@ static void facade_sequence(uint64_t seed) {
                     check(buffer->length() == byte_count(model) && buffer->count() == model.size(), "partial consume accounting");
                     continue;
                 }
-#ifndef MODEL_FACADE_CONTROL
                 front->destroy = disposed;
-#endif
             }
-#ifdef MODEL_FACADE_CONTROL
-            if (item.token) expected_callbacks.push_back(item);
-#else
             expected_callbacks.push_back(item);
-#endif
             buffer->pop(); model.pop_front();
             check(expected_callbacks.empty() && !callback_error, "pop callback order/live bytes");
         }
@@ -190,12 +184,10 @@ static void facade_sequence(uint64_t seed) {
     }
     // Only the first Rust DATA view can have a callback installed; later DATA
     // entries are discarded unobserved. All native tokens retain callbacks.
-#ifndef MODEL_FACADE_CONTROL
     if (!model.empty() && !model.front().token) {
         buffer->front()->destroy = disposed;
         expected_callbacks.push_back(model.front());
     }
-#endif
     for (const auto &item : model) if (item.token) expected_callbacks.push_back(item);
     buffer.reset();
     check(expected_callbacks.empty() && !callback_error, "teardown callback order/live bytes");
@@ -203,10 +195,6 @@ static void facade_sequence(uint64_t seed) {
 int main() {
     try {
         const uint64_t seeds[] = {1, 7, 42, 0x12345678, 0xdeadbeef, 0x9e3779b97f4a7c15ULL};
-#ifdef MODEL_FACADE_ONLY
-        for (uint64_t seed : seeds) facade_sequence(seed);
-        std::cout << "{\"facade_sequences\":6,\"steps_per_sequence\":64,\"callbacks\":" << callbacks << ",\"passed\":true}\n";
-#else
         uint64_t replay_runs = 0, injected = 0;
         for (uint32_t chunk : {0u, 1u, 4u, 16u}) for (uint64_t seed : seeds) {
 #ifdef MODEL_FAILURES
@@ -235,6 +223,5 @@ int main() {
                   << ",\"native_push\":" << native_calls << ",\"partial_consume\":" << consumes
                   << ",\"pop\":" << pops << ",\"pending_native_release\":" << release_refusals
                   << "},\"passed\":true}\n";
-#endif
     } catch (const std::exception &error) { std::cerr << error.what() << '\n'; return 1; }
 }

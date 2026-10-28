@@ -38,44 +38,6 @@ Ordinary append/write/i32/repeat/copy/termination/reduce, 44 checks per engine,
 plus C11 layout asserts and selected whole-TU syntax under C++14/17/20.
 The output path must not exist.
 
-## Loaded PHP consumers: `production.py`
-
-```sh
-python3 tests/modules/buffer/string/production.py \
-  --source S --source-ref SELECTED_COMMIT \
-  --engine native=/abs/native/swoole.so --engine selected=/abs/selected/swoole.so \
-  --build-manifest /abs/selected/build-manifest.json --archive A \
-  --selected-export /abs/selected/export.json --native-export /abs/native/export.json \
-  --consumer CONSUMER --output R
-```
-
-Builds a small PHP addon against headers reconstructed from each build's pinned
-inputs and patches; it links no String implementation or Rust archive. `nm`
-must show the addon importing the production methods and `dladdr` must resolve
-them inside the loaded extension. Consumers: `random`, `compatibility`, `format`,
-`allocation`, `ownership`, `integer`, `split`, `copy`, `facade`, `storage`,
-`metadata`, `terminator`, `iovec`. Native and selected assertion counts must
-match. `--borrow-immutable-exports` uses the export `swoole.so` in place instead of
-copying it, and verifies the export files are unchanged before and after the run.
-Optional `--php`, `--php-config` and `--php-extension` select the PHP SDK.
-
-`tests/modules/coroutine/production_stack.py` and
-`tests/modules/reactor/production_supported.py` import its header helpers.
-
-Interposes malloc/calloc/realloc/free (`DYLD_INSERT_LIBRARIES` or `LD_PRELOAD`,
-test child only) and runs 24 fresh-process scenarios per engine: cold growth
-trace (malloc 64, realloc 256..4096, free), failure at each growth, constructor
-malloc failure, calloc, realloc(NULL), disjoint interior append and zero-size
-cases. Rust adds two alias-rebase scenarios. Failed growth must keep pointer,
-length, offset, capacity and bytes.
-
-The report exits 1 on purpose: native String has two zero-owner defects, so
-native passes 23/24 on macOS and 22/24 on Linux (Rust 26/26).
-
-- `String(0).reserve(16)` loses its `malloc(0)` owner on both hosts.
-- On Linux, `reserve(0)` frees through `realloc(p, 0)`, gets null and throws with
-  a dangling pointer.
-
 ## Benchmark: `benchmark.py`
 
 ```sh
@@ -88,8 +50,6 @@ binary hashes. Run only on an idle host. Results: [algorithms.md](algorithms.md)
 
 ## Known failures
 
-- `production.py --consumer random` covers lengths 1..1024 only. Native
-  zero-length encoded random append fails its exact-length assertion.
-- Native DATA destroy callbacks on freed bytes are not exercised by the facade
-  consumer.
-- `test_gate_profiles.py` and `test_production.py` are unit tests that need no build.
+- `--random-only` covers lengths 1..1024 only. Native zero-length encoded random
+  append fails its exact-length assertion.
+- `test_gate_profiles.py` is a unit test that needs no build.
