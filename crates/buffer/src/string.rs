@@ -65,6 +65,22 @@ fn aligned(size: usize, alignment: usize) -> Result<usize, i32> {
         Ok(size)
     }
 }
+
+// Upstream `swoole_size_align(size, pagesize)` (include/swoole.h): `size + (page -
+// size % page)`. Unlike `aligned`, it always adds up to a whole page, so an already
+// page-aligned size grows by one more page. The grow paths (`String::write`,
+// `String::append_random_bytes`) size their reserve with it, so match it exactly.
+fn page_align(size: usize, page: usize) -> Result<usize, i32> {
+    if !page.is_power_of_two() {
+        return Err(INVALID);
+    }
+    let size = size.checked_add(page - size % page).ok_or(OVERFLOW)?;
+    if size > isize::MAX as usize {
+        Err(OVERFLOW)
+    } else {
+        Ok(size)
+    }
+}
 impl StringState {
     fn validate(&self) -> Result<(), i32> {
         if self.length > self.capacity
@@ -169,7 +185,7 @@ impl StringState {
                 plan.length = self.length.max(end);
                 if end > self.capacity {
                     let capacity = if edit.operation == WRITE {
-                        aligned(end.checked_mul(2).ok_or(OVERFLOW)?, edit.page)?
+                        page_align(end.checked_mul(2).ok_or(OVERFLOW)?, edit.page)?
                     } else {
                         end
                     };
@@ -925,5 +941,58 @@ mod copy_tests {
             );
         };
         assert!(plan == StringPlan::ZERO);
+    }
+}
+
+#[cfg(test)]
+mod capacity_tests {
+    use super::*;
+
+    // Upstream swoole_size_align (include/swoole.h): size + (page - size % page).
+    fn swoole_size_align(size: usize, page: usize) -> usize {
+        size + (page - size % page)
+    }
+
+    #[test]
+    fn page_align_always_adds_a_whole_page_like_upstream() {
+        let page = 4096usize;
+        for size in [0usize, 1, 100, 2048, 4095, 4096, 8192, 2048 * 2] {
+            assert_eq!(
+                page_align(size, page).unwrap(),
+                swoole_size_align(size, page),
+                "size={size}"
+            );
+        }
+        // The bug this fixes: a page-aligned size grows by a whole extra page,
+        // whereas `aligned` leaves it untouched.
+        assert_eq!(page_align(4096, page).unwrap(), 8192);
+        assert_eq!(aligned(4096, page).unwrap(), 4096);
+    }
+
+    #[test]
+    fn write_capacity_matches_upstream_for_a_page_aligned_double() {
+        let page = 4096usize;
+        let mut bytes = [0u8; 8];
+        let state = StringState {
+            data: bytes.as_mut_ptr(),
+            length: 0,
+            capacity: 0,
+            offset: 0,
+        };
+        let source = [0u8; 2048];
+        // end = offset + length = 2048, so the doubled reserve (4096) is page-aligned.
+        let edit = StringEdit {
+            operation: WRITE,
+            data: source.as_ptr(),
+            length: 2048,
+            count: 0,
+            offset: 0,
+            alignment: 8,
+            page,
+        };
+        let plan = state.plan(&edit).unwrap();
+        // Upstream reserves swoole_size_align(2048 * 2, page) = 8192, not 4096.
+        assert_eq!(plan.capacity, swoole_size_align(2048 * 2, page));
+        assert_eq!(plan.capacity, 8192);
     }
 }
