@@ -39,7 +39,7 @@ def require_equal(actual, expected):
 
 
 def archive():
-    if not SOURCE.is_dir():
+    if not (SOURCE / '.git').exists():
         raise RuntimeError('Pinned Hyperf missing; run corpus/thirdparty/hyperf.py --prepare')
     require_equal(git('rev-parse', 'HEAD').decode().strip(), MANIFEST['commit'])
     require_equal(git('diff', '--binary', 'HEAD'), b'')
@@ -56,6 +56,10 @@ def archive():
 
 def prepare(composer):
     SOURCE.parent.mkdir(parents=True, exist_ok=True)
+    # A cache restoring target/ can bring the tree back without its .git; git would then
+    # resolve the enclosing checkout, so start over from a clone.
+    if SOURCE.exists() and not (SOURCE / '.git').exists():
+        shutil.rmtree(SOURCE)
     if not SOURCE.exists():
         subprocess.run(['git', 'clone', '--no-checkout', MANIFEST['repository'], str(SOURCE)], check=True)
         subprocess.run(['git', '-C', str(SOURCE), 'checkout', '--detach', MANIFEST['commit']], check=True)
