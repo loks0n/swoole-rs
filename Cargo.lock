@@ -361,6 +361,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "swoole-rs-deflate"
+version = "0.1.0"
+dependencies = [
+ "libz-sys",
+]
+
+[[package]]
 name = "swoole-rs-error"
 version = "0.1.0"
 
@@ -503,6 +510,7 @@ name = "swoole-rs-phphttp"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "swoole-rs-deflate",
  "swoole-rs-http",
  "swoole-rs-httpbindings",
  "swoole-rs-zend",
