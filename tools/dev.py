@@ -594,10 +594,10 @@ def plan(args, reports):
                '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                *report('memory-mapping-operation'))
-        script('memory-table-v2-compatibility', 'tests/modules/memory/table_v2_compat.py',
-               '--source', ROOT / 'target/upstream/src', *report('memory-table-v2-compatibility'))
-        script('memory-source-compatibility', 'tests/modules/memory/channel_compat.py',
-               '--source', ROOT / 'target/upstream/src', *report('memory-source-compatibility'))
+        for name, runner in [('memory-table-v2-compatibility', 'table_v2_compat.py'),
+                             ('memory-source-compatibility', 'channel_compat.py')]:
+            script(name, 'tests/modules/memory/' + runner, '--source', ROOT / 'target/upstream/src',
+                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report(name))
         script('memory-native', 'tests/modules/memory/gate.py', '--extension', hybrid, *php,
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                *(['--sanitize'] if sys.platform == 'darwin' else []), *report('memory-native'))

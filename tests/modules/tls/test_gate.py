@@ -112,21 +112,11 @@ class OrdinaryAllocationControl(unittest.TestCase):
         self.assertEqual(gate.sanitizer_symbols('                 U malloc\n0000 T _Znwm\n'), [])
 
 
-class BenchmarkArchiveGuard(unittest.TestCase):
-    def test_standalone_kernel_cannot_substitute_selected_benchmark_archive(self):
-        command = [sys.executable, str(Path(__file__).with_name('differential.py')),
-            '--source', '/unused', '--reference', '/unused', '--library', '/unused',
-            '--openssl', '/unused', '--output', '/unused', '--benchmark-check']
-        result = subprocess.run(command, text=True, capture_output=True)
-        self.assertEqual(result.returncode, 2)
-        self.assertIn('requires an actual selected FFI archive', result.stderr)
-
-
 class CryptoOperationGuard(unittest.TestCase):
     def test_dh_operation_requires_allocator_profile(self):
         command=[sys.executable,str(Path(__file__).with_name('differential.py')),
-            '--source','/unused','--reference','/unused','--library','/unused','--openssl','/unused',
-            '--output','/unused','--crypto-operation','dhparam']
+            '--source','/unused','--reference','/unused','--library','/unused','--hybrid-library','/unused',
+            '--archive','/unused','--openssl','/unused','--output','/unused','--crypto-operation','dhparam']
         for operation in ['dhparam','curve','dtls-init']:
             with self.subTest(operation=operation):
                 command[-1]=operation
@@ -143,7 +133,7 @@ class TimedOutOutput(unittest.TestCase):
             root=Path(temporary);library=root/'native.so';library.write_bytes(b'synthetic, never loaded')
             report=root/'report.json'
             argv=['differential','--source',str(root),'--reference',str(root),'--library',str(library),
-                  '--openssl',str(root),'--output',str(report),'--command-timeout','1']
+                  '--hybrid-library',str(library),'--archive',str(root/'unused.a'),'--openssl',str(root),'--output',str(report),'--command-timeout','1']
             failure=subprocess.TimeoutExpired(['synthetic command'],1,output=b'partial original stdout\n',stderr=b'native stderr\n')
             with patch.object(sys,'argv',argv),patch.object(differential,'run_isolated',side_effect=failure):
                 self.assertEqual(differential.main(),1)

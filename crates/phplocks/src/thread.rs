@@ -2,18 +2,14 @@
 //! lives in a C++ `ThreadResource`, which `Thread\Map`, `ArrayList` and `Queue`
 //! reference-count across threads, so C++ makes and releases it.
 use crate::word::{self, Word, methods};
-use std::{
-    ffi::{CString, c_void},
-    ptr,
-    sync::OnceLock,
-};
+use std::{ffi::c_void, ptr, sync::OnceLock};
 use swoole_rs_zend::{
-    Call, Class, Object, class_name, set_object,
+    Call, Class, Object, set_object,
     sys::{
         ZEND_ACC_FINAL, ZEND_ACC_NOT_SERIALIZABLE, zend_class_entry, zend_function_entry,
         zend_object, zend_object_handlers, zval,
     },
-    throw_error, unset_property_deny,
+    throw_constructed_twice, unset_property_deny,
 };
 
 /// Makes a resource holding `value` and stores the address of its word.
@@ -187,16 +183,8 @@ fn construct<W: Kind>(call: &Call, _word: *mut W) {
     // SAFETY: as in `this_word`.
     let shared = unsafe { ThreadAtomic::<W>::data(call.this()) };
     if !shared.resource.is_null() {
-        // SAFETY: `$this` is live.
-        let name = unsafe { class_name(call.this()) };
-        let message = [
-            b"Constructor of ",
-            name.to_bytes(),
-            b" can only be called once",
-        ]
-        .concat();
-        // SAFETY: in a handler.
-        unsafe { throw_error(&CString::new(message).unwrap_or_default()) };
+        // SAFETY: in a handler, with `$this` live.
+        unsafe { throw_constructed_twice(call.this()) };
         // Upstream's Long constructor returns false here, Atomic's nothing.
         if W::IS_LONG != 0 {
             call.set_bool(false);

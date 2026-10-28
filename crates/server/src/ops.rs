@@ -36,6 +36,58 @@ pub const RUN_STORE_LISTEN_SOCKET: u32 = 18;
 /// `Server::destroy` once there is a factory.
 pub const RUN_DESTROY: u32 = 19;
 
+// Reactor threads (`src/server/reactor_thread.cc`); context reactor and its thread.
+/// `ReactorThread_verify_ssl_state`: context port and socket; a `swReturnCode`.
+pub const RUN_VERIFY_SSL: u32 = 20;
+/// `ReactorThread_onPacketReceived`: context event.
+pub const RUN_PACKET_RECEIVED: u32 = 21;
+pub const RUN_THREAD_SHUTDOWN: u32 = 22;
+/// `ReactorThread::close_connection(arg)`.
+pub const RUN_THREAD_CLOSE: u32 = 23;
+/// `ReactorThread_onPipeRead`: context event.
+pub const RUN_PIPE_READ: u32 = 24;
+pub const RUN_INIT_REACTOR: u32 = 25;
+/// `Server::heartbeat_check` in a reactor thread.
+pub const RUN_HEARTBEAT_CHECK: u32 = 26;
+pub const RUN_START_REACTOR_THREADS: u32 = 27;
+/// `Server::reactor_thread_main_loop` for thread arg.
+pub const RUN_REACTOR_THREAD_MAIN: u32 = 28;
+/// `ReactorThread_resume_data_receiving`: context socket and connection.
+pub const RUN_RESUME_RECEIVING: u32 = 29;
+/// `Server::dispatch_task`: context socket, connection and received data.
+pub const RUN_DISPATCH_TASK: u32 = 30;
+pub const RUN_JOIN_REACTOR_THREADS: u32 = 31;
+/// The heartbeat thread's loop.
+pub const RUN_HEARTBEAT_THREAD: u32 = 32;
+
+// Dispatch, sends and ports (`src/server/master.cc`).
+/// `Server::schedule_worker(arg)`: context send data.
+pub const RUN_SCHEDULE_WORKER: u32 = 33;
+/// `Server::feedback`: context connection, arg the event.
+pub const RUN_FEEDBACK: u32 = 34;
+/// `Server::sendwait(arg)`: context data and length.
+pub const RUN_SENDWAIT: u32 = 35;
+pub const RUN_KERNEL_NOBUFS: u32 = 36;
+pub const RUN_IDLE_WORKERS: u32 = 37;
+pub const RUN_IDLE_TASK_WORKERS: u32 = 38;
+pub const RUN_TASKING: u32 = 39;
+/// `Server::sendfile(arg)`: context file name, offset and length.
+pub const RUN_SENDFILE: u32 = 40;
+/// `Server::add_port`: context type, host and port; 1 with the port in the context.
+pub const RUN_ADD_PORT: u32 = 41;
+pub const RUN_SYSTEMD_SOCKETS: u32 = 42;
+// `BaseFactory` (`src/server/base.cc`).
+/// `Server::create_base_factory`: 1 with the factory in the context.
+pub const RUN_BASE_CREATE: u32 = 43;
+/// `BaseFactory::notify`: context event head.
+pub const RUN_BASE_NOTIFY: u32 = 44;
+/// `BaseFactory::end(arg)`: 0 or 1 as returned, or `END_CLOSE` when native code
+/// closes the connection's socket.
+pub const RUN_BASE_END: u32 = 45;
+/// `BaseFactory::finish`: context send data.
+pub const RUN_BASE_FINISH: u32 = 46;
+pub const END_CLOSE: u32 = 2;
+
 // Server facts.
 pub const OP_MODE: u32 = 0;
 pub const OP_SINGLE_THREAD: u32 = 1;
@@ -353,6 +405,283 @@ pub const CB_BUFFER_EMPTY: u32 = 3;
 pub const CB_TASK: u32 = 4;
 pub const CB_RECEIVE: u32 = 5;
 pub const CB_PACKET: u32 = 6;
+
+// Reactor threads. Ops 0-144 keep their meaning where reactor_thread.cc answers them.
+/// `swReturnCode` of `socket->ssl_accept()`.
+pub const OP_SSL_ACCEPT: u32 = 250;
+/// The socket has TLS and its handshake is not finished.
+pub const OP_SSL_PENDING: u32 = 251;
+/// `conn->ssl_ready = 1`.
+pub const OP_SSL_READY: u32 = 252;
+/// The port has a client certificate file; verifies peers; allows self-signed.
+pub const OP_CLIENT_CERT: u32 = 253;
+pub const OP_VERIFY_PEER: u32 = 254;
+/// `ssl_get_peer_certificate` into the thread buffer; `ssl_verify`.
+pub const OP_PEER_CERT: u32 = 255;
+pub const OP_SSL_VERIFY: u32 = 256;
+/// Dispatches `SW_SERVER_EVENT_CONNECT` with the peer certificate.
+pub const OP_DISPATCH_CERT: u32 = 257;
+/// `reactor->del(socket)`.
+pub const OP_REACTOR_DEL: u32 = 258;
+/// Fills the datagram task header.
+pub const OP_PACKET_INIT: u32 = 259;
+/// `recvfrom` into the packet; the `ssize_t`.
+pub const OP_RECVFROM: u32 = 260;
+/// The datagram's port is DTLS; accepts the DTLS session (arg the length) and returns
+/// `onPacketReceived`'s result.
+pub const OP_PORT_DTLS: u32 = 261;
+pub const OP_DTLS_ACCEPT: u32 = 262;
+/// Dispatches the datagram of arg bytes; whether it was dispatched.
+pub const OP_PACKET_DISPATCH: u32 = 263;
+pub const OP_HAVE_DGRAM: u32 = 264;
+/// Port arg's fd.
+pub const OP_PORT_FD: u32 = 265;
+/// `reactor->id`.
+pub const OP_REACTOR_ID: u32 = 266;
+pub const OP_REACTOR_NUM: u32 = 267;
+/// `reactor->del(port->socket)` for port arg.
+pub const OP_PORT_DEL: u32 = 268;
+pub const OP_HEARTBEAT_TIMER_CLEAR: u32 = 269;
+/// Closes the reactor's connections when it is destroyed.
+pub const OP_DESTROY_CALLBACK: u32 = 270;
+/// `stop_async_worker(get_worker(reactor->id))`.
+pub const OP_STOP_THREAD_WORKER: u32 = 271;
+pub const OP_WORKER_NUM: u32 = 272;
+/// Stops reading worker arg's master pipe.
+pub const OP_WORKER_PIPE_UNREAD: u32 = 273;
+/// Selects the connection at fd arg when valid.
+pub const OP_CONN_AT: u32 = 274;
+pub const OP_CONN_FD: u32 = 275;
+pub const OP_CONN_REACTOR: u32 = 276;
+pub const OP_CONN_SESSION: u32 = 277;
+/// Neither the peer closed nor the socket left the reactor.
+pub const OP_CONN_READING: u32 = 278;
+pub const OP_CONN_UNREAD: u32 = 279;
+pub const OP_WAIT_EXIT: u32 = 280;
+/// Selects the connection of session arg (`get_connection_verify_no_ssl`).
+pub const OP_SESSION_CONN: u32 = 281;
+pub const OP_CONN_FORCE: u32 = 282;
+/// `conn->ssl && !conn->ssl_ready`.
+pub const OP_CONN_HANDSHAKING: u32 = 283;
+/// `Server::close_connection(reactor, conn->socket)`.
+pub const OP_CLOSE: u32 = 284;
+/// Reads the pipe into the thread's message bus; the `ssize_t`.
+pub const OP_PIPE_READ: u32 = 285;
+pub const OP_PIPE_TYPE: u32 = 286;
+pub const OP_PIPE_FD: u32 = 287;
+pub const OP_PIPE_POP: u32 = 288;
+/// `connection_incoming`; `reactor->close` of the connection.
+pub const OP_INCOMING: u32 = 289;
+pub const OP_REACTOR_CLOSE: u32 = 290;
+pub const OP_COMMAND_REQUEST: u32 = 291;
+pub const OP_COMMAND_RESPONSE: u32 = 292;
+/// `swoole_kill(getpid(), SIGTERM)`.
+pub const OP_KILL_SELF: u32 = 293;
+pub const OP_ON_FINISH: u32 = 294;
+pub const OP_ON_PIPE_MESSAGE: u32 = 295;
+/// `factory_->end(arg, CLOSE_ACTIVELY)`.
+pub const OP_CLOSE_FORWARD: u32 = 296;
+/// `send_to_connection` of the pipe's packet.
+pub const OP_PIPE_SEND: u32 = 297;
+/// The thread buffer grows for 64K datagrams, then the handlers and port protocols.
+pub const OP_DGRAM_BUFFER: u32 = 298;
+pub const OP_SESSION_HANDLERS: u32 = 299;
+/// `microtime()`, a `double`.
+pub const OP_MICROTIME: u32 = 300;
+/// `is_healthy_connection(arg as double)` of the connection.
+pub const OP_CONN_HEALTHY: u32 = 301;
+/// `swoole_event_init(0)`; the context reactor becomes `sw_reactor()`.
+pub const OP_EVENT_INIT: u32 = 302;
+/// Port arg listens; then reads.
+pub const OP_PORT_LISTEN: u32 = 303;
+pub const OP_PORT_READ: u32 = 304;
+pub const OP_STORE_LISTEN_SOCKET: u32 = 305;
+/// `get_thread(0)->init(serv, reactor, 0)`.
+pub const OP_THREAD0_INIT: u32 = 306;
+/// The master reactor's and thread's id become `reactor_num`.
+pub const OP_MASTER_REACTOR_ID: u32 = 307;
+/// Starts reactor thread arg.
+pub const OP_SPAWN_REACTOR_THREAD: u32 = 308;
+pub const OP_HEARTBEAT_TIMER: u32 = 309;
+pub const OP_HEARTBEAT_THREAD: u32 = 310;
+pub const OP_START_MASTER_THREAD: u32 = 311;
+/// The context thread is reactor thread arg: its id and the thread's message bus.
+pub const OP_THREAD_ENTER: u32 = 312;
+pub const OP_WORKER_START: u32 = 313;
+pub const OP_WORKER_STOP: u32 = 314;
+/// `swoole_set_thread_id(arg)`, `THREAD_REACTOR`.
+pub const OP_REACTOR_THREAD_TYPE: u32 = 315;
+/// `thread->init(serv, reactor, id)`.
+pub const OP_THREAD_INIT: u32 = 316;
+pub const OP_THREAD_CLEAN: u32 = 317;
+/// `recv_queued_bytes > max_queued_bytes`.
+pub const OP_QUEUE_FULL: u32 = 318;
+pub const OP_WAITING_TIME: u32 = 319;
+pub const OP_SET_WAITING_TIME: u32 = 320;
+/// Arms the resume timer after the waiting time; whether it was armed.
+pub const OP_RESUME_TIMER: u32 = 321;
+/// The reactor reads the socket again and the timer is cleared.
+pub const OP_RESUME_READ: u32 = 322;
+/// Fills the receive task from the connection and data.
+pub const OP_TASK_INIT: u32 = 323;
+pub const OP_DATA_LEN: u32 = 324;
+/// `recv_queued_bytes` += / -= arg.
+pub const OP_QUEUE_ADD: u32 = 325;
+pub const OP_QUEUE_SUB: u32 = 326;
+pub const OP_FACTORY_DISPATCH: u32 = 327;
+/// The connection's reactor thread counts a dispatch; the server and port count one.
+pub const OP_THREAD_DISPATCH_COUNT: u32 = 328;
+pub const OP_COUNT_DISPATCH: u32 = 329;
+pub const OP_JOIN_HEARTBEAT: u32 = 330;
+/// Reactor thread arg: joinable; notify it to shut down; join.
+pub const OP_THREAD_JOINABLE: u32 = 331;
+pub const OP_THREAD_NOTIFY: u32 = 332;
+pub const OP_THREAD_JOIN: u32 = 333;
+/// Asks the connection's reactor thread to force-close session arg.
+pub const OP_SEND_CLOSE_FORCE: u32 = 334;
+
+pub const LOG_RECVFROM: u32 = 350;
+/// arg the session.
+pub const LOG_NO_SESSION: u32 = 351;
+/// arg the length.
+pub const TRACE_DISPATCH: u32 = 352;
+pub const TRACE_QUEUED: u32 = 353;
+pub const TRACE_HEARTBEAT_JOIN: u32 = 354;
+
+// `ServerEventType` values on the reactor pipe.
+pub const EVENT_CLOSE_FORCE: u32 = 6;
+pub const EVENT_CLOSE_FORWARD: u32 = 7;
+pub const EVENT_FINISH: u32 = 9;
+pub const EVENT_PIPE_MESSAGE: u32 = 10;
+pub const EVENT_INCOMING: u32 = 15;
+pub const EVENT_SHUTDOWN: u32 = 16;
+pub const EVENT_COMMAND_REQUEST: u32 = 17;
+pub const EVENT_COMMAND_RESPONSE: u32 = 18;
+pub const EVENT_SHUTDOWN_SIGNAL: u32 = 19;
+
+// Dispatch, sends and ports.
+/// A `dispatch_func` is set; its result for the context's fd.
+pub const OP_HAS_DISPATCH_FUNC: u32 = 400;
+pub const OP_DISPATCH_FUNC: u32 = 401;
+/// `sw_atomic_fetch_add(&worker_round_id, 1)`.
+pub const OP_ROUND_NEXT: u32 = 402;
+/// The IP hash key of the connection or datagram peer.
+pub const OP_IP_KEY: u32 = 403;
+/// Selects `get_connection(fd)`; whether there is one.
+pub const OP_FD_CONN: u32 = 404;
+pub const OP_CONN_UID: u32 = 405;
+pub const OP_CONN_WORKER: u32 = 406;
+/// Pins the connection to the least-loaded worker; returns it.
+pub const OP_PIN_LOWEST: u32 = 407;
+pub const OP_LOWEST_LOAD: u32 = 408;
+pub const OP_LOWEST_CONCURRENT: u32 = 409;
+pub const OP_IDLE_WORKER: u32 = 410;
+/// The event arg to the connection's reactor thread; whether it was sent.
+pub const OP_FEEDBACK_THREAD: u32 = 411;
+/// `send_to_connection` of the event arg; whether it succeeded.
+pub const OP_FEEDBACK_SEND: u32 = 412;
+/// Selects `get_connection_verify(arg)`; whether there is one.
+pub const OP_VERIFY_CONN: u32 = 413;
+/// `send_sync` of the context data; whether all of it was sent.
+pub const OP_SEND_SYNC: u32 = 414;
+/// Selects `get_connection(arg)` when it has a socket.
+pub const OP_SOCKET_CONN: u32 = 415;
+pub const OP_PIPE_NOBUFS: u32 = 416;
+pub const OP_SOCKET_NOBUFS: u32 = 417;
+pub const OP_WORKER_IDLE: u32 = 418;
+/// `gs->tasking_num`, an `int`; reset it to 0.
+pub const OP_TASKING: u32 = 419;
+pub const OP_TASKING_RESET: u32 = 420;
+pub const OP_IS_MASTER: u32 = 421;
+/// The longest sendfile name; copies the name into the task, returning its address.
+pub const OP_SENDFILE_NAME_MAX: u32 = 422;
+pub const OP_SENDFILE_NAME: u32 = 423;
+/// Finishes the sendfile task of arg bytes; whether the factory took it.
+pub const OP_SENDFILE_FINISH: u32 = 424;
+pub const OP_IS_CREATED: u32 = 425;
+pub const OP_PORT_TYPE: u32 = 426;
+pub const OP_PORT_NUMBER: u32 = 427;
+/// `strlen(host) + 1` and `SW_HOST_MAXSIZE`.
+pub const OP_HOST_SIZE: u32 = 428;
+pub const OP_HOST_MAXSIZE: u32 = 429;
+/// A new `ListenPort` of the context's type, host and port, with TLS when arg.
+pub const OP_PORT_NEW: u32 = 430;
+/// `create_socket()`; on failure `swoole_set_last_error(errno)` and the port is freed.
+pub const OP_PORT_SOCKET: u32 = 431;
+/// The new port's socket type; the dgram socket buffer; the socket for kind arg.
+pub const OP_NEW_PORT_TYPE: u32 = 432;
+pub const OP_DGRAM_PORT: u32 = 433;
+pub const OP_STREAM_PORT: u32 = 434;
+/// The new port joins `ports`.
+pub const OP_PORT_PUSH: u32 = 435;
+/// `LISTEN_PID`, `LISTEN_FDS_START`: the value, or `i64::MIN` when unset.
+pub const OP_ENV_LISTEN_PID: u32 = 436;
+pub const OP_ENV_FDS_START: u32 = 437;
+/// The sendfile name's length and the offset, an `off_t`.
+pub const OP_SENDFILE_NAME_LEN: u32 = 438;
+pub const OP_SENDFILE_OFFSET: u32 = 441;
+/// `swoole_get_systemd_listen_fds()`.
+pub const OP_SYSTEMD_FDS: u32 = 439;
+/// A new port importing fd arg, non-blocking and close-on-exec; whether it imported.
+pub const OP_PORT_IMPORT: u32 = 440;
+
+pub const LOG_INVALID_SESSION: u32 = 450;
+pub const LOG_SEND_IN_MASTER: u32 = 451;
+pub const LOG_SENDFILE_NAME: u32 = 452;
+pub const LOG_STAT: u32 = 453;
+pub const LOG_NOT_REGULAR: u32 = 454;
+pub const LOG_FILE_EMPTY: u32 = 455;
+pub const LOG_SENDWAIT: u32 = 456;
+pub const LOG_PORT_CREATED: u32 = 457;
+pub const LOG_TOO_MANY_PORTS: u32 = 458;
+pub const LOG_INVALID_PORT: u32 = 459;
+pub const LOG_HOST_TOO_LONG: u32 = 460;
+pub const LOG_LISTEN_PID: u32 = 461;
+pub const LOG_FDS_START: u32 = 462;
+
+// `BaseFactory`.
+/// `reactor_num = worker_num`, then the connection list and the per-worker counters.
+pub const OP_BASE_REACTORS: u32 = 500;
+pub const OP_ALLOC_CONNECTIONS: u32 = 501;
+pub const OP_ALLOC_CONNECTION_NUMS: u32 = 502;
+pub const OP_ALLOC_PORT_CONNECTION_NUMS: u32 = 503;
+pub const OP_NEW_BASE_FACTORY: u32 = 504;
+/// Selects `get_connection(info->fd)`; active; closed by the server.
+pub const OP_INFO_CONN: u32 = 505;
+pub const OP_CONN_ACTIVE: u32 = 506;
+pub const OP_CONN_CLOSED: u32 = 507;
+/// The head becomes the session's, then `worker_accept_event`.
+pub const OP_NOTIFY_ACCEPT: u32 = 508;
+/// The session arg has an fd; it belongs to another worker.
+pub const OP_SESSION_FD: u32 = 509;
+pub const OP_SESSION_FOREIGN: u32 = 510;
+/// The close forwarded to the session's worker; whether it was written.
+pub const OP_FORWARD_CLOSE: u32 = 511;
+pub const OP_NOT_EXIST: u32 = 512;
+/// Sets `close_reset`, `close_actively`.
+pub const OP_CLOSE_RESET: u32 = 513;
+pub const OP_CLOSE_ACTIVELY: u32 = 514;
+pub const OP_CONN_CLOSING_FLAG: u32 = 515;
+/// `closing = arg`; `onClose` when `if_do_close_callback`; `closing = 0`, `close_errno = 0`.
+pub const OP_SET_CLOSING: u32 = 516;
+pub const OP_CLOSE_CALLBACK: u32 = 517;
+pub const OP_CLOSE_DONE: u32 = 518;
+pub const OP_CONN_RESETTING: u32 = 519;
+/// The send's type is `SEND_DATA` or `SEND_FILE`; forward it; send it here.
+pub const OP_SEND_KIND_OK: u32 = 520;
+pub const OP_FORWARD_SEND: u32 = 521;
+pub const OP_SEND_HERE: u32 = 522;
+
+pub const LOG_BASE_ALLOC_CONNECTIONS: u32 = 530;
+pub const LOG_BASE_ALLOC_NUMS: u32 = 531;
+pub const LOG_BASE_ALLOC_PORT_NUMS: u32 = 532;
+pub const LOG_NOT_ACTIVE: u32 = 533;
+pub const LOG_CLOSED_BY_SERVER: u32 = 534;
+pub const LOG_END_NO_SESSION: u32 = 535;
+pub const LOG_SESSION_CLOSING: u32 = 536;
+pub const LOG_SESSION_CLOSED: u32 = 537;
+pub const LOG_UNKNOWN_EVENT: u32 = 538;
+pub const TRACE_FORWARD: u32 = 539;
 
 #[cfg(test)]
 mod tests {

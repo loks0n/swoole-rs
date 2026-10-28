@@ -14,8 +14,8 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 use swoole_rs_zend::{
-    Call, Class, Invalid, Object, alias, class_name, constant, declare_bool, declare_long,
-    declare_string, set_object, string,
+    Call, Class, Invalid, Object, alias, declare_bool, declare_long, declare_string,
+    register_long_constant, set_object, string,
     sys::{
         E_WARNING, HashPosition, IS_LONG, IS_STRING, SWR_PHP_HAVE_AI_ALL, SWR_PHP_HAVE_AI_IDN,
         SWR_PHP_HAVE_AI_V4MAPPED, ZEND_ACC_NOT_SERIALIZABLE, ZEND_ACC_PUBLIC, ZEND_ACC_READONLY,
@@ -24,7 +24,7 @@ use swoole_rs_zend::{
         zend_hash_move_forward_ex, zend_hash_str_find, zend_object, zend_object_handlers,
         zend_string, zval, zval_ptr_dtor,
     },
-    throw_error, throw_exception, type_of, unset_property_deny, value,
+    throw_constructed_twice, throw_exception, type_of, unset_property_deny, value,
 };
 
 /// `SW_BUFFER_SIZE_BIG`.
@@ -131,7 +131,7 @@ pub unsafe extern "C" fn swr_v1_phpclients_socket_minit(
     }
     for (name, value) in constants::ALWAYS {
         // SAFETY: as above.
-        unsafe { constant(name, i64::from(*value), module) };
+        unsafe { register_long_constant(name, i64::from(*value), module) };
     }
     // SAFETY: per the caller, a writable slot.
     unsafe { *socket_class = ce };
@@ -163,7 +163,7 @@ unsafe fn register_constants(module: c_int) {
         .chain([constants::AI_NUMERICSERV]);
     for (name, value) in all {
         // SAFETY: per the caller.
-        unsafe { constant(name, i64::from(value), module) };
+        unsafe { register_long_constant(name, i64::from(value), module) };
     }
 }
 
@@ -305,11 +305,8 @@ fn construct(call: &Call) {
     };
     let data = this(call);
     if !data.socket.is_null() {
-        // SAFETY: `$this` is live.
-        let name = unsafe { class_name(call.this()) }.to_string_lossy();
-        let message = CString::new(format!("Constructor of {name} can only be called once"));
-        // SAFETY: from a handler.
-        unsafe { throw_error(&message.unwrap_or_default()) };
+        // SAFETY: from a handler, with `$this` live.
+        unsafe { throw_constructed_twice(call.this()) };
         return call.set_bool(false);
     }
     let mut error = 0;
@@ -1033,23 +1030,7 @@ fn is_closed(call: &Call) {
     call.set_bool(socket.is_null() || unsafe { native::swoole_socket_coro_is_closed(socket) });
 }
 
-macro_rules! methods {
-    ($($name:ident => $body:path;)*) => {$(
-        /// # Safety
-        /// Called by Zend with a live frame and return slot.
-        #[unsafe(no_mangle)]
-        pub unsafe extern "C" fn $name(
-            frame: *mut swoole_rs_zend::sys::zend_execute_data,
-            value: *mut zval,
-        ) {
-            // SAFETY: per Zend's handler contract.
-            let call = unsafe { Call::new(frame, value) };
-            $body(&call);
-        }
-    )*};
-}
-
-methods! {
+swoole_rs_zend::handlers! {
     zim_swoole_socket_coro___construct => construct;
     zim_swoole_socket_coro_bind => bind;
     zim_swoole_socket_coro_listen => listen;

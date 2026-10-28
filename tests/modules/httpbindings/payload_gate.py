@@ -7,8 +7,9 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
-from source import definition
+from source import definition, rust_declarations
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+from tools.build_hybrid import hybrid_tree
 from tools.harness import ROOT, run_isolated, write_report
 from tools.build_upstream import COMMIT as PIN
 WRAPPERS=r'''
@@ -47,33 +48,30 @@ Result compression(const std::string&value,size_t n,int method){
 def main():
  parser=argparse.ArgumentParser(description=__doc__)
  parser.add_argument('--source',type=Path,required=True)
- group=parser.add_mutually_exclusive_group(required=True);group.add_argument('--archive',type=Path);group.add_argument('--rust-sanitize',action='store_true')
+ parser.add_argument('--archive',type=Path,required=True,help='Rust archive of the hybrid build under test')
  parser.add_argument('--native-libc',action='store_true',help='Unsanitized native libc semantics; ASan interceptors can alter locale behavior')
  parser.add_argument('--locale',default='C')
  parser.add_argument('--capabilities',type=int,choices=range(8),default=7)
  parser.add_argument('--output',type=Path,required=True);args=parser.parse_args();local=Path(__file__).resolve().parent
- report={'pin':PIN,'scope':__doc__,'limitations':'Native effect facades, not actual Zend allocator/GC/bailout. Compression capability0 compiles both original/candidate methods out; other profiles exercise the original methods.','capabilities':args.capabilities,'native_sanitizers':not args.native_libc,'locale':args.locale,'rust_instrumented':args.rust_sanitize,'rust_std_instrumented':False,'passed':False}
+ report={'pin':PIN,'scope':__doc__,'limitations':'Native effect facades, not actual Zend allocator/GC/bailout. Compression capability0 compiles both original/candidate methods out; other profiles exercise the original methods.','capabilities':args.capabilities,'native_sanitizers':not args.native_libc,'locale':args.locale,'rust_instrumented':False,'rust_std_instrumented':False,'passed':False}
  with tempfile.TemporaryDirectory(prefix='swr-httpbindings-payload-')as temp:
   tree=Path(temp)
-  if args.rust_sanitize:
-   args.archive=tree/'rust.a';cmd=['rustc','--edition=2024','-Zsanitizer=address','--crate-type=staticlib','-C','opt-level=3','-C','panic=abort',str(ROOT/'crates/httpbindings/src/lib.rs'),'-o',str(args.archive)]
-   r=run_isolated(cmd,timeout=60,env={**os.environ,'RUSTC_BOOTSTRAP':'1'});report['rust_compile']={'command':cmd,'returncode':r.returncode,'stdout':r.stdout,'stderr':r.stderr}
-   if r.returncode:write_report(args.output,report);return 1
-  original={n:subprocess.check_output(['git','-C',str(args.source),'show',PIN+':'+n]).decode()for n in ['ext-src/swoole_http_request.cc','include/swoole.h']}
-  for n,text in original.items():p=tree/n;p.parent.mkdir(parents=True,exist_ok=True);p.write_text(text)
-  patch=ROOT/'migration/patches/httpbindings/0002-request-policy.patch'
-  subprocess.run(['git','apply','--check',str(patch)],cwd=tree,check=True);subprocess.run(['git','apply',str(patch)],cwd=tree,check=True)
-  helpers='\n'.join(definition(original['include/swoole.h'],sig)for sig in ['static inline unsigned int swoole_strcaseeq(','static inline const char *swoole_strnstr(','static inline ssize_t swoole_strnpos('])
-  (tree/'helpers.h').write_text('#define sw_likely(x) (x)\n'+helpers)
-  for name,source in [('upstream_payload',original['ext-src/swoole_http_request.cc']),('candidate_payload',(tree/'ext-src/swoole_http_request.cc').read_text())]:
+  # Upstream side from the pin, candidate side from the hybrid build's fully patched tree.
+  hybrid_source,hybrid_flags=hybrid_tree(args.archive);names=['ext-src/swoole_http_request.cc','include/swoole.h']
+  original={n:subprocess.check_output(['git','-C',str(args.source),'show',PIN+':'+n]).decode()for n in names}
+  selected={n:(hybrid_source/n).read_text()for n in names}
+  for name,texts in [('upstream_payload',original),('candidate_payload',selected)]:
+   helpers='\n'.join(definition(texts['include/swoole.h'],sig)for sig in ['static inline unsigned int swoole_strcaseeq(','static inline const char *swoole_strnstr(','static inline ssize_t swoole_strnpos('])
+   (tree/(name+'_helpers.h')).write_text('#define sw_likely(x) (x)\n'+rust_declarations(helpers,hybrid_flags)+helpers)
+   source=texts['ext-src/swoole_http_request.cc']
    parts=[definition(source,sig)for sig in ['static int http_request_on_body(','static int http_request_message_complete(']]
    compress=[]
    if name=='candidate_payload':compress.append(definition(source,'static uint32_t http_request_compression_capabilities('))
    compress.extend(definition(source,sig)for sig in ['void HttpContext::set_compression_method(','const char *HttpContext::get_content_encoding() const'])
    create=definition(source,'static PHP_METHOD(swoole_http_request, create) {');a=create.index('SW_HASHTABLE_FOREACH_START2(');a=create.index('{',a)+1;b=create.index('            (void) keytype;',a)
    parts.append('static void apply_option(HttpContext*ctx,const char*key,size_t keylen,zval*zvalue){\n'+create[a:b]+'\n}')
-   out=tree/(name+'.cc');out.write_text('#include "payload_oracle.h"\n#include "helpers.h"\nnamespace '+name+' {\n#include "payload_wrappers.h"\n'+ '\n'.join(parts)+'\n#ifdef SW_HAVE_COMPRESSION\n'+'\n'.join(compress)+'\n#endif\n'+WRAPPERS+'\n}\n')
-  binary=tree/'gate';cmd=['c++','-std=c++14','-O1','-g','-fsanitize=address,undefined','-fno-sanitize-recover=all','-DPAYLOAD_CAPABILITIES='+str(args.capabilities),'-I'+str(local),'-I'+str(tree),'-I'+str(ROOT/'native/httpbindings'),str(tree/'upstream_payload.cc'),str(tree/'candidate_payload.cc'),str(local/'payload_gate.cc'),str(args.archive.resolve()),'-lm','-o',str(binary)]
+   out=tree/(name+'.cc');out.write_text('#include "payload_oracle.h"\n#include "'+name+'_helpers.h"\nnamespace '+name+' {\n#include "payload_wrappers.h"\n'+ '\n'.join(parts)+'\n#ifdef SW_HAVE_COMPRESSION\n'+'\n'.join(compress)+'\n#endif\n'+WRAPPERS+'\n}\n')
+  binary=tree/'gate';cmd=['c++','-std=c++14','-O1','-g','-fsanitize=address,undefined','-fno-sanitize-recover=all','-DPAYLOAD_CAPABILITIES='+str(args.capabilities),'-I'+str(local),'-I'+str(tree),'-I'+str(ROOT/'native/httpbindings'),*hybrid_flags,str(tree/'upstream_payload.cc'),str(tree/'candidate_payload.cc'),str(local/'payload_gate.cc'),str(args.archive.resolve()),'-lm','-o',str(binary)]
   if args.native_libc:cmd=[arg for arg in cmd if not arg.startswith('-fsanitize=') and arg!='-fno-sanitize-recover=all']
   if sys.platform.startswith('linux'):cmd+=['-ldl','-lpthread','-lrt','-lutil']
   r=run_isolated(cmd,timeout=90);report['compile']={'command':cmd,'returncode':r.returncode,'stdout':r.stdout,'stderr':r.stderr}
