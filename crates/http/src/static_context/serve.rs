@@ -1,5 +1,5 @@
 //! Selected filesystem-path policy; Native returns copied observations after effects.
-use super::*;
+use super::{FILENAME, HttpProxyText, HttpStaticContext, INVALID, bytes, swr_v1_http_static_catch};
 use crate::static_path as path;
 
 #[derive(Default)]
@@ -121,6 +121,10 @@ pub unsafe extern "C" fn swr_v2_http_context_serve(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        HttpStaticObservation, swr_v2_http_context_drop, swr_v2_http_context_new,
+        swr_v2_http_context_observed, swr_v2_http_context_path,
+    };
     use std::ptr;
     fn observation(event: u32) -> HttpContextServeObservation {
         HttpContextServeObservation {

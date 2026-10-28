@@ -288,7 +288,10 @@ pub unsafe extern "C" fn sw_rs_http2_respond_next(
     succeeded: u32,
     facts: *const Http2RespondFacts,
 ) -> u32 {
-    use respond_action::*;
+    use respond_action::{
+        BODY, COMMIT_END, EMPTY, ERROR_CLOSE, ERROR_SHUTDOWN, FALSE, HEADER, REMOVE, START,
+        SUCCESS_SHUTDOWN, TRAILER, TRUE,
+    };
     if facts.is_null() {
         return FALSE;
     }

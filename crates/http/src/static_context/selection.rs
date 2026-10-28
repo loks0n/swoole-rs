@@ -1,5 +1,5 @@
 //! Directory/index policy; Native owns each scoped filesystem effect and configuration view.
-use super::*;
+use super::{HttpIndexPage, HttpStaticContext, INDEX, INVALID, bytes, swr_v2_http_context_page};
 const DIRECTORY_KIND: u32 = 16;
 
 #[derive(Default)]
@@ -272,6 +272,10 @@ pub unsafe extern "C" fn swr_v2_http_context_index(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        HttpProxyText, swr_v2_http_context_drop, swr_v2_http_context_new,
+        swr_v2_http_directory_count,
+    };
     use std::ptr;
 
     struct Context(*mut HttpStaticContext);

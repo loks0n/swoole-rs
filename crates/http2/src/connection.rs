@@ -31,7 +31,11 @@ pub mod connection_action {
 /// (socket present) and SETUP (fresh SSL requirement). No native identity escapes.
 #[no_mangle]
 pub extern "C" fn sw_rs_http2_connection_next(stage: u32, outcome: u32, detail: u32) -> u32 {
-    use connection_action::*;
+    use connection_action::{
+        ALREADY, CLOSE, CLOSE_ERROR, CLOSE_SOCKET, CLOSE_START, CONNECT, CREATE, CREATE_ERROR,
+        DEFLATE, DEFLATE_ERROR, DISCONNECT, FALSE, INFLATE, INFLATE_ERROR, IO_ERROR, NO_SOCKET,
+        PREFACE, PROTOCOL, PUBLISH, RESET, SETTINGS, SETUP, SSL, START, TRUE,
+    };
     match stage {
         START => {
             if detail != 0 {
