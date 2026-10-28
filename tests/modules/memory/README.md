@@ -13,13 +13,14 @@ The `*.rs` files here are the crate's unit tests, included by
 ```
 python3 tests/modules/memory/gate.py --source /absolute/pinned/upstream \
   --extension /absolute/reference/swoole.so --sanitize \
+  --archive /absolute/build/rust-prefix/lib/libswoole_rs_ffi.a \
   --output target/reports/memory/native.json
 ```
 
-Compiles the pinned C++ sources and the overlaid sources into `probe.cc`
-facades, loads each through PHP FFI alongside the reference extension, and
-requires identical checksum traces. Without `--archive` it runs `cargo test` and
-builds the crate; with `--archive` it reuses that static library. It also checks
+Compiles the pinned C++ sources and the hybrid build's patched sources (the
+build `--archive` comes from) into `probe.cc` facades, loads each through PHP FFI
+alongside the reference extension, and requires identical checksum traces. It
+never rebuilds the archive. It also checks
 that every original native `assert(...)` expression survives the overlays, that
 the overlaid headers reject a build without the memory feature and accept one
 configured only through `config.h`, and runs exact untimed constructor and
@@ -116,8 +117,8 @@ python3 tests/modules/memory/channel_compat.py --source /absolute/pinned/upstrea
 python3 tests/modules/memory/table_v2_compat.py --source /absolute/pinned/upstream \
   --archive /absolute/libswoole_rs_ffi.a [--fixed-pool] [--upstream-unused-parameter-policy] \
   --output target/reports/memory/table-v2-compat.json
-python3 tests/modules/memory/fixed_native_construction.py --source /absolute/pinned/upstream \
-  --archive /absolute/libswoole_rs_ffi.a --output target/reports/memory/fixed-construction.json
+python3 tests/modules/memory/fixed_native_construction.py \
+  --archive /absolute/build/rust-prefix/lib/libswoole_rs_ffi.a --output target/reports/memory/fixed-construction.json
 python3 tests/modules/memory/mapping_operation.py --source /absolute/pinned/upstream \
   --archive /absolute/libswoole_rs_ffi.a --output target/reports/memory/mapping-operation.json
 ```

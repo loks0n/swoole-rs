@@ -32,7 +32,12 @@ mod php {
     }
 
     pub(super) fn bind() {
-        for file in ["src/shim.h", "src/shim.c"] {
+        for file in [
+            "src/shim.h",
+            "src/shim.c",
+            "src/shim_values.h",
+            "src/shim_values.c",
+        ] {
             println!("cargo::rerun-if-changed={file}");
         }
         let includes = includes();
@@ -42,7 +47,7 @@ mod php {
             .generate_comments(false)
             .clang_args(includes.iter().map(|dir| format!("-I{}", dir.display())))
             .allowlist_function(
-                "(_?zend_|object_properties_init|object_init_ex|php_error_docref|swr_zend_|swr_zval_|zval_|add_assoc_|add_next_index_|add_index_).*",
+                "(_?zend_|object_properties_init|object_init_ex|php_error_docref|php_url_encode|php_format_date|php_time|swr_zend_|swr_zval_|zval_|add_assoc_|add_next_index_|add_index_).*",
             )
             .allowlist_type("(_?zend_|_?zval).*")
             .allowlist_var(
@@ -59,6 +64,7 @@ mod php {
             .expect("zend-sys: write bindings");
         cc::Build::new()
             .file("src/shim.c")
+            .file("src/shim_values.c")
             .includes(&includes)
             .warnings(true)
             .compile("swoole_rs_zend_shim");

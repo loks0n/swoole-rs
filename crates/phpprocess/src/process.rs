@@ -720,7 +720,7 @@ fn read(call: &Call) {
     // SAFETY: the string made above.
     unsafe { (*buffer).len = length };
     // SAFETY: the return value takes the string's one reference.
-    unsafe { call.set_str(buffer) };
+    unsafe { call.set_string(buffer) };
 }
 
 fn string_data(string: *mut zend_string) -> *mut c_char {
@@ -730,7 +730,7 @@ fn string_data(string: *mut zend_string) -> *mut c_char {
 }
 
 fn write(call: &Call) {
-    let Ok(data) = call.arity(1, 1).and_then(|()| call.str(1)) else {
+    let Ok(data) = call.arity(1, 1).and_then(|()| call.bytes(1)) else {
         call.set_bool(false);
         return;
     };
@@ -785,7 +785,7 @@ fn export_socket(call: &Call) {
 }
 
 fn push(call: &Call) {
-    let Ok(data) = call.arity(1, 1).and_then(|()| call.str(1)) else {
+    let Ok(data) = call.arity(1, 1).and_then(|()| call.bytes(1)) else {
         call.set_bool(false);
         return;
     };
@@ -846,7 +846,7 @@ fn pop(call: &Call) {
 fn exec(call: &Call) {
     let parsed = call
         .arity(2, 2)
-        .and_then(|()| Ok((call.str(1)?, call.array(2)?)));
+        .and_then(|()| Ok((call.bytes(1)?, call.array(2)?)));
     let Ok((file, Some(args))) = parsed else {
         call.set_bool(false);
         return;
