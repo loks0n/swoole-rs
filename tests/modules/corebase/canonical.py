@@ -18,7 +18,7 @@ from tools.native_core import library_identity
 
 MAC_EXCLUDED = ['coroutine/hook', 'coroutine/system', 'lock/lock', 'network/socket',
                 'os/os', 'os/process_pool', 'os/signal', 'server/http_server', 'server/server', 'coroutine/iouring']
-LINUX_CASES = 'datahead_dump dec2hex hex2dec random_string file_put_contents file_get_size version_compare common_divisor common_multiple shell_exec file_size eventdata_pack stack_defer_fn string_format dirname mkdir_recursive set_task_tmpdir version hook intersection itoa get_systemd_listen_fds type_size vsnprintf snprintf log_level trace_flag only_dump redirect_stdout fatal_error spinlock futex undefined_behavior'.split()
+LINUX_CASES = 'datahead_dump dec2hex hex2dec random_string file_put_contents file_get_size version_compare common_divisor common_multiple shell_exec file_size eventdata_pack stack_defer_fn string_format dirname mkdir_recursive set_task_tmpdir set_task_tmpdir_in_threads version hook intersection itoa get_systemd_listen_fds type_size vsnprintf snprintf log_level trace_flag only_dump redirect_stdout fatal_error spinlock futex undefined_behavior'.split()
 MAC_CASES = ['dec2hex', 'hex2dec', 'version_compare', 'common_divisor', 'common_multiple',
              'dirname', 'itoa', 'type_size', 'mkdir_recursive', 'hook', 'log_level', 'trace_flag']
 
