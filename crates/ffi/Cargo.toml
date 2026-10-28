@@ -51,6 +51,7 @@ swoole-rs-utilities = { path = "../utilities", optional = true }
 swoole-rs-locks = { path = "../locks", optional = true }
 swoole-rs-wrappers = { path = "../wrappers", optional = true }
 swoole-rs-framing = { path = "../framing" }
+swoole-rs-server = { path = "../server" }
 swoole-rs-reactor = { path = "../reactor", optional = true }
 swoole-rs-corebase = { path = "../corebase", optional = true }
 swoole-rs-coroutine = { path = "../coroutine", optional = true }
