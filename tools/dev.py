@@ -275,7 +275,7 @@ def plan(args, reports):
         script('reactor-compile', 'tests/modules/reactor/compile_gate.py', '--source', ROOT / 'target/upstream/src',
                '--report', reports / 'reactor-compile.json')
     if typed_buffer(args):
-        pytest('buffer-typed-layout', 'tests/modules/buffer/test_typed_layout.py')
+        pytest('buffer-typed-layout', 'tests/modules/buffer/test_typed_layout.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a')
         pytest('buffer-typed', 'tests/modules/buffer/test_typed.py', '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize')
         script('reactor-buffer-typed-compile', 'tests/modules/reactor/buffer_typed_compile.py',
                '--source', ROOT / 'target/upstream/src',
@@ -585,7 +585,6 @@ def plan(args, reports):
                '--source-ref', utility_source, *report('utilities-public-storage'))
     if 'memory' in modules:
         script('memory-fixed-native-construction', 'tests/modules/memory/fixed_native_construction.py',
-               '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                *report('memory-fixed-native-construction'))
         script('memory-mapping-operation', 'tests/modules/memory/mapping_operation.py',
