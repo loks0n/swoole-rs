@@ -2,6 +2,7 @@
 #define SWOOLE_RS_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define SWR_ABI_VERSION 1
@@ -195,6 +196,45 @@ swr_v1_server_local_addrs *swr_v1_server_local_addrs_new(void);
 void swr_v1_server_local_addrs_free(swr_v1_server_local_addrs *addrs);
 uint16_t swr_v1_server_local_addr_index(const swr_v1_server_local_addrs *addrs, bool v6, const uint8_t *addr);
 const char *swr_v1_server_local_addr(const swr_v1_server_local_addrs *addrs, bool v6, uint16_t index);
+
+/*
+ * The module host (crates/phpswoole): php_swoole.cc's MINIT registers the global
+ * constants and Swoole\Exception/Swoole\Error through swr_v1_phpswoole_minit, and
+ * the global functions are its zif_swoole_* exports. C++ lends what only it can
+ * reach: Swoole's error, logger and MIME state and the module globals.
+ */
+enum {
+    SWR_PHPSWOOLE_DEBUG = 1 << 0, SWR_PHPSWOOLE_SHORTNAME = 1 << 1, SWR_PHPSWOOLE_COMPRESSION = 1 << 2,
+    SWR_PHPSWOOLE_ZLIB = 1 << 3, SWR_PHPSWOOLE_BROTLI = 1 << 4, SWR_PHPSWOOLE_TLS1_1 = 1 << 5,
+    SWR_PHPSWOOLE_TLS1_2 = 1 << 6, SWR_PHPSWOOLE_TLS1_3 = 1 << 7, SWR_PHPSWOOLE_DTLS = 1 << 8,
+    SWR_PHPSWOOLE_SSL3 = 1 << 9, SWR_PHPSWOOLE_IOURING = 1 << 10,
+};
+struct _zval_struct;
+struct _zend_array;
+struct _zend_class_entry;
+typedef struct swr_v1_phpswoole_ops {
+    int32_t (*last_error)(void);
+    void (*set_last_error)(int32_t code);
+    uint8_t (*display_errors)(void);
+    uint32_t (*cpu_num)(void);
+    /* sw_logger()->put */
+    void (*log_put)(int32_t level, const char *message, size_t length);
+    /* swoole_error_log's tail: set the error, then put if the level passes and it isn't ignored. */
+    void (*error_log)(int32_t level, int32_t error, const char *message, size_t length);
+    void (*ignore_error)(int32_t code);
+    uint8_t (*mime_add)(const char *suffix, const char *type);
+    void (*mime_set)(const char *suffix, const char *type);
+    uint8_t (*mime_del)(const char *suffix);
+    const char *(*mime_get)(const char *filename);
+    uint8_t (*mime_exists)(const char *filename);
+    void (*mime_list)(struct _zval_struct *array);
+    /* req_status RINIT_END -> CALL_USER_SHUTDOWNFUNC_BEGIN; 0 if it was not RINIT_END. */
+    uint8_t (*shutdown_begin)(void);
+    void (*unserialize)(struct _zval_struct *value, const char *buf, size_t length, struct _zend_array *options);
+    void (*json_decode)(struct _zval_struct *value, const char *str, size_t length, int64_t options, int64_t depth);
+} swr_v1_phpswoole_ops;
+void swr_v1_phpswoole_minit(int32_t module_number, uint32_t flags, const swr_v1_phpswoole_ops *ops,
+                            struct _zend_class_entry **exception, struct _zend_class_entry **error);
 
 #ifdef __cplusplus
 }

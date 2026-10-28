@@ -29,6 +29,7 @@
         "config.m4",
         "CMakeLists.txt",
         "ext-src/php_swoole.cc",
+        "ext-src/php_swoole_private.h",
         "include/swoole_server.h",
         "src/server/master.cc"
       ]
