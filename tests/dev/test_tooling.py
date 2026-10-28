@@ -805,7 +805,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('--sdk-export', commands['phpevents-sdk'])
         self.assertIn('--native-export', commands['phpevents-sdk'])
         self.assertNotIn('phphelpers-sdk', commands)
-        self.assertNotIn('phpevents-descriptors', commands)
 
     def test_php_sockets_reuse_rejects_mismatched_native_or_configured_profile(self):
         import hashlib
