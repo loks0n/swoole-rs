@@ -186,6 +186,16 @@ typedef struct {
     bool (*wait)(void *);
 } swr_v1_hook_sendfile_ops;
 int swr_v1_hook_sendfile(const swr_v1_hook_sendfile_ops *ops, off_t *offset, size_t end);
+/* connect(host)/sendto(host)'s address loop: up to two assigns with a resolve
+ * between them on SW_ERROR_BAD_HOST_ADDR. 0 assigned (or fell through), 1 an
+ * assign failed otherwise, 2 the resolve failed. */
+typedef struct {
+    void *context;
+    bool (*assign)(void *);
+    bool (*bad_host)(void);
+    bool (*resolve)(void *);
+} swr_v1_hook_resolve_ops;
+int swr_v1_hook_resolve(const swr_v1_hook_resolve_ops *ops);
 /* The coroutine bound for reading or writing (event SW_EVENT_READ/WRITE; bind accepts both bits).
    bound_co follows get_bound_co; event_name returns 0 reading, 1 writing, 2 reading or writing. */
 void *swr_v1_hook_socket_co(const swr_v1_hook_socket_state *state, uint32_t event);
