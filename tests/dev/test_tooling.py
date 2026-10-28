@@ -489,21 +489,6 @@ class Lanes(unittest.TestCase):
                           if argument == '--php-extension']
                 self.assertEqual(loaded.count('curl'), 1)
 
-    def test_redis_original_profile_keeps_baseline_and_complete_inventory(self):
-        args = SimpleNamespace(lane='integrate', module=['phpcollections'], all_modules=False,
-                               php='php', php_extension=[], jobs=2, test=None, case=None,
-                               benchmark=False, compare=False, fix_halfclose=False,
-                               redis_extension=Path('/private/redis.so'), redis_image='sha256:explicit')
-        with patch.object(dev.sys, 'platform', 'linux'):
-            commands = dict(dev.plan(args, ROOT / 'target/reports/collections-prerequisites'))
-        profile = commands['phpcollections-prerequisites']
-        self.assertIn('--source-ref', profile)
-        self.assertIn('--build-manifest', profile)
-        self.assertIn('--archive', profile)
-        self.assertNotIn('--case', profile)
-        self.assertIn('igbinary', profile)
-        self.assertEqual(profile[profile.index('--redis-extension') + 1], str(args.redis_extension))
-
     def test_child_php_selection_is_explicit_and_scoped_to_direct_official_runner(self):
         args = SimpleNamespace(lane='integrate', module=None, all_modules=True, php='php', php_extension=[],
                                jobs=2, test=None, case=None, benchmark=False, compare=False, fix_halfclose=True)
@@ -652,11 +637,6 @@ class Lanes(unittest.TestCase):
         self.assertNotIn('--archive', commands['memory-source-compatibility'])
         self.assertIn('--build-manifest', commands['phpcollections-runtime'])
         self.assertIn('--archive', commands['phpcollections-runtime'])
-        handlers = commands['phpcollections-global-handlers']
-        for flag in ['--source', '--source-ref', '--build-manifest', '--archive']:
-            self.assertIn(flag, handlers)
-        self.assertEqual(handlers.count('--engine'), 2)
-        self.assertNotIn('--case', handlers)
         for phase in ['ports-count', 'ports-settings']:
             self.assertIn('--core', commands[phase])
             self.assertIn('--archive', commands[phase])

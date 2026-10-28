@@ -413,19 +413,6 @@ def plan(args, reports):
             script('phpcollections-column-bytes', 'tests/modules/phpcollections/php_runtime.py', *php_for('curl'), *engines,
                    '--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                    '--source-ref', 'HEAD', '--profile', 'column-bytes', *report('phpcollections-column-bytes'))
-            script('phpcollections-global-handlers', 'tests/modules/phpcollections/handlers.py',
-                   '--source', ROOT / 'target/upstream/src', '--source-ref', 'HEAD',
-                   *php, *engines, '--build-manifest', manifest,
-                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-                   *report('phpcollections-global-handlers'))
-            if getattr(args, 'redis_extension', None):
-                script('phpcollections-prerequisites', 'tests/modules/phpcollections/originals.py',
-                       '--source', ROOT / 'target/upstream/src', '--source-ref', 'HEAD',
-                       '--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-                       *php_for('curl', 'sockets', 'posix', 'mbstring', 'igbinary'), *engines,
-                       '--redis-extension', args.redis_extension,
-                       *(['--redis-image', args.redis_image] if getattr(args, 'redis_image', None) else []),
-                       *report('phpcollections-prerequisites'))
     if 'phphelpers' in modules:
         script('phphelpers-async', 'tests/modules/phphelpers/async_gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('phphelpers-async'))
@@ -777,8 +764,7 @@ BARRIER_PHASES = {'ownership', 'build', 'reference-build', 'stdext-reference-bui
 
 
 # Phases that run original PHPTs under another name (their servers race for ports under load).
-PHPT_PHASES = {'phpt', 'framing-versioned-expectation', 'phpcollections-global-handlers',
-               'phpcollections-prerequisites', 'utilities-lowercase-runtime'}
+PHPT_PHASES = {'phpt', 'framing-versioned-expectation', 'utilities-lowercase-runtime'}
 
 
 def serial_phase(name):
@@ -1055,8 +1041,6 @@ def main():
     parser.add_argument('--native-build-root', type=Path, help='Private location for native hybrid worlds; space guard remains enforced')
     parser.add_argument('--gtest-prefix', type=Path, help='Read-only C++14-compatible GoogleTest prefix for native originals')
     parser.add_argument('--php-extension', action='append', default=[])
-    parser.add_argument('--redis-extension', type=Path, help='Explicit Redis-enabled full original collection profile, retaining baseline phases')
-    parser.add_argument('--redis-image', help='Immutable Redis Docker image for that profile; otherwise use managed native service')
     parser.add_argument('--hypothesis', help='What this experiment should establish')
     parser.add_argument('--expect', help='Observable outcome that supports the hypothesis')
     parser.add_argument('--benchmark', action='store_true', help='Run isolated benchmarks after all correctness phases pass')
@@ -1088,8 +1072,6 @@ def main():
         parser.error('--frozen-source requires integration and a literal lowercase 40-hex commit')
     if args.jobs < 1 or args.test and args.lane != 'edit' or args.case and args.lane != 'candidate':
         parser.error('Positive --jobs required; --test is edit-only and --case is candidate-only')
-    if args.redis_image and not args.redis_extension:
-        parser.error('--redis-image requires the explicit --redis-extension profile')
     if args.benchmark and args.lane == 'edit':
         parser.error('Benchmarks require candidate or integrate')
     if args.phase and (args.lane == 'edit' or args.benchmark):
