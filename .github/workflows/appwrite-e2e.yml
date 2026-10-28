@@ -176,6 +176,8 @@ jobs:
       _APP_DB_HOST: postgresql
       _APP_DB_PORT: 5432
       _APP_OPTIONS_ROUTER_PROTECTION: enabled
+      # appwrite_bench.py creates sessions far past the abuse limit.
+      _APP_OPTIONS_ABUSE: disabled
     steps:
       - uses: actions/checkout@v4
         with:
