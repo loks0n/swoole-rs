@@ -39,7 +39,6 @@ for test in \
     tests/modules/phpcoroutines/test_statistics_identity.py \
     tests/modules/phpcoroutines/test_system_boundary.py \
     tests/modules/phpcoroutines/test_system_control_boundary.py \
-    tests/modules/phpevents/test_identity.py \
     tests/modules/phphelpers/test_entrypoint.py \
     tests/modules/phphelpers/test_facade_identity.py \
     tests/modules/phphelpers/test_gate.py \

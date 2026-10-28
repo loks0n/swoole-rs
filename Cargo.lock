@@ -490,6 +490,9 @@ version = "0.1.0"
 [[package]]
 name = "swoole-rs-phpevents"
 version = "0.1.0"
+dependencies = [
+ "swoole-rs-zend",
+]
 
 [[package]]
 name = "swoole-rs-phphelpers"
