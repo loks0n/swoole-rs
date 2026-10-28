@@ -52,6 +52,15 @@
         "ext-src/swoole_http_request.cc",
         "ext-src/swoole_http_server.cc"
       ]
+    },
+    {
+      "path": "0009-http-host-bailouts.patch",
+      "sha256": "890aaf690ab27744ff4d8e70b259d58fa9625c8e45e9d182eca57a4f7c0ae77d",
+      "upstream_paths": [
+        "ext-src/php_swoole_http.h",
+        "ext-src/swoole_http_request.cc",
+        "ext-src/swoole_http_response.cc"
+      ]
     }
   ]
 }
