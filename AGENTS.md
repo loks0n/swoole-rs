@@ -98,7 +98,7 @@ out of scope, or already tracked by an open issue is not a finding.
 
 Verify each finding before fixing it: a failing test, a command and its output,
 or the exact lines that disagree. Then fix it straight away, as an executor
-would (steps 2 to 6), in a PR that states the evidence. Only a finding that
+would (steps 2 and 3), in a PR that states the evidence. Only a finding that
 needs a decision becomes an issue, with `needs:decision`.
 
 ## Tickets
