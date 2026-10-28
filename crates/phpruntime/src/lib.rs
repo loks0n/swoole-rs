@@ -293,21 +293,7 @@ fn enable_hook(mut requested: u32) -> Result<bool, Bailout> {
     let installed = HOOKED.load(Ordering::Relaxed);
 
     requested = transports(requested, installed);
-    for (bit, stdio) in [(flags::FILE, 0), (flags::STDIO, 1)] {
-        if let Some(hook) = transition(requested, installed, bit) {
-            // SAFETY: C++'s wrapper swap.
-            unsafe { (ops.stream_ops)(stdio, u8::from(hook)) };
-        }
-    }
-    for bit in flags::PDO {
-        if ops.features & bit == 0 {
-            continue;
-        }
-        if let Some(hook) = transition(requested, installed, bit) {
-            // SAFETY: a driver that is built in.
-            unsafe { (ops.pdo)(bit, u8::from(!hook)) };
-        }
-    }
+    wrappers(requested, installed);
     functions::hook_all(requested, installed)?;
     mongodb(requested, installed);
 
@@ -350,6 +336,27 @@ fn transports(mut requested: u32, installed: u32) -> u32 {
         }
     }
     requested
+}
+
+/// `hook_stream_ops` and `hook_pdo_driver`: the plain-files wrapper, the stdio
+/// ops and the PDO drivers built in.
+fn wrappers(requested: u32, installed: u32) {
+    let ops = ops();
+    for (bit, stdio) in [(flags::FILE, 0), (flags::STDIO, 1)] {
+        if let Some(hook) = transition(requested, installed, bit) {
+            // SAFETY: C++'s wrapper swap.
+            unsafe { (ops.stream_ops)(stdio, u8::from(hook)) };
+        }
+    }
+    for bit in flags::PDO {
+        if ops.features & bit == 0 {
+            continue;
+        }
+        if let Some(hook) = transition(requested, installed, bit) {
+            // SAFETY: a driver that is built in.
+            unsafe { (ops.pdo)(bit, u8::from(!hook)) };
+        }
+    }
 }
 
 /// `hook_mongodb`: alias `MongoDB\Client` to the library's class.
@@ -480,6 +487,132 @@ mod tests {
         assert_eq!(transition(0, flags::TCP, flags::TCP), Some(false));
         assert_eq!(transition(flags::TCP, flags::TCP, flags::TCP), None);
         assert_eq!(transition(flags::UDP, 0, flags::TCP), None);
+    }
+
+    thread_local! {
+        static TRACE: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+
+    fn record(entry: String) {
+        TRACE.with(|trace| trace.borrow_mut().push(entry));
+    }
+
+    fn trace() -> Vec<String> {
+        TRACE.with(|trace| std::mem::take(&mut *trace.borrow_mut()))
+    }
+
+    unsafe extern "C" fn no() -> u8 {
+        0
+    }
+    unsafe extern "C" fn zero() -> u32 {
+        0
+    }
+    unsafe extern "C" fn sleep(_: f64) -> i32 {
+        0
+    }
+    unsafe extern "C" fn flags_in(_: u32) {}
+    unsafe extern "C" fn hook(_: u8, _: *mut u32) {}
+    unsafe extern "C" fn transport(index: u32, hook: u8) -> i32 {
+        record(format!("transport:{index}:{hook}"));
+        0
+    }
+    unsafe extern "C" fn stream_ops(stdio: u8, hook: u8) {
+        record(format!("stream:{stdio}:{hook}"));
+    }
+    unsafe extern "C" fn pdo(flag: u32, blocking: u8) {
+        record(format!("pdo:{flag}:{blocking}"));
+    }
+    unsafe extern "C" fn callable(_: *mut zval) -> *mut c_void {
+        std::ptr::null_mut()
+    }
+    unsafe extern "C" fn free(_: *mut c_void) {}
+    unsafe extern "C" fn fcc(_: *mut c_void) -> *mut zend_fcall_info_cache {
+        std::ptr::null_mut()
+    }
+    unsafe extern "C" fn log(_: *const c_char) {}
+    unsafe extern "C" fn error(_: i32, _: *const c_char) {}
+
+    /// Two PDO drivers built in, no native curl.
+    static FAKE: Ops = Ops {
+        features: flags::PDO_PGSQL | flags::PDO_SQLITE,
+        exception: std::ptr::null_mut(),
+        in_coroutine: no,
+        coroutine_sleep: sleep,
+        set_hook_flags: flags_in,
+        get_hook_flags: zero,
+        enable_library: no,
+        main_thread: no,
+        active_threads: zero,
+        call_hook: hook,
+        transport,
+        stream_ops,
+        pdo,
+        callable,
+        callable_free: free,
+        callable_fcc: fcc,
+        log_warning: log,
+        fatal_error: error,
+        error,
+        user_func: None,
+        stream_select: None,
+        stream_socket_pair: None,
+        proc_open: None,
+        proc_close: None,
+        proc_get_status: None,
+        proc_terminate: None,
+        gethostbyname: None,
+        exit: None,
+        putenv: None,
+    };
+
+    fn run(requested: u32, installed: u32) -> (u32, Vec<String>) {
+        OPS.get_or_init(|| &FAKE);
+        let requested = transports(requested, installed);
+        wrappers(requested, installed);
+        (requested, trace())
+    }
+
+    #[test]
+    fn transports_and_wrappers_change_only_what_changed_in_order() {
+        let all = flags::all(false);
+        let (flags, calls) = run(all, 0);
+        assert_eq!(flags, all);
+        assert_eq!(
+            calls,
+            [
+                "transport:0:1",
+                "transport:1:1",
+                "transport:2:1",
+                "transport:3:1",
+                "transport:4:1",
+                "transport:5:1",
+                "stream:0:1",
+                "stream:1:1",
+                "pdo:65536:0",
+                "pdo:524288:0",
+            ]
+        );
+        let (_, calls) = run(0, all);
+        assert_eq!(
+            calls,
+            [
+                "transport:0:0",
+                "transport:1:0",
+                "transport:2:0",
+                "transport:3:0",
+                "transport:4:0",
+                "transport:5:0",
+                "stream:0:0",
+                "stream:1:0",
+                "pdo:65536:1",
+                "pdo:524288:1",
+            ]
+        );
+        assert_eq!(run(all, all).1, Vec::<String>::new(), "nothing changes");
+        let (_, calls) = run(flags::SSL | flags::STDIO, flags::TCP | flags::STDIO);
+        assert_eq!(calls, ["transport:0:0", "transport:4:1"]);
+        let (_, calls) = run(flags::PDO_ODBC | flags::PDO_FIREBIRD, 0);
+        assert!(calls.is_empty(), "drivers not built in stay untouched");
     }
 
     #[test]
