@@ -1,15 +1,15 @@
 //! PHP `Swoole\Http\Cookie`: class registration, objects and every method, and
 //! the `Set-Cookie` line `Swoole\Http\Response::cookie()` sends. The line is
 //! built by `swr_v1_httpbindings_cookie`'s phases; this file runs their effects.
-use crate::{
-    APPEND, APPEND_AGE, APPEND_DATE, APPEND_ENCODED, Action, CookieInput, DONE, ENCODE,
-    FORMAT_DATE, FREE_DATE, FREE_ENCODED, READ_AGE, Text, WARN, swr_v1_httpbindings_cookie,
-};
 use std::{
     ffi::{CStr, c_char},
     mem::offset_of,
     ptr,
     sync::OnceLock,
+};
+use swoole_rs_httpbindings::{
+    APPEND, APPEND_AGE, APPEND_DATE, APPEND_ENCODED, Action, CookieInput, DONE, ENCODE,
+    FORMAT_DATE, FREE_DATE, FREE_ENCODED, READ_AGE, Text, WARN, swr_v1_httpbindings_cookie,
 };
 use swoole_rs_zend::{
     Call, Class, Object,
