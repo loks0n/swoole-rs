@@ -10,8 +10,10 @@ A flagged test may be re-run (--recheck: up to 3 re-runs per engine, or one hybr
 re-run when the hybrid's first failure timed out). If upstream fails a re-run, the test
 is flaky on upstream only if the hybrid passes one of its re-runs; otherwise it is a
 regression. If upstream passes every re-run, any failed hybrid re-run is a regression
-and passing them all is a pass on re-run. Only regressions fail the gate, and a flagged
-test without hybrid re-runs stays one.
+and passing them all is a pass on re-run. A hybrid that both passed and failed its
+re-runs gets more upstream re-runs (up to 9 in all) before that verdict: a test racy
+on both engines then shows an upstream failure too. Only regressions fail the gate, and
+a flagged test without hybrid re-runs stays one.
 
 A re-run whose test passed but whose runner then aborted with the heap-corruption
 signature both engines hit at the same rate (#200, #406) is inconclusive: it is left out
@@ -40,6 +42,8 @@ TIMED_OUT = re.compile(r'process timed out|exceeded its isolated group deadline'
 # The official runner's own abort after a passing test (#200).
 ABORTED = re.compile(r'corrupted double-linked list[\s\S]*Aborted')
 RERUNS = 3
+# Upstream re-runs for a test the hybrid both passed and failed on re-run.
+EXTENDED_RERUNS = 9
 STATUSES = ['passed', 'failed', 'skipped']
 
 
@@ -123,7 +127,8 @@ def recheck(tests, rechecked):
 
 def pending(tests, rechecked, engine='upstream', results=()):
     """Flagged tests still worth re-running on `engine`. Upstream stops at its first failed
-    re-run. Another engine stops once its verdict is settled (a pass after an upstream
+    re-run; `upstream-extended` continues upstream, to 9 re-runs, for a test the hybrid
+    both passed and failed. Another engine stops once its verdict is settled (a pass after an upstream
     failure, a failure otherwise) or its budget is spent: one re-run if its first failure
     timed out, else three. Inconclusive re-runs don't use the budget, but each engine stops
     after twice its budget in all."""
@@ -131,9 +136,13 @@ def pending(tests, rechecked, engine='upstream', results=()):
 
     def within(statuses, budget):
         return len(conclusive(statuses)) < budget and len(statuses) < 2 * budget
-    if engine == 'upstream':
+    if engine in ('upstream', 'upstream-extended'):
+        def mixed(test):
+            hybrid = conclusive(runs[test].get('hybrid', []))
+            return 'passed' in hybrid and any(status != 'passed' for status in hybrid)
+        budget = EXTENDED_RERUNS if engine == 'upstream-extended' else RERUNS
         return [test for test in tests if all(status in ('passed', 'inconclusive') for status in runs[test].get('upstream', []))
-                and within(runs[test].get('upstream', []), RERUNS)]
+                and (engine == 'upstream' or mixed(test)) and within(runs[test].get('upstream', []), budget)]
     timed_out = {row['test'] for row in results if row['engine'] == engine and row.get('timed_out')}
     left = []
     for test in tests:
