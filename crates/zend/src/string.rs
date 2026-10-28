@@ -41,6 +41,17 @@ pub fn alloc(length: usize) -> *mut zend_string {
     unsafe { swr_zend_string_alloc(length) }
 }
 
+/// `zend_string_init(bytes, len, 0)`: a new string holding a copy of `bytes`.
+#[must_use]
+pub fn copy(bytes: &[u8]) -> *mut zend_string {
+    let string = alloc(bytes.len());
+    // SAFETY: a fresh allocation of `bytes.len()` bytes and a NUL.
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), val(string), bytes.len()) };
+    // SAFETY: as above.
+    unsafe { truncate(string, bytes.len()) };
+    string
+}
+
 /// `zend_string_realloc(string, length, 0)`.
 /// # Safety
 /// `string` is a live, unshared, non-interned string.

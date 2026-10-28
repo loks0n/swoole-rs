@@ -22,6 +22,14 @@
       "upstream_paths": [
         "ext-src/swoole_socket_coro.cc"
       ]
+    },
+    {
+      "path": "0003-swoole_client_coro.patch",
+      "sha256": "eac891f3e78e7dcd3d9605be6285e14943b07ad004e0fcb6bf5c74849a0360a4",
+      "upstream_paths": [
+        "ext-src/swoole_client_coro.cc",
+        "ext-src/swoole_socket_coro.cc"
+      ]
     }
   ]
 }
