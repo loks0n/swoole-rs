@@ -1,4 +1,4 @@
-"""Module-local staging and actual-call proof for corebase correctness gates."""
+"""The hybrid build's base.cc and actual-call proof for corebase correctness gates."""
 import os
 from pathlib import Path
 import platform
@@ -8,7 +8,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
-from tools.build_hybrid import apply_patch_verified
+from tools.build_hybrid import hybrid_tree
 
 CALLS = ('type_size', 'gcd', 'lcm', 'parse_stoi', 'systemd_listen_fds_action', 'itoa', 'radix', 'hex_mode', 'version', 'dirname', 'mkdir_next', 'lifecycle_next', 'init_next', 'hook_add_action')
 
@@ -23,14 +23,11 @@ def check_git_environment():
         raise ValueError('Git environment requires a separate protocol: ' + ', '.join(injected))
 
 
-def apply_corebase(work, patch, run, expected_sha256):
-    check_git_environment()
-    work = work.resolve()
-    proof = apply_patch_verified(work, patch, ['src/core/base.cc'], expected_sha256)
-    actual = Path(run(['git', '-C', work, 'rev-parse', '--show-toplevel']).decode().strip()).resolve()
-    if actual != work:
-        raise ValueError('Patch staging does not own its Git root')
-    patched = (work / 'src/core/base.cc').read_bytes()
+def hybrid_corebase(archive):
+    """base.cc of the hybrid build the archive came from, the flags its build compiled it with
+    (its patched headers, Rust headers and config.h) and a receipt."""
+    source, flags = hybrid_tree(archive)
+    patched = (source / 'src/core/base.cc').read_bytes()
     if any(('swr_v1_corebase_' + name + '(').encode() not in patched for name in CALLS):
         raise ValueError('Required corebase caller absent')
     cpu_actions = (b'case SWR_COREBASE_QUERY_CPU:',
@@ -38,9 +35,9 @@ def apply_corebase(work, patch, run, expected_sha256):
                    b'case SWR_COREBASE_QUERY_CPU_AGAIN:')
     if any(action not in patched for action in cpu_actions):
         raise ValueError('Rust-selected native CPU initialization actions absent')
-    return {**proof, 'git_root': str(actual), 'required_callers': list(CALLS),
-            'cpu_init_actions': [action.decode().removeprefix('case ').removesuffix(':')
-                                 for action in cpu_actions]}
+    return patched, [*flags, '-DHAVE_CONFIG_H', '-I' + str(source)], {
+        'hybrid_tree': str(source), 'required_callers': list(CALLS),
+        'cpu_init_actions': [action.decode().removeprefix('case ').removesuffix(':') for action in cpu_actions]}
 
 
 def prove_calls(binary, names, selected, run, prefix):

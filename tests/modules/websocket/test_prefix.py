@@ -1,4 +1,5 @@
-"""Compare header prefixes against the actual unchanged pinned C++ parser."""
+"""Compare header prefixes against the actual unchanged pinned C++ parser. The Rust side's
+declarations come from the hybrid build the archive belongs to."""
 import hashlib
 import io
 import json
@@ -11,6 +12,7 @@ import tarfile
 
 import pytest
 
+from tools.build_hybrid import hybrid_tree
 from tools.harness import ROOT, run_isolated
 from tools.harness import run_compiler
 
@@ -31,9 +33,8 @@ def test_prefix(pytestconfig, tmp_path):
     prefix = next(value.partition('=')[2] for value in manifest['configure'] if value.startswith('--with-swoole-rs='))
     archive = (Path(prefix) / 'lib/libswoole_rs_ffi.a').resolve(strict=True)
     assert sha(archive) == manifest['inputs']['rust_archive_sha256'], 'Selected archive checksum differs from its build manifest'
-    header = ROOT / 'native/include/swoole_rs_websocket.h'
-    assert sha(header) == manifest['inputs']['headers_sha256'][str(header.relative_to(ROOT))], \
-        'Current ABI header differs from the selected build'
+    hybrid, flags = hybrid_tree(archive)
+    rust_headers = [flag for flag in flags if flag.startswith('-I') and flag != '-I' + str(hybrid / 'include')]
     local = Path(__file__).resolve().parent
     tree = tmp_path
     data = subprocess.check_output(['git', '-C', str(source_tree), 'archive', PIN,
@@ -51,7 +52,7 @@ def test_prefix(pytestconfig, tmp_path):
         includes += ['-I' + str(Path(openssl) / 'include')]
     command = shlex.split(os.environ.get('CXX', 'c++')) + includes + [
         '-std=c++17', '-O1', '-g', '-ffunction-sections', '-fdata-sections',
-        '-I' + str(tree / 'include'), '-I' + str(tree / 'thirdparty'), '-I' + str(ROOT / 'native/include'),
+        '-I' + str(tree / 'include'), '-I' + str(tree / 'thirdparty'), *rust_headers,
         str(tree / 'src/protocol/websocket.cc'), str(tree / 'src/protocol/base.cc'), str(local / 'prefix.cc'), str(archive),
         '-Wl,-dead_strip' if sys.platform == 'darwin' else '-Wl,--gc-sections', '-lc', '-lm']
     if sys.platform.startswith('linux'):
