@@ -447,7 +447,9 @@ fn socks5() {
         ("candidate", out("socks5_candidate.cc")),
     ] {
         cpp()
-            .define("swoole", engine)
+            // Its own namespace: other shims define different swoole classes per engine.
+            .define("swoole", format!("socks5_{engine}").as_str())
+            .define("SWR_SOCKS5_ENGINE", engine)
             .include("shim/socks5")
             .include("upstream/include")
             .include("../../native/protocols")
