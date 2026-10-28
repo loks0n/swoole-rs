@@ -43,3 +43,47 @@ int swr_zend_register_class_alias(const char *name, size_t length, zend_class_en
     alias = zend_new_interned_string(alias);
     return zend_register_class_alias_ex(ZSTR_VAL(alias), ZSTR_LEN(alias), ce, 1);
 }
+
+int swr_zend_try(void (*body)(void *), void *arg) {
+    volatile int bailed = 0;
+    zend_try {
+        body(arg);
+    }
+    zend_catch {
+        bailed = 1;
+    }
+    zend_end_try();
+    return bailed;
+}
+
+typedef struct {
+    zend_fcall_info *fci;
+    zend_fcall_info_cache *fcc;
+    zend_result result;
+} swr_zend_call;
+
+static void swr_zend_call_body(void *arg) {
+    swr_zend_call *call = arg;
+    call->result = zend_call_function(call->fci, call->fcc);
+}
+
+int swr_zend_try_call(zend_fcall_info *fci, zend_fcall_info_cache *fcc, int *result) {
+    swr_zend_call call = {fci, fcc, FAILURE};
+    int bailed = swr_zend_try(swr_zend_call_body, &call);
+    *result = call.result == SUCCESS;
+    return bailed;
+}
+
+int swr_zend_parse_func(zval *arg, uint32_t number, zend_fcall_info *fci, zend_fcall_info_cache *fcc) {
+    char *error = NULL;
+#if PHP_VERSION_ID >= 80300
+    if (zend_parse_arg_func(arg, fci, fcc, 0, &error, 1)) {
+#else
+    if (zend_parse_arg_func(arg, fci, fcc, 0, &error)) {
+#endif
+        return 1;
+    }
+    zend_wrong_parameter_error(error ? ZPP_ERROR_WRONG_CALLBACK : ZPP_ERROR_WRONG_ARG, number, error,
+                               Z_EXPECTED_FUNC, arg);
+    return 0;
+}

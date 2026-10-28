@@ -35,4 +35,15 @@ void swr_zend_array_init(zval *value);
 /* Swoole's sw_zend_register_class_alias for a name without a leading
  * backslash: a lowercased, interned, persistent alias. */
 int swr_zend_register_class_alias(const char *name, size_t length, zend_class_entry *ce);
+/* Bailouts. zend_try runs `body(arg)`; returns 1 if it bailed out (Zend's
+ * longjmp), which is then caught here. `body` must be C or C++: a bailout must
+ * never longjmp over a Rust frame. Rust reports the bailout to its C/C++ caller,
+ * which re-raises it with zend_bailout() once the Rust frames have returned. */
+int swr_zend_try(void (*body)(void *), void *arg);
+/* zend_call_function(fci, fcc) inside zend_try: *result is 1 on SUCCESS. */
+int swr_zend_try_call(zend_fcall_info *fci, zend_fcall_info_cache *fcc, int *result);
+
+/* Z_PARAM_FUNC of argument `number` (not nullable): 1, or 0 after raising
+ * Zend's own parameter error. */
+int swr_zend_parse_func(zval *arg, uint32_t number, zend_fcall_info *fci, zend_fcall_info_cache *fcc);
 #endif
