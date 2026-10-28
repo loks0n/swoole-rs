@@ -62,13 +62,11 @@ Rust.
 1. Claim the first issue `python3 tools/ci.py next` prints (see Tickets).
 2. Branch from `main` and commit; `git config core.hooksPath .githooks` enables
    the quick pre-commit checks.
-3. Push, open a PR whose body says `Closes #n`, and run
-   `gh pr merge --auto --squash <pr>`. GitHub merges it once `rust`, `tooling`
-   and `hybrid` pass. `gates` and the merge tier keep running: watch them in the
-   background with `python3 tools/ci.py wait --pr <pr>` and start on the next
-   issue meanwhile. If they show you broke something, fixing it comes next.
-4. Close the issue with a note of what you checked, file follow-ups as
-   `status:ready` sub-issues of the same goal, and repeat.
+3. Push, open a PR whose body says `Closes #n` and what you checked, run
+   `gh pr merge --auto --squash <pr>`, and go straight on to the next issue in
+   the same turn. Opening the PR ends your part: auto-merge lands it, and the
+   merge tier and *Red main* catch anything it breaks, so don't wait for either.
+   File follow-ups as `status:ready` sub-issues of the same goal as you find them.
 
 Nobody needs to approve your next step, so keep the loop going on your own. When
 a question comes up, gather the data (read upstream, reproduce, measure) and make
@@ -170,8 +168,8 @@ old: at most one run (about 15-30 minutes) behind `main`. Every job has a
 
 `main` is often red, and that's tolerable; never stop other work because of it.
 What must not slip through is a **new** failure: a phase that passed in the
-previous completed merge-tier run, or one that didn't exist then. `ci.py status`
-and `wait` list them as `new failures` for merge-tier runs.
+previous completed merge-tier run, or one that didn't exist then. Before you
+claim, glance at `python3 tools/ci.py status`: it lists them as `new failures`.
 
 For each new failure, search open issues for the phase name. If none mentions
 it, file a `p0` `kind:bug` issue with the run link, the phase and its log path,
