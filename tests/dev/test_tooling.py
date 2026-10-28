@@ -571,7 +571,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('tests/modules/buffer/string/test_gate.py::test_profile[random]', commands['string-random'])
         self.assertIn('--source', commands['http-request-lifecycle'])
         self.assertIn('--archive', commands['http-request-lifecycle'])
-        self.assertIn('--source', commands['memory-fixed-native-construction'])
         self.assertIn('--archive', commands['memory-fixed-native-construction'])
         self.assertIn('--archive', commands['memory-mapping-operation'])
         self.assertNotIn('--sanitize', commands['memory-mapping-operation'])

@@ -18,7 +18,7 @@ import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT, run_isolated, write_report
-from tools.build_hybrid import apply_patch_verified
+from tools.build_hybrid import hybrid_tree
 
 from tools.build_upstream import COMMIT as PIN
 SOURCES = ['src/core/heap.cc', 'src/core/channel.cc', 'src/memory/fixed_pool.cc', 'src/memory/global_memory.cc', 'src/memory/ring_buffer.cc', 'src/memory/shared_memory.cc', 'src/memory/table.cc']
@@ -28,11 +28,6 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def apply_overlays(tree, entries):
-    return [apply_patch_verified(tree, ROOT / 'migration/patches/memory' / entry['path'],
-                                 entry['upstream_paths'], entry['sha256']) for entry in entries]
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, default=ROOT / 'target/upstream/src')
@@ -40,7 +35,7 @@ def main():
     parser.add_argument('--php', default='php')
     parser.add_argument('--php-extension', action='append', default=[])
     parser.add_argument('--sanitize', action='store_true')
-    parser.add_argument('--archive', type=Path, help='Reuse exact prebuilt archive; source correspondence/Rust unit tests are caller responsibility')
+    parser.add_argument('--archive', type=Path, required=True, help='Rust archive of the hybrid build under test; its patched tree supplies the Rust side')
     parser.add_argument('--output', default=str(ROOT / 'target/reports/memory-gate.json'))
     parser.add_argument('--prepare-benchmark', type=Path, help='Save optimized unsanitized binaries and hash-checked timing recipe after correctness passes; does not measure')
     args = parser.parse_args()
@@ -71,40 +66,29 @@ def main():
             return result
         with tempfile.TemporaryDirectory(prefix='swr-memory-gate-') as temporary:
             directory = Path(temporary)
-            if args.archive is None:
-                # Real crate, private detached manifest until integrator registers workspace.
-                manifest = directory / 'Cargo.toml'
-                manifest.write_text('[package]\nname="swoole-rs-memory"\nversion="0.1.0"\nedition="2024"\n[workspace]\n[lib]\nname="swoole_rs_memory"\ncrate-type=["rlib","staticlib"]\npath=' + json.dumps(str(ROOT / 'crates/memory/src/lib.rs')) + '\n')
-                target = ROOT / 'target/memory-cargo'
-                cargo = ['cargo', '--manifest-path', str(manifest), '--target-dir', str(target)]
-                run(['cargo', 'test', *cargo[1:]])
-                run(['cargo', 'build', '--release', *cargo[1:]])
-                archive = target / 'release/libswoole_rs_memory.a'
-                report['rust_tests'] = 'run from current source in this gate'
-                report['archive_source_identity'] = 'built from current recorded source'
-            else:
-                archive = args.archive.resolve(strict=True)
-                report['rust_tests'] = 'not run: prebuilt archive selected'
-                report['archive_source_identity'] = 'caller must verify prebuilt archive/source correspondence'
+            archive = args.archive.resolve(strict=True)
+            report['rust_tests'] = 'not run: prebuilt archive selected'
+            report['archive_source_identity'] = 'caller must verify prebuilt archive/source correspondence'
             report['archive'] = str(archive)
+            hybrid, hybrid_flags = hybrid_tree(archive)
+            report['hybrid_tree'] = str(hybrid)
             overlay = json.loads((ROOT / 'migration/patches/memory/manifest.json').read_text())
             report['patch_manifest'] = overlay
             if overlay['upstream_commit'] != PIN:
                 raise ValueError('Overlay pin mismatch')
             raw = subprocess.check_output(['git', '-C', str(args.source), 'archive', PIN, 'include', *SOURCES])
+            with tarfile.open(fileobj=io.BytesIO(raw)) as bundle:
+                for member in bundle:
+                    if member.isfile():
+                        path = directory / 'upstream' / member.name
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(bundle.extractfile(member).read())
             for variant in ['upstream', 'rust']:
                 tree = directory / variant
-                tree.mkdir()
-                with tarfile.open(fileobj=io.BytesIO(raw)) as bundle:
-                    for member in bundle:
-                        if member.isfile():
-                            path = tree / member.name
-                            path.parent.mkdir(parents=True, exist_ok=True)
-                            path.write_bytes(bundle.extractfile(member).read())
+                tree.mkdir(exist_ok=True)
+                # Upstream builds the pinned tree; rust builds the hybrid build's patched tree and flags.
+                sources, headers = (tree, ['-I' + str(tree / 'include')]) if variant == 'upstream' else (hybrid, hybrid_flags)
                 if variant == 'rust':
-                    report['patch_applications'] = apply_overlays(tree, overlay['patches'])
-                    for header in sorted((ROOT / 'native/memory').glob('*.h')):
-                        shutil.copy2(header, tree / 'include')
                     # Preserve every original assertion expression/count. Rust status
                     # checks add validation; they cannot substitute for native witnesses.
                     assertions = {}
@@ -112,7 +96,7 @@ def main():
                         def expressions(path):
                             return Counter(re.sub(r'\s+', '', value) for value in re.findall(r'\bassert\s*\((.*?)\);', path.read_text(), re.S))
                         original = expressions(directory / 'upstream' / source)
-                        selected = expressions(tree / source)
+                        selected = expressions(hybrid / source)
                         missing = original - selected
                         if missing:
                             raise ValueError(f'Original assertions removed from {source}: {dict(missing)}')
@@ -122,7 +106,7 @@ def main():
                 if variant == 'rust':
                     guard = tree / 'guard.cc'
                     guard.write_text('#include "swoole_heap.h"\n')
-                    rejected = run_isolated(compiler + ['-std=c++17', '-I' + str(tree / 'include'), '-fsyntax-only', str(guard)], cwd=ROOT, timeout=15)
+                    rejected = run_isolated(compiler + ['-std=c++17', '-I' + str(hybrid / 'include'), '-fsyntax-only', str(guard)], cwd=ROOT, timeout=15)
                     report['feature_guard'] = {'exit_code': rejected.returncode, 'stderr': rejected.stderr}
                     if rejected.returncode == 0 or 'Memory overlay requires --enable-swoole-rs-memory' not in rejected.stderr:
                         raise ValueError('Selected overlay did not reject disabled memory feature')
@@ -130,19 +114,19 @@ def main():
                     configured.mkdir()
                     (configured / 'config.h').write_text('#define SWOOLE_RS_MEMORY 1\n')
                     command = compiler + ['-std=c++17', '-DHAVE_CONFIG_H', '-I' + str(configured),
-                        '-I' + str(ROOT / 'native/memory'), '-I' + str(tree / 'include'), '-fsyntax-only', str(guard)]
+                        *(flag for flag in hybrid_flags if flag.startswith('-I')), '-fsyntax-only', str(guard)]
                     accepted = run_isolated(command, cwd=ROOT, timeout=15)
                     report['configured_feature_guard'] = {'command': command, 'exit_code': accepted.returncode, 'stderr': accepted.stderr}
                     if accepted.returncode:
                         raise ValueError('Heap header failed when memory feature is supplied only by config.h')
                 binary = tree / ('probe.so' if linux else 'probe.dylib')
-                command = compiler + ['-std=c++17', '-O2', '-g', '-fvisibility=hidden', '-I' + str(tree / 'include')]
+                command = compiler + ['-std=c++17', '-O2', '-g', '-fvisibility=hidden', *headers]
                 command += shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
                 command += ['-shared', '-fPIC', '-Wl,-Bsymbolic'] if linux else ['-dynamiclib', '-undefined', 'dynamic_lookup']
-                command += [*[str(tree / source) for source in SOURCES], str(Path(__file__).with_name('probe.cc')), str(Path(__file__).with_name('benchmark.cc'))]
+                command += [*[str(sources / source) for source in SOURCES], str(Path(__file__).with_name('probe.cc')), str(Path(__file__).with_name('benchmark.cc'))]
                 environment = dict(os.environ)
                 if variant == 'rust':
-                    command += ['-DSWOOLE_RS_MEMORY=1', str(archive)]
+                    command.append(str(archive))
                     if linux:
                         command += ['-ldl', '-lpthread', '-lrt', '-lutil', '-lm']
                     if args.sanitize:

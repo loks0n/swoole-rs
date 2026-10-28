@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Compare real mkdir callers with scoped IO traces and private filesystem cases."""
+"""Compare real mkdir callers (pinned and hybrid-build base.cc) with scoped IO traces and
+private filesystem cases."""
 import argparse
 from datetime import datetime, timezone
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -10,7 +10,7 @@ import platform
 import signal
 import subprocess
 import tempfile
-from patching import apply_corebase, check_git_environment, prove_calls
+from patching import check_git_environment, hybrid_corebase, prove_calls
 from cases import mkdir_cases
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -34,9 +34,6 @@ def main():
                   scope='Whole original/patched native TU. Deterministic IO trace and actual private filesystem; logging/last_error are explicit modeled shims, not native logger/global validation.',
                   exclusions=['Original empty-input UB and full C-visible PATH_MAX-1 nontrailing append overflow'])
     args.output.parent.mkdir(parents=True, exist_ok=True)
-
-    def sha(path):
-        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
     def run(argv, cwd=None, data=None):
         env = os.environ.copy()
@@ -77,26 +74,22 @@ def main():
         check_git_environment()
         source = args.source.resolve();archive = args.archive.resolve()
         original = run(['git', '-C', source, 'show', PIN + ':src/core/base.cc']).decode()
-        manifest = json.loads((ROOT / 'migration/patches/corebase/manifest.json').read_text())
-        assert manifest['upstream_commit'] == PIN and len(manifest['patches']) == 1
-        entry = manifest['patches'][0];patch = ROOT / 'migration/patches/corebase' / entry['path']
-        assert entry['upstream_paths'] == ['src/core/base.cc'] and sha(patch) == entry['sha256']
+        patched, hybrid_flags, report['hybrid'] = hybrid_corebase(archive)
+        patched = patched.decode()
         with tempfile.TemporaryDirectory(prefix='swoole-mkdir-') as temporary:
-            work = Path(temporary);(work / 'src/core').mkdir(parents=True)
-            path = work / 'src/core/base.cc';path.write_text(original)
-            report['patch_application'] = apply_corebase(work, patch, run, entry['sha256'])
-            patched = path.read_text()
-            flags = ['-std=c++17', '-O2', '-ffunction-sections', '-fdata-sections', '-DHAVE_CONFIG_H',
-                     '-DSWOOLE_RS_COREBASE', '-I' + str(LOCAL), '-I' + str(ROOT / 'native/corebase'),
-                     '-I' + str(ROOT / 'native/include'), '-I' + str(source), '-I' + str(source / 'include')]
-            flags += ['-I' + str(p.resolve()) for p in args.include]
+            work = Path(temporary)
+            common = ['-std=c++17', '-O2', '-ffunction-sections', '-fdata-sections', '-I' + str(LOCAL)]
+            common += ['-I' + str(p.resolve()) for p in args.include]
             if args.sanitize:
-                flags += ['-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer']
+                common += ['-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer']
+            pinned_flags = ['-DHAVE_CONFIG_H', '-I' + str(source), '-I' + str(source / 'include')]
             link = ['-Wl,-dead_strip'] if platform.system() == 'Darwin' else ['-Wl,--gc-sections', '-ldl', '-lpthread', '-lm']
             outputs = {}
             for engine, body in [('original', original), ('rust', patched)]:
                 cpp = work / (engine + '.cc');cpp.write_text(scoped(body))
                 binary = work / engine
+                # Each engine builds from its own tree: the pin, or the hybrid build.
+                flags = [*common, *(hybrid_flags if engine == 'rust' else pinned_flags)]
                 run(['c++', *flags, cpp, *([archive] if engine == 'rust' else []), *link, '-o', binary])
                 report.setdefault('actual_calls', {})[engine] = prove_calls(binary, ['mkdir_next'],
                     engine == 'rust', run, args.output.with_suffix('.' + engine))

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Compare complete original and patched base.cc through actual native callers."""
+"""Compare complete original (pinned) and hybrid-build base.cc through actual native callers."""
 import argparse
 from datetime import datetime, timezone
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -10,7 +9,7 @@ import platform
 import signal
 import subprocess
 import tempfile
-from patching import apply_corebase, check_git_environment, prove_calls
+from patching import check_git_environment, hybrid_corebase, prove_calls
 from cases import generate
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -24,7 +23,7 @@ def main():
     parser.add_argument('--source', type=Path, required=True, help='Configured pinned upstream checkout (read-only)')
     parser.add_argument('--include', type=Path, action='append', default=[], help='Additional dependency include directory')
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--archive', type=Path, help='Exact published Rust static archive; otherwise compile owned source privately')
+    parser.add_argument('--archive', type=Path, required=True, help='Rust archive of the hybrid build under test; its base.cc and headers are the Rust side')
     char_mode = parser.add_mutually_exclusive_group()
     char_mode.add_argument('--signed-char', action='store_true', help='Validate native -fsigned-char mode')
     char_mode.add_argument('--unsigned-char', action='store_true', help='Validate native -funsigned-char mode including all byte ctype inputs')
@@ -33,7 +32,7 @@ def main():
     report = {'passed': False, 'created_utc': datetime.now(timezone.utc).isoformat(),
               'platform': platform.platform(), 'upstream_commit': PIN, 'commands': [],
               'scope': 'Eight helpers via complete original/patched native TU, configured native strndup allocation; no PHP, full base lifecycle or performance claim.',
-              'native_sanitizers': args.sanitize, 'rust_sanitizers': 'external archive: inspect its provenance' if args.archive else False, 'native_long_bits': __import__('ctypes').sizeof(__import__('ctypes').c_long) * 8,
+              'native_sanitizers': args.sanitize, 'rust_sanitizers': 'external archive: inspect its provenance', 'native_long_bits': __import__('ctypes').sizeof(__import__('ctypes').c_long) * 8,
               'exclusions': ['decimal LONG_MIN: original signed overflow', 'high-bit hex ctype inputs',
                              'zero gcd/lcm and invalid radix native assertion domains',
                              'lcm intermediate remainder above INT_MAX: native implementation-defined conversion',
@@ -64,29 +63,16 @@ def main():
             raise RuntimeError('Command failed; original diagnostics retained in report')
         return stdout
 
-    def digest(path):
-        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
     try:
         check_git_environment()
         source = args.source.resolve()
         original = run(['git', '-C', source, 'show', PIN + ':src/core/base.cc'])
-        manifest = json.loads((ROOT / 'migration/patches/corebase/manifest.json').read_text())
-        assert manifest['upstream_commit'] == PIN and len(manifest['patches']) == 1
-        entry = manifest['patches'][0]
-        assert entry['upstream_paths'] == ['src/core/base.cc']
-        patch = ROOT / 'migration/patches/corebase' / entry['path']
-        assert digest(patch) == entry['sha256']
+        patched, hybrid_flags, report['hybrid'] = hybrid_corebase(args.archive)
         cases = generate(args.unsigned_char)
         inputs = ''.join(f"{c['id']} {c['operation']} {c['locale']} {c['initial_errno']} {c['a'] or '-'} {c['b'] or '-'}\n" for c in cases).encode()
         args.output.with_suffix('.inputs').write_bytes(inputs)
         with tempfile.TemporaryDirectory(prefix='swoole-corebase-') as temporary:
             work = Path(temporary)
-            (work / 'src/core').mkdir(parents=True)
-            target = work / 'src/core/base.cc'
-            target.write_bytes(original)
-            report['patch_application'] = apply_corebase(work, patch, run, entry['sha256'])
-            patched = target.read_bytes()
             original_tests = run(['git', '-C', source, 'show', PIN + ':core-tests/src/core/base.cpp']).decode()
             selected = ['dec2hex', 'hex2dec', 'version_compare', 'common_divisor', 'common_multiple', 'dirname', 'itoa', 'type_size']
             bodies = []
@@ -102,28 +88,25 @@ def main():
             original_driver.write_text('#include "swoole.h"\n#include "swoole_protocol.h"\n#include <cstdlib>\n#include <cstring>\nusing namespace swoole;\n#define TEST(group,name) void test_##name()\n#define ASSERT_EQ(a,b) do { if (!((a)==(b))) std::abort(); } while(0)\n#define ASSERT_STREQ(a,b) do { if (std::strcmp((a),(b)) != 0) std::abort(); } while(0)\n' + '\n'.join(bodies) + '\nint main(){SwooleG.std_allocator={malloc,calloc,realloc,free};' + ''.join('test_' + n + '();' for n in selected) + '}\n')
             report['original_test_cases'] = selected
             report['allocation_gate'] = 'Standard strndup interposition: one allocation, exact length/NUL, reentrant helper call, ENOMEM/null, retry; both engines'
-            if args.archive:
-                archive = args.archive.resolve()
-            else:
-                (work / 'Cargo.toml').write_text('[workspace]\n[package]\nname="corebase-gate"\nversion="0.1.0"\nedition="2024"\n[dependencies]\nitoa="=1.0.18"\nlibc="=0.2.191"\n[lib]\nname="swoole_rs_corebase"\ncrate-type=["staticlib"]\npath=' + json.dumps(str(ROOT / 'crates/corebase/src/lib.rs')) + '\n')
-                run(['cargo', 'build', '--offline', '--release', '--manifest-path', work / 'Cargo.toml'])
-                archive = work / 'target/release/libswoole_rs_corebase.a'
-            flags = ['-std=c++17', '-O2', '-ffunction-sections', '-fdata-sections', '-DHAVE_CONFIG_H', '-I' + str(source), '-I' + str(source / 'include')]
-            flags += ['-I' + str(i.resolve()) for i in args.include]
+            archive = args.archive.resolve()
+            common = ['-std=c++17', '-O2', '-ffunction-sections', '-fdata-sections']
+            common += ['-I' + str(i.resolve()) for i in args.include]
             if args.unsigned_char:
-                flags += ['-funsigned-char']
+                common += ['-funsigned-char']
             elif args.signed_char:
-                flags += ['-fsigned-char']
+                common += ['-fsigned-char']
             report['native_char_mode'] = 'unsigned' if args.unsigned_char else ('signed' if args.signed_char else 'compiler default')
             if args.sanitize:
-                flags += ['-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer']
+                common += ['-g', '-fsanitize=address,undefined', '-fno-omit-frame-pointer']
             link = ['-Wl,-dead_strip'] if platform.system() == 'Darwin' else ['-Wl,--gc-sections', '-ldl', '-lpthread', '-lm']
             outputs = {}
+            pinned_flags = ['-DHAVE_CONFIG_H', '-I' + str(source), '-I' + str(source / 'include')]
             for engine, body in [('original', original), ('rust', patched)]:
                 src = work / (engine + '.cc');src.write_bytes(body)
                 obj = work / (engine + '.o');binary = work / engine
-                extra = ['-DSWOOLE_RS_COREBASE', '-I' + str(ROOT / 'native/corebase')] if engine == 'rust' else []
-                run(['c++', *flags, *extra, '-c', src, '-o', obj])
+                # Each engine's TUs build from its own tree: the pin, or the hybrid build.
+                flags = [*common, *(hybrid_flags if engine == 'rust' else pinned_flags)]
+                run(['c++', *flags, '-c', src, '-o', obj])
                 run(['c++', *flags, ROOT / 'tests/modules/corebase/driver.cc', obj, *([archive] if engine == 'rust' else []), *link, '-o', binary])
                 report.setdefault('actual_calls', {})[engine] = prove_calls(binary,
                     ['type_size', 'gcd', 'lcm', 'parse_stoi', 'itoa', 'radix', 'hex_mode', 'version', 'dirname'],

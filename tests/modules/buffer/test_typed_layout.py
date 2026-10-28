@@ -1,9 +1,9 @@
-"""Compile the patched Buffer header with SWOOLE_RS_BUFFER_TYPED omitted/0/1 and check its layout."""
+"""Compile the hybrid build's Buffer header with SWOOLE_RS_BUFFER_TYPED omitted/0/1 and check its layout."""
 import subprocess
 
 import pytest
 
-from native import INCLUDES, patch
+from tools.build_hybrid import hybrid_tree
 
 PROBE = '''#include "swoole.h"
 #include "swoole_buffer.h"
@@ -28,13 +28,13 @@ def carrier(text):
 
 
 @pytest.mark.parametrize('standard', ['c++14', 'c++17', 'c++20'])
-def test_layout(pinned, standard):
-    tree = pinned('include')
-    patch(tree, 1)
+def test_layout(archive, standard):
+    _, flags = hybrid_tree(archive)
+    flags = [flag for flag in flags if flag != '-DSWOOLE_RS_BUFFER_TYPED']
     declarations = {}
     for enabled in [None, 0, 1]:
         text = PROBE.format(size=8 if enabled == 1 else 56)
-        command = ['c++', '-std=' + standard, '-DSWOOLE_RS_BUFFER=1', '-I' + str(tree / 'include'), *INCLUDES]
+        command = ['c++', '-std=' + standard, *flags]
         if enabled is not None:
             command += ['-DSWOOLE_RS_BUFFER_TYPED=' + str(enabled)]
         result = subprocess.run(command + ['-fsyntax-only', '-x', 'c++', '-'], input=text, capture_output=True, text=True)
