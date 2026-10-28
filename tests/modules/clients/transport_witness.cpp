@@ -9,6 +9,8 @@
 #include <functional>
 #include <sstream>
 #include <stdexcept>
+#include <exception>
+#include <memory>
 #include <iostream>
 #include "swoole_rs_clients.h"
 #define SW_OK 0
@@ -52,12 +54,20 @@ static int swoole_event_write(Socket*,const char*,size_t length){observe("event-
 // DECLARATIONS
 namespace BODY_NAMESPACE {
 struct Client {
-    // The patched bodies reach the flags through the Client accessors (#447).
-    bool is_active() const{return active;} void set_active(bool v){active=v;} bool is_async() const{return async;}
-    bool *field(uint32_t f){return f==SWR_CLIENTS_WAIT_DNS?&wait_dns:f==SWR_CLIENTS_ONERROR_CALLED?&onerror_called:&active;}
-    bool flag(uint32_t f) const{return *const_cast<Client*>(this)->field(f);} void set_flag(uint32_t f,bool v){*field(f)=v;}
+#ifdef SELECTED_STATE
+    // The selected Client's flags are Rust's (#447); scenarios set and read them the same way.
+    std::unique_ptr<swr_v1_clients_state,decltype(&swr_v1_clients_state_free)> state_{swr_v1_clients_state_new(false),swr_v1_clients_state_free};
+    bool flag(uint32_t f) const{return swr_v1_clients_flag(state_.get(),f);}
+    void set_flag(uint32_t f,bool v){swr_v1_clients_set_flag(state_.get(),f,v);}
+#else
+    bool async=false,wait_dns=false,active=false,onerror_called=false;
+    bool *field(uint32_t f){return f==SWR_CLIENTS_ASYNC?&async:f==SWR_CLIENTS_WAIT_DNS?&wait_dns:f==SWR_CLIENTS_ONERROR_CALLED?&onerror_called:&active;}
+    bool flag(uint32_t f) const{return *const_cast<Client*>(this)->field(f);}
+    void set_flag(uint32_t f,bool v){*field(f)=v;}
+#endif
+    bool is_active() const{return flag(SWR_CLIENTS_ACTIVE);} void set_active(bool v){set_flag(SWR_CLIENTS_ACTIVE,v);} bool is_async() const{return flag(SWR_CLIENTS_ASYNC);}
     Socket *socket=nullptr;Address server_addr;
-    bool async=false,wait_dns=false,active=false,open_ssl=false,onerror_called=false,high_watermark=false;
+    bool open_ssl=false,high_watermark=false;
     int sock_flags_=9;size_t buffer_high_watermark=4;
     std::function<void(Client*)> onReceive,onError,onConnect,onBufferFull;
     bool *destroyed=nullptr;
@@ -74,9 +84,9 @@ static void execute_onConnect(Client*cli){observe("on-connect");cli->onConnect(c
 static std::string run(unsigned bits,unsigned scenario,unsigned outcome,unsigned mode,int udp_connect){
     effects.clear();effect_hook={};bool destroyed=false;Socket first,second;second.fd=99;first.output_length=outcome%3?3:9;second.output_length=9;
     first.socket_type=bits&64?SW_SOCK_UNIX_DGRAM:1;
-    auto *cli=new Client;cli->destroyed=&destroyed;cli->socket=&first;cli->async=bits&1;cli->wait_dns=bits&8;cli->open_ssl=bits&32;cli->high_watermark=bits&512;
+    auto *cli=new Client;cli->destroyed=&destroyed;cli->socket=&first;cli->set_flag(SWR_CLIENTS_ASYNC,bits&1);cli->set_flag(SWR_CLIENTS_WAIT_DNS,bits&8);cli->open_ssl=bits&32;cli->high_watermark=bits&512;
     address_result=scenario==1?-1:0;connect_result=int(outcome%3)-1;bind_result=outcome%2?-1:0;event_result=outcome<3?-1:7;ssl_result=int(outcome%3)-1;dns_result=outcome<3?-1:9;write_result=outcome%2?-1:0;last_error=outcome>=3?SW_ERROR_OUTPUT_BUFFER_OVERFLOW:73;
-    probe=[&]{if(destroyed)return std::string("deleted");std::ostringstream s;s<<cli->async<<cli->wait_dns<<cli->active<<cli->open_ssl<<cli->onerror_called<<cli->high_watermark<<":"<<cli->sock_flags_<<":"<<first.removed<<":"<<second.removed<<":"<<(cli->socket==&second)<<":"<<first.info.addr.un.sun_path;return s.str();};
+    probe=[&]{if(destroyed)return std::string("deleted");std::ostringstream s;s<<cli->flag(SWR_CLIENTS_ASYNC)<<cli->flag(SWR_CLIENTS_WAIT_DNS)<<cli->flag(SWR_CLIENTS_ACTIVE)<<cli->open_ssl<<cli->flag(SWR_CLIENTS_ONERROR_CALLED)<<cli->high_watermark<<":"<<cli->sock_flags_<<":"<<first.removed<<":"<<second.removed<<":"<<(cli->socket==&second)<<":"<<first.info.addr.un.sun_path;return s.str();};
     auto callback=[&](Client*c,const std::string&name){observe("callback:"+name);
         if(scenario==2){c->open_ssl=false;c->close();}
         if(scenario==3)throw std::runtime_error("native callback");
@@ -89,9 +99,9 @@ static std::string run(unsigned bits,unsigned scenario,unsigned outcome,unsigned
     if(bits&256)cli->onBufferFull=[&](Client*c){callback(c,"full");};
     effect_hook=[&](const std::string&name){
         if(scenario==5&&name=="write"){cli->socket=&second;cli->high_watermark=true;}
-        if(scenario==6&&name=="close"){cli->onError={};cli->async=false;}
-        if(scenario==7&&name=="dtls"){cli->async=false;cli->onConnect={};}
-        if(scenario==8&&name=="timeout"){cli->async=!cli->async;cli->wait_dns=!cli->wait_dns;cli->onReceive={};}
+        if(scenario==6&&name=="close"){cli->onError={};cli->set_flag(SWR_CLIENTS_ASYNC,false);}
+        if(scenario==7&&name=="dtls"){cli->set_flag(SWR_CLIENTS_ASYNC,false);cli->onConnect={};}
+        if(scenario==8&&name=="timeout"){cli->set_flag(SWR_CLIENTS_ASYNC,!cli->flag(SWR_CLIENTS_ASYNC));cli->set_flag(SWR_CLIENTS_WAIT_DNS,!cli->flag(SWR_CLIENTS_WAIT_DNS));cli->onReceive={};}
         if(scenario==9&&name=="buffer-size"){cli->socket=&second;cli->open_ssl=false;}
     };
     ssize_t result=17;std::string exception;

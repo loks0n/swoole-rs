@@ -46,7 +46,7 @@ def main():
       }
       std::cout<<count<<"\n";
     }'''
-    cpp.write_text(prelude+facade.replace('BODY_NAMESPACE','native').replace('// ACTUAL_BODY',native)+facade.replace('BODY_NAMESPACE','rust').replace('// ACTUAL_BODY',rust)+driver)
+    cpp.write_text(prelude+facade.replace('BODY_NAMESPACE','native').replace('// ACTUAL_BODY',native)+'#define SELECTED_STATE\n'+facade.replace('BODY_NAMESPACE','rust').replace('// ACTUAL_BODY',rust)+driver)
     flags=['-fsanitize=address,undefined','-fno-omit-frame-pointer'] if a.sanitize else []
     variants=[];cases=0
     for dtls in [False,True]:
