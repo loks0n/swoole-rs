@@ -2,7 +2,6 @@
 """Successful TLS frontend call-order models and scalar metadata; no crypto/filesystem/failure/SNI/lifetime/stopped execution."""
 from pathlib import Path
 import sys
-import overlay
 from count import main,accessor
 
 
@@ -16,9 +15,9 @@ def extract(text,signature):
     return 'static void tls_prefix(TlsPort *port, HashTable *vht) {\n    zval *ztmp = nullptr;\n'+text[start:end]+'}\n'
 
 
-def support(folder,args):
-    raw=overlay.original('include/swoole.h');p=folder/'bounds.inc';p.write_text('\n'.join(line for line in raw.splitlines()if line.startswith(('#define SW_MAX(', '#define SW_MIN(')))+'\n')
-    return {'scope':'Only pinned bound macros; native TLS/filesystem outcomes are supplied as successful facts'}
+def support(folder,args,read):
+    raw=read('include/swoole.h');p=folder/'bounds.inc';p.write_text('\n'.join(line for line in raw.splitlines()if line.startswith(('#define SW_MAX(', '#define SW_MIN(')))+'\n')
+    return {'scope':'Only each side\'s bound macros; native TLS/filesystem outcomes are supplied as successful facts'}
 
 
 if __name__=='__main__':

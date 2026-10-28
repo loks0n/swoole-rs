@@ -106,7 +106,7 @@ int main(){try{
   check(old.try_serve_index_file()==selected.try_serve_index_file(),"real index path selection");
   check(old.get_dir_files()==selected.get_dir_files(),"directory context scan");
   check(old.get_dir_files()==selected.get_dir_files(),"directory context cache");
-  IndexBuffer left(capacity),right(capacity);check(old.make_index_page(&left)==selected.make_index_page(&right),"directory context page length");
+  upstream_context::IndexBuffer left(capacity);candidate_context::IndexBuffer right(capacity);check(old.make_index_page(&left)==selected.make_index_page(&right),"directory context page length");
   check(left.storage==right.storage&&left.length==right.length&&left.size==right.size&&left.offset==right.offset&&left.events==right.events,"directory page bytes/native buffer effects");
   check(old.make_index_page(&left)==selected.make_index_page(&right),"repeated directory context page length");
   check(left.storage==right.storage&&left.length==right.length&&left.size==right.size&&left.offset==right.offset&&left.events==right.events,"repeated directory page bytes/native buffer effects");

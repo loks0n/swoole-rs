@@ -1,5 +1,7 @@
 // Exact pinned/selected accessor bodies; only external native storage is supplied.
+#ifdef PORTS_DRIVER
 #include "swoole_rs_ports.h"
+#endif
 #include <atomic>
 #include <cassert>
 #include <cstdint>
@@ -13,17 +15,17 @@ static_assert(alignof(std::atomic<uint32_t>) == alignof(uint32_t), "counter alig
 using sw_atomic_t = volatile uint32_t;
 struct SharedCounters { sw_atomic_t connection_num; sw_atomic_t *connection_nums; };
 struct Server { uint32_t worker_num; };
-static Server server;
-static uint64_t server_reads;
-static Server *sw_server() { ++server_reads; return &server; }
-namespace original {
-struct ListenPort { SharedCounters *gs; size_t get_connection_num() const; };
-#include "original.inc"
+// One instance shared by both translation units.
+inline Server server;
+inline uint64_t server_reads;
+inline Server *sw_server() { ++server_reads; return &server; }
+namespace original { struct ListenPort { SharedCounters *gs; size_t get_connection_num() const; }; }
+namespace selected { struct ListenPort { SharedCounters *gs; size_t get_connection_num() const; }; }
+// Each side's body in its own translation unit; the selected one also holds the driver.
+namespace PORTS_SIDE {
+#include "body.inc"
 }
-namespace selected {
-struct ListenPort { SharedCounters *gs; size_t get_connection_num() const; };
-#include "selected.inc"
-}
+#ifdef PORTS_DRIVER
 
 int main() {
     uint64_t cases=0, state=0x706f727473;
@@ -59,3 +61,4 @@ int main() {
     }
     std::cout<<"connection-count "<<cases<<" exact-body and direct-ABI cases PASS\n";
 }
+#endif
