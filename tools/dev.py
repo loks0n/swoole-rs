@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 from datetime import datetime, timezone
+from fnmatch import fnmatchcase
 import json
 import os
 from pathlib import Path
@@ -1088,7 +1089,7 @@ def main():
     parser.add_argument('--expect', help='Observable outcome that supports the hypothesis')
     parser.add_argument('--benchmark', action='store_true', help='Run isolated benchmarks after all correctness phases pass')
     parser.add_argument('--compare', action='store_true', help='Also rerun upstream controls in the candidate lane (integration always does)')
-    parser.add_argument('--phase', action='append', help='Run named canonical phases only; omitted gates remain explicitly not run and cannot qualify full integration')
+    parser.add_argument('--phase', action='append', help='Run named canonical phases (or fnmatch patterns) only; omitted gates remain explicitly not run and cannot qualify full integration')
     parser.add_argument('--with-prerequisites', action='store_true',
                         help='Add the phases each --phase needs: the reports it reads and the builds it uses')
     parser.add_argument('--phase-timeout', type=int, default=1200, metavar='SECONDS',
@@ -1135,6 +1136,10 @@ def main():
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S') + '-' + uuid.uuid4().hex[:8]
     reports = ROOT / 'target/reports/dev' / stamp
     planned = plan(args, reports)
+    if args.phase:
+        # A pattern (`--phase 'halfclose-*'`) names every planned phase it matches.
+        args.phase = [match for pattern in args.phase
+                      for match in ([name for name, _ in planned if fnmatchcase(name, pattern)] or [pattern])]
     if args.phase and args.with_prerequisites:
         args.phase = with_prerequisites(planned, args.phase)
     if args.phase:

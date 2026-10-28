@@ -233,6 +233,34 @@ jobs:
           name: phpt-stdext
           path: phpt-stdext.json
 
+  # The opt-in --fix-halfclose repair (M15) is its own build variant, so its gates run
+  # here; full-gates builds without it.
+  halfclose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/install
+      - uses: actions/cache/restore@v4
+        with:
+          path: target/upstream
+          key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
+      - if: hashFiles('target/upstream/src/run-tests.php') == ''
+        run: python3 tools/build_upstream.py
+      - uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-
+      - run: cargo fetch --locked
+      - run: python3 tools/dev.py integrate --fix-halfclose --php-extension sockets --phase 'halfclose-*' --with-prerequisites
+      # tools/ci.py reads phases* artifacts for new and fixed phases.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phases-halfclose
+          path: target/reports/dev/*/loop.json
+
   phpt:
     needs: phpt-build
     runs-on: ubuntu-24.04

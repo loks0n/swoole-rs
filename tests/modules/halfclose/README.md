@@ -8,6 +8,14 @@ incomplete TLS close_notify, keeps sendfile ownership across EINTR, and ignores
 cached read events after close is queued. See the
 [native contract](../../../native/halfclose/contract.md).
 
+The merge tier's `halfclose` job runs every phase below:
+`python3 tools/dev.py integrate --fix-halfclose --php-extension sockets --phase 'halfclose-*' --with-prerequisites`.
+
+Gate audit (#480): all 13 phases are kept. Each checks the repair's behavior, which
+upstream lacks, so no original PHPT, Rust test or fuzz target can cover it.
+`halfclose-pause-originals` runs `client_close_in_writable_event.phpt` against the
+repaired build. The PHPT gate runs it only on the unrepaired hybrid.
+
 ## PHP server gates
 
 Each takes one or more `--engine NAME=/absolute/modules/swoole.so`. On Linux add

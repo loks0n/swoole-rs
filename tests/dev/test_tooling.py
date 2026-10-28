@@ -1125,6 +1125,16 @@ class FocusedPhases(unittest.TestCase):
                 run.assert_not_called()
                 self.assertFalse((root / 'target').exists())
 
+    def test_phase_patterns_select_every_matching_phase(self):
+        import contextlib
+        import io
+        planned = [('halfclose-a', ['a']), ('other', ['o']), ('halfclose-b', ['b'])]
+        output = io.StringIO()
+        with patch.object(dev, 'plan', return_value=planned), contextlib.redirect_stdout(output), \
+             patch('sys.argv', ['dev.py', 'integrate', '--phase', 'halfclose-*', '--plan']):
+            dev.main()
+        self.assertEqual([row['phase'] for row in json.loads(output.getvalue())], ['halfclose-a', 'halfclose-b'])
+
     def test_selecting_every_phase_still_does_not_claim_complete_plan(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

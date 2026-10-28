@@ -25,8 +25,11 @@ class PhaseTimeout(unittest.TestCase):
             self.assertLess(time.monotonic() - started, 10)
             grandchild = int(pid_file.read_text())
             time.sleep(0.2)
-            with self.assertRaises(ProcessLookupError):
-                os.kill(grandchild, 0)
+            # Killed but unreaped (a zombie) counts as gone: not every container's init reaps orphans.
+            stat = Path(f'/proc/{grandchild}/stat')
+            if not (stat.exists() and stat.read_text().rpartition(')')[2].split()[0] == 'Z'):
+                with self.assertRaises(ProcessLookupError):
+                    os.kill(grandchild, 0)
 
     def run_main(self, planned, *extra, execute=None):
         with tempfile.TemporaryDirectory() as directory:
