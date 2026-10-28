@@ -233,6 +233,10 @@ jobs:
           name: phpt-stdext
           path: phpt-stdext.json
 
+  # The --enable-iouring --enable-uring-socket build variant and its PHPTs.
+  iouring:
+    uses: ./.github/workflows/iouring.yml
+
   # The opt-in --fix-halfclose repair (M15) is its own build variant, so its gates run
   # here; full-gates builds without it.
   halfclose:
