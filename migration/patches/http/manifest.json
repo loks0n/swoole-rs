@@ -17,9 +17,16 @@
     },
     {
       "path": "0003-static-inline.patch",
-      "sha256": "17a554fe8e0ded4b36c584c2800e245292061c6638314c430aab9033f4eb5713",
+      "sha256": "e3fcc1d0d92442f7f036c8de87aaacb59aa7eee35bc04e41439c06e899b1126c",
       "upstream_paths": [
         "include/swoole_static_handler.h"
+      ]
+    },
+    {
+      "path": "0004-http2-static.patch",
+      "sha256": "233ec107708552c85b49ed2f048e4d120b0d42820f8193c4a53c8976ae384d95",
+      "upstream_paths": [
+        "ext-src/swoole_http2_server.cc"
       ]
     }
   ]

@@ -13,6 +13,7 @@
       "depends_on": [],
       "owned_paths": [
         "crates/ffi/",
+        "crates/server/",
         "crates/zend-sys/",
         "crates/zend/",
         "native/include/",
@@ -442,6 +443,7 @@
       ],
       "owned_paths": [
         "crates/locks/",
+        "crates/phplocks/",
         "native/locks/",
         "migration/patches/locks/",
         "tests/modules/locks/"

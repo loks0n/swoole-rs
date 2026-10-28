@@ -388,10 +388,12 @@ dependencies = [
  "swoole-rs-phpcoroutines",
  "swoole-rs-phpevents",
  "swoole-rs-phphelpers",
+ "swoole-rs-phplocks",
  "swoole-rs-ports",
  "swoole-rs-process",
  "swoole-rs-protocols",
  "swoole-rs-reactor",
+ "swoole-rs-server",
  "swoole-rs-timer",
  "swoole-rs-tls",
  "swoole-rs-utilities",
@@ -475,6 +477,14 @@ name = "swoole-rs-phphelpers"
 version = "0.1.0"
 
 [[package]]
+name = "swoole-rs-phplocks"
+version = "0.1.0"
+dependencies = [
+ "swoole-rs-locks",
+ "swoole-rs-zend",
+]
+
+[[package]]
 name = "swoole-rs-ports"
 version = "0.1.0"
 
@@ -495,6 +505,13 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "swoole-rs-buffer",
+]
+
+[[package]]
+name = "swoole-rs-server"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
