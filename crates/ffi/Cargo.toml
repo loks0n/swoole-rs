@@ -10,6 +10,8 @@ crate-type = ["staticlib"]
 
 [features]
 default = []
+# The graduated modules' PHP classes (Swoole\Timer); every hybrid build has PHP.
+php = ["dep:swoole-rs-phptimer", "swoole-rs-phptimer/php"]
 
 memory = ["dep:swoole-rs-memory"]
 
@@ -52,6 +54,7 @@ swoole-rs-http = { path = "../http" }
 swoole-rs-utilities = { path = "../utilities", optional = true }
 swoole-rs-locks = { path = "../locks", optional = true }
 swoole-rs-phplocks = { path = "../phplocks", optional = true }
+swoole-rs-phptimer = { path = "../phptimer", optional = true }
 swoole-rs-wrappers = { path = "../wrappers", optional = true }
 swoole-rs-framing = { path = "../framing" }
 swoole-rs-server = { path = "../server" }
