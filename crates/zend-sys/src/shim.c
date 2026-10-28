@@ -17,65 +17,8 @@ void swr_zend_class_set_create_object(zend_class_entry *ce,
     ce->create_object = create;
 }
 
-zend_string *swr_zend_string_alloc(size_t length) {
-    return zend_string_alloc(length, 0);
-}
-
-void swr_zend_set_stringl(zval *target, const char *bytes, size_t length) {
-    ZVAL_STRINGL(target, bytes, length);
-}
-
-void swr_zend_set_str(zval *target, zend_string *string) {
-    ZVAL_STR(target, string);
-}
-
 void swr_zend_array_init(zval *target) {
     array_init(target);
-}
-
-void swr_zend_object_release(zend_object *object) {
-    OBJ_RELEASE(object);
-}
-
-void swr_zend_object_addref(zend_object *object) {
-    GC_ADDREF(object);
-}
-
-bool swr_zend_parse_arg_func(zval *arg, uint32_t num) {
-    zend_fcall_info fci;
-    zend_fcall_info_cache fcc;
-    char *error = NULL;
-#ifdef Z_PARAM_FUNC_NO_TRAMPOLINE_FREE
-    if (zend_parse_arg_func(arg, &fci, &fcc, 0, &error, 1)) {
-#else
-    if (zend_parse_arg_func(arg, &fci, &fcc, 0, &error)) {
-#endif
-        return 1;
-    }
-    zend_wrong_parameter_error(error ? ZPP_ERROR_WRONG_CALLBACK : ZPP_ERROR_WRONG_ARG, num, error, Z_EXPECTED_FUNC, arg);
-    return 0;
-}
-
-void swr_zend_hash_foreach(const HashTable *table, bool (*each)(zval *value, void *context), void *context) {
-    zval *value;
-    ZEND_HASH_FOREACH_VAL((HashTable *) table, value) {
-        if (!each(value, context)) {
-            break;
-        }
-    }
-    ZEND_HASH_FOREACH_END();
-}
-
-bool swr_zend_module_loaded(const char *name, size_t length) {
-    return zend_hash_str_find(&module_registry, name, length) != NULL;
-}
-
-zend_long swr_zval_get_long(const zval *value) {
-    return zval_get_long(value);
-}
-
-void swr_zend_string_free(zend_string *string) {
-    efree(string);
 }
 
 void *swr_zend_emalloc(size_t size) {
@@ -117,6 +60,46 @@ int swr_zend_register_class_alias(const char *name, size_t length, zend_class_en
     return zend_register_class_alias_ex(ZSTR_VAL(alias), ZSTR_LEN(alias), ce, 1);
 }
 
-bool swr_zend_is_true(const zval *value) {
-    return zend_is_true((zval *) value);
+int swr_zend_try(void (*body)(void *), void *arg) {
+    volatile int bailed = 0;
+    zend_try {
+        body(arg);
+    }
+    zend_catch {
+        bailed = 1;
+    }
+    zend_end_try();
+    return bailed;
+}
+
+typedef struct {
+    zend_fcall_info *fci;
+    zend_fcall_info_cache *fcc;
+    zend_result result;
+} swr_zend_call;
+
+static void swr_zend_call_body(void *arg) {
+    swr_zend_call *call = arg;
+    call->result = zend_call_function(call->fci, call->fcc);
+}
+
+int swr_zend_try_call(zend_fcall_info *fci, zend_fcall_info_cache *fcc, int *result) {
+    swr_zend_call call = {fci, fcc, FAILURE};
+    int bailed = swr_zend_try(swr_zend_call_body, &call);
+    *result = call.result == SUCCESS;
+    return bailed;
+}
+
+int swr_zend_parse_func(zval *arg, uint32_t number, zend_fcall_info *fci, zend_fcall_info_cache *fcc) {
+    char *error = NULL;
+#if PHP_VERSION_ID >= 80400
+    if (zend_parse_arg_func(arg, fci, fcc, 0, &error, 1)) {
+#else
+    if (zend_parse_arg_func(arg, fci, fcc, 0, &error)) {
+#endif
+        return 1;
+    }
+    zend_wrong_parameter_error(error ? ZPP_ERROR_WRONG_CALLBACK : ZPP_ERROR_WRONG_ARG, number, error,
+                               Z_EXPECTED_FUNC, arg);
+    return 0;
 }

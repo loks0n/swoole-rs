@@ -32,7 +32,12 @@ mod php {
     }
 
     pub(super) fn bind() {
-        for file in ["src/shim.h", "src/shim.c"] {
+        for file in [
+            "src/shim.h",
+            "src/shim.c",
+            "src/shim_values.h",
+            "src/shim_values.c",
+        ] {
             println!("cargo::rerun-if-changed={file}");
         }
         let includes = includes();
@@ -59,6 +64,7 @@ mod php {
             .expect("zend-sys: write bindings");
         cc::Build::new()
             .file("src/shim.c")
+            .file("src/shim_values.c")
             .includes(&includes)
             .warnings(true)
             .compile("swoole_rs_zend_shim");

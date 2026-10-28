@@ -11,8 +11,8 @@ python3 -m pytest 'tests/modules/buffer/string/test_gate.py::test_profile[format
 ```
 
 `tools/dev.py` runs each profile as the phase `string-<profile>`. Each compiles
-pinned `string.cc`, `base.cc`, `os/base.cc` and `base64.cc` (`string_build.py`)
-for upstream and for the patched Rust engine, checks the Rust symbols in the
+`string.cc`, `base.cc`, `os/base.cc` and `base64.cc` (`string_build.py`) from the
+pin for upstream and from the hybrid build's tree for the Rust engine, checks the Rust symbols in the
 linked binary and runs the consumer.
 
 | Profile | Checks |

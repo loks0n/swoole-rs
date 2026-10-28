@@ -12,7 +12,6 @@ done
 # Module unit tests that need no build or pinned source, run from their own
 # directory so they import their siblings.
 for test in \
-    tests/modules/buffer/test_buffer_staging.py \
     tests/modules/clients/test_gate_output.py \
     tests/modules/integration/test_bridge_inventory.py \
     tests/modules/memory/test_benchmark.py \

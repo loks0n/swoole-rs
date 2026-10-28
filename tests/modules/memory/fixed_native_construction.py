@@ -12,7 +12,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0,str(ROOT))
-from tools.build_hybrid import apply_patch_verified
+from tools.build_hybrid import hybrid_tree
 from tools.harness import run_isolated
 from tools.build_upstream import COMMIT as PIN
 SOURCE='src/memory/fixed_pool.cc'
@@ -24,7 +24,6 @@ def sha(path):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--source',type=Path,required=True)
     parser.add_argument('--archive',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--cxx',default='c++')
@@ -38,18 +37,14 @@ def main():
     try:
         archive=args.archive.resolve(strict=True)
         report['archive_sha256']=sha(archive)
-        report['source_sha256']={str(p.relative_to(ROOT)):sha(p) for p in [Path(__file__),Path(__file__).with_suffix('.cc'),ROOT/'native/memory/swoole_rs_memory.h']}
-        manifest=json.loads((ROOT/'migration/patches/memory/manifest.json').read_text())
-        assert manifest['upstream_commit']==PIN
-        entry=next(e for e in manifest['patches'] if SOURCE in e['upstream_paths'])
-        report['patch']=entry
-        def pinned(name):
-            return subprocess.check_output(['git','-C',str(args.source),'show',PIN+':'+name],timeout=20).decode()
+        report['source_sha256']={str(p.relative_to(ROOT)):sha(p) for p in [Path(__file__),Path(__file__).with_suffix('.cc')]}
+        # The hybrid build's FixedPool bodies and declarations, and its Rust headers.
+        hybrid,flags=hybrid_tree(archive)
+        report['hybrid_tree']=str(hybrid)
+        rust_headers=[flag for flag in flags if flag.startswith('-I') and flag!='-I'+str(hybrid/'include')]
         with tempfile.TemporaryDirectory(prefix='swr-fixed-native-') as temporary:
-            tree=Path(temporary);source=tree/SOURCE;source.parent.mkdir(parents=True)
-            source.write_text(pinned(SOURCE))
-            report['patch_application']=apply_patch_verified(tree,ROOT/'migration/patches/memory'/entry['path'],entry['upstream_paths'],entry['sha256'])
-            selected=source.read_text();header=pinned('include/swoole_memory.h')
+            tree=Path(temporary)
+            selected=(hybrid/SOURCE).read_text();header=(hybrid/'include/swoole_memory.h').read_text()
             declarations=header.split('namespace swoole {',1)[1].split('struct RingBufferImpl;',1)[0]
             bodies=selected.split('namespace swoole {',1)[1].rsplit('}  // namespace swoole',1)[0]
             model=tree/'fixed_native_construction_selected.inc'
@@ -59,7 +54,7 @@ def main():
                 binary=tree/standard
                 command=[*shlex.split(args.cxx),'-std='+standard,'-O1','-g','-Wall','-Wextra','-Werror',
                          '-Wno-unused-parameter','-fsanitize=address,undefined','-fno-omit-frame-pointer',
-                         '-I'+str(tree),'-I'+str(ROOT/'native/memory'),'-I'+str(ROOT/'native/include'),
+                         '-I'+str(tree),*rust_headers,
                          str(Path(__file__).with_suffix('.cc')),str(archive),'-lpthread','-ldl','-lm','-o',str(binary)]
                 for label,argv in [('compile',command),('inert-success',[str(binary)])]:
                     if label=='compile':
