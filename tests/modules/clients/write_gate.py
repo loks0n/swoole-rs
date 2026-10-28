@@ -28,7 +28,7 @@ def main():
         if path=='src/network/client.cc':original=text
     gate.apply_overlay(scratch,out);selected=(scratch/'src/network/client.cc').read_text()
     signature='static int Client_onWrite(Reactor *reactor, Event *event) {';native=gate.body(original,signature);rust=gate.body(selected,signature)
-    if native==rust or 'swr_v1_clients_write_next' not in rust:raise ValueError('No actual selected Rust writable caller')
+    if native==rust or 'swr_v1_clients_on_write' not in rust:raise ValueError('No actual selected Rust writable caller')
     template=(Path(__file__).with_name('write_witness.cpp')).read_text()
     prelude,facade=template.split('// DECLARATIONS: inserted once for each actual native/selected body.')
     facade=facade.split('// DRIVER')[0]
@@ -39,7 +39,7 @@ def main():
         if(expected!=actual){std::cerr<<"mismatch "<<bits<<":"<<scenario<<":"<<outcome<<"\n"<<expected<<"\n"<<actual<<"\n";return 1;}++count;
       }std::cout<<count<<"\n";
     }'''
-    cpp.write_text(prelude+facade.replace('BODY_NAMESPACE','native').replace('// ACTUAL_BODY',native)+facade.replace('BODY_NAMESPACE','rust').replace('// ACTUAL_BODY',rust)+driver)
+    cpp.write_text(prelude+facade.replace('BODY_NAMESPACE','native').replace('// ACTUAL_BODY',native)+'#define SELECTED_STATE\n'+facade.replace('BODY_NAMESPACE','rust').replace('// ACTUAL_BODY',rust)+driver)
     exe=out/'actual_write';flags=['-fsanitize=address,undefined','-fno-omit-frame-pointer'] if a.sanitize else []
     gate.run(['c++','-std=c++17','-O1',*flags,'-I',ROOT/'native/clients',cpp,archive,'-lpthread','-ldl','-lm','-o',exe]);cases=int(gate.run([exe]).strip())
     report=dict(passed=True,cases=cases,scope=__doc__,pin=gate.PIN,native_sanitized=a.sanitize,rust_sanitized=a.rust_sanitized)
