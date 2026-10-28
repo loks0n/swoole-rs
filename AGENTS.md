@@ -65,9 +65,12 @@ Rust.
 4. Close the issue with a note of what you checked, file follow-ups as
    `status:ready` sub-issues of the same goal, and repeat.
 
-Nobody needs to approve your next step, so keep the loop going on your own. For
-a real policy question, add `needs:decision` with your recommendation and work
-on something else until it's answered.
+Nobody needs to approve your next step, so keep the loop going on your own. When
+a question comes up, gather the data (read upstream, reproduce, measure) and make
+the call yourself; you're trusted to choose well, and the PR is where you explain
+the choice. `needs:decision` is only for exceptional cases: changing project policy,
+or a choice that's hard to undo and that the data can't settle. Then add your
+recommendation and work on something else until it's answered.
 
 **Upstream security bugs stay private.** This repo is public. A memory-safety bug
 or other likely vulnerability in upstream Swoole (or any dependency) never goes in
@@ -110,10 +113,9 @@ Use GitHub's own relationships, not comments or labels:
   of the blocker>`). An issue is blocked while any blocker is open and is
   unblocked by GitHub the moment the last one closes. Claimable issues, in claim
   order: `python3 tools/ci.py next`.
-- **Waiting on a decision:** add `needs:decision` and comment the question (a
-  policy change, an open design choice), after trying to settle it with data.
-  Whoever decides, the goal agent or a person, answers on the issue and removes
-  the label.
+- **Waiting on a decision:** rare (see Executor agents). Add `needs:decision`
+  with the evidence and a recommendation; the goal agent or a person answers on
+  the issue and removes the label.
 - **Waiting on a CI run or measurement:** make the issue that produces it the
   blocker, or file one.
 - **Goals:** a `kind:goal` issue's children are its sub-issues (`gh api -X POST
