@@ -28,6 +28,18 @@ else
     install "$@"
 fi
 [ -z "$APT_CACHE" ] || chmod -R a+rX "$APT_CACHE"
+# liburing for --enable-iouring builds and the io_uring crates. Upstream needs >= 2.8
+# and Ubuntu 24.04 ships 2.5, so build the release upstream's own CI installs
+# (scripts/install-liburing.sh) into /usr/local, where pkg-config and ld find it.
+if ! pkg-config --atleast-version=2.8 liburing 2>/dev/null; then
+    liburing=$(mktemp -d)
+    curl -fsSL --retry 5 -o "$liburing/src.tar.gz" https://github.com/axboe/liburing/archive/refs/tags/liburing-2.13.tar.gz
+    echo "618e34dbea408fc9e33d7c4babd746036dbdedf7fce2496b1178ced0f9b5b357  $liburing/src.tar.gz" | sha256sum -c -
+    tar -xzf "$liburing/src.tar.gz" -C "$liburing" --strip-components=1
+    (cd "$liburing" && ./configure --prefix=/usr/local >/dev/null && make -j"$(nproc)" install >/dev/null)
+    ldconfig
+    rm -rf "$liburing"
+fi
 # Locales some original PHPTs switch to.
 localedef -i en_US -f ISO-8859-1 en_US.ISO8859-1
 localedef -i tr_TR -f ISO-8859-9 tr_TR.ISO8859-9
