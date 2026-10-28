@@ -1,4 +1,4 @@
-//! Private `StaticHandlerV2` directory owner. No native container or name mirror.
+//! Private `StaticHandler` directory owner. No native container or name mirror.
 use crate::proxy::HttpProxyText;
 use crate::{HttpIndexPage, INVALID, bytes, swr_v1_http_index_page};
 use std::{

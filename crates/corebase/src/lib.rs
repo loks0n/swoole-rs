@@ -9,9 +9,16 @@
     )
 )]
 mod hook;
+mod host;
 mod lifecycle;
 mod random;
 pub use hook::swr_v1_corebase_hook_add_action;
+pub use host::{
+    DataHead, swr_v1_corebase_datahead_dump, swr_v1_corebase_dump_ascii, swr_v1_corebase_dump_hex,
+    swr_v1_corebase_microtime, swr_v1_corebase_print_backtrace, swr_v1_corebase_rand,
+    swr_v1_corebase_random_u64, swr_v1_corebase_redirect_stdout, swr_v1_corebase_shell_exec,
+    swr_v1_corebase_system_random, swr_v1_corebase_wait_for,
+};
 pub use lifecycle::{
     LifecycleState, swr_v1_corebase_init_next, swr_v1_corebase_lifecycle_next,
     swr_v1_corebase_task_tmp_next,

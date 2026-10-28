@@ -8,7 +8,6 @@ unsafe extern "C" {
     fn msgget(key: libc::key_t, flags: c_int) -> c_int;
     fn msgsnd(id: c_int, msg: *const c_void, size: usize, flags: c_int) -> c_int;
     fn msgrcv(id: c_int, msg: *mut c_void, size: usize, kind: c_long, flags: c_int) -> isize;
-    #[cfg(test)]
     fn msgctl(id: c_int, cmd: c_int, buf: *mut c_void) -> c_int;
 }
 
@@ -75,6 +74,13 @@ pub unsafe extern "C" fn swr_v1_os_msg_push(
             _ => return 2,
         }
     }
+}
+
+/// `MsgQueue::destroy`: `msgctl(id, IPC_RMID)`; false leaves errno for the warning.
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_os_msg_remove(id: c_int) -> bool {
+    // SAFETY: IPC_RMID takes no buffer.
+    unsafe { msgctl(id, libc::IPC_RMID, std::ptr::null_mut()) == 0 }
 }
 
 #[repr(C)]
@@ -179,8 +185,8 @@ mod tests {
             },
             "ENOMSG is quiet"
         );
-        // SAFETY: removes the private queue created above.
-        unsafe { msgctl(queue.id, libc::IPC_RMID, std::ptr::null_mut()) };
+        assert!(swr_v1_os_msg_remove(queue.id), "removed");
+        assert!(!swr_v1_os_msg_remove(queue.id), "already removed");
         let pop = unsafe { swr_v1_os_msg_pop(queue.id, (&raw mut got).cast(), 8, 3, flags) };
         assert_eq!(
             pop,

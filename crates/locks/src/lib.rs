@@ -340,14 +340,13 @@ pub unsafe extern "C" fn swr_v1_locks_destroy(storage: *mut c_void, kind: i32) {
 // Generic operations preserve unsigned/signed wrapping and __sync CAS/add/sub fences.
 // op: load=0, store=1, add-fetch=2, sub-fetch=3, compare-set=4 (expected last).
 macro_rules! atomic_api {
-    ($name:ident, $atomic:ty, $word:ty) => {
-        #[unsafe(no_mangle)]
-        pub unsafe extern "C" fn $name(
-            storage: *mut $word,
-            op: u32,
-            value: $word,
-            expected: $word,
-        ) -> $word {
+    ($name:ident, $rust:ident, $atomic:ty, $word:ty) => {
+        /// The operation itself, inlined into Rust callers (PHP Atomic) so a
+        /// constant `op` folds away.
+        /// # Safety
+        /// `storage` is null or a live word that is only accessed atomically.
+        #[inline]
+        pub unsafe fn $rust(storage: *mut $word, op: u32, value: $word, expected: $word) -> $word {
             if storage.is_null() || !(storage as usize).is_multiple_of(align_of::<$atomic>()) {
                 return 0;
             }
@@ -368,10 +367,23 @@ macro_rules! atomic_api {
                 _ => 0,
             }
         }
+
+        /// # Safety
+        /// As for the Rust function it wraps.
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(
+            storage: *mut $word,
+            op: u32,
+            value: $word,
+            expected: $word,
+        ) -> $word {
+            // SAFETY: per the caller.
+            unsafe { $rust(storage, op, value, expected) }
+        }
     };
 }
-atomic_api!(swr_v1_locks_atomic32, AtomicU32, u32);
-atomic_api!(swr_v1_locks_atomic64, AtomicI64, i64);
+atomic_api!(swr_v1_locks_atomic32, atomic32, AtomicU32, u32);
+atomic_api!(swr_v1_locks_atomic64, atomic64, AtomicI64, i64);
 
 // Barrier words follow the atomic API's contract; it rejects null and misaligned ones.
 #[unsafe(no_mangle)]

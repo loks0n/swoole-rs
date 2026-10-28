@@ -1,5 +1,5 @@
 diff --git a/src/core/base.cc b/src/core/base.cc
-index 202a6cb3e..cdd1de726 100644
+index 202a6cb..bbd072f 100644
 --- a/src/core/base.cc
 +++ b/src/core/base.cc
 @@ -17,4 +17,9 @@
@@ -12,7 +12,12 @@ index 202a6cb3e..cdd1de726 100644
  #include <cstdarg>
 +#include <cstdlib>
  #include <cassert>
-@@ -95,65 +100,95 @@ static void bug_report_message_init() {
+@@ -31,4 +36,2 @@
+ #include <set>
+-#include <chrono>
+-#include <random>
+ 
+@@ -95,65 +98,95 @@ static void bug_report_message_init() {
  void swoole_init() {
 -    if (SwooleG.init) {
 -        return;
@@ -164,7 +169,7 @@ index 202a6cb3e..cdd1de726 100644
 +        }
 +    }
  }
-@@ -191,19 +226,74 @@ SW_EXTERN_C_END
+@@ -191,19 +224,74 @@ SW_EXTERN_C_END
  
 -void swoole_clean() {
 -    SW_LOOP_N(SW_MAX_HOOK_TYPE) {
@@ -253,9 +258,23 @@ index 202a6cb3e..cdd1de726 100644
 +void swoole_clean() {
 +    corebase_lifecycle(SWR_COREBASE_CLEAN, SW_MAX_HOOK_TYPE);
  }
-@@ -249,2 +339,40 @@ bool swoole_set_task_tmpdir(const std::string &dir) {
+@@ -249,20 +337,38 @@ bool swoole_set_task_tmpdir(const std::string &dir) {
  
-+#ifdef SWOOLE_RS_COREBASE
+-    if (dir.at(0) != '/') {
+-        swoole_warning("wrong absolute path '%s'", dir.c_str());
+-        return false;
+-    }
+-
+-    if (access(dir.c_str(), R_OK) < 0 && !swoole_mkdir_recursive(dir)) {
+-        swoole_warning("create task tmp dir('%s') failed", dir.c_str());
+-        return false;
+-    }
+-
+-    SwooleG.task_tmpfile = dir + "/" SW_TASK_TMP_FILE;
+-
+-    if (SwooleG.task_tmpfile.length() >= SW_TASK_TMP_PATH_SIZE) {
+-        swoole_warning("task tmp_dir is too large, the max size is '%d'", SW_TASK_TMP_PATH_SIZE - 1);
+-        return false;
 +    swr_v1_corebase_lifecycle_state cursor{};
 +    uint64_t observed = 0;
 +    for (;;) {
@@ -291,14 +310,11 @@ index 202a6cb3e..cdd1de726 100644
 +        default:
 +            std::abort();
 +        }
-+    }
-+#else
-     if (dir.at(0) != '/') {
-@@ -267,2 +395,3 @@ bool swoole_set_task_tmpdir(const std::string &dir) {
-     return true;
-+#endif
+     }
+-
+-    return true;
  }
-@@ -274,14 +403,30 @@ std::string swoole_get_task_tmpdir() {
+@@ -274,14 +380,30 @@ std::string swoole_get_task_tmpdir() {
  
 +// Rust selects the sequence; all native effects and callbacks run after return.
 +// Pinned flag values are checked rather than silently translating a new ABI.
@@ -339,7 +355,7 @@ index 202a6cb3e..cdd1de726 100644
      }
 -    return pid;
  }
-@@ -289,62 +434,70 @@ pid_t swoole_fork_exec(const std::function<void(void)> &fn) {
+@@ -289,62 +411,70 @@ pid_t swoole_fork_exec(const std::function<void(void)> &fn) {
  pid_t swoole_fork(int flags) {
 -    if (!(flags & SW_FORK_EXEC)) {
 -        if (swoole_coroutine_is_in()) {
@@ -457,7 +473,7 @@ index 202a6cb3e..cdd1de726 100644
 -
 -    return pid;
  }
-@@ -356,9 +509,3 @@ bool swoole_is_main_thread() {
+@@ -356,9 +486,3 @@ bool swoole_is_main_thread() {
  void swoole_thread_init(bool main_thread) {
 -    if (!SwooleTG.buffer_stack) {
 -        SwooleTG.buffer_stack = new String(SW_STACK_BUFFER_SIZE);
@@ -468,7 +484,7 @@ index 202a6cb3e..cdd1de726 100644
 -    SwooleTG.main_thread = main_thread;
 +    corebase_lifecycle(SWR_COREBASE_THREAD_INIT, main_thread);
  }
-@@ -366,12 +513,3 @@ void swoole_thread_init(bool main_thread) {
+@@ -366,12 +490,3 @@ void swoole_thread_init(bool main_thread) {
  void swoole_thread_clean(bool main_thread) {
 -    if (SwooleTG.timer) {
 -        swoole_timer_free();
@@ -482,7 +498,29 @@ index 202a6cb3e..cdd1de726 100644
 -    }
 +    corebase_lifecycle(SWR_COREBASE_THREAD_CLEAN, 0);
  }
-@@ -415,6 +553,13 @@ bool swoole_mkdir_recursive(const std::string &dir) {
+@@ -379,6 +494,3 @@ void swoole_thread_clean(bool main_thread) {
+ void swoole_dump_ascii(const char *data, size_t size) {
+-    for (size_t i = 0; i < size; i++) {
+-        printf("%u ", (unsigned) data[i]);
+-    }
+-    printf("\n");
++    swr_v1_corebase_dump_ascii(data, size);
+ }
+@@ -398,12 +510,3 @@ void swoole_dump_bin(const uchar *data, char type, size_t size) {
+ void swoole_dump_hex(const uchar *data, size_t outlen) {
+-    for (size_t i = 0; i < outlen; ++i) {
+-        if ((i & 0x0fu) == 0) {
+-            printf("%08zX: ", i);
+-        }
+-        printf("%02X ", data[i]);
+-        if (((i + 1) & 0x0fu) == 0) {
+-            printf("\n");
+-        }
+-    }
+-    printf("\n");
++    swr_v1_corebase_dump_hex(data, outlen);
+ }
+@@ -415,6 +518,13 @@ bool swoole_mkdir_recursive(const std::string &dir) {
      char tmp[PATH_MAX];
 -    size_t len = dir.length();
 -
@@ -500,7 +538,7 @@ index 202a6cb3e..cdd1de726 100644
 +    }
 +    if (step == 2) {
          swoole_error_log(SW_LOG_WARNING,
-@@ -423,25 +568,4 @@ bool swoole_mkdir_recursive(const std::string &dir) {
+@@ -423,25 +533,4 @@ bool swoole_mkdir_recursive(const std::string &dir) {
                           PATH_MAX - 1);
 -        return false;
 -    }
@@ -527,7 +565,7 @@ index 202a6cb3e..cdd1de726 100644
 -    return true;
 +    return step == 0;
  }
-@@ -449,24 +573,3 @@ bool swoole_mkdir_recursive(const std::string &dir) {
+@@ -449,24 +538,3 @@ bool swoole_mkdir_recursive(const std::string &dir) {
  int swoole_type_size(char type) {
 -    switch (type) {
 -    case 'c':
@@ -553,7 +591,7 @@ index 202a6cb3e..cdd1de726 100644
 -    }
 +    return swr_v1_corebase_type_size(static_cast<uint8_t>(type));
  }
-@@ -475,16 +578,6 @@ char *swoole_dec2hex(ulong_t value, int base) {
+@@ -475,16 +543,6 @@ char *swoole_dec2hex(ulong_t value, int base) {
      assert(base > 1 && base < 37);
 -
 -    static char digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
@@ -573,7 +611,7 @@ index 202a6cb3e..cdd1de726 100644
 +    if (first == SIZE_MAX) return nullptr;
 +    return sw_strndup(buf + first, sizeof(buf) - first - 1);
  }
-@@ -492,26 +585,3 @@ char *swoole_dec2hex(ulong_t value, int base) {
+@@ -492,53 +550,13 @@ char *swoole_dec2hex(ulong_t value, int base) {
  ulong_t swoole_hex2dec(const char *hex, size_t *parsed_bytes) {
 -    size_t value = 0;
 -    *parsed_bytes = 0;
@@ -601,50 +639,51 @@ index 202a6cb3e..cdd1de726 100644
 -    return value;
 +    return swr_v1_corebase_hex_mode(hex, parsed_bytes, static_cast<char>(-1) < 0);
  }
-@@ -524,21 +594,26 @@ int swoole_system_random(int min, int max) {
-     static int dev_random_fd = -1;
+ 
+-#ifndef RAND_MAX
+-#define RAND_MAX 2147483647
+-#endif
+-
+ int swoole_system_random(int min, int max) {
+-    static int dev_random_fd = -1;
 -    unsigned random_value;
 -
-+    unsigned random_value = 0;
-+    bool read_complete = false;
      assert(max > min);
 -
 -    if (dev_random_fd == -1) {
 -        dev_random_fd = open("/dev/urandom", O_RDONLY);
 -        if (dev_random_fd < 0) {
 -            return swoole_rand(min, max);
-+    swr_v1_corebase_random_state state{};
-+    for (;;) {
-+        const uint32_t flags = (dev_random_fd >= 0 ? 1u : 0u) | (read_complete ? 2u : 0u);
-+        switch (swr_v1_corebase_random_next(&state, SWR_COREBASE_RANDOM_SYSTEM,
-+                                          flags, 0, random_value, min, max)) {
-+        case SWR_COREBASE_RANDOM_OPEN:
-+            dev_random_fd = open("/dev/urandom", O_RDONLY);
-+            break;
-+        case SWR_COREBASE_RANDOM_READ: {
-+            constexpr int bytes_to_read = sizeof(random_value);
-+            read_complete = read(dev_random_fd, &random_value, bytes_to_read) >= bytes_to_read;
-+            break;
-+        }
-+        case SWR_COREBASE_RANDOM_FALLBACK: return swoole_rand(min, max);
-+        case SWR_COREBASE_RANDOM_WARN:
-+            swoole_sys_warning("read() from /dev/urandom failed");
-+            break;
-+        case SWR_COREBASE_RANDOM_RETURN: return state.value;
-+        default: std::abort();
-         }
-     }
+-        }
+-    }
 -
 -    auto next_random_byte = (char *) &random_value;
 -    constexpr int bytes_to_read = sizeof(random_value);
 -
 -    if (read(dev_random_fd, next_random_byte, bytes_to_read) < bytes_to_read) {
--        swoole_sys_warning("read() from /dev/urandom failed");
++    bool read_failed = false;
++    const int value = swr_v1_corebase_system_random(min, max, &read_failed);
++    if (read_failed) {
+         swoole_sys_warning("read() from /dev/urandom failed");
 -        return SW_ERR;
--    }
+     }
 -    return min + (random_value % (max - min + 1));
++    return value;
  }
-@@ -565,31 +640,3 @@ void swoole_redirect_stdout(const char *file) {
+@@ -546,6 +564,10 @@ int swoole_system_random(int min, int max) {
+ void swoole_redirect_stdout(int new_fd) {
+-    if (dup2(new_fd, STDOUT_FILENO) < 0) {
++    int errors[2];
++    swr_v1_corebase_redirect_stdout(new_fd, errors);
++    if (errors[0]) {
++        errno = errors[0];
+         swoole_sys_warning("dup2(STDOUT_FILENO) failed");
+     }
+-    if (dup2(new_fd, STDERR_FILENO) < 0) {
++    if (errors[1]) {
++        errno = errors[1];
+         swoole_sys_warning("dup2(STDERR_FILENO) failed");
+@@ -565,31 +587,3 @@ void swoole_redirect_stdout(const char *file) {
  int swoole_version_compare(const char *version1, const char *version2) {
 -    int result = 0;
 -
@@ -677,7 +716,7 @@ index 202a6cb3e..cdd1de726 100644
 -    return result;
 +    return swr_v1_corebase_version(version1, version2);
  }
-@@ -602,11 +649,3 @@ uint32_t swoole_common_divisor(uint32_t u, uint32_t v) {
+@@ -602,11 +596,3 @@ uint32_t swoole_common_divisor(uint32_t u, uint32_t v) {
      assert(v > 0);
 -    while (u > 0) {
 -        if (u < v) {
@@ -690,7 +729,7 @@ index 202a6cb3e..cdd1de726 100644
 -    return v;
 +    return swr_v1_corebase_gcd(u, v);
  }
-@@ -619,13 +658,3 @@ uint32_t swoole_common_multiple(uint32_t u, uint32_t v) {
+@@ -619,13 +605,3 @@ uint32_t swoole_common_multiple(uint32_t u, uint32_t v) {
      assert(v > 0);
 -
 -    uint32_t m_cup = u;
@@ -705,7 +744,30 @@ index 202a6cb3e..cdd1de726 100644
 -    return u * v / n_cup;
 +    return swr_v1_corebase_lcm(u, v);
  }
-@@ -690,23 +719,3 @@ bool sw_wait_for(const std::function<bool(void)> &fn, int timeout_ms) {
+@@ -671,18 +647,6 @@ int sw_printf(const char *format, ...) {
+ bool sw_wait_for(const std::function<bool(void)> &fn, int timeout_ms) {
+-    int sleep_msec = 1;
+-    while (timeout_ms >= 0) {
+-        if (fn()) {
+-            return true;
+-        }
+-        usleep(sleep_msec * 1000);
+-        sleep_msec *= 2;
+-        // Align the time so that the timeout is consistent with the user settings
+-        if (timeout_ms > 0 && timeout_ms - sleep_msec < 0) {
+-            sleep_msec = timeout_ms;
+-            timeout_ms = 0;
+-        } else {
+-            timeout_ms -= sleep_msec;
+-        }
+-    }
+-    return false;
++    return swr_v1_corebase_wait_for(
++        [](void *ready) { return (*static_cast<const std::function<bool(void)> *>(ready))(); },
++        const_cast<std::function<bool(void)> *>(&fn),
++        timeout_ms);
+ }
+@@ -690,23 +654,3 @@ bool sw_wait_for(const std::function<bool(void)> &fn, int timeout_ms) {
  int swoole_itoa(char *buf, long value) {
 -    long i = 0, j;
 -
@@ -730,7 +792,53 @@ index 202a6cb3e..cdd1de726 100644
 -    return s_len;
 +    return swr_v1_corebase_itoa(buf, value);
  }
-@@ -773,14 +782,28 @@ char *swoole_string_format(size_t n, const char *format, ...) {
+@@ -714,42 +658,8 @@ int swoole_itoa(char *buf, long value) {
+ int swoole_shell_exec(const char *command, pid_t *pid, bool get_error_stream) {
+-    pid_t child_pid;
+-    int fds[2];
+-    if (pipe(fds) < 0) {
+-        return SW_ERR;
+-    }
+-
+-    if ((child_pid = fork()) == -1) {
++    const int fd = swr_v1_corebase_shell_exec(command, pid, get_error_stream);
++    if (fd == -2) {
+         swoole_sys_warning("fork() failed");
+-        close(fds[0]);
+-        close(fds[1]);
+         return SW_ERR;
+     }
+-
+-    if (child_pid == 0) {
+-        close(fds[SW_PIPE_READ]);
+-
+-        if (get_error_stream) {
+-            if (fds[SW_PIPE_WRITE] == fileno(stdout)) {
+-                dup2(fds[SW_PIPE_WRITE], fileno(stderr));
+-            } else if (fds[SW_PIPE_WRITE] == fileno(stderr)) {
+-                dup2(fds[SW_PIPE_WRITE], fileno(stdout));
+-            } else {
+-                dup2(fds[SW_PIPE_WRITE], fileno(stdout));
+-                dup2(fds[SW_PIPE_WRITE], fileno(stderr));
+-                close(fds[SW_PIPE_WRITE]);
+-            }
+-        } else {
+-            if (fds[SW_PIPE_WRITE] != fileno(stdout)) {
+-                dup2(fds[SW_PIPE_WRITE], fileno(stdout));
+-                close(fds[SW_PIPE_WRITE]);
+-            }
+-        }
+-
+-        execl("/bin/sh", "sh", "-c", command, nullptr);
+-        exit(127);
+-    } else {
+-        *pid = child_pid;
+-        close(fds[SW_PIPE_WRITE]);
+-    }
+-    return fds[SW_PIPE_READ];
++    return fd;
+ }
+@@ -773,14 +683,28 @@ char *swoole_string_format(size_t n, const char *format, ...) {
  
 -static constexpr char characters[] = {
 -    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U',
@@ -769,7 +877,7 @@ index 202a6cb3e..cdd1de726 100644
      }
 -    buf[i] = '\0';
  }
-@@ -788,5 +811,25 @@ void swoole_random_string(char *buf, size_t len) {
+@@ -788,5 +712,25 @@ void swoole_random_string(char *buf, size_t len) {
  void swoole_random_string(std::string &str, size_t len) {
 -    size_t i = 0;
 -    for (; i < len; i++) {
@@ -798,7 +906,25 @@ index 202a6cb3e..cdd1de726 100644
 +        default: std::abort();
 +        }
      }
-@@ -819,3 +862,14 @@ bool swoole_get_env(const char *name, int *value) {
+@@ -795,7 +739,3 @@ void swoole_random_string(std::string &str, size_t len) {
+ uint64_t swoole_random_int() {
+-    static thread_local std::random_device rd;
+-    static thread_local std::mt19937_64 gen(rd());
+-    static thread_local std::uniform_int_distribution<uint64_t> dis;
+-    std::uniform_int_distribution<uint64_t>::param_type params(0, UINT64_MAX);
+-    return dis(gen, params);
++    return swr_v1_corebase_random_u64();
+ }
+@@ -803,7 +743,3 @@ uint64_t swoole_random_int() {
+ int swoole_rand(int min, int max) {
+-    static thread_local std::random_device rd;
+-    static thread_local std::mt19937 gen(rd());
+-    static thread_local std::uniform_int_distribution<int> dis;
+-    std::uniform_int_distribution<int>::param_type params(min, max);
+-    return dis(gen, params);
++    return swr_v1_corebase_rand(min, max);
+ }
+@@ -819,3 +755,14 @@ bool swoole_get_env(const char *name, int *value) {
      }
 -    *value = std::stoi(e);
 +    const std::string input(e);
@@ -814,7 +940,7 @@ index 202a6cb3e..cdd1de726 100644
 +        *value = std::stoi(input);
 +    }
      return true;
-@@ -825,6 +879,10 @@ int swoole_get_systemd_listen_fds() {
+@@ -825,6 +772,10 @@ int swoole_get_systemd_listen_fds() {
      int ret;
 -    if (!swoole_get_env("LISTEN_FDS", &ret)) {
 +    const bool found = swoole_get_env("LISTEN_FDS", &ret);
@@ -827,7 +953,59 @@ index 202a6cb3e..cdd1de726 100644
 +    }
 +    if (action == SWR_COREBASE_SYSTEMD_LISTEN_FDS_ERROR_LIMIT) {
          swoole_error_log(SW_LOG_ERROR, SW_ERROR_SERVER_TOO_MANY_LISTEN_PORT, "LISTEN_FDS is too big");
-@@ -926,9 +984,4 @@ void DataHead::print() {
+@@ -841,18 +792,6 @@ void swoole_print_backtrace() {
+ }
+-#elif defined(HAVE_EXECINFO) && !defined(__ANDROID__)
+-#include <execinfo.h>
++#else
+ void swoole_print_backtrace() {
+-    int size = 16;
+-    void *array[16];
+-    int stack_num = backtrace(array, size);
+-    char **stacktrace = backtrace_symbols(array, stack_num);
+-    int i;
+-
+-    for (i = 0; i < stack_num; ++i) {
+-        printf("%s\n", stacktrace[i]);
+-    }
+-    free(stacktrace);
++    swr_v1_corebase_print_backtrace();
+ }
+-#else
+-void swoole_print_backtrace() {}
+ #endif
+@@ -893,27 +832,6 @@ namespace swoole {
+ //-------------------------------------------------------------------------------
++static_assert(sizeof(DataHead) == 40 && offsetof(DataHead, time) == 32, "Rust DataHead layout");
++
+ size_t DataHead::dump(char *_buf, size_t _len) {
+-    return sw_snprintf(_buf,
+-                       _len,
+-                       "DataHead[%p]\n"
+-                       "{\n"
+-                       "    long fd = %ld;\n"
+-                       "    uint64_t msg_id = %" PRIu64 ";\n"
+-                       "    uint32_t len = %d;\n"
+-                       "    int16_t reactor_id = %d;\n"
+-                       "    uint8_t type = %d;\n"
+-                       "    uint8_t flags = %d;\n"
+-                       "    uint16_t server_fd = %d;\n"
+-                       "    uint16_t ext_flags = %d;\n"
+-                       "    double time = %f;\n"
+-                       "}\n",
+-                       this,
+-                       fd,
+-                       msg_id,
+-                       len,
+-                       reactor_id,
+-                       type,
+-                       flags,
+-                       server_fd,
+-                       ext_flags,
+-                       time);
++    return swr_v1_corebase_datahead_dump(this, _buf, _len);
+ }
+@@ -926,9 +844,4 @@ void DataHead::print() {
  std::string dirname(const std::string &file) {
 -    size_t index = file.find_last_of('/');
 -    if (index == std::string::npos) {
@@ -839,7 +1017,7 @@ index 202a6cb3e..cdd1de726 100644
 +    const size_t length = swr_v1_corebase_dirname(reinterpret_cast<const uint8_t *>(file.data()), file.length());
 +    return file.substr(0, length);
  }
-@@ -936,3 +989,7 @@ std::string dirname(const std::string &file) {
+@@ -936,3 +849,7 @@ std::string dirname(const std::string &file) {
  void hook_add(void **hooks, int type, const Callback &func, int push_back) {
 -    if (hooks[type] == nullptr) {
 +    const auto action = swr_v1_corebase_hook_add_action(hooks[type] != nullptr, push_back);
@@ -848,8 +1026,14 @@ index 202a6cb3e..cdd1de726 100644
 +    }
 +    if (action == SWR_COREBASE_HOOK_CREATE_FRONT || action == SWR_COREBASE_HOOK_CREATE_BACK) {
          hooks[type] = new std::list<Callback>;
-@@ -941,3 +998,3 @@ void hook_add(void **hooks, int type, const Callback &func, int push_back) {
+@@ -941,3 +858,3 @@ void hook_add(void **hooks, int type, const Callback &func, int push_back) {
      auto *l = static_cast<std::list<Callback> *>(hooks[type]);
 -    if (push_back) {
 +    if (action == SWR_COREBASE_HOOK_CREATE_BACK || action == SWR_COREBASE_HOOK_PUSH_BACK) {
          l->push_back(func);
+@@ -972,4 +889,3 @@ std::string intersection(const std::vector<std::string> &vec1, std::set<std::str
+ double microtime() {
+-    using namespace std::chrono;
+-    return duration_cast<duration<double>>(system_clock::now().time_since_epoch()).count();
++    return swr_v1_corebase_microtime();
+ }

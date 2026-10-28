@@ -37,6 +37,28 @@ int32_t swr_v1_locks_wakeup(uint32_t *, int32_t n);
 int32_t swr_v1_locks_coroutine_try(uint32_t *, uintptr_t held_cookie, int64_t held_cid, uintptr_t current_cookie, int64_t current_cid, uint8_t blocking);
 int32_t swr_v1_locks_coroutine_release(uint32_t *);
 double swr_v1_locks_coroutine_backoff(double second, double initial, double maximum);
+/* PHP Atomic classes (crates/phplocks). MINIT passes upstream's method tables,
+ * built from the stubs' arginfo; Rust registers the classes, and the methods
+ * are its zim_swoole_*atomic* exports. Atomic words come from `alloc`/`release`
+ * (the global pool); thread words live in C++ ThreadResources made by `create`. */
+struct _zend_function_entry;
+struct _zend_class_entry;
+struct _zval_struct;
+void swr_v1_phplocks_atomic_minit(const struct _zend_function_entry *atomic_methods,
+                                  const struct _zend_function_entry *long_methods,
+                                  struct _zend_class_entry *exception,
+                                  void *(*alloc)(uint32_t size),
+                                  void (*release)(void *word));
+#ifdef SW_THREAD /* config.h: ZTS builds with thread support */
+void swr_v1_phplocks_thread_atomic_minit(const struct _zend_function_entry *atomic_methods,
+                                         const struct _zend_function_entry *long_methods,
+                                         void *(*create)(int32_t is_long, int64_t value, void **word),
+                                         void (*del_ref)(void *resource),
+                                         struct _zend_class_entry **atomic_class,
+                                         struct _zend_class_entry **long_class);
+void *swr_v1_phplocks_thread_atomic_resource(const struct _zval_struct *object);
+void swr_v1_phplocks_thread_atomic_create(struct _zval_struct *return_value, int32_t is_long, void *resource, void *word);
+#endif
 #ifdef __cplusplus
 }
 #endif

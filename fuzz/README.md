@@ -41,11 +41,11 @@ outside the compared domain are not compared; the candidate is still checked. Se
 `http_header_info` runs `Request::parse_header_info` on both engines over any
 request head (up to its blank line): content length, keep-alive, chunked and
 nobody-chunked flags, errno and the multipart boundary must match. `http_range`
-runs `StaticHandler::parse_range` from the pinned static_handler.cc and from it
-with `migration/patches/http/0002-static-ranges.patch`, over a file size, MIME type
-length, If-Range verdict and any Range header: status, content length, every task
-and its part header, and the closing boundary must match. Outside the compared
-domain, the candidate must reject the request.
+runs `StaticHandler::parse_range` from the pinned static_handler.cc and the one
+`migration/patches/http/0002-static-ranges.patch` puts in its place (over the Rust
+static context), over a file size up to `i64::MAX` (an `off_t`), MIME type length,
+If-Range verdict and any Range header: status, content length, every task and its
+part header, and the closing boundary must match.
 
 For MQTT and RESP, `mqtt_length` compares `mqtt::get_package_length` over any
 received bytes and `resp_parse` compares `redis::parse` (every string and, on

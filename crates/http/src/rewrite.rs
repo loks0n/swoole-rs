@@ -1,13 +1,5 @@
 //! Static rewrite byte policy; Native retains regex execution and effects.
-use crate::proxy::HttpProxyText;
 use crate::{HttpSpan, INVALID, OVERFLOW, bytes};
-#[repr(C)]
-pub struct HttpRewriteLiteral {
-    pub url: HttpProxyText,
-    pub pattern: HttpProxyText,
-    pub replacement: HttpProxyText,
-}
-use std::ptr;
 pub(crate) fn classify(pattern: &[u8]) -> (crate::HttpSpan, bool) {
     let regex =
         pattern.len() >= 2 && pattern.first() == Some(&b'~') && pattern.last() == Some(&b'~');
@@ -61,67 +53,6 @@ pub(crate) fn literal_suffix<'a>(
         .ok_or(OVERFLOW)?;
     Ok(Some((suffix, required)))
 }
-/// Literal prefix replacement. Returns0=no match,1=match; capacity0 queries the
-/// required output size, other capacities must fit it exactly or provide more.
-/// Strings are byte spans (embedded NUL is significant), without a terminator.
-/// # Safety
-/// Every input span is readable/initialized. Output capacity and written are
-/// writable, aligned where needed and mutually disjoint from all input spans.
-/// No allocation/callback/borrow survives this call.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_http_rewrite_literal(
-    request: *const HttpRewriteLiteral,
-    output: *mut u8,
-    capacity: usize,
-    written: *mut usize,
-) -> i32 {
-    if request.is_null() || written.is_null() || capacity != 0 && output.is_null() {
-        return INVALID;
-    }
-    if capacity > isize::MAX as usize {
-        return OVERFLOW;
-    }
-    // SAFETY: `request` is non-null (checked above), aligned and initialized per the caller contract.
-    let request = unsafe { &*request };
-    // Every request span is readable and initialized (see the contract).
-    let inputs = [
-        // SAFETY: as above.
-        unsafe { bytes(request.url.data, request.url.length) },
-        // SAFETY: as above.
-        unsafe { bytes(request.pattern.data, request.pattern.length) },
-        // SAFETY: as above.
-        unsafe { bytes(request.replacement.data, request.replacement.length) },
-    ];
-    let [url, pattern, replacement] = match inputs {
-        [Ok(a), Ok(b), Ok(c)] => [a, b, c],
-        values => return values.into_iter().find_map(Result::err).unwrap_or(INVALID),
-    };
-    let (suffix, required) = match literal_suffix(url, pattern, replacement.len()) {
-        Ok(Some(plan)) => plan,
-        Ok(None) => return 0,
-        Err(error) => return error,
-    };
-    if capacity != 0 && capacity < required {
-        return INVALID;
-    }
-    if capacity != 0 {
-        // `replacement.len() + suffix.len() == required <= capacity` writable output bytes,
-        // disjoint from every input span.
-        // SAFETY: as above.
-        unsafe { ptr::copy_nonoverlapping(replacement.as_ptr(), output, replacement.len()) };
-        // SAFETY: as above.
-        unsafe {
-            ptr::copy_nonoverlapping(
-                suffix.as_ptr(),
-                output.wrapping_add(replacement.len()),
-                suffix.len(),
-            );
-        };
-    }
-    // SAFETY: `written` is non-null (checked above), aligned and writable per the caller contract.
-    unsafe { written.write(required) };
-    1
-}
 /// Copied first-match cursor shared by legacy and sole-owner context callers.
 /// Native configuration/regex effects occur only between complete calls.
 #[repr(C)]
@@ -132,17 +63,6 @@ pub struct HttpRewriteState {
     count: usize,
 }
 impl HttpRewriteState {
-    pub(crate) fn legacy_step(&mut self, count: usize, observed: u32, index: &mut usize) -> i32 {
-        if observed == 7 {
-            return if self.phase == 2 { 6 } else { INVALID };
-        }
-        let action = self.step(count, observed, index);
-        if action == 0 && observed == 4 {
-            5
-        } else {
-            action
-        }
-    }
     pub(crate) fn step(&mut self, count: usize, observed: u32, index: &mut usize) -> i32 {
         const RULE: u32 = 1;
         const LITERAL: u32 = 2;
@@ -193,52 +113,6 @@ impl HttpRewriteState {
         }
     }
 }
-/// Legacy ordered-rule caller: existing observations0..5 and event6=completed
-/// regex replacement,7=matched literal query. Actions0=not rewritten,1=read rule,2=literal query,3=search,
-/// 4=replace,5=publish then return true,6=allocate/fill literal. A literal match
-/// publishes even equal bytes; equal regex output resumes the next rule.
-/// # Safety
-/// Initialized unique state and disjoint writable index. At event6 both spans
-/// are initialized/disjoint from state/output; ignored otherwise. Native config,
-/// string/regex effects and publication complete after return, with no live Rust
-/// borrow, retained operand or copied configuration owner.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v2_http_rewrite_step(
-    state: *mut HttpRewriteState,
-    count: usize,
-    observed: u32,
-    current: *const HttpProxyText,
-    replacement: *const HttpProxyText,
-    index: *mut usize,
-) -> i32 {
-    // SAFETY: `state` is null or live, aligned and exclusively lent for this call.
-    let state = unsafe { state.as_mut() };
-    // SAFETY: `index` is null or live, aligned and exclusively lent for this call.
-    let index = unsafe { index.as_mut() };
-    let (Some(state), Some(index)) = (state, index) else {
-        return INVALID;
-    };
-    let observed = if observed == 6 {
-        // SAFETY: `current` is null or a live, aligned text descriptor.
-        let current = unsafe { current.as_ref() };
-        // SAFETY: `replacement` is null or a live, aligned text descriptor.
-        let replacement = unsafe { replacement.as_ref() };
-        let (Some(current), Some(replacement)) = (current, replacement) else {
-            return INVALID;
-        };
-        // SAFETY: each descriptor names `length` initialized bytes.
-        let current = unsafe { bytes(current.data, current.length) };
-        // SAFETY: as above.
-        let replacement = unsafe { bytes(replacement.data, replacement.length) };
-        let (Ok(current), Ok(replacement)) = (current, replacement) else {
-            return INVALID;
-        };
-        if current == replacement { 3 } else { 4 }
-    } else {
-        observed
-    };
-    state.legacy_step(count, observed, index)
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,46 +130,11 @@ mod tests {
         assert_eq!(state.step(0, 4, &mut index), 0);
     }
     #[test]
-    fn binary_prefix_and_exact_capacity_are_preserved() {
-        let url = b"/a\0suffix";
-        let pattern = b"/a\0";
-        let replacement = b"/b\0";
-        let span = |value: &[u8]| HttpProxyText {
-            data: value.as_ptr(),
-            length: value.len(),
-        };
-        let request = HttpRewriteLiteral {
-            url: span(url),
-            pattern: span(pattern),
-            replacement: span(replacement),
-        };
-        let mut output = [0xcc; 16];
-        let mut written = 99;
+    fn binary_prefix_keeps_the_suffix_after_embedded_nul() {
         assert_eq!(
-            unsafe {
-                swr_v1_http_rewrite_literal(
-                    &raw const request,
-                    output.as_mut_ptr(),
-                    8,
-                    &raw mut written,
-                )
-            },
-            INVALID
+            literal_suffix(b"/a\0suffix", b"/a\0", 3),
+            Ok(Some((&b"suffix"[..], 9)))
         );
-        assert_eq!(output, [0xcc; 16]);
-        assert_eq!(written, 99);
-        assert_eq!(
-            unsafe {
-                swr_v1_http_rewrite_literal(
-                    &raw const request,
-                    output.as_mut_ptr(),
-                    9,
-                    &raw mut written,
-                )
-            },
-            1
-        );
-        assert_eq!(&output[..written], b"/b\0suffix");
-        assert_eq!(output[written], 0xcc);
+        assert_eq!(literal_suffix(b"/a", b"/a\0", 3), Ok(None));
     }
 }

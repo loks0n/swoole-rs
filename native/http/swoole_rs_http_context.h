@@ -62,10 +62,6 @@ int32_t swr_v2_http_directory_emit(const swr_v2_http_directory *, size_t,
  * storage is observed fresh after Native reserve/extend; no pointer is retained. */
 int32_t swr_v2_http_context_page_emit(const swr_v2_http_context *, size_t,
     const swr_v1_http_index_page_input *, uint8_t *, size_t, size_t, swr_v2_http_page_buffer *);
-/* Same complete append operation for Legacy markup: preserve the successful
- * index_page size-query count across Native allocation effects. */
-int32_t swr_v2_http_index_page_emit(const swr_v1_http_index_page_input *, size_t,
-    uint8_t *, size_t, size_t, swr_v2_http_page_buffer *);
 /* Private selected page protocol: begin!=0 requests header1; resume requests
  * entry2(index), footer3, done0. Native buffer effects run after each call. */
 int32_t swr_v2_http_context_page_step(swr_v2_http_context *, uint32_t, size_t *);

@@ -27,6 +27,9 @@ bool swr_v1_os_pool_join(const swr_v1_os_pool *pool, uintptr_t key);
 size_t swr_v1_os_pool_worker_num(const swr_v1_os_pool *pool);
 size_t swr_v1_os_pool_queue_size(const swr_v1_os_pool *pool);
 void swr_v1_os_pool_notify_one(const swr_v1_os_pool *pool);
+/* Reads up to 128 completed event tokens from the pipe and hands each to
+ * complete; returns the count, or -1 with errno intact. */
+ssize_t swr_v1_os_pool_complete(int fd, void (*complete)(uintptr_t event));
 /* File IO. Each call returns right after a failing syscall, errno intact, so
  * native logs the upstream warning. */
 typedef struct { size_t done; bool failed; } swr_v1_os_file_io;
@@ -39,6 +42,13 @@ ssize_t swr_v1_os_file_read_line(int fd, void *buf, size_t n);
 /* size, or -1 with the error to publish (errno or EISDIR). */
 typedef struct { int64_t size; int error; } swr_v1_os_file_size_t;
 swr_v1_os_file_size_t swr_v1_os_file_size(int fd);
+swr_v1_os_file_size_t swr_v1_os_file_size_path(const char *path);
+/* status 0: fd open for native to read/write and close; otherwise fd is -1:
+ * 1 open failed (errno intact), 2 size unknown (publish error), 3 empty,
+ * 4 too large. */
+typedef struct { int fd; uint32_t status; int64_t size; int error; } swr_v1_os_file_contents_t;
+swr_v1_os_file_contents_t swr_v1_os_file_contents_open(const char *path, uint64_t maximum);
+swr_v1_os_file_contents_t swr_v1_os_file_put_open(const char *path, uint64_t length, uint64_t maximum);
 /* warn: copy fallback 1 pread, 2 write; kqueue sendfile 1 sendfile. */
 typedef struct { ssize_t result; uint32_t warn; } swr_v1_os_sendfile_t;
 swr_v1_os_sendfile_t swr_v1_os_sendfile_copy(int out_fd, int in_fd, off_t *offset, size_t size);
@@ -67,6 +77,7 @@ int swr_v1_os_thread_get_name(char *buf, size_t len);
 typedef struct { int id; int perms; } swr_v1_os_msg_open_t;
 swr_v1_os_msg_open_t swr_v1_os_msg_open(key_t key, int perms);
 int swr_v1_os_msg_flags(int flags, bool blocking);
+bool swr_v1_os_msg_remove(int id);
 int swr_v1_os_msg_push(int id, const void *msg, size_t length, int flags);
 typedef struct { ssize_t result; bool warn; } swr_v1_os_msg_pop_t;
 swr_v1_os_msg_pop_t swr_v1_os_msg_pop(int id, void *msg, size_t size, long kind, int flags);

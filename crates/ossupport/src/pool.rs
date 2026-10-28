@@ -2,6 +2,7 @@
 //! pool shared by every reactor thread, its task queue, worker threads, growth
 //! scheduling and idle retirement. Events are opaque native tokens; native code
 //! runs them, writes them to the completion pipe and frees them.
+use libc::c_int;
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, MutexGuard, OnceLock, PoisonError};
@@ -277,6 +278,27 @@ pub unsafe extern "C" fn swr_v1_os_pool_release(pool: *const Pool) {
     }
 }
 
+/// `AsyncThreads::callback`: reads up to `SW_AIO_EVENT_NUM` (128) completed event
+/// tokens from the pipe and hands each to `complete`. Returns how many, or -1 if
+/// the read failed (errno intact for native's warning).
+#[unsafe(no_mangle)]
+pub extern "C" fn swr_v1_os_pool_complete(
+    fd: c_int,
+    complete: extern "C" fn(event: usize),
+) -> isize {
+    let mut events = [0_usize; 128];
+    // SAFETY: `events` is writable for its whole size.
+    let n = unsafe { libc::read(fd, events.as_mut_ptr().cast(), size_of_val(&events)) };
+    if n < 0 {
+        return -1;
+    }
+    let count = n.unsigned_abs() / size_of::<usize>();
+    for &event in &events[..count] {
+        complete(event);
+    }
+    count.cast_signed()
+}
+
 /// # Safety
 /// `pool` is null or a pointer `swr_v1_os_pool_acquire` returned.
 unsafe fn borrow(pool: *const Pool) -> Option<&'static Pool> {
@@ -509,6 +531,34 @@ mod tests {
             until(|| EXECUTED.load(Ordering::SeqCst) == 41);
             swr_v1_os_pool_release(pool);
         }
+    }
+
+    static COMPLETED: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+    extern "C" fn complete(event: usize) {
+        lock(&COMPLETED).push(event);
+    }
+
+    #[test]
+    fn completions_are_read_whole_tokens_at_a_time() {
+        use std::io::Write;
+        use std::os::fd::AsRawFd;
+        let (reader, mut writer) =
+            std::os::unix::net::UnixStream::pair().unwrap_or_else(|e| unreachable!("{e}"));
+        let mut bytes = Vec::new();
+        for token in [7_usize, 9] {
+            bytes.extend_from_slice(&token.to_ne_bytes());
+        }
+        bytes.push(1); // a torn trailing token is ignored, as upstream
+        writer
+            .write_all(&bytes)
+            .unwrap_or_else(|e| unreachable!("{e}"));
+        assert_eq!(
+            swr_v1_os_pool_complete(reader.as_raw_fd(), complete),
+            2,
+            "two tokens"
+        );
+        assert_eq!(*lock(&COMPLETED), [7, 9], "in pipe order");
+        assert_eq!(swr_v1_os_pool_complete(-1, complete), -1, "read failure");
     }
 
     #[test]

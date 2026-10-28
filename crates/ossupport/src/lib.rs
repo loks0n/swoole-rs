@@ -11,9 +11,10 @@ mod file;
 #[cfg(any(target_vendor = "apple", target_os = "freebsd"))]
 pub use file::swr_v1_os_sendfile;
 pub use file::{
-    FileIo, FileSize, Sendfile, swr_v1_os_file_close, swr_v1_os_file_open, swr_v1_os_file_read_all,
-    swr_v1_os_file_read_line, swr_v1_os_file_size, swr_v1_os_file_write_all,
-    swr_v1_os_random_bytes, swr_v1_os_sendfile_copy, swr_v1_os_tmpfile,
+    FileContents, FileIo, FileSize, Sendfile, swr_v1_os_file_close, swr_v1_os_file_contents_open,
+    swr_v1_os_file_open, swr_v1_os_file_put_open, swr_v1_os_file_read_all,
+    swr_v1_os_file_read_line, swr_v1_os_file_size, swr_v1_os_file_size_path,
+    swr_v1_os_file_write_all, swr_v1_os_random_bytes, swr_v1_os_sendfile_copy, swr_v1_os_tmpfile,
 };
 mod system;
 pub use system::{
@@ -25,11 +26,12 @@ pub use system::{
 pub use system::{swr_v1_os_get_cpu_affinity, swr_v1_os_set_cpu_affinity};
 mod msg_queue;
 pub use msg_queue::{
-    MsgOpen, MsgPop, swr_v1_os_msg_flags, swr_v1_os_msg_open, swr_v1_os_msg_pop, swr_v1_os_msg_push,
+    MsgOpen, MsgPop, swr_v1_os_msg_flags, swr_v1_os_msg_open, swr_v1_os_msg_pop,
+    swr_v1_os_msg_push, swr_v1_os_msg_remove,
 };
 mod pool;
 pub use pool::{
-    Pool, PoolHooks, swr_v1_os_pool_acquire, swr_v1_os_pool_dispatch, swr_v1_os_pool_join,
-    swr_v1_os_pool_notify_one, swr_v1_os_pool_queue_size, swr_v1_os_pool_release,
-    swr_v1_os_pool_task_id, swr_v1_os_pool_worker_num,
+    Pool, PoolHooks, swr_v1_os_pool_acquire, swr_v1_os_pool_complete, swr_v1_os_pool_dispatch,
+    swr_v1_os_pool_join, swr_v1_os_pool_notify_one, swr_v1_os_pool_queue_size,
+    swr_v1_os_pool_release, swr_v1_os_pool_task_id, swr_v1_os_pool_worker_num,
 };

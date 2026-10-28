@@ -2,6 +2,7 @@
 #define SWOOLE_RS_UTILITIES_H
 #include <stdint.h>
 #include <stddef.h>
+#include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -29,6 +30,26 @@ void swr_v1_utils_spinlock(uint32_t *, uint32_t cpus, uint32_t backoff_limit);
 int32_t swr_v1_utils_wait(uint32_t *, double timeout);
 int32_t swr_v1_utils_wakeup(uint32_t *, int32_t n);
 #endif
+/* The same pair without futex: a registry in memory shared by every waiting
+ * process, adopted (and zeroed) by init before any fork; init is false for
+ * null or misaligned memory. wait returns 0 or -1, wakeup the number notified
+ * or -1; *error is the errno to record, or 0. */
+size_t swr_v1_utils_wait_registry_size(void);
+bool swr_v1_utils_wait_registry_init(void *memory);
+int32_t swr_v1_utils_registry_wait(uint32_t *, double timeout, int32_t *error);
+int32_t swr_v1_utils_registry_wakeup(uint32_t *, int32_t n, int32_t *error);
+/* swoole::BitMap's storage: bits start clear; bits past the end are ignored
+ * by set and read as clear. Null handles are no-ops. */
+typedef struct SwrUtilsBitmap SwrUtilsBitmap;
+SwrUtilsBitmap *swr_v1_utils_bitmap_create(size_t bits);
+void swr_v1_utils_bitmap_destroy(SwrUtilsBitmap *);
+void swr_v1_utils_bitmap_clear(SwrUtilsBitmap *);
+void swr_v1_utils_bitmap_set(SwrUtilsBitmap *, size_t bit, bool value);
+bool swr_v1_utils_bitmap_get(const SwrUtilsBitmap *, size_t bit);
+/* The local zone's current offset from UTC, in seconds. */
+long swr_v1_utils_timezone(void);
+/* First c in [p, last), or null. */
+char *swr_v1_utils_strlchr(char *p, const char *last, char c);
 /* Borrowed bytes and independent aligned outputs; returns a substring span, never allocates. */
 int32_t swr_v1_utils_pretty_range(const uint8_t *, size_t, uint8_t strip, size_t *, size_t *);
 /* Logging enum policy, returned strings are immutable static NUL-terminated storage. */

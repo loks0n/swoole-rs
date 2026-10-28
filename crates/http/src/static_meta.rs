@@ -72,60 +72,6 @@ pub unsafe extern "C" fn swr_v1_http_static_content_type(
     unsafe { written.write(length) };
     0
 }
-/// Check0=no parent token,1=inside root using pinned C-string prefix semantics.
-/// # Safety
-/// Filename/root are readable for their declared initialized spans.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_http_static_path_check(
-    filename: *const u8,
-    length: usize,
-    root: *const u8,
-    root_length: usize,
-    kind: u32,
-) -> i32 {
-    if kind > 1 {
-        return INVALID;
-    }
-    // SAFETY: the caller lends the filename's declared initialized span.
-    let filename = match unsafe {
-        bytes(
-            filename,
-            if kind == 0 {
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    reason = "the native uint32_t filename length"
-                )]
-                let native = length as u32 as usize;
-                native
-            } else {
-                length
-            },
-        )
-    } {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if kind == 0 {
-        return i32::from(!filename.windows(2).any(|s| s == b".."));
-    }
-    if filename.len() <= root_length || filename[root_length] != b'/' {
-        return 0;
-    }
-    // SAFETY: the caller lends `root_length` initialized bytes at `root` (null only when empty).
-    let root = match unsafe { bytes(root, root_length) } {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    for (&a, &b) in filename.iter().zip(root) {
-        if a != b {
-            return 0;
-        }
-        if a == 0 {
-            break;
-        }
-    }
-    1
-}
 /// Publish404 only for the terminal location match; no native callback occurs.
 /// # Safety
 /// status is aligned, initialized and exclusively writable.
@@ -179,48 +125,5 @@ mod tests {
         );
         assert_eq!(&output[..written], b"multipart/byteranges; boundary=a\0b");
         assert_eq!(output[written], 0xa5);
-    }
-    #[test]
-    fn c_prefix_containment_and_bytewise_parent_check_remain_distinct() {
-        let filename = b"/r\0other/child";
-        let root = b"/r\0oot";
-        assert_eq!(
-            unsafe {
-                swr_v1_http_static_path_check(
-                    filename.as_ptr(),
-                    filename.len(),
-                    root.as_ptr(),
-                    root.len(),
-                    1,
-                )
-            },
-            0
-        );
-        let filename = b"/r\0abc/child";
-        assert_eq!(
-            unsafe {
-                swr_v1_http_static_path_check(
-                    filename.as_ptr(),
-                    filename.len(),
-                    root.as_ptr(),
-                    root.len(),
-                    1,
-                )
-            },
-            1
-        );
-        let filename = b"a\0..b";
-        assert_eq!(
-            unsafe {
-                swr_v1_http_static_path_check(
-                    filename.as_ptr(),
-                    filename.len(),
-                    std::ptr::null(),
-                    0,
-                    0,
-                )
-            },
-            0
-        );
     }
 }
