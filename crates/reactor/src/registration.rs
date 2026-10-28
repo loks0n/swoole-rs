@@ -131,7 +131,7 @@ pub use kqueue::*;
     target_os = "dragonfly"
 ))]
 mod kqueue {
-    use super::*;
+    use super::{SW_EVENT_READ, SW_EVENT_WRITE, c_int, c_void, reads, writes};
 
     /// `NOTE_EOF` where the platform defines it (upstream's `#ifdef NOTE_EOF`).
     #[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
