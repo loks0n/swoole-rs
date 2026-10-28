@@ -10,7 +10,8 @@ yanked = "deny"
 [licenses]
 version = 2
 # Compatible with the project's Apache-2.0.
-allow = ["Apache-2.0", "MIT"]
+# BSD-3-Clause, ISC and Unicode-3.0 come with bindgen (zend-sys, build time only).
+allow = ["Apache-2.0", "MIT", "BSD-3-Clause", "ISC", "Unicode-3.0"]
 confidence-threshold = 0.9
 
 [licenses.private]
