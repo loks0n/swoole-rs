@@ -217,6 +217,7 @@ mod tests {
     }
 
     #[test]
+    #[expect(clippy::cognitive_complexity, reason = "one end-to-end queue scenario")]
     fn typed_queue_owns_cursor_tags_and_full_byte_accounting() {
         assert_eq!(mem::size_of::<Front>(), 40);
         assert_eq!(mem::align_of::<Front>(), 8);

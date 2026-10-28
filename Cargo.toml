@@ -15,40 +15,26 @@ panic = "abort"
 unreachable_pub = "deny"
 
 [workspace.lints.clippy]
-# Silent truncation, sign flips and misaligned casts at the FFI boundary (#157).
-cast_possible_truncation = "deny"
-cast_sign_loss = "deny"
-cast_possible_wrap = "deny"
-cast_ptr_alignment = "deny"
-# Pedantic lints fixed by `cargo clippy --fix` (#156).
-borrow_as_ptr = "deny"
-semicolon_if_nothing_returned = "deny"
-cast_lossless = "deny"
-unreadable_literal = "deny"
-checked_conversions = "deny"
-enum_glob_use = "deny"
-bool_to_int_with_if = "deny"
-needless_bitwise_bool = "deny"
-unnecessary_semicolon = "deny"
-unnested_or_patterns = "deny"
-range_plus_one = "deny"
-ref_as_ptr = "deny"
-if_not_else = "deny"
-must_use_candidate = "deny"
-doc_markdown = "deny"
-manual_let_else = "deny"
-redundant_else = "deny"
-needless_continue = "deny"
-single_match_else = "deny"
-comparison_chain = "deny"
-stable_sort_primitive = "deny"
-ptr_as_ptr = "deny"
-format_collect = "deny"
-assert_is_empty = "deny"
-items_after_statements = "deny"
-unnecessary_box_returns = "deny"
-trivially_copy_pass_by_ref = "deny"
-cast_precision_loss = "deny"
+# Pedantic is denied whole (#156), including the cast lints that guard the FFI
+# boundary against silent truncation, sign flips and misalignment (#157).
+pedantic = { level = "deny", priority = -1 }
+# Allowed: state-transition tables keep one arm per state, and merging arms
+# would reorder guarded ones.
+match_same_arms = "allow"
+# Allowed: naming lints that flag FFI and protocol names (owner/owned,
+# stage/state, SHA-1's a..e) and C-shaped option structs.
+similar_names = "allow"
+many_single_char_names = "allow"
+struct_excessive_bools = "allow"
+struct_field_names = "allow"
+# Allowed: hot buffer paths inline on purpose.
+inline_always = "allow"
+# Allowed: protocol lengths and native type codes are decimal by nature.
+decimal_bitwise_operands = "allow"
+# Allowed until #213 fixes it.
+wildcard_imports = "allow"
+# Function size, at clippy.toml's thresholds (#159).
+cognitive_complexity = "deny"
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
 dbg_macro = "deny"

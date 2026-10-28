@@ -38,11 +38,10 @@ pub(crate) unsafe extern "C" fn swr_v1_phphelpers_string_plan(
         (1, 2) => (Copy, 3),
         // String move assignment preserves the original release-before-transfer,
         // even for self-move: do not introduce a new self-assignment behavior.
-        (2, 0) => (Release, 1),
+        (2 | 3, 0) => (Release, 1),
         (2, 1) => (Move, 2),
         (2, 2) => (ResetSource, 3),
         // String(zval*) assignment and both CharPtr duplication assignments.
-        (3, 0) => (Release, 1),
         (3, 1) => (Copy, 2),
         // Borrowed native zend_string constructor: retain or take custody.
         (4, 0) => (if observation != 0 { Copy } else { Alias }, 1),

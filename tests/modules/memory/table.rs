@@ -622,6 +622,7 @@ fn mutation(store: &CounterStore, root: *mut Row, key: &[u8], mode: u32) -> Muta
     }
 }
 #[test]
+#[expect(clippy::cognitive_complexity, reason = "one end-to-end table scenario")]
 fn mutation_owns_real_links_and_counters_around_native_pool_effect_boundaries() {
     assert_eq!(mem::size_of::<CounterFields>(), 48);
     assert_eq!(mem::size_of::<Mutation>(), 144);

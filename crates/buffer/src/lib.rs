@@ -696,6 +696,10 @@ mod tests {
     static ALLOCATOR: FailAllocator = FailAllocator;
 
     #[test]
+    #[expect(
+        clippy::cognitive_complexity,
+        reason = "one end-to-end facade scenario"
+    )]
     fn facade_plans_preserve_identity_live_callback_bytes_and_raw_api_compatibility() {
         let b = Owned::new(2);
         let mut identity = 0u8;
@@ -1107,6 +1111,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::cognitive_complexity,
+        reason = "one scenario per allocation failure point"
+    )]
     fn every_allocation_failure_is_atomic() {
         let mut handle = ptr::dangling_mut();
         FAIL_AFTER.set(Some(0));

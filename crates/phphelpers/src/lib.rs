@@ -18,6 +18,10 @@ pub extern "C" fn swr_v1_phphelpers_empty(count: usize) -> u8 {
     u8::from(count == 0)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one lookup table of PHP function aliases"
+)]
 fn alias(family: u32, name: &[u8]) -> Option<&'static [u8]> {
     match (family, name) {
         (0, b"all") => Some(b"array_all\0"),
@@ -66,8 +70,7 @@ fn alias(family: u32, name: &[u8]) -> Option<&'static [u8]> {
         (0, b"walk") => Some(b"array_walk\0"),
         (0, b"replaceStr") => Some(b"swoole_array_replace_str\0"),
         (0, b"iReplaceStr") => Some(b"swoole_array_ireplace_str\0"),
-        (0, b"serialize") => Some(b"serialize\0"),
-        (0, b"marshal") => Some(b"serialize\0"),
+        (0, b"serialize" | b"marshal") => Some(b"serialize\0"),
         (0, b"jsonEncode") => Some(b"json_encode\0"),
         (1, b"length") => Some(b"strlen\0"),
         (1, b"isEmpty") => Some(b"swoole_str_is_empty\0"),
@@ -154,8 +157,7 @@ fn alias(family: u32, name: &[u8]) -> Option<&'static [u8]> {
         (1, b"mbDetectEncoding") => Some(b"mb_detect_encoding\0"),
         (1, b"mbConvertEncoding") => Some(b"mb_convert_encoding\0"),
         (1, b"mbConvertCase") => Some(b"mb_convert_case\0"),
-        (1, b"unserialize") => Some(b"unserialize\0"),
-        (1, b"unmarshal") => Some(b"unserialize\0"),
+        (1, b"unserialize" | b"unmarshal") => Some(b"unserialize\0"),
         (1, b"jsonDecode") => Some(b"swoole_str_json_decode\0"),
         (1, b"jsonDecodeToObject") => Some(b"swoole_str_json_decode_to_object\0"),
         (2, b"write") => Some(b"fwrite\0"),

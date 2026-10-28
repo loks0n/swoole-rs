@@ -203,9 +203,8 @@ pub extern "C" fn swr_v1_hook_wait_for(
         1 if result => (delay, 3, 0),
         1 => (delay, 2, 2),
         2 if result => (swr_v1_hook_backoff(delay, initial, maximum), 1, 1),
-        2 => (delay, 4, -1),
+        2 | 4 => (delay, 4, -1),
         3 => (delay, 3, 0),
-        4 => (delay, 4, -1),
         _ => (delay, phase, -2),
     };
     WaitForPlan {
