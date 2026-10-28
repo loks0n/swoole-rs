@@ -150,7 +150,7 @@ git config core.hooksPath .githooks        # pre-commit/pre-push checks
 ```
 
 Then run the executor loop (claim, branch, PR, `gh pr merge --auto --squash`,
-`python3 tools/ci.py wait`, close). A GitHub Codespace or any devcontainer host
+next issue). A GitHub Codespace or any devcontainer host
 builds `.devcontainer/` automatically and injects `GH_TOKEN`, so the clone and the
 hooks line are the only steps. Keep builds, profiles and clones under the
 environment's own disk; `python3 tools/dev.py prune` clears a day's leavings.

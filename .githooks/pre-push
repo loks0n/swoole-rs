@@ -1,6 +1,3 @@
 #!/bin/sh
-# Reminder only: merging a PR starts the merge tier, which is the full validation.
-echo "Once GitHub auto-merges this branch, watch the merge tier (every gate, application and PHPT) with:
-  python3 tools/ci.py wait --commit \$(gh pr view <pr> --json mergeCommit -q .mergeCommit.oid)" >&2
 # Drop build output this worktree hasn't touched in a day (#395); never blocks the push.
 python3 tools/dev.py prune >&2 || true
