@@ -1,4 +1,5 @@
-//! PHP HTTP policy. Native effects execute only after these functions return.
+//! PHP HTTP policy, whose native effects execute only after these functions
+//! return, and (with the `php` feature, see docs/zend.md) `Swoole\Http\Cookie`.
 #![deny(unsafe_op_in_unsafe_fn)]
 #![cfg_attr(
     not(test),
@@ -7,6 +8,8 @@
         clippy::multiple_unsafe_ops_per_block
     )
 )]
+#[cfg(feature = "php")]
+mod cookie;
 mod emission;
 mod file;
 mod payload;
@@ -14,6 +17,8 @@ mod request;
 mod response;
 mod server;
 mod settings;
+#[cfg(feature = "php")]
+pub use cookie::*;
 pub use emission::*;
 pub use file::*;
 pub use payload::*;

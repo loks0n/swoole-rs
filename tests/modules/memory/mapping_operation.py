@@ -14,7 +14,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
-from tools.build_hybrid import apply_patch_verified
+from tools.build_hybrid import hybrid_tree
 from tools.harness import run_isolated
 
 from tools.build_upstream import COMMIT as PIN
@@ -55,7 +55,7 @@ def main():
               'forced_file_support_adapter': 'Original forced fallback requires explicit pinned swoole_file.h; original missing-header failure retained separately',
               'syntax_warning_policy': 'Strict -Werror except pinned upstream unused parameters explicitly suppressed'}
     owned = [Path(__file__), *sorted(Path(__file__).parent.glob('mapping_operation*')),
-             *sorted((ROOT / 'crates/memory/src').rglob('*.rs')), ROOT / 'native/memory/swoole_rs_memory.h']
+             *sorted((ROOT / 'crates/memory/src').rglob('*.rs'))]
     report['source_sha256'] = {str(p.relative_to(ROOT)): sha(p) for p in owned if p.is_file()}
     try:
         archive = args.archive.resolve(strict=True)
@@ -63,22 +63,22 @@ def main():
         report['archive_sha256'] = sha(archive)
         report['compiler'] = {'cxx': subprocess.check_output([*shlex.split(args.cxx), '--version'], text=True),
                               'cc': subprocess.check_output([*shlex.split(args.cc), '--version'], text=True)}
-        manifest = json.loads((ROOT / 'migration/patches/memory/manifest.json').read_text())
-        assert manifest['upstream_commit'] == PIN
-        entry = next(p for p in manifest['patches'] if SOURCE in p['upstream_paths'])
-        report['patch'] = entry
+        hybrid, hybrid_flags = hybrid_tree(archive)
+        report['hybrid_tree'] = str(hybrid)
+        rust_headers = [flag for flag in hybrid_flags if flag.startswith('-I') and flag != '-I' + str(hybrid / 'include')]
         bundle = subprocess.check_output(['git', '-C', str(args.source), 'archive', PIN, 'include', SOURCE], timeout=20)
         flags = shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
         with tempfile.TemporaryDirectory(prefix='swr-mapping-operation-') as temporary:
             tree = Path(temporary)
-            for variant in ['original', 'selected']:
-                with tarfile.open(fileobj=io.BytesIO(bundle)) as tar:
-                    for member in tar:
-                        if member.isfile():
-                            path = tree / variant / member.name
-                            path.parent.mkdir(parents=True, exist_ok=True)
-                            path.write_bytes(tar.extractfile(member).read())
-            report['patch_application'] = apply_patch_verified(tree / 'selected', ROOT / 'migration/patches/memory' / entry['path'], entry['upstream_paths'], entry['sha256'])
+            with tarfile.open(fileobj=io.BytesIO(bundle)) as tar:
+                for member in tar:
+                    if member.isfile():
+                        path = tree / 'original' / member.name
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_bytes(tar.extractfile(member).read())
+            # Original: the pinned tree. Selected: the hybrid build's tree and flags.
+            trees = {'original': (tree / 'original', ['-I' + str(tree / 'original/include')]),
+                     'selected': (hybrid, hybrid_flags)}
             def run(label, argv, compile=False):
                 if compile:
                     free = {str(p): shutil.disk_usage(p).free for p in [ROOT, tree, args.output.parent]}
@@ -91,8 +91,7 @@ def main():
                 if result.returncode:
                     raise RuntimeError(f'{label} failed with exit {result.returncode}')
                 return result
-            includes = ['-I' + str(ROOT / 'native/memory'), '-I' + str(ROOT / 'native/include')]
-            for variant in ['original', 'selected']:
+            for variant, (root, headers) in trees.items():
                 for backend in ['anonymous', 'file', 'no-map-failed']:
                     wrapper = tree / (variant + '-' + backend + '.cc')
                     prefix = '#include <sys/mman.h>\n'
@@ -100,14 +99,13 @@ def main():
                         prefix += '#undef MAP_ANONYMOUS\n#undef MAP_ANON\n#include \"swoole_file.h\"\n'
                     if backend == 'no-map-failed':
                         prefix += '#undef MAP_FAILED\n'
-                    wrapper.write_text(prefix + '#include ' + json.dumps(str(tree / variant / SOURCE)) + '\n')
+                    wrapper.write_text(prefix + '#include ' + json.dumps(str(root / SOURCE)) + '\n')
                     for standard in ['c++14', 'c++17']:
                         run(f'{variant}-{backend}-{standard}', [*shlex.split(args.cxx), '-std=' + standard,
                             '-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter', '-fsyntax-only',
-                            *(['-DSWOOLE_RS_MEMORY=1'] if variant == 'selected' else []),
-                            '-I' + str(tree / variant / 'include'), *includes, *flags, str(wrapper)], compile=True)
+                            *headers, *flags, str(wrapper)], compile=True)
             model = tree / 'selected-model.cc'
-            model.write_text(selected_model((tree / 'selected' / SOURCE).read_text()))
+            model.write_text(selected_model((hybrid / SOURCE).read_text()))
             sanitize = ['-fsanitize=address,undefined', '-fno-omit-frame-pointer']
             fixture = Path(__file__).parent
             for backend in ['anonymous', 'file']:
@@ -115,14 +113,14 @@ def main():
                 run('compile-success-' + backend, [*shlex.split(args.cxx), '-std=c++14', '-O1', '-g',
                     '-Wall', '-Wextra', '-Werror', *sanitize,
                     *(['-DSWR_MODEL_FILE_BACKEND=1'] if backend == 'file' else []),
-                    '-I' + str(fixture), *includes, str(model), str(fixture / 'mapping_operation_model.cc'),
+                    '-I' + str(fixture), *rust_headers, str(model), str(fixture / 'mapping_operation_model.cc'),
                     str(archive), '-lpthread', '-ldl', '-lm', '-o', str(binary)], compile=True)
                 value = json.loads(run('success-' + backend, [str(binary)]).stdout)
                 assert value['passed'] and value['actual_native_success_cases'] == 16 and value['explicit_os_calls'] == 0
                 report.setdefault('results', {})[backend] = value
             obj, binary = tree / 'ffi.o', tree / 'ffi'
             run('compile-c11', [*shlex.split(args.cc), '-std=c11', '-O1', '-g', '-Wall', '-Wextra', '-Werror',
-                *sanitize, *includes, '-c', str(fixture / 'mapping_operation.c'), '-o', str(obj)], compile=True)
+                *sanitize, *rust_headers, '-c', str(fixture / 'mapping_operation.c'), '-o', str(obj)], compile=True)
             run('link-c11', [*shlex.split(args.cxx), *sanitize, str(obj), str(archive), '-lpthread', '-ldl', '-lm', '-o', str(binary)], compile=True)
             value = json.loads(run('actual-c11', [str(binary)]).stdout)
             assert value['passed'] and value['explicit_os_calls'] == 0

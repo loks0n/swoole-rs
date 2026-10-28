@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Complete pinned Logger::put bodies with real shared-thread mutex, FILE writes and stream publication."""
+"""Complete pinned and hybrid-build Logger::put bodies with real shared-thread mutex, FILE writes and
+stream publication."""
 import argparse
 import json
 from pathlib import Path
@@ -8,8 +9,8 @@ import sys
 import tempfile
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
+from tools.build_hybrid import hybrid_tree
 from tools.harness import run_isolated, write_report
-from overlay import apply_owned
 from gate import PIN
 from rust_asan import inspect as inspect_rust_asan
 
@@ -42,9 +43,11 @@ def main():
     with tempfile.TemporaryDirectory(prefix='swr-logger-put-') as temporary:
         tree = Path(temporary)
         original = subprocess.check_output(['git','-C',str(args.source),'show',PIN+':src/core/log.cc'], text=True)
-        source = tree/'src/core/log.cc'; source.parent.mkdir(parents=True); source.write_text(original)
-        patch = ROOT/'migration/patches/utilities/0002-log.patch'
-        report['overlay_application'] = apply_owned(tree, patch)
+        # The candidate is the hybrid build's log.cc; its Rust declarations come from that build.
+        hybrid, flags = hybrid_tree(args.archive)
+        report['hybrid_tree'] = str(hybrid)
+        source = hybrid/'src/core/log.cc'
+        rust_headers = [flag for flag in flags if flag.startswith('-I') and flag != '-I'+str(hybrid/'include')]
         log_header = subprocess.check_output(['git','-C',str(args.source),'show',PIN+':include/swoole_log.h'], text=True)
         config_header = subprocess.check_output(['git','-C',str(args.source),'show',PIN+':include/swoole_config.h'], text=True)
         if '#define SW_LOG_DATE_STRLEN 128' not in log_header or '#define SW_LOG_BUFFER_SIZE (SW_ERROR_MSG_SIZE + 256)' not in log_header or '#define SW_ERROR_MSG_SIZE 16384' not in config_header:
@@ -66,7 +69,7 @@ def main():
         report['substitutions'] = substitutions
         binary = tree/'put'
         command = ['c++','-std=c++14','-O2','-Wall','-Wextra','-Werror','-UNDEBUG',
-                   '-I'+str(tree),'-I'+str(ROOT/'native/utilities'),str(fixture),
+                   '-I'+str(tree),*rust_headers,str(fixture),
                    str(args.archive.resolve()),'-lpthread','-ldl','-lm','-o',str(binary)]
         if owned_state:
             command += ['-DM14_STATE_ABI2', '-I'+str(ROOT/'tests/modules/utilities')]

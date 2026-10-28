@@ -429,6 +429,9 @@ version = "0.1.0"
 [[package]]
 name = "swoole-rs-httpbindings"
 version = "0.1.0"
+dependencies = [
+ "swoole-rs-zend",
+]
 
 [[package]]
 name = "swoole-rs-inflate"
@@ -465,6 +468,9 @@ dependencies = [
 [[package]]
 name = "swoole-rs-phpcollections"
 version = "0.1.0"
+dependencies = [
+ "swoole-rs-zend",
+]
 
 [[package]]
 name = "swoole-rs-phpcoroutines"
