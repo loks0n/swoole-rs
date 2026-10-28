@@ -49,6 +49,13 @@ void swr_v1_phplocks_atomic_minit(const struct _zend_function_entry *atomic_meth
                                   struct _zend_class_entry *exception,
                                   void *(*alloc)(uint32_t size),
                                   void (*release)(void *word));
+/* Swoole\Lock: `kinds` has bit 1 << Lock::Type per lock type the build has;
+ * `capabilities` is what swr_v1_locks_lock takes; `unconstructed` reports a
+ * method called before the constructor (a fatal error). */
+void swr_v1_phplocks_lock_minit(const struct _zend_function_entry *methods, int32_t module_number,
+                                uint32_t kinds, uint32_t capabilities,
+                                struct _zend_class_entry *exception,
+                                void *(*alloc)(uint32_t size), void (*unconstructed)(void));
 #ifdef SW_THREAD /* config.h: ZTS builds with thread support */
 void swr_v1_phplocks_thread_atomic_minit(const struct _zend_function_entry *atomic_methods,
                                          const struct _zend_function_entry *long_methods,

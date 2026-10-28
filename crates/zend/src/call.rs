@@ -3,10 +3,10 @@ use crate::sys::{
     _zend_expected_type_Z_EXPECTED_DOUBLE, _zend_expected_type_Z_EXPECTED_LONG,
     _zval_struct__bindgen_ty_1, IS_DOUBLE, IS_FALSE, IS_LONG, IS_TRUE, ZPP_ERROR_WRONG_ARG,
     zend_execute_data, zend_expected_type, zend_object, zend_parse_arg_double_slow,
-    zend_parse_arg_long_slow, zend_value, zend_wrong_parameter_error,
+    zend_parse_arg_long_slow, zend_update_property_long, zend_value, zend_wrong_parameter_error,
     zend_wrong_parameters_count_error, zval,
 };
-use std::ptr;
+use std::{ffi::CStr, ptr};
 
 /// Zval slots `zend_execute_data` occupies before the first argument
 /// (`ZEND_CALL_FRAME_SLOT`).
@@ -157,6 +157,20 @@ impl Call {
         // SAFETY: the return slot is live for the handler.
         unsafe { (*self.value).value = zend_value { lval: value } };
         self.set(IS_LONG);
+    }
+
+    /// `zend_update_property_long(NULL, Z_OBJ_P(ZEND_THIS), name, value)`.
+    pub fn update_property_long(&self, name: &CStr, value: i64) {
+        // SAFETY: a method's live `$this`; Zend copies the name.
+        unsafe {
+            zend_update_property_long(
+                ptr::null_mut(),
+                self.this(),
+                name.as_ptr(),
+                name.count_bytes(),
+                value,
+            );
+        }
     }
 
     /// `RETVAL_BOOL`.
