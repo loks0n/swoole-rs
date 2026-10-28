@@ -134,6 +134,8 @@ pub use swoole_rs_phphttp::*;
 
 #[cfg(feature = "http2")]
 pub use swoole_rs_http2 as http2;
+#[cfg(feature = "http2")]
+pub use swoole_rs_phphttp2::*;
 
 #[cfg(feature = "ports")]
 pub use swoole_rs_ports as ports;

@@ -87,8 +87,10 @@ enum SwrPhpCallableAction { SWR_PHP_CALLABLE_DONE=0, SWR_PHP_CALLABLE_TRUTH=1,
     SWR_PHP_CALLABLE_INVALID=4, SWR_PHP_CALLABLE_RETAIN=5 };
 uint32_t swr_v1_phphelpers_callable(uint32_t *, uint8_t truthy, uint8_t valid);
 
-/* stdext (crates/phpstdext): typed arrays and methods on scalars. Rust exports
- * the swoole_* function handlers (zif_*) under Zend's own names. */
+#ifdef SW_STDEXT
+/* stdext (crates/phpstdext): typed arrays and methods on scalars, linked only
+ * when config.h enables SW_STDEXT. Rust exports the swoole_* function handlers
+ * (zif_*) under Zend's own names. */
 struct _zval_struct;
 struct _zend_array;
 struct _zend_string;
@@ -113,6 +115,7 @@ void swr_v1_phpstdext_copy_type(struct _zval_struct *container, struct _zend_arr
 /* ASSIGN_DIM_OP on a typed array: concat needs strings, arithmetic numbers;
  * if not, Zend has thrown. */
 bool swr_v1_phpstdext_operation(struct _zend_array *ht, bool concat);
+#endif
 #ifdef __cplusplus
 }
 #endif

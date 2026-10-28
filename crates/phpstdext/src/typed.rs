@@ -191,29 +191,44 @@ fn type_of_name(name: &[u8]) -> u8 {
 /// # Safety
 /// `start` begins `len` bytes of a NUL-terminated definition.
 unsafe fn parse_value(target: &mut TypeValue, start: *const u8, len: usize) -> bool {
+    // SAFETY: per the caller.
+    match unsafe { split_value(start, len) } {
+        Ok(value) => {
+            *target = value;
+            true
+        }
+        Err(rest) => {
+            // SAFETY: a printf format with the NUL-terminated rest.
+            unsafe {
+                zend_throw_error(
+                    ptr::null_mut(),
+                    c"The key type of array must be string or int, but got %s".as_ptr(),
+                    rest,
+                );
+            }
+            false
+        }
+    }
+}
+
+/// [`parse_value`]'s split: the value, or where the text after a key that is
+/// not `string` or `int` begins.
+/// # Safety
+/// As [`parse_value`].
+unsafe fn split_value(start: *const u8, len: usize) -> Result<TypeValue, *const u8> {
     // SAFETY: per the caller, NUL-terminated.
     let rest = unsafe { CStr::from_ptr(start.cast()) }.to_bytes();
     // SAFETY: per the caller, within the definition.
     let bytes = |from: usize, count: usize| unsafe {
         slice::from_raw_parts(start.wrapping_add(from), count)
     };
+    let mut target = TypeValue::default();
     match rest.iter().position(|&byte| byte == b',') {
-        None => {
-            target.key = 0;
-            target.offset = 1;
-        }
+        None => target.offset = 1,
         Some(comma) => {
             target.key = type_of_name(bytes(1, comma - 1));
             if !matches!(u32::from(target.key), IS_STRING | IS_LONG) {
-                // SAFETY: a printf format with the NUL-terminated rest.
-                unsafe {
-                    zend_throw_error(
-                        ptr::null_mut(),
-                        c"The key type of array must be string or int, but got %s".as_ptr(),
-                        start.wrapping_add(comma + 1),
-                    );
-                }
-                return false;
+                return Err(start.wrapping_add(comma + 1));
             }
             // Definitions are shorter than 65535 bytes.
             target.offset = u16::try_from(comma + 1).unwrap_or(u16::MAX);
@@ -222,7 +237,7 @@ unsafe fn parse_value(target: &mut TypeValue, start: *const u8, len: usize) -> b
     let len = u16::try_from(len).unwrap_or(u16::MAX);
     target.len = len.wrapping_sub(target.offset).wrapping_sub(1);
     target.value = type_of_name(bytes(usize::from(target.offset), usize::from(target.len)));
-    true
+    Ok(target)
 }
 
 /// `ArrayTypeInfo::parse` into `info`, which has room for the definition.
@@ -1051,10 +1066,8 @@ mod tests {
     fn parsed(definition: &[u8]) -> TypeValue {
         let mut text = definition.to_vec();
         text.push(0);
-        let mut value = TypeValue::default();
-        // SAFETY: a NUL-terminated definition; these keys never throw.
-        assert!(unsafe { parse_value(&mut value, text.as_ptr(), definition.len()) });
-        value
+        // SAFETY: a NUL-terminated definition.
+        unsafe { split_value(text.as_ptr(), definition.len()) }.unwrap()
     }
 
     #[test]

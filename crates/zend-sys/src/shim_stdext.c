@@ -42,10 +42,6 @@ zend_execute_data *swr_zend_push_nested_call(zend_function *fn, uint32_t num_arg
     return zend_vm_stack_push_call_frame(ZEND_CALL_NESTED_FUNCTION, fn, num_args, object);
 }
 
-bool swr_zend_instanceof(const zend_class_entry *ce, const zend_class_entry *base) {
-    return instanceof_function(ce, base);
-}
-
 zval *swr_zend_uninitialized_zval(void) {
     return &EG(uninitialized_zval);
 }

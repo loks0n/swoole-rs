@@ -19,9 +19,6 @@ int swr_zend_try_lookup_class(zend_string *name, zend_class_entry **ce);
 /* zend_vm_stack_push_call_frame(ZEND_CALL_NESTED_FUNCTION, fn, num_args, object). */
 zend_execute_data *swr_zend_push_nested_call(zend_function *fn, uint32_t num_args, void *object);
 
-/* instanceof_function. */
-bool swr_zend_instanceof(const zend_class_entry *ce, const zend_class_entry *base);
-
 /* &EG(uninitialized_zval). */
 zval *swr_zend_uninitialized_zval(void);
 
