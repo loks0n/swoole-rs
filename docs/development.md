@@ -106,6 +106,30 @@ docker run --rm -it -v "$PWD:/work" -w /work swoole-rs-dev bash
 
 Tooling tests: `tests/dev/run.sh` (parallel; prints only failing files), or `python3 -m unittest discover -b -s tests/dev` (`-b` hides output from passing tests).
 
+### One command: `dev.py docker`
+
+```sh
+python3 tools/dev.py docker -- integrate --module utilities --phase utilities-logger-owned-state
+```
+
+Runs any `dev.py` command in the dev image for this host's architecture, with no
+manual setup:
+
+- builds the image the first time (tagged `swoole-rs-dev:<arch>-<.devcontainer hash>`,
+  so arm64 and amd64 never mix and a changed `.devcontainer/` gets a new image)
+- mounts this worktree, and its git metadata, at their host paths
+- keeps the toolchain and crate registry in named volumes (`swr-rustup-<arch>`,
+  `swr-cargo-<arch>`), and cargo output in `target/docker/`
+- inside the container, installs the pinned toolchain, runs `cargo fetch --locked`,
+  builds `target/upstream` (cached), and passes the image's PHP extensions to
+  `candidate`/`integrate` unless the command names its own
+- adds `--with-prerequisites` to a `--phase` selection, so the builds and reports a
+  phase needs run first
+
+It warns when the disk has less than 20 GB free. `dev.py prune` also removes
+`target/worktrees/*` older than its window and dev images other than the current
+one, so nothing needs `rm -rf` outside `target/`.
+
 ## Cloud executors
 
 Executor agents (AGENTS.md) run in a cloud environment by default, not on a shared
