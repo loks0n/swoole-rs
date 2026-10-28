@@ -15,6 +15,7 @@ mod connection;
 mod control;
 pub mod local_addr;
 pub mod ops;
+mod reactor_thread;
 mod startup;
 
 pub use local_addr::{
@@ -137,7 +138,7 @@ fn run<H: Host>(h: &mut H, operation: u32, arg: u64) -> i64 {
             startup::destroy(h);
             SW_OK
         }
-        _ => SW_ERR,
+        _ => reactor_thread::run(h, operation, arg),
     }
 }
 
