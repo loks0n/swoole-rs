@@ -76,7 +76,7 @@ int swr_zend_try_call(zend_fcall_info *fci, zend_fcall_info_cache *fcc, int *res
 
 int swr_zend_parse_func(zval *arg, uint32_t number, zend_fcall_info *fci, zend_fcall_info_cache *fcc) {
     char *error = NULL;
-#if PHP_VERSION_ID >= 80300
+#if PHP_VERSION_ID >= 80400
     if (zend_parse_arg_func(arg, fci, fcc, 0, &error, 1)) {
 #else
     if (zend_parse_arg_func(arg, fci, fcc, 0, &error)) {
