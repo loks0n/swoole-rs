@@ -150,17 +150,14 @@ The cold, write and query regressions block default activation.
 cargo test -p swoole-rs-buffer --offline
 cargo clippy -p swoole-rs-buffer --all-targets --offline -- -D warnings
 cargo rustc -p swoole-rs-buffer --release --offline --locked --crate-type staticlib
-python3 tests/modules/buffer/string/gate.py --original-only \
-  --source target/upstream/src \
-  --archive target/release/libswoole_rs_buffer.a --sanitize \
-  --output target/string/gate-original.json
+python3 -m pytest 'tests/modules/buffer/string/test_gate.py::test_profile[originals]' \
+  --archive target/release/libswoole_rs_buffer.a --sanitize
 ```
 
-`gate.py` without a profile flag writes `STOPPED_NOT_RUN` and does nothing.
-`--original-only` runs all 23 unchanged pinned `core-tests/src/core/string.cpp`
-tests against both engines. Focused positive profiles: `--transition-only`,
-`--copy-only`, `--split-only`, `--integer-only`, `--ownership-only`,
-`--allocation-only`, `--format-only`, `--random-only`. The gate needs the pinned
-native core/base, os/base and base64 sources and `pkg-config openssl`. ASan/UBSan
+The `originals` profile runs all 23 unchanged pinned `core-tests/src/core/string.cpp`
+tests against both engines. Focused positive profiles: `transitions`, `copy`,
+`split`, `integer`, `ownership`, `allocation`, `format`, `random`. The gate needs
+the pinned native core/base, os/base and base64 sources (`target/upstream/src`)
+and `pkg-config openssl`. ASan/UBSan
 covers the C++ side only. `tests/modules/buffer/string/test_compatibility.py` checks
 `swr_v1_string_edit_object`. See `tests/modules/buffer/string/profiles.md`.
