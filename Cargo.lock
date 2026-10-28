@@ -465,6 +465,9 @@ dependencies = [
 [[package]]
 name = "swoole-rs-phpcollections"
 version = "0.1.0"
+dependencies = [
+ "swoole-rs-zend",
+]
 
 [[package]]
 name = "swoole-rs-phpcoroutines"
