@@ -43,9 +43,28 @@ swr_v1_os_sendfile_t swr_v1_os_sendfile_copy(int out_fd, int in_fd, off_t *offse
 swr_v1_os_sendfile_t swr_v1_os_sendfile(int out_fd, int in_fd, off_t *offset, size_t size);
 #endif
 size_t swr_v1_os_random_bytes(void *buf, size_t size);
-int32_t swr_v1_os_permissions(int32_t perms);
-int32_t swr_v1_os_queue_flags(int32_t flags, bool blocking, int32_t nowait);
-int32_t swr_v1_os_queue_error(bool interrupted, bool again);
+/* src/os/base.cc process and thread identity. Isolation reports each failed step
+ * as it happens (errno intact): 1 group lookup, 2 user lookup, 3 setgid,
+ * 4 setuid, 5 chdir("/"), 6 chroot. Thread names return the pthread error. */
+bool swr_v1_os_is_root_user(void);
+void swr_v1_os_set_isolation(const char *group, const char *user, const char *root,
+                             void (*warn)(uint32_t step, void *context), void *context);
+void swr_v1_os_set_process_death_signal(int signal);
+#if defined(__linux__) || defined(__FreeBSD__)
+int swr_v1_os_set_cpu_affinity(const void *set);
+int swr_v1_os_get_cpu_affinity(void *set);
+#endif
+long swr_v1_os_thread_native_id(void);
+int swr_v1_os_thread_set_name(const char *name);
+int swr_v1_os_thread_get_name(char *buf, size_t len);
+/* SysV message queue. open defaults perms outside (0, 01000) to 0666; push
+ * retries EINTR: 0 sent, 1 EAGAIN (quiet), 2 failed (warn); errno intact. */
+typedef struct { int id; int perms; } swr_v1_os_msg_open_t;
+swr_v1_os_msg_open_t swr_v1_os_msg_open(key_t key, int perms);
+int swr_v1_os_msg_flags(int flags, bool blocking);
+int swr_v1_os_msg_push(int id, const void *msg, size_t length, int flags);
+typedef struct { ssize_t result; bool warn; } swr_v1_os_msg_pop_t;
+swr_v1_os_msg_pop_t swr_v1_os_msg_pop(int id, void *msg, size_t size, long kind, int flags);
 #ifdef __cplusplus
 }
 static_assert(sizeof(uintptr_t) == sizeof(void *), "opaque token width");

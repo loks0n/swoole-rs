@@ -50,10 +50,19 @@ they compose the calls above with `String` and the upstream logs.
 
 ## SysV message queue
 
-`swr_v1_os_permissions`, `swr_v1_os_queue_flags`, `swr_v1_os_queue_error`: default 0666 for values outside
-(0, 01000); blocking mutates flags only; push retries EINTR before EAGAIN. Pop
-does not retry. SysV resource ownership stays native. Module tests never use
-upstream's fixed SysV key or mutate host IPC resources.
+`msg_queue.rs`: `swr_v1_os_msg_open` defaults permissions outside (0, 01000) to
+0666 and calls `msgget(key, IPC_CREAT | perms)`; `swr_v1_os_msg_flags` changes
+only `IPC_NOWAIT`; push retries `EINTR` and stays quiet on `EAGAIN`; pop does not
+retry and is quiet on `ENOMSG`/`EINTR`. Removal, stat and capacity stay native.
+Module tests use a private queue and remove it.
 
-Still native: OS base lifecycle, resolver, File storage and UnixSocket
+## Process and thread identity
+
+`system.rs` (upstream `src/os/base.cc`): root check, `swoole_set_isolation`
+(reporting each failed step through a native callback so warnings keep their
+order and errno), parent-death signal, process CPU affinity (`getpid()`, as
+upstream), native thread id and thread names.
+
+Still native: `swoole_daemon`, the resolver request types and handlers,
+`swoole_thread_id_to_str`, `swoole_tmpfile`, File storage and UnixSocket
 construction.
