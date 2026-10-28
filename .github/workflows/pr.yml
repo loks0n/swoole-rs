@@ -49,6 +49,7 @@ jobs:
     outputs:
       hybrid: ${{ steps.paths.outputs.hybrid }}
       iouring: ${{ steps.paths.outputs.iouring }}
+      zts: ${{ steps.paths.outputs.zts }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,6 +63,9 @@ jobs:
           fi
           if echo "$changed" | grep -qE '^(migration/patches/hooks/|crates/(hooks|uring[^/]*)/|\.github/workflows/iouring\.yml$|\.devcontainer/install\.sh$)'; then
             echo iouring=true >> "$GITHUB_OUTPUT"
+          fi
+          if echo "$changed" | grep -qE '^(migration/patches/(locks/|[^/]+/[^/]*thread)|crates/(phplocks|phpthread|zend[^/]*)/|native/(locks|phpthread)/|\.github/workflows/zts\.yml$|\.devcontainer/(install|php-zts)\.sh$)'; then
+            echo zts=true >> "$GITHUB_OUTPUT"
           fi
 
   # The all-modules hybrid with the halfclose repair, so no module's native code
@@ -123,6 +127,12 @@ jobs:
     needs: changes
     if: needs.changes.outputs.iouring == 'true'
     uses: ./.github/workflows/iouring.yml
+
+  # The ZTS build variant (merge tier), when a PR touches thread or ZTS code. Informative.
+  zts:
+    needs: changes
+    if: needs.changes.outputs.zts == 'true'
+    uses: ./.github/workflows/zts.yml
 
   # Candidate-lane gates of the modules this PR touches (every module for shared
   # build inputs); prints "No module touched" and passes otherwise. Advisory until

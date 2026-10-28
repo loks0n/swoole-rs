@@ -1,0 +1,69 @@
+name: ZTS
+# Upstream and the all-modules hybrid built against a thread-safe PHP with
+# --enable-swoole-thread, then the PHPTs upstream's own thread CI runs (swoole_thread,
+# scripts/run-tests.sh with SWOOLE_THREAD) plus the atomic and lock families, whose
+# Thread\Atomic and Thread\Lock only exist in this build. Any test that passes on
+# upstream must pass on the hybrid. zend-sys binds the ZTS headers (PHP_CONFIG).
+# Called by the merge tier, and by the PR tier when a PR touches thread or ZTS code.
+on:
+  workflow_call:
+env:
+  CCACHE_DIR: ${{ github.workspace }}/.ccache
+  CCACHE_MAXSIZE: 500M
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  phpt:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/install
+      # Restored only: the pinned reference is rebuilt for ZTS below, never saved.
+      - uses: actions/cache/restore@v4
+        with:
+          path: target/upstream
+          key: upstream-${{ runner.os }}-${{ hashFiles('tools/build_upstream.py') }}
+      - uses: actions/cache@v4
+        with:
+          path: target/php-zts
+          key: php-zts-${{ runner.os }}-${{ hashFiles('.devcontainer/php-zts.sh') }}
+      - run: .devcontainer/php-zts.sh target/php-zts
+      - uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: ccache-${{ runner.os }}-
+      - run: cargo fetch --locked
+      # The control is the pinned reference itself, unpatched.
+      - run: |
+          php="--php-config $PWD/target/php-zts/bin/php-config --phpize $PWD/target/php-zts/bin/phpize --configure=--enable-swoole-thread"
+          python3 tools/build_upstream.py $php
+          python3 tools/build_hybrid.py $php $(python3 -c 'from tools.build_hybrid import SELECTABLE; print(*(f"--module {m}" for m in SELECTABLE))') | tee hybrid.log
+          mkdir -p target/phpt
+          cp -L target/upstream/src/modules/swoole.so target/phpt/upstream.so
+          cp -L "$(sed -n 's/^\(Built\|Cached\) rust: //p' hybrid.log)" target/phpt/hybrid.so
+          for engine in upstream hybrid; do target/php-zts/bin/php -n -d extension=$PWD/target/phpt/$engine.so --ri swoole | grep -E '^thread '; done
+          python3 corpus/upstream/inventory.py --output target/phpt/manifest.json
+      - run: |
+          families="--module swoole_thread --module swoole_atomic --module swoole_lock"
+          options="--manifest target/phpt/manifest.json --timeout 30 --php $PWD/target/php-zts/bin/php"
+          mkdir -p target/phpt/zts
+          for engine in upstream hybrid; do
+            python3 corpus/upstream/run.py $options $families --engine $engine=target/phpt/$engine.so \
+              --output target/phpt/zts/$engine.json || [ $? -eq 1 ]
+          done
+          corpus/upstream/recheck.sh target/phpt/zts target/phpt target/phpt/recheck $options
+          set -- target/phpt/zts/*.json
+          if ls target/phpt/recheck/*.json >/dev/null 2>&1; then set -- "$@" --recheck target/phpt/recheck/*.json; fi
+          python3 corpus/upstream/gate.py "$@" --output phpt-zts.json | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phpt-zts
+          path: |
+            phpt-zts.json
+            target/phpt/zts/
+            target/phpt/recheck/
