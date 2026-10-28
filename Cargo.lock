@@ -507,6 +507,7 @@ name = "swoole-rs-phphttp"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "swoole-rs-http",
  "swoole-rs-httpbindings",
  "swoole-rs-zend",
 ]
