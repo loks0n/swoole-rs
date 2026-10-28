@@ -62,6 +62,13 @@ pub(crate) fn add<W: Word>(call: &Call, word: *mut W) {
 }
 ```
 
+Speed: a method crosses crates (`zend`, the mechanism crate) and rustc inlines
+non-generic functions across crates only when they are `#[inline]`. Keep the
+`zend` call-frame accessors `#[inline]`, and give the mechanism a plain
+`#[inline] pub` Rust function beside its `swr_v1_*` export (as
+`locks::atomic32` sits beside `swr_v1_locks_atomic32`); calling the export
+costs Atomic::add about 40 instructions.
+
 Mirror upstream's ZPP block exactly: the same min/max, defaults and failure
 return value. Errors are Zend's own (`zend_wrong_parameters_count_error`,
 `zend_wrong_parameter_error`), so messages match.

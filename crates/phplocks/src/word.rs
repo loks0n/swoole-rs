@@ -1,7 +1,7 @@
 //! Method bodies shared by Atomic and Thread\Atomic: each parses its arguments
 //! as upstream's ZPP block does, applies one locks-crate operation to the
 //! object's word and sets the return value.
-use swoole_rs_locks::{swr_v1_locks_atomic32, swr_v1_locks_atomic64};
+use swoole_rs_locks::{atomic32, atomic64};
 use swoole_rs_zend::Call;
 
 const LOAD: u32 = 0;
@@ -12,7 +12,7 @@ const COMPARE_SET: u32 = 4;
 
 /// A shared word: `sw_atomic_t` (u32) or `sw_atomic_long_t` (i64).
 pub(crate) trait Word: Sized {
-    /// `swr_v1_locks_atomic32`/`64`, with PHP ints cast to the word as upstream's
+    /// The locks crate's `atomic32`/`atomic64`, with PHP ints cast to the word as upstream's
     /// `(uint32_t)` and `(sw_atomic_long_t)` casts do.
     /// # Safety
     /// `word` is null or a live word accessed only atomically.
@@ -27,14 +27,14 @@ impl Word for u32 {
     )]
     unsafe fn apply(word: *mut Self, op: u32, value: i64, expected: i64) -> i64 {
         // SAFETY: per the caller; the locks crate rejects null and misalignment.
-        i64::from(unsafe { swr_v1_locks_atomic32(word, op, value as u32, expected as u32) })
+        i64::from(unsafe { atomic32(word, op, value as u32, expected as u32) })
     }
 }
 
 impl Word for i64 {
     unsafe fn apply(word: *mut Self, op: u32, value: i64, expected: i64) -> i64 {
         // SAFETY: per the caller; the locks crate rejects null and misalignment.
-        unsafe { swr_v1_locks_atomic64(word, op, value, expected) }
+        unsafe { atomic64(word, op, value, expected) }
     }
 }
 

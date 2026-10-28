@@ -60,6 +60,7 @@ impl<T> Object<T> {
     /// `std` is the `std` of a live `Object<T>`, and no other reference to its
     /// data is live while the result is.
     #[must_use]
+    #[inline]
     pub unsafe fn data<'a>(std: *mut zend_object) -> &'a mut T {
         let this = std.wrapping_byte_sub(Self::OFFSET).cast::<Self>();
         // SAFETY: per the caller, `this` is the live object around `std`.
