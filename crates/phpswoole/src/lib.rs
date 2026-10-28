@@ -15,8 +15,18 @@
 mod constants;
 mod functions;
 mod interfaces;
+mod options;
 
-use std::{ffi::c_char, ptr, sync::OnceLock};
+pub use options::{sw_zval_is_serializable, swr_v1_phpswoole_set_global_option};
+
+use std::{
+    ffi::c_char,
+    ptr,
+    sync::{
+        OnceLock,
+        atomic::{AtomicU32, Ordering},
+    },
+};
 use swoole_rs_zend::{
     Class,
     sys::{
@@ -67,9 +77,30 @@ pub struct HostOps {
         options: i64,
         depth: i64,
     ),
+    // `php_swoole_set_global_option`'s effects, in its order.
+    set_signalfd: unsafe extern "C" fn(on: u8),
+    set_kqueue: unsafe extern "C" fn(on: u8),
+    set_trace_flags: unsafe extern "C" fn(flags: i64),
+    set_log_file: unsafe extern "C" fn(file: *const c_char, length: usize),
+    set_log_level: unsafe extern "C" fn(level: i64),
+    set_log_date_format: unsafe extern "C" fn(format: *const c_char, length: usize),
+    set_log_date_with_microseconds: unsafe extern "C" fn(on: u8),
+    set_log_rotation: unsafe extern "C" fn(rotation: i64),
+    set_display_errors: unsafe extern "C" fn(on: u8),
+    /// `SwooleG.print_backtrace_on_error`, or C++'s exception when the build
+    /// has no stack traces.
+    set_print_backtrace: unsafe extern "C" fn(on: u8),
+    set_dns_server: unsafe extern "C" fn(server: *const c_char, length: usize),
+    /// `Socket::default_{dns,connect,read,write}_timeout` (`kind` 0..=3).
+    set_socket_timeout: unsafe extern "C" fn(kind: i32, seconds: f64),
+    set_socket_buffer_size: unsafe extern "C" fn(size: i64),
+    /// `http2::put_default_setting(id, value)`.
+    set_http2_default: unsafe extern "C" fn(id: i32, value: i64),
 }
 
 static OPS: OnceLock<&'static HostOps> = OnceLock::new();
+/// The `swr_v1_phpswoole_minit` flags.
+static FLAGS: AtomicU32 = AtomicU32::new(0);
 static EXCEPTION: Class = Class::new();
 static ERROR: Class = Class::new();
 
@@ -97,6 +128,7 @@ pub unsafe extern "C" fn swr_v1_phpswoole_minit(
     if let Some(ops) = unsafe { ops.as_ref() } {
         OPS.get_or_init(|| ops);
     }
+    FLAGS.store(flags, Ordering::Relaxed);
     // SAFETY: MINIT, with the module's number.
     unsafe { constants::register(module_number, flags) };
     // SAFETY: Zend registers Exception before any extension's MINIT.

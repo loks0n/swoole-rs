@@ -233,10 +233,30 @@ typedef struct swr_v1_phpswoole_ops {
     uint8_t (*shutdown_begin)(void);
     void (*unserialize)(struct _zval_struct *value, const char *buf, size_t length, struct _zend_array *options);
     void (*json_decode)(struct _zval_struct *value, const char *str, size_t length, int64_t options, int64_t depth);
+    /* php_swoole_set_global_option's effects, in its order. */
+    void (*set_signalfd)(uint8_t on);
+    void (*set_kqueue)(uint8_t on);
+    void (*set_trace_flags)(int64_t flags);
+    void (*set_log_file)(const char *file, size_t length);
+    void (*set_log_level)(int64_t level);
+    void (*set_log_date_format)(const char *format, size_t length);
+    void (*set_log_date_with_microseconds)(uint8_t on);
+    void (*set_log_rotation)(int64_t rotation);
+    void (*set_display_errors)(uint8_t on);
+    void (*set_print_backtrace)(uint8_t on);
+    void (*set_dns_server)(const char *server, size_t length);
+    /* kind: 0 dns, 1 connect, 2 read, 3 write */
+    void (*set_socket_timeout)(int32_t kind, double seconds);
+    void (*set_socket_buffer_size)(int64_t size);
+    void (*set_http2_default)(int32_t id, int64_t value);
 } swr_v1_phpswoole_ops;
 void swr_v1_phpswoole_minit(int32_t module_number, uint32_t flags, const swr_v1_phpswoole_ops *ops,
                             struct _zend_class_entry **exception, struct _zend_object_handlers *exception_handlers,
                             struct _zend_class_entry **error);
+/* php_swoole_set_global_option: null, or the error of the size at *failed that
+ * did not parse, which the caller reports as a fatal error. */
+struct _zend_string;
+struct _zend_string *swr_v1_phpswoole_set_global_option(struct _zend_array *options, struct _zval_struct **failed);
 
 #ifdef __cplusplus
 }

@@ -61,6 +61,13 @@
       "upstream_paths": [
         "ext-src/php_swoole.cc"
       ]
+    },
+    {
+      "path": "0009-phpswoole-options.patch",
+      "sha256": "7f169a368520df5e7409efeaa8d518afddf56d7a4687a6ce546687debe486f88",
+      "upstream_paths": [
+        "ext-src/php_swoole.cc"
+      ]
     }
   ]
 }
