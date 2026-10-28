@@ -417,16 +417,16 @@ pub unsafe extern "C" fn sw_rs_http2_pack_settings(
         s.max_header_list_size,
     ];
     let mut bytes = [0u8; 45];
-    bytes[..9].copy_from_slice(&header(4, u32::try_from(count * 6).unwrap_or(0), 0, 0));
-    let mut offset = 9;
-    for (index, value) in values.iter().enumerate() {
-        if server != 0 && index == 1 {
-            continue;
-        }
-        bytes[offset..offset + 2]
-            .copy_from_slice(&u16::try_from(index + 1).unwrap_or(0).to_be_bytes());
-        bytes[offset + 2..offset + 6].copy_from_slice(&value.to_be_bytes());
-        offset += 6;
+    let (head, entries) = bytes.split_at_mut(9);
+    head.copy_from_slice(&header(4, u32::try_from(count * 6).unwrap_or(0), 0, 0));
+    let sent = values
+        .iter()
+        .enumerate()
+        .filter(|&(index, _)| server == 0 || index != 1);
+    for ((index, value), entry) in sent.zip(entries.as_chunks_mut::<6>().0) {
+        let (id, value_bytes) = entry.split_at_mut(2);
+        id.copy_from_slice(&u16::try_from(index + 1).unwrap_or(0).to_be_bytes());
+        value_bytes.copy_from_slice(&value.to_be_bytes());
     }
     ptr::copy_nonoverlapping(bytes.as_ptr(), out, size);
     size

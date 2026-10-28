@@ -208,6 +208,9 @@ pub unsafe extern "C" fn swr_v1_error_strerror(
         return std::ptr::null();
     }
     let used = 31 - remaining.len();
-    buffer[used] = 0;
+    let Some(end) = buffer.get_mut(used) else {
+        return std::ptr::null();
+    };
+    *end = 0;
     buffer.as_ptr().cast()
 }
