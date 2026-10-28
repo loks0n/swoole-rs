@@ -91,10 +91,6 @@ int sock_fd=77,type=4,sock_domain=AF_INET;NativeSocket native;NativeSocket *sock
  ssize_t recv_all(void *,size_t);ssize_t send_all(const void *,size_t); \
  enum {TRANSFER_ALL=1,TRANSFER_EINTR=2,TRANSFER_CHECKED=4};template <class Call> ssize_t transfer(EventType,const void *,size_t,int,Call);}; \
 struct UringSocket {ssize_t recv(void *,size_t n){return io("uring-recv",n);}ssize_t send(const void *,size_t n){return io("uring-send",n);}void check_return_value(ssize_t r){record("check:"+std::to_string(r));}ssize_t recv_all(void *,size_t);ssize_t send_all(const void *,size_t);}; \
-static bool running=true;static bool swoole_event_is_running(){record("event:running");return running;} \
-static std::vector<int> submit_results;static size_t submit_index=0; \
-static int io_uring_submit(int *){record("submit");return submit_results.at(submit_index++);}static void usleep(int n){record("usleep:"+std::to_string(n));} \
-struct Iouring {int ring=0,used=0;int get_sq_used(){record("sq:used");return used;}void submit(bool);}; \
 struct PHPCoroutine {enum :uint32_t {HOOK_TCP=1<<1,HOOK_UDP=1<<2,HOOK_UNIX=1<<3,HOOK_UDG=1<<4,HOOK_SSL=1<<5,HOOK_TLS=1<<6,HOOK_FILE=1<<8,HOOK_STDIO=1<<15,HOOK_PDO_PGSQL=1<<16,HOOK_PDO_ODBC=1<<17,HOOK_PDO_ORACLE=1<<18,HOOK_PDO_SQLITE=1<<19,HOOK_PDO_FIREBIRD=1<<20,HOOK_STREAM_FUNCTION=1<<7,HOOK_SLEEP=1<<9,HOOK_PROC=1<<10,HOOK_SOCKETS=1<<14,HOOK_NATIVE_CURL=1<<12,HOOK_CURL=1<<11,HOOK_NET_FUNCTION=1<<21,HOOK_MONGODB=1<<22};}; \
 static void swoole_timer_del(void *){record("poll:timer-del");} \
 struct Reactor {std::vector<std::function<void(void*)>> callbacks;void defer(void(*)(void*),void*){record("poll:defer");}void defer(const std::function<void(void*)> &fn){record("event:defer");callbacks.push_back(fn);}};struct EventWaiter {Coroutine *co;uint32_t revents;int error_;EventWaiter(Coroutine *p,uint32_t bits):co(p),revents(bits),error_(0){}};static int16_t translate_events_to_poll(int);static int translate_events_from_poll(int16_t); \
@@ -123,13 +119,13 @@ namespace selected {
 
 #define CASES(NS) \
 static std::vector<std::string> run_##NS(int scenario){using namespace NS;trace.clear();errno=0;last_error=0;Coroutine co;Coroutine::current=&co;SwooleTG.reactor=&co; \
- warning_hook=nullptr;alias_exists=false;class_found=true;alias_result=SUCCESS;syscall_io=io;datagram=true;dns_result="resolved";System::canceled=false;io_index=0;throw_io=false;submit_index=0;available=true;timer_ok=true;wake_ok=true; \
+ warning_hook=nullptr;alias_exists=false;class_found=true;alias_result=SUCCESS;syscall_io=io;datagram=true;dns_result="resolved";System::canceled=false;io_index=0;throw_io=false;available=true;timer_ok=true;wake_ok=true; \
  if(scenario<4){SwooleTG.reactor=scenario&1?&co:nullptr;Coroutine::current=scenario&2?&co:nullptr;record("no-coro:"+std::to_string(is_no_coro()));} \
  else if(scenario<28){} \
  else if(scenario<44){int k=scenario-28;std::vector<std::vector<ssize_t>> cases={{0},{8},{-EINVAL},{-EAGAIN,3,5},{2,3,3},{2,-EAGAIN,-ECONNRESET},{2,0},{-EAGAIN,0}};io_results=cases[k%8];Socket s;char b[16]={};ssize_t r=k<8?s.recv_all(b,8):s.send_all(b,8);record("result:"+std::to_string(r));} \
  else if(scenario<50){Socket s;char b[8]={};io_results={2};int k=scenario-44;available=k%3!=0;timer_ok=k%3!=1;wake_ok=k%3!=2;ssize_t r=k<3?s.recv_all(b,8):s.send_all(b,8);record("result:"+std::to_string(r));} \
  else if(scenario<62){int k=scenario-50;std::vector<std::vector<ssize_t>> cases={{0},{8},{-EINVAL},{3,5},{3,-EINTR},{3,0}};io_results=cases[k%6];UringSocket s;char b[16]={};ssize_t r=k<6?s.recv_all(b,8):s.send_all(b,8);record("result:"+std::to_string(r));} \
- else if(scenario<72){int k=scenario-62;Iouring ring;ring.used=16;submit_results={0};if(k==0)ring.submit(false);if(k==1){ring.used=15;ring.submit(false);}if(k==2){ring.used=15;running=false;ring.submit(false);running=true;}if(k==3){submit_results={-EAGAIN};ring.submit(true);}if(k==4){submit_results={-EBUSY,1};ring.submit(true);}if(k==5){submit_results={-EINTR,1};ring.submit(true);}if(k==6){submit_results={-EINVAL};ring.submit(true);}if(k==7){submit_results={-EBUSY,-EINTR,-EAGAIN};ring.submit(true);}if(k==8){submit_results={-EBUSY,-EINTR,2};ring.submit(true);}if(k==9)ring.submit(true);} \
+ else if(scenario<72){} \
  else if(scenario<193){uint32_t words[]={0,UINT32_MAX,1u<<7,1u<<9,1u<<10,1u<<14,1u<<12,1u<<11,1u<<21,(1u<<11)|(1u<<12),0x80000000u};int k=scenario-72;runtime_hook_flags=words[k/11];uint32_t requested=words[k%11];hook_all_func(requested);record("outer-requested:"+std::to_string(requested));record("installed:"+std::to_string(runtime_hook_flags));} \
  if(scenario>=193 && scenario<643){int k=scenario-193;uint32_t words[]={0,UINT32_MAX,1u<<1,1u<<2,1u<<3,1u<<4,1u<<5,1u<<6,1u<<8,1u<<15,1u<<16,1u<<17,1u<<18,1u<<19,1u<<20};runtime_hook_flags=words[(k/15)%15];uint32_t requested=words[k%15];transport_failure=k>=225?"ssl":"";hook_stream_factory(&requested);hook_stream_ops(requested);hook_pdo_driver(requested);record("requested:"+std::to_string(requested));} \
  /* 643..931: socket_poll_trigger_event moved to Rust (crates/hooks/src/poll.rs, ported_trigger_matrix). */ \

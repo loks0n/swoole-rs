@@ -260,32 +260,58 @@ fn sq_used(engine: &Uring) -> u32 {
     engine.ring.sq.ring_entries - sq_space_left(engine)
 }
 
-/// Submit queued requests; below the batch size, only at the end of the loop.
-fn submit(engine: &mut Uring, immediately: bool) {
-    if !immediately
+/// The ring's side of a submit, so its order can be tested without one.
+trait Submitter {
+    fn event_running(&mut self) -> bool;
+    fn sq_used(&mut self) -> u32;
+    fn submit(&mut self) -> c_int;
+    fn sleep(&mut self);
+    fn failed(&mut self);
+}
+
+impl Submitter for Uring {
+    fn event_running(&mut self) -> bool {
         // SAFETY: the native callback has no preconditions.
-        && unsafe { (engine.host.event_running)() }
-        && sq_used(engine) < SQE_BATCH_SIZE
-    {
+        unsafe { (self.host.event_running)() }
+    }
+
+    fn sq_used(&mut self) -> u32 {
+        sq_used(self)
+    }
+
+    fn submit(&mut self) -> c_int {
+        // SAFETY: the ring is initialized.
+        unsafe { sys::io_uring_submit(&raw mut self.ring) }
+    }
+
+    fn sleep(&mut self) {
+        // SAFETY: usleep(3) has no preconditions.
+        unsafe { libc::usleep(10_000) };
+    }
+
+    fn failed(&mut self) {
+        // SAFETY: the native callback only logs.
+        unsafe { (self.host.submit_failed)() };
+    }
+}
+
+/// Submit queued requests; below the batch size, only at the end of the loop.
+fn submit(ring: &mut impl Submitter, immediately: bool) {
+    if !immediately && ring.event_running() && ring.sq_used() < SQE_BATCH_SIZE {
         return;
     }
     loop {
-        // SAFETY: the ring is initialized.
-        let ret = unsafe { sys::io_uring_submit(&raw mut engine.ring) };
+        let ret = ring.submit();
         if ret >= 0 {
             return;
         }
         match -ret {
             // Retried on the next submit.
             libc::EAGAIN => return,
-            libc::EBUSY => {
-                // SAFETY: usleep(3) has no preconditions.
-                unsafe { libc::usleep(10_000) };
-            }
+            libc::EBUSY => ring.sleep(),
             libc::EINTR => {}
             _ => {
-                // SAFETY: the native callback only logs.
-                unsafe { (engine.host.submit_failed)() };
+                ring.failed();
                 return;
             }
         }
@@ -1077,6 +1103,98 @@ pub(crate) mod testing {
 mod tests {
     use super::testing::{HOST, with_engine};
     use super::*;
+
+    #[derive(Default)]
+    struct Recorder {
+        running: bool,
+        used: u32,
+        results: Vec<c_int>,
+        trace: Vec<String>,
+    }
+
+    impl Submitter for Recorder {
+        fn event_running(&mut self) -> bool {
+            self.trace.push("running".into());
+            self.running
+        }
+        fn sq_used(&mut self) -> u32 {
+            self.trace.push("sq:used".into());
+            self.used
+        }
+        fn submit(&mut self) -> c_int {
+            self.trace.push("submit".into());
+            self.results.remove(0)
+        }
+        fn sleep(&mut self) {
+            self.trace.push("usleep:10000".into());
+        }
+        fn failed(&mut self) {
+            self.trace.push("submit:error".into());
+        }
+    }
+
+    fn submitted(running: bool, used: u32, results: &[c_int], immediately: bool) -> Vec<String> {
+        let mut ring = Recorder {
+            running,
+            used,
+            results: results.to_vec(),
+            ..Recorder::default()
+        };
+        submit(&mut ring, immediately);
+        ring.trace
+    }
+
+    // The hooks ordered gate's io_uring submit scenarios, against upstream's order.
+    #[test]
+    fn submit_batches_and_retries_in_upstream_order() {
+        let (busy, intr, again) = (-libc::EBUSY, -libc::EINTR, -libc::EAGAIN);
+        assert_eq!(
+            submitted(true, 16, &[0], false),
+            ["running", "sq:used", "submit"],
+            "a full batch"
+        );
+        assert_eq!(
+            submitted(true, 15, &[0], false),
+            ["running", "sq:used"],
+            "deferred"
+        );
+        assert_eq!(
+            submitted(false, 15, &[0], false),
+            ["running", "submit"],
+            "loop not running"
+        );
+        assert_eq!(
+            submitted(true, 16, &[again], true),
+            ["submit"],
+            "EAGAIN waits"
+        );
+        assert_eq!(
+            submitted(true, 16, &[busy, 1], true),
+            ["submit", "usleep:10000", "submit"],
+            "EBUSY sleeps"
+        );
+        assert_eq!(
+            submitted(true, 16, &[intr, 1], true),
+            ["submit", "submit"],
+            "EINTR retries"
+        );
+        assert_eq!(
+            submitted(true, 16, &[-libc::EINVAL], true),
+            ["submit", "submit:error"],
+            "other errors log"
+        );
+        assert_eq!(
+            submitted(true, 16, &[busy, intr, again], true),
+            ["submit", "usleep:10000", "submit", "submit"],
+            "retries end at EAGAIN"
+        );
+        assert_eq!(
+            submitted(true, 16, &[busy, intr, 2], true),
+            ["submit", "usleep:10000", "submit", "submit"],
+            "retries end at success"
+        );
+        assert_eq!(submitted(true, 16, &[0], true), ["submit"], "immediately");
+    }
 
     #[test]
     fn timespec_matches_double_to_timespec() {
