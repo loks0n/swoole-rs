@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_channel_coro.cc b/ext-src/swoole_channel_coro.cc
-index 75bb2eb..71ce2ba 100644
+index 75bb2eb..dfaead5 100644
 --- a/ext-src/swoole_channel_coro.cc
 +++ b/ext-src/swoole_channel_coro.cc
 @@ -21,2 +21,7 @@
@@ -83,7 +83,7 @@ index 75bb2eb..71ce2ba 100644
 -    chan_object->std.handlers = &swoole_channel_coro_handlers;
 -    return &chan_object->std;
 -}
-+static constexpr swr_v1_phpcollections_channel_ops channel_ops = {
++static const swr_v1_phpcollections_channel_ops channel_ops = {
 +    [](size_t capacity) -> void * { return new Channel(capacity); },
 +    [](void *chan) { delete static_cast<Channel *>(chan); },
 +    [](void *chan, void *data, double timeout) -> uint8_t { return static_cast<Channel *>(chan)->push(data, timeout); },
