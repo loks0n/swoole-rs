@@ -5,6 +5,7 @@ use libc::{c_char, c_int, c_void};
 use std::{
     collections::{HashMap, VecDeque},
     ffi::CStr,
+    hash::{BuildHasherDefault, Hasher},
     mem::MaybeUninit,
     ptr,
 };
@@ -146,7 +147,8 @@ struct Client {
     remote: Http2Settings,
     remote_window: u32,
     local_window: u32,
-    streams: HashMap<u32, Stream>,
+    streams: Streams,
+    headers: Headers,
     queue: VecDeque<Vec<u8>>,
     inflater: *mut c_void,
     deflater: *mut c_void,
@@ -196,43 +198,86 @@ fn window(current: u32, amount: usize, initial: u32, credit: bool) -> Http2Windo
     plan
 }
 
-/// The HPACK header list upstream's `HeaderSet` builds: names lowercased.
+/// The HPACK header list upstream's `HeaderSet` builds (names lowercased),
+/// in one byte arena the client reuses across requests.
+#[derive(Default)]
 struct Headers {
-    slots: Vec<Option<(Vec<u8>, Vec<u8>)>>,
+    bytes: Vec<u8>,
+    /// Each slot's name and value as (start, name length, value length).
+    slots: Vec<Option<(usize, usize, usize)>>,
+    list: Vec<Header>,
 }
 
 impl Headers {
-    fn add(&mut self, name: &[u8], value: &[u8]) {
-        self.slots
-            .push(Some((name.to_ascii_lowercase(), value.to_vec())));
+    fn clear(&mut self) {
+        self.bytes.clear();
+        self.slots.clear();
+    }
+
+    fn store(&mut self, name: &[u8], value: &[&[u8]]) -> (usize, usize, usize) {
+        let start = self.bytes.len();
+        self.bytes.extend(name.iter().map(u8::to_ascii_lowercase));
+        for part in value {
+            self.bytes.extend_from_slice(part);
+        }
+        (start, name.len(), self.bytes.len() - start - name.len())
+    }
+
+    fn add(&mut self, name: &[u8], value: &[&[u8]]) {
+        let slot = self.store(name, value);
+        self.slots.push(Some(slot));
     }
 
     fn set(&mut self, index: usize, name: &[u8], value: &[u8]) {
-        self.slots[index] = Some((name.to_ascii_lowercase(), value.to_vec()));
+        self.slots[index] = Some(self.store(name, &[value]));
     }
 
-    fn list(&self) -> Vec<Header> {
-        self.slots
-            .iter()
-            .map(|slot| match slot {
-                Some((name, value)) => Header {
-                    name: name.as_ptr(),
-                    value: value.as_ptr(),
-                    name_length: name.len(),
-                    value_length: value.len(),
-                    flags: NV_NO_COPY,
-                },
-                None => Header {
-                    name: ptr::null(),
-                    value: ptr::null(),
-                    name_length: 0,
-                    value_length: 0,
-                    flags: 0,
-                },
-            })
-            .collect()
+    /// The `nghttp2_nv` list over the arena, valid until the next change.
+    fn list(&mut self) -> &[Header] {
+        let base = self.bytes.as_ptr();
+        self.list.clear();
+        self.list.extend(self.slots.iter().map(|slot| match *slot {
+            Some((start, name, value)) => Header {
+                name: base.wrapping_add(start),
+                value: base.wrapping_add(start + name),
+                name_length: name,
+                value_length: value,
+                flags: NV_NO_COPY,
+            },
+            None => Header {
+                name: ptr::null(),
+                value: ptr::null(),
+                name_length: 0,
+                value_length: 0,
+                flags: 0,
+            },
+        }));
+        &self.list
     }
 }
+
+/// Stream ids are small and spread by the server's odd/even rule: hash them
+/// by a multiply instead of `SipHash`.
+#[derive(Default)]
+struct IdHasher(u64);
+
+impl Hasher for IdHasher {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.0 = (self.0 << 8 | u64::from(byte)).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        }
+    }
+
+    fn write_u32(&mut self, id: u32) {
+        self.0 = u64::from(id).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+    }
+}
+
+type Streams<T = Stream> = HashMap<u32, T, BuildHasherDefault<IdHasher>>;
 
 /// The socket's close hook.
 /// # Safety
@@ -283,7 +328,8 @@ impl Client {
             remote: Http2Settings::default(),
             remote_window: 0,
             local_window: local.init_window_size,
-            streams: HashMap::new(),
+            streams: Streams::default(),
+            headers: Headers::default(),
             queue: VecDeque::new(),
             inflater: ptr::null_mut(),
             deflater: ptr::null_mut(),
@@ -590,14 +636,15 @@ impl Client {
         let headers = unsafe { table::property(request, c"headers") };
         // SAFETY: as above.
         let cookies = unsafe { table::property(request, c"cookies") };
-        let mut set = Headers { slots: Vec::new() };
+        let mut set = std::mem::take(&mut self.headers);
+        set.clear();
         let text = |value: *mut zval| {
             // SAFETY: live property zvals.
             unsafe { table::string_bytes(value) }.filter(|text| !text.is_empty())
         };
-        set.add(b":method", text(method).unwrap_or(b"GET"));
-        set.add(b":path", text(path).unwrap_or(b"/"));
-        set.add(b":scheme", if self.ssl { b"https" } else { b"http" });
+        set.add(b":method", &[text(method).unwrap_or(b"GET")]);
+        set.add(b":path", &[text(path).unwrap_or(b"/")]);
+        set.add(b":scheme", &[if self.ssl { b"https" } else { b"http" }]);
         set.slots.push(None);
         let mut host = false;
         // SAFETY: as above.
@@ -616,7 +663,7 @@ impl Client {
                     set.set(AUTHORITY, b":authority", value.bytes());
                     host = true;
                 } else {
-                    set.add(key, value.bytes());
+                    set.add(key, &[value.bytes()]);
                 }
             }
         }
@@ -652,13 +699,14 @@ impl Client {
                 };
                 // SAFETY: the reference php_url_encode returned.
                 let encoded = unsafe { Owned::from_raw(encoded) };
-                set.add(b"cookie", &[key, b"=", encoded.bytes()].concat());
+                set.add(b"cookie", &[key, b"=", encoded.bytes()]);
             }
         }
         let list = set.list();
+        let (headers, count) = (list.as_ptr(), list.len());
         // SAFETY: the codec and a list of live headers.
         let bound = unsafe {
-            native::swoole_http2_client_coro_deflate_bound(self.deflater, list.as_ptr(), list.len())
+            native::swoole_http2_client_coro_deflate_bound(self.deflater, headers, count)
         };
         let mut frame = vec![0_u8; FRAME_HEADER + bound];
         // SAFETY: as above, into the frame's `bound` bytes after its header.
@@ -667,10 +715,11 @@ impl Client {
                 self.deflater,
                 frame.as_mut_ptr().wrapping_add(FRAME_HEADER),
                 bound,
-                list.as_ptr(),
-                list.len(),
+                headers,
+                count,
             )
         };
+        self.headers = set;
         if written < 0 {
             #[expect(
                 clippy::cast_possible_truncation,
@@ -1733,4 +1782,50 @@ swoole_rs_zend::handlers! {
     zim_swoole_http2_client_coro_ping => ping;
     zim_swoole_http2_client_coro_goaway => goaway;
     zim_swoole_http2_client_coro_close => close;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn headers_lowercase_names_into_one_arena() {
+        let mut set = Headers::default();
+        set.add(b":method", &[b"GET"]);
+        set.slots.push(None);
+        set.add(b"X-Token", &[b"a", b"=", b"b"]);
+        set.set(1, b":authority", b"host:8080");
+        let list = set.list().to_vec();
+        let text = |pointer: *const u8, length: usize| {
+            // SAFETY: the arena outlives these reads.
+            unsafe { std::slice::from_raw_parts(pointer, length) }.to_vec()
+        };
+        assert_eq!(list.len(), 3, "three slots");
+        assert_eq!(
+            text(list[1].name, list[1].name_length),
+            b":authority",
+            "reserved slot"
+        );
+        assert_eq!(
+            text(list[2].name, list[2].name_length),
+            b"x-token",
+            "lowercased"
+        );
+        assert_eq!(
+            text(list[2].value, list[2].value_length),
+            b"a=b",
+            "joined value"
+        );
+        assert_eq!(list[0].flags, NV_NO_COPY, "no-copy flags");
+    }
+
+    #[test]
+    fn stream_ids_hash_apart() {
+        let mut streams = Streams::<()>::default();
+        for id in (1..200).step_by(2) {
+            streams.insert(id, ());
+        }
+        assert_eq!(streams.len(), 100, "distinct ids");
+        assert!(streams.contains_key(&199), "lookup");
+    }
 }
