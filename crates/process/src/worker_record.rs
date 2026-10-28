@@ -45,8 +45,10 @@ pub struct WorkerRecord {
 /// `worker` points to a live `Worker`/`WorkerRecord` in its backing memory.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_worker_status(worker: *const WorkerRecord) -> u8 {
-    // SAFETY: the caller lends a live worker record.
-    unsafe { &*worker }.status
+    // SAFETY: the caller lends a live worker record. Reading the field through the
+    // pointer makes no reference to the whole record, which other processes write
+    // in shared memory.
+    unsafe { (*worker).status }
 }
 
 /// Set the worker's status.
@@ -55,8 +57,9 @@ pub unsafe extern "C" fn swr_v1_worker_status(worker: *const WorkerRecord) -> u8
 /// `worker` points to a live, writable `Worker`/`WorkerRecord`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_worker_set_status(worker: *mut WorkerRecord, status: u8) {
-    // SAFETY: the caller lends a live, writable worker record.
-    unsafe { &mut *worker }.status = status;
+    // SAFETY: the caller lends a live, writable worker record; as above, only the
+    // field is written, with no reference to the whole record.
+    unsafe { (*worker).status = status };
 }
 
 #[cfg(test)]
