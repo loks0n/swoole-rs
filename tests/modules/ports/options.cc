@@ -1,5 +1,6 @@
 #define SWR_PORTS_FLAGS_NO_MAIN
 #include "flags.cc"
+#ifdef PORTS_DRIVER
 int main() {
     static_assert(sizeof(SwrPortsOption)==56&&offsetof(SwrPortsOption,action)==32&&offsetof(SwrPortsOption,reserved)==52,"option C ABI");
     size_t cases=flag_checks(true);
@@ -27,3 +28,4 @@ int main() {
     printf("%zu normal binary-prefix and option catalog ABI comparisons passed\n",cases);
     return 0;
 }
+#endif

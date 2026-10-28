@@ -13,23 +13,24 @@
     )
 )]
 
+mod access;
 pub mod bailout;
 mod call;
 mod class;
 mod error;
 mod object;
-mod value;
+pub mod string;
+pub mod value;
 
-pub use call::{Call, Invalid};
-pub use class::{Class, class_name, unset_property_deny};
-pub use class::{register_double_constant, register_long_constant};
+pub use access::{declare_null, push_string, set_key, string_of, to_long, value_of};
+pub use call::{Call, Invalid, type_of};
+pub use class::{
+    Class, class_name, declare_bool, declare_long, declare_string, register_double_constant,
+    register_long_constant, unset_property_deny,
+};
 pub use error::{throw_constructed_twice, throw_error, throw_exception};
 pub use object::{Object, init_object, set_object};
 pub use swoole_rs_zend_sys as sys;
-pub use value::{
-    bytes, declare_long, declare_null, long_of, push_string, set_key, string_of, type_of,
-    update_long, value_of,
-};
 
 /// Export Zend handlers under Zend's own names (`zim_<class>_<method>` for
 /// methods, `zif_<function>` for functions) so upstream's tables name them

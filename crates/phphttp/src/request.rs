@@ -10,7 +10,7 @@ use crate::{
 use std::{ptr, slice};
 use swoole_rs_zend::{
     Call, Class, declare_long, declare_null, handlers,
-    sys::{IS_STRING, zend_class_entry, zend_function_entry, zend_object},
+    sys::{IS_STRING, ZEND_ACC_PUBLIC, zend_class_entry, zend_function_entry, zend_object},
     type_of,
 };
 
@@ -48,7 +48,7 @@ pub unsafe extern "C" fn swr_v1_phphttp_request_minit(
     let ce = REQUEST.entry();
     for name in [c"fd", c"streamId"] {
         // SAFETY: MINIT, with the class just registered.
-        unsafe { declare_long(ce, name, 0) };
+        unsafe { declare_long(ce, name, 0, ZEND_ACC_PUBLIC) };
     }
     for name in [
         c"header",
@@ -105,7 +105,7 @@ fn get_data(call: &Call) {
 }
 
 fn create_request(call: &Call) {
-    let Ok(options) = call.arity(0, 1).and_then(|()| call.array(1)) else {
+    let Ok(options) = call.arity(0, 1).and_then(|()| call.array_opt(1)) else {
         return call.set_bool(false);
     };
     // SAFETY: the return slot and an optional array argument of this call.
@@ -123,7 +123,7 @@ fn parse(call: &Call) {
     if host::flags(ctx) & COMPLETED != 0 {
         return call.set_bool(false);
     }
-    let Ok(Some(data)) = call.arity(1, 1).and_then(|()| call.string(1)) else {
+    let Ok(Some(data)) = call.arity(1, 1).and_then(|()| call.string_opt(1)) else {
         return call.set_bool(false);
     };
     // SAFETY: a live context and the argument's bytes.

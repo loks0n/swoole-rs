@@ -1,5 +1,8 @@
 // Exact listen address prefix; mock native server records effects without IO.
+// Two translation units, one per WRAPPERS_SIDE; the selected one also holds the driver.
+#ifdef WRAPPERS_DRIVER
 #include "swoole_rs_wrappers.h"
+#endif
 #include <cassert>
 #include <cerrno>
 #include <cstdlib>
@@ -10,7 +13,7 @@
 #include <string>
 #include <vector>
 #include "numbers.inc"
-static std::ostringstream trace;
+inline std::ostringstream trace;
 constexpr int SW_SOCK_TCP=1;
 struct Context {};
 struct Port {};
@@ -23,13 +26,13 @@ struct Server {
         host=address;port=number;trace<<"add:"<<type<<':'<<host.size()<<':'<<host<<':'<<port<<';';return &endpoint;
     }
 };
-static void swoole_warning(const char *message) { trace<<"warn:"<<message<<';'; }
-namespace original {
-#include "original.inc"
+inline void swoole_warning(const char *message) { trace<<"warn:"<<message<<';'; }
+namespace original { std::shared_ptr<Server> listen(const std::string &addr, const std::function<void(Context &ctx)> &cb, int mode); }
+namespace selected { std::shared_ptr<Server> listen(const std::string &addr, const std::function<void(Context &ctx)> &cb, int mode); }
+namespace WRAPPERS_SIDE {
+#include "body.inc"
 }
-namespace selected {
-#include "selected.inc"
-}
+#ifdef WRAPPERS_DRIVER
 template<class F>static std::string run(F function,const std::string &address,int mode) {
     trace.str("");trace.clear();errno=0;
     auto server=function(address,[](Context &){},mode);
@@ -52,3 +55,4 @@ int main() {
     auto empty=swr_v1_wrappers_listener_plan(nullptr,0);assert(!empty.separator&&!empty.valid&&!empty.default_host);++cases;
     std::cout<<"listener-prefix "<<cases<<" exact-prefix/direct-ABI cases PASS\n";
 }
+#endif

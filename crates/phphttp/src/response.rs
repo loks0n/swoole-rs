@@ -1,4 +1,5 @@
 //! `Swoole\Http\Response`.
+use crate::cookie::{swr_v1_httpbindings_cookie_line, swr_v1_httpbindings_cookie_object_line};
 use crate::{
     context::{self, Holder},
     host::{
@@ -13,13 +14,14 @@ use crate::{
     },
 };
 use std::{ffi::CStr, mem::MaybeUninit, ptr};
-use swoole_rs_httpbindings::{
-    swr_v1_httpbindings_cookie_line, swr_v1_httpbindings_cookie_object_line,
-    swr_v1_httpbindings_file_range,
-};
+use swoole_rs_httpbindings::swr_v1_httpbindings_file_range;
+use swoole_rs_zend::string::bytes;
 use swoole_rs_zend::{
-    Call, Class, Invalid, bytes, declare_long, declare_null, handlers, push_string, set_key,
-    sys::{IS_OBJECT, IS_STRING, zend_class_entry, zend_function_entry, zend_object, zend_string},
+    Call, Class, Invalid, declare_long, declare_null, handlers, push_string, set_key,
+    sys::{
+        IS_OBJECT, IS_STRING, ZEND_ACC_PUBLIC, zend_class_entry, zend_function_entry, zend_object,
+        zend_string,
+    },
     type_of, value_of,
 };
 
@@ -60,7 +62,7 @@ pub unsafe extern "C" fn swr_v1_phphttp_response_minit(
     }
     let ce = RESPONSE.entry();
     // SAFETY: MINIT, with the class just registered.
-    unsafe { declare_long(ce, c"fd", 0) };
+    unsafe { declare_long(ce, c"fd", 0, ZEND_ACC_PUBLIC) };
     for name in [c"socket", c"header", c"cookie", c"trailer"] {
         // SAFETY: as above.
         unsafe { declare_null(ce, name) };
@@ -330,7 +332,7 @@ fn status(call: &Call) {
     let run = || -> Option<()> {
         let parsed = call
             .arity(1, 2)
-            .and_then(|()| Ok((call.long(1, 0)?, call.string(2)?)));
+            .and_then(|()| Ok((call.long(1, 0)?, call.string_opt(2)?)));
         let (code, reason) = parsed.ok()?;
         let ctx = checked(call)?;
         let reason = reason.unwrap_or_default();
@@ -360,7 +362,7 @@ fn header(call: &Call) {
     let run = || -> Option<()> {
         let parsed = call
             .arity(2, 3)
-            .and_then(|()| Ok((call.string(1)?, call.passed(2), call.bool(3, true)?)));
+            .and_then(|()| Ok((call.string_opt(1)?, call.passed(2), call.bool(3, true)?)));
         let (Some(key), Some(value), format) = parsed.ok()? else {
             return None;
         };
@@ -378,7 +380,7 @@ fn trailer(call: &Call) {
     let run = || -> Option<()> {
         let parsed = call
             .arity(2, 2)
-            .and_then(|()| Ok((call.string(1)?, call.string_or_null(2)?)));
+            .and_then(|()| Ok((call.string_opt(1)?, call.string_or_null(2)?)));
         let (Some(key), value) = parsed.ok()? else {
             return None;
         };

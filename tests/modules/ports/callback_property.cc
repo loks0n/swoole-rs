@@ -7,11 +7,14 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#ifdef PORTS_DRIVER
 #include "swoole_rs_ports.h"
+#endif
 #include "zend-map.inc"
 #include "events.inc"
-static std::ostringstream trace;
-static unsigned lowercase_calls;
+// One instance shared by both translation units.
+inline std::ostringstream trace;
+inline unsigned lowercase_calls;
 struct zval { std::string bytes; bool is_null=false; unsigned identity=0; };
 struct zend_string { std::string bytes; };
 namespace zend {
@@ -32,10 +35,10 @@ static zend_string *zend_string_tolower(zend_string *input) {
     for(char &c:result->bytes)c=static_cast<char>(zend_lowercase[static_cast<unsigned char>(c)]);
     return result;
 }
-static std::unordered_map<std::string,zval> properties;
-static int object,entry;
-static int *swoole_server_port_ce=&entry;
-static zval null_value{"",true,0};
+inline std::unordered_map<std::string,zval> properties;
+inline int object,entry;
+inline int *swoole_server_port_ce=&entry;
+inline zval null_value{"",true,0};
 static zval *zend_read_property(int *ce,int *obj,const char *name,size_t size,bool silent,zval *) {
     assert(ce==swoole_server_port_ce&&obj==&object&&silent);
     trace << "read:" << std::string(name,size) << ';';
@@ -51,12 +54,14 @@ static zval *zend_read_property(int *ce,int *obj,const char *name,size_t size,bo
 #define RETURN_FALSE return nullptr
 #define RETURN_NULL() do {trace << "null;";return nullptr;}while(0)
 #define RETURN_ZVAL(p,copy,dtor) do {static_assert(copy==1&&dtor==0,"return flags");trace << "copy:" << (p)->identity << ';';return (p);}while(0)
-namespace Original {
-#include "original.inc"
+namespace original { zval *get_callback(zval *input); }
+namespace selected { zval *get_callback(zval *input); }
+// Each side's body in its own translation unit; the selected one also holds the driver.
+namespace PORTS_SIDE {
+#include "body.inc"
+zval *get_callback(zval *input) { return getCallback(input); }
 }
-namespace Selected {
-#include "selected.inc"
-}
+#ifdef PORTS_DRIVER
 static uint32_t seed=0x81715;
 static uint32_t random_word(){seed^=seed<<13;seed^=seed>>17;seed^=seed<<5;return seed;}
 static unsigned long cases;
@@ -64,8 +69,8 @@ static void compare(const std::string &name,bool null_properties) {
     unsigned id=1;properties.clear();
     for(const auto &event:server_port_event_map) properties.emplace("on"+event.second.name,zval{"callback",null_properties,id++});
     zval input{name,false,0};
-    trace.str("");trace.clear();lowercase_calls=0;auto *expected=Original::getCallback(&input);auto original=trace.str();assert(lowercase_calls==1);
-    trace.str("");trace.clear();lowercase_calls=0;auto *actual=Selected::getCallback(&input);assert(lowercase_calls==0);
+    trace.str("");trace.clear();lowercase_calls=0;auto *expected=original::get_callback(&input);auto original=trace.str();assert(lowercase_calls==1);
+    trace.str("");trace.clear();lowercase_calls=0;auto *actual=selected::get_callback(&input);assert(lowercase_calls==0);
     if(expected!=actual||original!=trace.str()) {fprintf(stderr,"getter model mismatch case=%lu length=%zu\n",cases,name.size());std::abort();}
     cases++;
 }
@@ -89,3 +94,4 @@ int main() {
     assert(locales>=1);
     printf("%lu exact normal getter comparisons; %u available locale settings; native lowercase allocation removed\n",cases,locales);
 }
+#endif

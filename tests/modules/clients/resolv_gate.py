@@ -7,41 +7,38 @@ c-ares, whole PHP runtime or global storage lifetime parity.
 import argparse
 import json
 from pathlib import Path
+import sys
 import gate
 
 ROOT=Path(__file__).resolve().parents[3]
+sys.path.insert(0,str(ROOT))
+from tools.build_hybrid import hybrid_tree
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--source',required=True,type=Path)
-    p.add_argument('--archive',type=Path)
+    p.add_argument('--archive',required=True,type=Path,help='Rust archive of the hybrid build under test')
     p.add_argument('--output',required=True,type=Path)
     p.add_argument('--sanitize',action='store_true')
     p.add_argument('--rust-sanitized',action='store_true')
     a=p.parse_args();out=a.output.parent/(a.output.stem+'-artifacts');out.mkdir(parents=True,exist_ok=True);gate.LOG=out/'commands';gate.LOG.mkdir(exist_ok=True)
-    if a.rust_sanitized and not (a.sanitize and a.archive):p.error('--rust-sanitized needs --archive and --sanitize')
-    archive=a.archive or out/'libclients.a'
-    if not a.archive:gate.run(['rustc','--edition','2024','--crate-type','staticlib','-O','-C','panic=abort',ROOT/'crates/clients/src/lib.rs','-o',archive])
-    scratch=out/'patched';scratch.mkdir(exist_ok=True);original=''
-    for path in gate.overlay_manifest()['upstream_paths']:
-        text=gate.run(['git','-C',a.source,'show',f'{gate.PIN}:{path}']);dest=scratch/path;dest.parent.mkdir(parents=True,exist_ok=True);dest.write_text(text)
-        if path=='src/network/dns.cc':original=text
-    gate.apply_overlay(scratch,out);selected=(scratch/'src/network/dns.cc').read_text()
-    native='';rust=''
+    if a.rust_sanitized and not a.sanitize:p.error('--rust-sanitized needs --sanitize')
+    # Native side from the pin, Rust side from the hybrid build's fully patched tree.
+    hybrid_source,hybrid_flags=hybrid_tree(a.archive)
+    trees={'native':lambda path:gate.run(['git','-C',a.source,'show',f'{gate.PIN}:{path}']),'rust':lambda path:(hybrid_source/path).read_text()}
+    original=trees['native']('src/network/dns.cc');selected=trees['rust']('src/network/dns.cc')
+    bodies={'native':'','rust':''}
     for signature in ['SW_API void swoole_set_dns_server(const std::string &server) {','SW_API bool swoole_load_resolv_conf() {']:
         before=gate.body(original,signature);after=gate.body(selected,signature)
         if before==after or 'swr_v1_clients_' not in after:raise ValueError('No actual selected Rust resolver configuration caller')
-        native+=before+'\n';rust+=after+'\n'
-    address_native=gate.run(['git','-C',a.source,'show',f'{gate.PIN}:src/network/address.cc'])
-    address_selected=(scratch/'src/network/address.cc').read_text()
-    native_port=gate.body(address_native,'bool Address::verify_port(const int port, const bool for_connect) {')
-    selected_port=gate.body(address_selected,'bool Address::verify_port(const int port, const bool for_connect) {')
-    header=gate.run(['git','-C',a.source,'show',f'{gate.PIN}:include/swoole.h'])
-    integers=gate.body(header,'static inline long sw_atol(const char *str) {')+'\n'+gate.body(header,'static inline int sw_atoi(const char *str) {')
+        bodies['native']+=before+'\n';bodies['rust']+=after+'\n'
     template=(Path(__file__).with_name('resolv_witness.cpp')).read_text()
-    prelude,facade=template.replace('// NATIVE_INTEGER',integers).split('// DECLARATIONS')
-    facade=facade.split('// DRIVER')[0]
-    cpp=out/'actual_resolv.cpp'
+    prelude,facade=template.split('// DECLARATIONS');facade,rest=facade.split('// ENTRY');entry=rest.split('// DRIVER')[0]
+    def side(name):
+        read=trees[name];header=read('include/swoole.h')
+        integers=gate.body(header,'static inline long sw_atol(const char *str) {')+'\n'+gate.body(header,'static inline int sw_atoi(const char *str) {')
+        port=gate.body(read('src/network/address.cc'),'bool Address::verify_port(const int port, const bool for_connect) {')
+        return ('#include "swoole_rs_clients.h"\n' if name=='rust' else '')+prelude.replace('// NATIVE_INTEGER',integers)+facade.replace('BODY_NAMESPACE',name).replace('// ACTUAL_PORT',port).replace('// ACTUAL_BODY',bodies[name])
     driver=r'''int main(int argc,char **argv){if(argc!=2)return 9;size_t count=0;
       for(const std::string&host:std::vector<std::string>{"","a","127.0.0.1"," "})for(int port=-3;port<=65538;port++){
         const auto value=host+":"+std::to_string(port);auto expected=native::endpoint(value),actual=rust::endpoint(value);
@@ -59,10 +56,13 @@ def main():
       }
       std::cout<<count<<"\n";
     }'''
-    cpp.write_text(prelude+facade.replace('BODY_NAMESPACE','native').replace('// ACTUAL_PORT',native_port).replace('// ACTUAL_BODY',native)+facade.replace('BODY_NAMESPACE','rust').replace('// ACTUAL_PORT',selected_port).replace('// ACTUAL_BODY',rust)+driver)
-    exe=out/'actual_resolv';flags=['-fsanitize=address,undefined','-fno-omit-frame-pointer'] if a.sanitize else []
-    gate.run(['c++','-std=c++17','-O1',*flags,'-I',ROOT/'native/clients',cpp,archive,'-lpthread','-ldl','-lm','-o',exe]);cases=int(gate.run([exe,out/'private-resolv.conf']).strip())
-    report=dict(passed=True,cases=cases,scope=__doc__,pin=gate.PIN,not_compared=['Endpoints and config tokens beyond their fixed sizes are outside the compared domain; Rust stops at bounds there.'],native_sanitized=a.sanitize,rust_sanitized=a.rust_sanitized)
+    # Each side in its own translation unit: the native one sees only pinned text.
+    native,rust=out/'native_resolv.cpp',out/'actual_resolv.cpp'
+    native.write_text(side('native'));rust.write_text(side('rust')+entry+driver)
+    exe=out/'actual_resolv';flags=['-std=c++17','-O1',*(['-fsanitize=address,undefined','-fno-omit-frame-pointer'] if a.sanitize else [])]
+    gate.run(['c++',*flags,'-c',native,'-o',out/'native_resolv.o'])
+    gate.run(['c++',*flags,*hybrid_flags,rust,out/'native_resolv.o',a.archive,'-lpthread','-ldl','-lm','-o',exe]);cases=int(gate.run([exe,out/'private-resolv.conf']).strip())
+    report=dict(passed=True,cases=cases,scope=__doc__,pin=gate.PIN,hybrid_tree=str(hybrid_source),not_compared=['Endpoints and config tokens beyond their fixed sizes are outside the compared domain; Rust stops at bounds there.'],native_sanitized=a.sanitize,rust_sanitized=a.rust_sanitized)
     a.output.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 
 if __name__=='__main__':main()

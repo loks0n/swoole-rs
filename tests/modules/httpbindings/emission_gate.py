@@ -4,13 +4,12 @@ import argparse
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
 from source import definition
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'http'))
+from gate import PIN, Sides
 from tools.harness import ROOT, run_isolated, write_report
-from tools.build_upstream import COMMIT as PIN
 CONTEXT = r'''
 struct HttpContext;
 bool swoole_http2_server_write(HttpContext*,zend_string*);
@@ -69,9 +68,8 @@ Result run(unsigned bits,size_t length,bool null,bool ending,unsigned failed,uns
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--archive', type=Path)
-    group.add_argument('--rust-sanitize', action='store_true')
+    parser.add_argument('--archive', type=Path, required=True, help='Rust archive of the hybrid build under test')
+    parser.add_argument('--rust-sanitize', action='store_true', help='Link a private ASan httpbindings Rust archive instead')
     parser.add_argument('--without-compression', action='store_true')
     parser.add_argument('--without-zlib', action='store_true')
     parser.add_argument('--output', type=Path, required=True)
@@ -83,47 +81,39 @@ def main():
               'passed': False}
     with tempfile.TemporaryDirectory(prefix='swr-httpbindings-emission-') as temp:
         tree = Path(temp)
+        archive = args.archive.resolve()
         if args.rust_sanitize:
-            args.archive = tree / 'rust.a'
-            cmd = ['rustc', '--edition=2024', '-Zsanitizer=address', '--crate-type=staticlib', '-C', 'opt-level=3', '-C', 'panic=abort', str(ROOT / 'crates/httpbindings/src/lib.rs'), '-o', str(args.archive)]
+            archive = tree / 'rust.a'
+            cmd = ['rustc', '--edition=2024', '-Zsanitizer=address', '--crate-type=staticlib', '-C', 'opt-level=3', '-C', 'panic=abort', str(ROOT / 'crates/httpbindings/src/lib.rs'), '-o', str(archive)]
             result = run_isolated(cmd, timeout=60, env={**os.environ, 'RUSTC_BOOTSTRAP': '1'})
             report['rust_compile'] = {'command': cmd, 'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
             if result.returncode:
                 write_report(args.output, report)
                 return 1
+        # Upstream side from the pin, candidate side from the hybrid build's fully patched tree.
         dest = 'ext-src/swoole_http_response.cc'
-        original = subprocess.check_output(['git', '-C', str(args.source), 'show', PIN + ':' + dest]).decode()
-        config = subprocess.check_output(['git', '-C', str(args.source), 'show', PIN + ':include/swoole_config.h']).decode()
-        threshold = next(line for line in config.splitlines() if line.startswith('#define SW_HTTP_MAX_APPEND_DATA '))
-        path = tree / dest
-        path.parent.mkdir(parents=True)
-        path.write_text(original)
-        report['append_threshold'] = threshold
-        patch = ROOT / 'migration/patches/httpbindings/0003-response-policy.patch'
-        subprocess.run(['git', 'apply', '--check', str(patch)], cwd=tree, check=True)
-        subprocess.run(['git', 'apply', str(patch)], cwd=tree, check=True)
-        for name, text in [('upstream_emission', original), ('candidate_emission', path.read_text())]:
+        sides = Sides(args.source, args.archive, tree, dest)
+        defines = ['-I' + str(local)] + (['-DEMISSION_NO_COMPRESSION'] if args.without_compression else []) + (['-DEMISSION_NO_ZLIB'] if args.without_zlib else [])
+        for flags in sides.flags.values():
+            flags[:] = ['-std=c++14' if flag == '-std=c++17' else flag for flag in flags] + defines
+        units = []
+        for side, name, text, config in [('upstream', 'upstream_emission', sides.original(dest), sides.original('include/swoole_config.h')),
+                                         ('candidate', 'candidate_emission', sides.selected(dest), sides.selected('include/swoole_config.h'))]:
+            threshold = next(line for line in config.splitlines() if line.startswith('#define SW_HTTP_MAX_APPEND_DATA '))
+            report.setdefault('append_threshold', {})[side] = threshold
             bodies = '\n'.join(definition(text, 'void HttpContext::' + method + '(') for method in ['send_trailer', 'write', 'end'])
             p = tree / (name + '.cc')
             p.write_text('#include "emission_oracle.h"\n' + threshold + '\nnamespace ' + name + ' {\n' + CONTEXT + bodies + WRAPPER + '\n}\n')
+            units.append((side, p))
         binary = tree / 'gate'
-        cmd = ['c++', '-std=c++14', '-O1', '-g', '-fsanitize=address,undefined', '-fno-sanitize-recover=all', '-I' + str(local), '-I' + str(ROOT / 'native/httpbindings'), str(tree / 'upstream_emission.cc'), str(tree / 'candidate_emission.cc'), str(local / 'emission_gate.cc'), str(args.archive.resolve()), '-lm', '-o', str(binary)]
-        if args.without_compression:
-            cmd.append('-DEMISSION_NO_COMPRESSION')
-        if args.without_zlib:
-            cmd.append('-DEMISSION_NO_ZLIB')
-        if sys.platform.startswith('linux'):
-            cmd += ['-ldl', '-lpthread', '-lrt', '-lutil']
-        result = run_isolated(cmd, timeout=90)
-        report['compile'] = {'command': cmd, 'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
-        if not result.returncode:
+        if sides.build(binary, [*units, ('candidate', local / 'emission_gate.cc')], archive, report):
             result = run_isolated([str(binary)], timeout=120)
             report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
             if not result.returncode:
                 report['outcome'] = json.loads(result.stdout.splitlines()[-1])
                 report['passed'] = True
         write_report(args.output, report)
-        print(json.dumps(report.get('outcome', report.get('run', report['compile']))))
+        print(json.dumps(report.get('outcome', report.get('run', report['compile'][-1]))))
         return 0 if report['passed'] else 1
 
 

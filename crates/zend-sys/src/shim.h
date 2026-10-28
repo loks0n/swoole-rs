@@ -23,17 +23,8 @@ zend_class_entry *swr_zend_register_class(const char *name, size_t length,
 void swr_zend_class_set_create_object(zend_class_entry *ce,
                                       zend_object *(*create)(zend_class_entry *ce));
 
-/* ZVAL_STRINGL: a new string holding a copy of the bytes. */
-void swr_zval_stringl(zval *target, const char *bytes, size_t length);
-
 /* ZVAL_EMPTY_STRING: the interned empty string. */
 void swr_zval_empty_string(zval *target);
-
-/* ZVAL_COPY: `target` takes a new reference to `source`'s value. */
-void swr_zval_copy(zval *target, const zval *source);
-
-/* zval_get_long, whose out-of-line helper's signature changed in PHP 8.3. */
-zend_long swr_zval_get_long(const zval *value);
 
 /* emalloc and efree (macros taking file and line in debug builds). */
 void *swr_zend_emalloc(size_t size);
@@ -67,4 +58,6 @@ int swr_zend_try_call(zend_fcall_info *fci, zend_fcall_info_cache *fcc, int *res
 /* Z_PARAM_FUNC of argument `number` (not nullable): 1, or 0 after raising
  * Zend's own parameter error. */
 int swr_zend_parse_func(zval *arg, uint32_t number, zend_fcall_info *fci, zend_fcall_info_cache *fcc);
+#include "shim_clients.h"
+#include "shim_http.h"
 #endif

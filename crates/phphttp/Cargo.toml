@@ -4,17 +4,11 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 license = "Apache-2.0"
-description = "PHP Swoole\\Http\\Request and Swoole\\Http\\Response classes over the zend crates"
+description = "PHP Swoole\\Http classes over the zend crates and the httpbindings policy"
 
 [features]
 # Needs PHP headers (swoole-rs-zend-sys); without it the crate is empty.
-php = [
-    "dep:swoole-rs-zend",
-    "swoole-rs-zend/php",
-    "dep:libc",
-    "dep:swoole-rs-httpbindings",
-    "swoole-rs-httpbindings/php",
-]
+php = ["dep:swoole-rs-zend", "swoole-rs-zend/php", "dep:swoole-rs-httpbindings", "dep:libc"]
 
 [dependencies]
 libc = { version = "=0.2.191", optional = true }

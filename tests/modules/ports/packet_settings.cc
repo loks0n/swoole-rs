@@ -1,6 +1,7 @@
 // Candidate-only scalar boundary plans; the pinned native prefix runs valid settings only.
 #define SWR_PORTS_FLAGS_NO_MAIN
 #include "flags.cc"
+#ifdef PORTS_DRIVER
 int main() {
     static_assert(sizeof(SwrPortsPacketSetting)==16&&offsetof(SwrPortsPacketSetting,copy_len)==8,"packet plan ABI");
     size_t cases=flag_checks(true);
@@ -34,3 +35,4 @@ int main() {
     printf("%zu normal prefix/flag/buffer and candidate-only packet plan comparisons passed\n",cases);
     return 0;
 }
+#endif
