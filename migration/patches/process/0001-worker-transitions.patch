@@ -574,7 +574,7 @@ index ee4229d..7b493ce 100644
 -#endif
          break;
 diff --git a/src/server/task_worker.cc b/src/server/task_worker.cc
-index 324abb3..cfa34a0 100644
+index 324abb3..7377762 100644
 --- a/src/server/task_worker.cc
 +++ b/src/server/task_worker.cc
 @@ -18,2 +18,7 @@
@@ -600,7 +600,43 @@ index 324abb3..cfa34a0 100644
 -    } else if (task->info.type == SW_SERVER_EVENT_COMMAND_REQUEST) {
 +    } else if (action == 3) {
          ret = TaskWorker_call_command_handler(pool, worker, task);
-@@ -319,7 +326,2 @@ bool Server::task_unpack(EventData *task, String *buffer, PacketPtr *packet) {
+@@ -134,15 +141,8 @@ bool Server::task_pack(EventData *task, const void *_data, size_t _length) {
+ 
+-    if (_length < SW_IPC_MAX_SIZE - sizeof(task->info)) {
+-        memcpy(task->data, _data, _length);
+-        task->info.len = _length;
+-        return true;
+-    }
+-
+-    PacketTask pkg{};
+-    File file = make_tmpfile();
+-    if (!file.ready()) {
+-        return false;
+-    }
+-
+-    if (file.write_all(_data, _length) != _length) {
++    const auto packed = swr_v1_process_task_pack((uint8_t *) task->data,
++                                                 SW_IPC_MAX_SIZE - sizeof(task->info),
++                                                 (const uint8_t *) _data,
++                                                 _length,
++                                                 SwooleG.task_tmpfile.c_str());
++    if (!packed.ok) {
+         swoole_warning("write to tmpfile failed");
+@@ -150,9 +150,6 @@ bool Server::task_pack(EventData *task, const void *_data, size_t _length) {
+     }
+-
+-    task->info.len = sizeof(pkg);
+-    task->info.ext_flags |= SW_TASK_TMPFILE;
+-    swoole_strlcpy(pkg.tmpfile, file.get_path().c_str(), sizeof(pkg.tmpfile));
+-    pkg.length = _length;
+-    memcpy(task->data, &pkg, sizeof(pkg));
+-
++    task->info.len = packed.info_len;
++    if (packed.tmpfile) {
++        task->info.ext_flags |= SW_TASK_TMPFILE;
++    }
+     return true;
+@@ -319,7 +316,2 @@ bool Server::task_unpack(EventData *task, String *buffer, PacketPtr *packet) {
  
 -    File fp(_pkg.tmpfile, O_RDONLY);
 -    if (!fp.ready()) {
@@ -608,7 +644,7 @@ index 324abb3..cfa34a0 100644
 -        return false;
 -    }
      if (buffer->size < _pkg.length) {
-@@ -327,8 +329,15 @@ bool Server::task_unpack(EventData *task, String *buffer, PacketPtr *packet) {
+@@ -327,8 +319,15 @@ bool Server::task_unpack(EventData *task, String *buffer, PacketPtr *packet) {
      }
 -    if (fp.read_all(buffer->str, _pkg.length) != _pkg.length) {
 +    const auto read = swr_v1_process_task_file_read(
@@ -628,7 +664,7 @@ index 324abb3..cfa34a0 100644
 -        unlink(_pkg.tmpfile);
 -    }
      buffer->length = _pkg.length;
-@@ -442,3 +451,6 @@ bool Server::finish(const char *data, size_t data_len, int flags, const EventDat
+@@ -442,3 +441,6 @@ bool Server::finish(const char *data, size_t data_len, int flags, const EventDat
      }
 -    if (current_task->info.type == SW_SERVER_EVENT_PIPE_MESSAGE) {
 +    const bool pipe_message = current_task->info.type == SW_SERVER_EVENT_PIPE_MESSAGE;
@@ -636,12 +672,12 @@ index 324abb3..cfa34a0 100644
 +        !pipe_message && (current_task->info.ext_flags & SW_TASK_NOREPLY));
 +    if (finish_error == 1) {
          swoole_warning("Server::task()/Server::finish() is not supported in onPipeMessage callback");
-@@ -446,3 +458,3 @@ bool Server::finish(const char *data, size_t data_len, int flags, const EventDat
+@@ -446,3 +448,3 @@ bool Server::finish(const char *data, size_t data_len, int flags, const EventDat
      }
 -    if (current_task->info.ext_flags & SW_TASK_NOREPLY) {
 +    if (finish_error == 2) {
          swoole_warning("Server::finish() can only be used in the worker process");
-@@ -469,7 +481,6 @@ bool Server::finish(const char *data, size_t data_len, int flags, const EventDat
+@@ -469,7 +471,6 @@ bool Server::finish(const char *data, size_t data_len, int flags, const EventDat
          // callback function
 -        if (current_task->info.ext_flags & SW_TASK_CALLBACK) {
 -            flags |= SW_TASK_CALLBACK;
