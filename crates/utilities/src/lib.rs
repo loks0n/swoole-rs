@@ -19,8 +19,8 @@ mod wait_registry;
 pub use bytes::*;
 pub use logger_state::*;
 pub use wait_registry::{
-    Registry, swr_v1_utils_registry_wait, swr_v1_utils_registry_wakeup,
-    swr_v1_utils_wait_registry_init, swr_v1_utils_wait_registry_size,
+    swr_v1_utils_registry_wait, swr_v1_utils_registry_wakeup, swr_v1_utils_wait_registry_init,
+    swr_v1_utils_wait_registry_size,
 };
 
 use std::mem::MaybeUninit;
