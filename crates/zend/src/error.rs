@@ -17,3 +17,76 @@ pub unsafe fn throw_error(message: &CStr) {
     // SAFETY: per the caller; "%s" takes the NUL-terminated message.
     unsafe { zend_throw_error(ptr::null_mut(), c"%s".as_ptr(), message.as_ptr()) };
 }
+
+/// `E_WARNING`.
+#[expect(clippy::cast_possible_wrap, reason = "error levels are small")]
+pub const E_WARNING: i32 = crate::sys::E_WARNING as i32;
+/// `E_ERROR`: Zend bails out after reporting it.
+#[expect(clippy::cast_possible_wrap, reason = "error levels are small")]
+pub const E_ERROR: i32 = crate::sys::E_ERROR as i32;
+
+/// A message formatted on the stack (truncated at 1023 bytes). It owns nothing,
+/// so a Zend error that longjmps past it skips no drop.
+#[derive(Clone, Copy)]
+pub struct Message {
+    buffer: [u8; 1024],
+    length: usize,
+}
+
+impl Default for Message {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Message {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            buffer: [0; 1024],
+            length: 0,
+        }
+    }
+
+    /// Append raw bytes, as `%s` of a C string would.
+    pub fn push(&mut self, bytes: &[u8]) {
+        let room = self.buffer.len() - 1 - self.length;
+        let take = bytes.len().min(room);
+        self.buffer[self.length..self.length + take].copy_from_slice(&bytes[..take]);
+        self.length += take;
+    }
+
+    /// The text so far, NUL-terminated.
+    #[must_use]
+    pub fn as_cstr(&self) -> &CStr {
+        CStr::from_bytes_until_nul(&self.buffer).unwrap_or(c"")
+    }
+}
+
+impl std::fmt::Write for Message {
+    fn write_str(&mut self, text: &str) -> std::fmt::Result {
+        self.push(text.as_bytes());
+        Ok(())
+    }
+}
+
+/// `format!` into a [`Message`].
+#[macro_export]
+macro_rules! message {
+    ($($arg:tt)*) => {{
+        let mut message = $crate::Message::new();
+        let _ = ::std::fmt::Write::write_fmt(&mut message, format_args!($($arg)*));
+        message
+    }};
+}
+
+/// `php_error_docref(NULL, level, "%s", message)`.
+/// # Safety
+/// Called from a handler or a callback Zend runs. `E_ERROR` does not return:
+/// Zend longjmps out, so the caller's frames must own nothing that needs a drop.
+pub unsafe fn php_error(level: i32, message: &CStr) {
+    // SAFETY: per the caller; "%s" takes the NUL-terminated message.
+    unsafe {
+        crate::sys::php_error_docref(ptr::null(), level, c"%s".as_ptr(), message.as_ptr());
+    }
+}

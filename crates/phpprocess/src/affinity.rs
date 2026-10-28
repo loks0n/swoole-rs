@@ -1,0 +1,141 @@
+//! `Process::setAffinity()`/`getAffinity()` and the cpu-set conversions
+//! `Thread` shares (`HAVE_CPU_AFFINITY`: Linux here).
+use crate::{
+    host::host,
+    report::{fatal, sys},
+};
+use std::ffi::c_void;
+use swoole_rs_zend::{
+    Call, E_WARNING, add_next_index_long, each_value, message,
+    sys::{swr_zend_array_init, swr_zval_get_long, zval},
+};
+
+fn cpu_num() -> usize {
+    // SAFETY: C++'s reader of `SwooleG.cpu_num`.
+    unsafe { (host().cpu_num)() as usize }
+}
+
+/// `php_swoole_array_to_cpu_set`: false (after a warning for a bad id) when
+/// the array is empty, too long or names a CPU out of range.
+/// # Safety
+/// `array` is a live array zval and `set` a writable `cpu_set_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_phpprocess_array_to_cpu_set(
+    array: *const zval,
+    set: *mut c_void,
+) -> bool {
+    // SAFETY: per the caller.
+    let value = unsafe { (*array).value };
+    // SAFETY: an array zval holds its table.
+    let table = unsafe { value.arr };
+    // SAFETY: a live table.
+    let count = unsafe { (*table).nNumOfElements } as usize;
+    if count == 0 {
+        return false;
+    }
+    let limit = cpu_num();
+    if count > limit {
+        fatal(E_WARNING, &message!("More than the number of CPU"));
+        return false;
+    }
+    let set = set.cast::<libc::cpu_set_t>();
+    // SAFETY: per the caller.
+    unsafe { libc::CPU_ZERO(&mut *set) };
+    let mut valid = true;
+    let each = |value: *mut zval| {
+        // SAFETY: a live element.
+        let cpu = unsafe { swr_zval_get_long(value) };
+        let index = usize::try_from(cpu).unwrap_or(usize::MAX);
+        if index >= limit || index >= libc::CPU_SETSIZE as usize {
+            fatal(E_WARNING, &message!("invalid cpu id [{cpu}]"));
+            valid = false;
+            return false;
+        }
+        // SAFETY: per the caller.
+        unsafe { libc::CPU_SET(index, &mut *set) };
+        true
+    };
+    // SAFETY: a live table the loop does not modify.
+    unsafe { each_value(table, each) };
+    valid
+}
+
+/// `php_swoole_cpu_set_to_array`.
+/// # Safety
+/// `array` is a writable zval and `set` a valid `cpu_set_t`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_phpprocess_cpu_set_to_array(array: *mut zval, set: *const c_void) {
+    // SAFETY: per the caller.
+    unsafe { swr_zend_array_init(array) };
+    // SAFETY: per the caller.
+    let set = unsafe { &*set.cast::<libc::cpu_set_t>() };
+    let count = cpu_num().min(libc::CPU_SETSIZE as usize);
+    for cpu in 0..count {
+        if libc::CPU_ISSET(cpu, set) {
+            // SAFETY: the array initialised above.
+            unsafe { add_next_index_long(array, cpu as i64) };
+        }
+    }
+}
+
+fn set_affinity(call: &Call) {
+    let Ok(Some(_)) = call.arity(1, 1).and_then(|()| call.array(1)) else {
+        return;
+    };
+    // SAFETY: an all-zero cpu set is empty.
+    let mut set: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    let argument = call.arg(1);
+    // SAFETY: the array argument and a local set.
+    if !unsafe { swr_v1_phpprocess_array_to_cpu_set(argument, (&raw mut set).cast()) } {
+        call.set_bool(false);
+        return;
+    }
+    // SAFETY: getpid has no preconditions; `set` is a valid cpu set.
+    if unsafe {
+        libc::sched_setaffinity(libc::getpid(), size_of::<libc::cpu_set_t>(), &raw const set)
+    } < 0
+    {
+        sys(E_WARNING, &message!("sched_setaffinity() failed"));
+        call.set_bool(false);
+        return;
+    }
+    call.set_bool(true);
+}
+
+fn get_affinity(call: &Call) {
+    // SAFETY: an all-zero cpu set is empty.
+    let mut set: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    // SAFETY: getpid has no preconditions; `set` is writable.
+    if unsafe {
+        libc::sched_getaffinity(libc::getpid(), size_of::<libc::cpu_set_t>(), &raw mut set)
+    } < 0
+    {
+        sys(E_WARNING, &message!("sched_getaffinity() failed"));
+        call.set_bool(false);
+        return;
+    }
+    // SAFETY: the return slot and a valid set.
+    unsafe { swr_v1_phpprocess_cpu_set_to_array(call.value(), (&raw const set).cast()) };
+}
+
+/// # Safety
+/// Called by Zend with a live frame and return slot.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zim_swoole_process_setAffinity(
+    frame: *mut swoole_rs_zend::sys::zend_execute_data,
+    value: *mut zval,
+) {
+    // SAFETY: per Zend's handler contract.
+    set_affinity(&unsafe { Call::new(frame, value) });
+}
+
+/// # Safety
+/// Called by Zend with a live frame and return slot.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zim_swoole_process_getAffinity(
+    frame: *mut swoole_rs_zend::sys::zend_execute_data,
+    value: *mut zval,
+) {
+    // SAFETY: per Zend's handler contract.
+    get_affinity(&unsafe { Call::new(frame, value) });
+}
