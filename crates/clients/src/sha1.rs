@@ -13,7 +13,7 @@ const INIT: [u32; 5] = [
 ];
 
 /// Compute the 20-byte SHA-1 digest of `data`.
-pub fn digest(data: &[u8]) -> [u8; 20] {
+pub(crate) fn digest(data: &[u8]) -> [u8; 20] {
     let mut h = INIT;
     let mut schedule = [0u32; 80];
 

@@ -3,12 +3,12 @@ use std::ffi::c_char;
 
 #[repr(C)]
 #[derive(Default)]
-pub struct StatsState {
+pub(crate) struct StatsState {
     pub index: u32,
     pub zero_async: u8,
 }
 #[repr(C)]
-pub struct StatsPlan {
+pub(crate) struct StatsPlan {
     pub action: u32,
     pub key: *const c_char,
     pub key_length: usize,
@@ -37,7 +37,7 @@ const KEYS: [&[u8]; 15] = [
 /// `state` is exclusive writable native stack POD, initially zeroed and preserved
 /// between steps. `has_iouring` is the actual native configuration capability.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_stats(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_stats(
     state: *mut StatsState,
     observation: u8,
     has_iouring: u8,

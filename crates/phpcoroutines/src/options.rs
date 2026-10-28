@@ -3,12 +3,12 @@ use std::ffi::c_char;
 
 #[repr(C)]
 #[derive(Default)]
-pub struct OptionState {
+pub(crate) struct OptionState {
     pub index: u32,
     pub stage: u32,
 }
 #[repr(C)]
-pub struct OptionPlan {
+pub(crate) struct OptionPlan {
     pub action: u32,
     pub key: *const c_char,
     pub key_length: usize,
@@ -77,7 +77,7 @@ impl OptionPlan {
 /// `state` is exclusive writable native-owned POD, initially zeroed, preserved
 /// across steps. No Zend pointer is ever passed to or retained by Rust.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_options(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_options(
     state: *mut OptionState,
     observation: i64,
     default_max: i64,

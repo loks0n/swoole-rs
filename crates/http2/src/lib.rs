@@ -263,18 +263,18 @@ pub struct Http2RespondFacts {
 
 // Module-local effect tags mirror the private native executor.
 mod respond_action {
-    pub const START: u32 = 0;
-    pub const HEADER: u32 = 1;
-    pub const COMMIT_END: u32 = 2;
-    pub const EMPTY: u32 = 3;
-    pub const BODY: u32 = 4;
-    pub const TRAILER: u32 = 5;
-    pub const ERROR_CLOSE: u32 = 6;
-    pub const REMOVE: u32 = 7;
-    pub const ERROR_SHUTDOWN: u32 = 8;
-    pub const SUCCESS_SHUTDOWN: u32 = 9;
-    pub const FALSE: u32 = 10;
-    pub const TRUE: u32 = 11;
+    pub(crate) const START: u32 = 0;
+    pub(crate) const HEADER: u32 = 1;
+    pub(crate) const COMMIT_END: u32 = 2;
+    pub(crate) const EMPTY: u32 = 3;
+    pub(crate) const BODY: u32 = 4;
+    pub(crate) const TRAILER: u32 = 5;
+    pub(crate) const ERROR_CLOSE: u32 = 6;
+    pub(crate) const REMOVE: u32 = 7;
+    pub(crate) const ERROR_SHUTDOWN: u32 = 8;
+    pub(crate) const SUCCESS_SHUTDOWN: u32 = 9;
+    pub(crate) const FALSE: u32 = 10;
+    pub(crate) const TRUE: u32 = 11;
 }
 
 /// Choose one native effect. No borrowed state or Rust frame survives its execution.

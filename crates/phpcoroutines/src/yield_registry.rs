@@ -9,7 +9,7 @@ thread_local! {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phpcoroutines_yield_put(cid: i64, token: usize) {
+pub(crate) extern "C" fn swr_v1_phpcoroutines_yield_put(cid: i64, token: usize) {
     YIELDED.with_borrow_mut(|registry| {
         registry.insert(cid, token);
     });
@@ -19,7 +19,7 @@ pub extern "C" fn swr_v1_phpcoroutines_yield_put(cid: i64, token: usize) {
 /// # Safety
 /// `token` is writable for one usize. Its referent is never accessed by Rust.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_take(cid: i64, token: *mut usize) -> u8 {
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_yield_take(cid: i64, token: *mut usize) -> u8 {
     YIELDED.with_borrow_mut(|registry| match registry.remove(&cid) {
         Some(value) => {
             // SAFETY: `token` is writable for one usize and doesn't alias the registry.
@@ -31,7 +31,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_take(cid: i64, token: *mut u
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_phpcoroutines_yield_erase(cid: i64) {
+pub(crate) extern "C" fn swr_v1_phpcoroutines_yield_erase(cid: i64) {
     YIELDED.with_borrow_mut(|registry| {
         registry.remove(&cid);
     });
@@ -39,13 +39,13 @@ pub extern "C" fn swr_v1_phpcoroutines_yield_erase(cid: i64) {
 
 /// Native `SW_THREAD_LOCAL` custody owns this opaque allocation. It is global when
 /// `SW_THREAD` is off, per-thread when on; no separate Rust global registry exists.
-pub struct YieldRegistry(Registry);
+pub(crate) struct YieldRegistry(Registry);
 
 /// # Safety
 /// `owner` is writable exclusive native owner storage, initially null. Keep its
 /// handle until native destruction and serialize operations like the original map.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_put(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_put(
     owner: *mut *mut YieldRegistry,
     cid: i64,
     token: usize,
@@ -63,7 +63,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_put(
 /// A nonnull handle is live/exclusive. Output is writable and does not alias its
 /// storage. A null handle denotes the original empty, unallocated native map.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_take(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_take(
     registry: *mut YieldRegistry,
     cid: i64,
     token: *mut usize,
@@ -85,7 +85,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_take(
 /// # Safety
 /// A nonnull handle is live/exclusive. Null denotes an empty unallocated map.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_erase(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_erase(
     registry: *mut YieldRegistry,
     cid: i64,
 ) {
@@ -99,7 +99,9 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_erase(
 /// Consume the handle exactly once at its native owner's destruction. Only opaque
 /// metadata drops, never referents. Null is accepted for an empty native owner.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_drop(registry: *mut YieldRegistry) {
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_drop(
+    registry: *mut YieldRegistry,
+) {
     if !registry.is_null() {
         // SAFETY: a non-null owned handle, consumed exactly once at native destruction.
         unsafe { drop(Box::from_raw(registry)) };
@@ -111,7 +113,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_drop(registry: *mut
 /// Owner storage is live/writable/exclusive, initially null or one live handle.
 /// Failure publishes neither a new owner nor token; referents remain native.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_try_put(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_yield_registry_try_put(
     owner: *mut *mut YieldRegistry,
     cid: i64,
     token: usize,

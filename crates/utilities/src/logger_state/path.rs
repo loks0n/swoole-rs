@@ -3,7 +3,7 @@ use super::{ALLOCATION, CAPACITY, INVALID, LogState, OK, Text, admission};
 use std::alloc::{Layout, alloc, dealloc};
 use std::ffi::c_char;
 
-pub struct LogPath {
+pub(super) struct LogPath {
     text: Text,
     native_max: usize,
 }
@@ -21,7 +21,7 @@ fn c_prefix(bytes: &[u8]) -> &[u8] {
 /// input is readable for its length, null only when empty. No input is
 /// retained. A successful sole owner must be destroyed or adopted exactly once.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_utils_log_path_create(
+pub(super) unsafe extern "C" fn swr_v1_utils_log_path_create(
     state: *const LogState,
     operation: u32,
     input: *const u8,
@@ -90,7 +90,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_create(
 /// Path is exclusively owned and date readable for `date_length` bytes, null only
 /// when empty. Replacement is published only after full fallible construction.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_utils_log_path_rotate(
+pub(super) unsafe extern "C" fn swr_v1_utils_log_path_rotate(
     path: *mut LogPath,
     date: *const u8,
     date_length: usize,
@@ -134,7 +134,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_rotate(
 /// Path is null or live, length is null or exclusive writable `size_t` storage.
 /// Borrowed bytes remain valid until destroy/adopt; no Rust reference escapes.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_utils_log_path_get(
+pub(super) unsafe extern "C" fn swr_v1_utils_log_path_get(
     path: *const LogPath,
     length: *mut usize,
 ) -> *const c_char {
@@ -150,7 +150,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_get(
 /// # Safety
 /// Path is null or solely owned, quiescent, and not previously consumed.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_utils_log_path_destroy(path: *mut LogPath) {
+pub(super) unsafe extern "C" fn swr_v1_utils_log_path_destroy(path: *mut LogPath) {
     if !path.is_null() {
         // SAFETY: solely owned from create, quiescent, and not previously consumed.
         unsafe { path.drop_in_place() };
@@ -165,7 +165,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_destroy(path: *mut LogPath) {
 /// Failure retains both owners. Success invalidates path but retains its byte
 /// allocation in state, without another reserve or copy.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_utils_log_path_adopt(
+pub(super) unsafe extern "C" fn swr_v1_utils_log_path_adopt(
     state: *const LogState,
     path: *mut LogPath,
 ) -> u32 {
@@ -195,7 +195,7 @@ pub unsafe extern "C" fn swr_v1_utils_log_path_adopt(
 /// and readable; elsewhere it may be null. Native effects follow return, with
 /// the native RAII handle retaining path through the original rotation scope.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_utils_log_path_emit_step(
+pub(super) unsafe extern "C" fn swr_v1_utils_log_path_emit_step(
     state: *const LogState,
     phase: *mut u32,
     level: i32,

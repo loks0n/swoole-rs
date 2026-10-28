@@ -3,7 +3,10 @@
 /// Cursor is exclusive writable native stack POD, initially zeroed. Each scalar
 /// observation is freshly supplied for the last request; no native pointer enters.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_activation(stage: *mut u32, observation: u8) -> u32 {
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_activation(
+    stage: *mut u32,
+    observation: u8,
+) -> u32 {
     // SAFETY: per this function's `# Safety` contract, `stage` is live, aligned and exclusive.
     let stage = unsafe { &mut *stage };
     loop {

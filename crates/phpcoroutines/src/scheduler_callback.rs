@@ -4,22 +4,22 @@ use crate::scheduler_control::{SchedulerConstants, swr_v1_phpcoroutines_schedule
 use core::cell::UnsafeCell;
 
 #[repr(C)]
-pub struct SchedulerCallbackOwner {
+pub(crate) struct SchedulerCallbackOwner {
     identity: UnsafeCell<usize>,
 }
 #[repr(C)]
-pub struct OwnedConfigurePlan {
+pub(crate) struct OwnedConfigurePlan {
     plan: ConfigurePlan,
     identity: usize,
 }
 #[repr(C)]
 #[derive(Default)]
-pub struct CallbackControlState {
+pub(crate) struct CallbackControlState {
     stage: u32,
     asserted: u8,
 }
 #[repr(C)]
-pub struct CallbackControlPlan {
+pub(crate) struct CallbackControlPlan {
     action: u32,
     identity: usize,
 }
@@ -30,7 +30,7 @@ pub struct CallbackControlPlan {
 /// No referent is interpreted; no borrow survives Native effects. During Native
 /// free/create the old identity stays published exactly until creation returns.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_configure_owned(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_configure_owned(
     state: *mut ConfigureState,
     owner: *mut SchedulerCallbackOwner,
     mut observation: u8,
@@ -70,7 +70,7 @@ pub unsafe extern "C" fn swr_v1_phpcoroutines_configure_owned(
 /// no new thread-safety guarantee. Constants/observation obey the existing control
 /// contract. Native asserts/calls/frees only after return, then refreshes facts.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_callback_control(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_callback_control(
     state: *mut CallbackControlState,
     owner: *mut SchedulerCallbackOwner,
     kind: u32,

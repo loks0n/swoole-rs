@@ -1,6 +1,6 @@
 //! Whole self/target introspection routing with native executor custody.
 #[repr(C)]
-pub struct TracePlan {
+pub(crate) struct TracePlan {
     pub action: u32,
     pub skip_last: i32,
 }
@@ -11,7 +11,7 @@ pub struct TracePlan {
 /// Stage is exclusive writable native POD, initially zero. Observation answers
 /// the last requested scalar fact; printing is the stable caller mode.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_trace(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_trace(
     stage: *mut u32,
     cid: i64,
     observation: i64,

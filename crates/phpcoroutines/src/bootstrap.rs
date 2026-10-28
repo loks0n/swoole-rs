@@ -2,13 +2,13 @@
 use std::ffi::c_char;
 
 #[repr(C)]
-pub struct BootstrapState {
+pub(crate) struct BootstrapState {
     pub index: u32,
     pub phase: u32,
     pub cli: u8,
 }
 #[repr(C)]
-pub struct BootstrapPlan {
+pub(crate) struct BootstrapPlan {
     pub action: u32,
     pub id: u32,
     pub name: *const c_char,
@@ -124,7 +124,7 @@ fn plan(action: u32, id: u32, name: Option<&'static [u8]>) -> BootstrapPlan {
 /// Scheduler1,System2). Observation answers the latest native presence request;
 /// `exit_opcode` is the actual PHP-version compilation capability.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_phpcoroutines_bootstrap(
+pub(crate) unsafe extern "C" fn swr_v1_phpcoroutines_bootstrap(
     state: *mut BootstrapState,
     kind: u32,
     observation: u8,

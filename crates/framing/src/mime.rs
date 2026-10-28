@@ -1,5 +1,5 @@
 // Immutable catalog copied byte-for-byte from the pinned reference.
-pub static CATALOG: &[(&[u8], &[u8])] = &[
+pub(crate) static CATALOG: &[(&[u8], &[u8])] = &[
     (b"ez", b"application/andrew-inset"),
     (b"aw", b"application/applixware"),
     (b"atom", b"application/atom+xml"),
