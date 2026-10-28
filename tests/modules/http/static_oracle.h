@@ -2,7 +2,6 @@
 #include "swoole_server.h"
 #include "swoole_static_handler.h"
 #include "swoole_rs_http.h"
-#include "swoole_rs_http_static_v2.h"
 #include <sstream>
 #include <stdexcept>
 #include <tuple>
@@ -30,13 +29,13 @@ inline const char *get_status_message(int status) { return status==SW_HTTP_NOT_F
 struct Request { Buffer *buffer_; size_t url_offset_=0,url_length_=7; int method=SW_HTTP_GET; bool keep_alive=true; std::string modified_header="",range="",if_range=""; mutable std::vector<std::string> trace; \
     std::string get_header(const char *key) const { trace.emplace_back(key); return std::string(key)=="If-Modified-Since" ? modified_header : std::string(key)=="Range" ? range : if_range; } \
 }; \
-struct StaticHandler { Server *server; int status_code; StaticHandler(Server *,const char *,size_t); StaticHandler(Server *,const char *,size_t,const std::shared_ptr<std::vector<::swoole::http_server::RewriteRule>> *); \
+struct StaticHandler { Server *server; int status_code; StaticHandler(Server *,const char *,size_t); \
     bool try_serve(); std::string get_date(); std::string get_date_last_modified(); bool is_modified(const std::string &); bool try_serve_index_file(); \
     bool has_index_file() const; bool is_enabled_auto_index() const; bool is_dir() const; size_t make_index_page(Buffer *); \
     void parse_range(const char *,const char *); const std::vector<StaticScenario::Task> &get_tasks() const; std::vector<StaticScenario::Task> copy_tasks() const; \
     size_t get_filesize() const; size_t get_content_length() const; const std::string &get_mimetype() const; const std::string &get_content_type(); \
     const char *get_filename() const; const std::string &get_end_part() const; int32_t get_status()const{return status_code;} void copy_filename(char *,size_t)const; size_t copy_end_part(char *,size_t)const; const std::string &get_content_type(std::string &scratch){(void)scratch;return get_content_type();} \
-}; using StaticHandlerV2=StaticHandler; } \
+}; } \
 struct Server { std::shared_ptr<std::vector<::swoole::http_server::RewriteRule>> rewrite_rules; StaticScenario scenario; std::vector<std::string> trace; std::vector<std::tuple<int,int,std::string>> events; http_server::Request *mutable_request=nullptr; unsigned send_count=0; \
     bool select_static_handler(const http_server::Request *,const Connection *); \
     int send_to_connection(const SendData *response) { trace.push_back("send"); if(scenario.throw_on_send) throw std::runtime_error("send failed"); ++send_count; \
@@ -47,7 +46,6 @@ struct Server { std::shared_ptr<std::vector<::swoole::http_server::RewriteRule>>
         events.emplace_back(response->info.fd,response->info.type,payload); return scenario.send_result; } \
 }; \
 inline http_server::StaticHandler::StaticHandler(Server *s,const char *,size_t):server(s),status_code(s->scenario.status) {} \
-inline http_server::StaticHandler::StaticHandler(Server *s,const char *url,size_t length,const std::shared_ptr<std::vector<::swoole::http_server::RewriteRule>> *):StaticHandler(s,url,length) {} \
 inline void http_server::StaticHandler::copy_filename(char *output,size_t capacity)const{if(server->scenario.filename.size()>=capacity)throw std::length_error("filename scratch");memcpy(output,server->scenario.filename.c_str(),server->scenario.filename.size()+1);} \
 inline size_t http_server::StaticHandler::copy_end_part(char *output,size_t capacity)const{if(server->scenario.end_part.size()>capacity)throw std::length_error("end scratch");memcpy(output,server->scenario.end_part.data(),server->scenario.end_part.size());return server->scenario.end_part.size();} \
 inline bool http_server::StaticHandler::try_serve() { server->trace.push_back("serve");return server->scenario.serve; } \

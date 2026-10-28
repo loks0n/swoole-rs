@@ -107,39 +107,6 @@ pub unsafe extern "C" fn swr_v1_http_index_page(
     unsafe { written.write(sink.length) };
     0
 }
-/// Append the previously queried Legacy page part using the same complete
-/// buffer protocol as the owned context. The queried count remains captured
-/// across Native reserve/extend effects; no pointer/borrow is retained by Rust.
-/// # Safety
-/// Page/input spans obey `index_page`'s contract and remain unchanged from its
-/// successful size query. Buffer is writable for capacity, length<=capacity;
-/// independent result is writable/aligned. Native effects run only after return.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v2_http_index_page_emit(
-    page: *const HttpIndexPage,
-    queried: usize,
-    buffer: *mut u8,
-    length: usize,
-    capacity: usize,
-    output: *mut crate::HttpContextPageBuffer,
-) -> i32 {
-    let render = |data, size, written| {
-        // SAFETY: `page` follows index_page's contract; emit_page passes a writable span.
-        unsafe { swr_v1_http_index_page(page, data, size, written) }
-    };
-    // SAFETY: forwards the caller's page, buffer and output under emit_page's contract.
-    unsafe {
-        emit_page(
-            page,
-            Some(queried),
-            buffer,
-            length,
-            capacity,
-            output,
-            render,
-        )
-    }
-}
 
 // One complete append operation for both real callers. The renderer is always
 // Rust code; it invokes no external callback or Native allocator/effect. Only
@@ -221,6 +188,29 @@ pub(crate) unsafe fn emit_page(
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// The emit protocol over a queried legacy page part.
+    unsafe fn emit(
+        page: *const HttpIndexPage,
+        queried: usize,
+        buffer: *mut u8,
+        length: usize,
+        capacity: usize,
+        output: *mut crate::HttpContextPageBuffer,
+    ) -> i32 {
+        let render =
+            |data, size, written| unsafe { swr_v1_http_index_page(page, data, size, written) };
+        unsafe {
+            emit_page(
+                page,
+                Some(queried),
+                buffer,
+                length,
+                capacity,
+                output,
+                render,
+            )
+        }
+    }
     fn span(input: &[u8]) -> HttpProxyText {
         HttpProxyText {
             data: input.as_ptr(),
@@ -260,7 +250,7 @@ mod tests {
             let mut result = crate::HttpContextPageBuffer::default();
             assert_eq!(
                 unsafe {
-                    swr_v2_http_index_page_emit(
+                    emit(
                         &raw const page,
                         count,
                         output.as_mut_ptr(),
@@ -278,7 +268,7 @@ mod tests {
             let capacity = output.len();
             assert_eq!(
                 unsafe {
-                    swr_v2_http_index_page_emit(
+                    emit(
                         &raw const page,
                         count,
                         output.as_mut_ptr(),

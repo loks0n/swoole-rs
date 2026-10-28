@@ -1,10 +1,11 @@
-# StaticHandlerV2 context (`swr_v2_http_context_*`)
+# StaticHandler context (`swr_v2_http_context_*`)
 
-`StaticHandlerV2` holds three pointers: the external Server, a borrowed typed view
-of that Server's `rewrite_rules` field, and one unique opaque Rust context. It has
-no StaticHandler core, native strings, containers or stat object. The public
-`StaticHandler` and all v1 exports are unchanged. V2 is unreleased and changes
-together with its Server callers. SDKs that use it must be rebuilt.
+`StaticHandler` (the only one since #752; HTTP/1 and HTTP/2 both use it) holds two
+pointers: the external Server and one unique opaque Rust context. It has no native
+strings, containers or stat object. `Server::apply_rewrite_rules`, its friend,
+reads the Server's `rewrite_rules` at the original rewrite boundary and drives the
+context's rewrite steps. The class layout differs from upstream's; SDKs that use
+it must be rebuilt.
 
 ## What the context owns
 

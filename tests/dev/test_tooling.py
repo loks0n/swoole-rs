@@ -732,7 +732,7 @@ class Lanes(unittest.TestCase):
         self.assertLess(list(commands).index('corebase-lifecycle'), list(commands).index('tls-native'))
         self.assertLess(list(commands).index('coroutine-native-originals'), list(commands).index('tls-native'))
         self.assertIn('--archive',commands['http-locales'])
-        self.assertIn('--archive',commands['http-inline'])
+        self.assertIn('--archive',commands['http-rewrites'])
         self.assertIn('--archive',commands['http-dispatch'])
         self.assertIn('--archive',commands['http-multipart-emit'])
         args.native_build_root = Path('/private-ram/hybrid')

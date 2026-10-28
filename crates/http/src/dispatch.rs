@@ -22,38 +22,6 @@ pub extern "C" fn swr_v1_http_proxy_auth_enabled(
 ) -> i32 {
     i32::from(user_length != 0 && password_length != 0)
 }
-/// Phase0 receives configured-index1/directory2; phase1 receives scanOK4;
-/// phase2 receives found-index8/autoindex16; phase3 receives filenameOK32.
-/// Actions0=reject,1=accept,2=scan directory,3=native intersection,4=set filename.
-/// # Safety
-/// Phase is initialized/aligned/exclusively writable; native effects run only
-/// after return. No Rust borrow, callback or owner survives those effects.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_http_index_file(phase: *mut u32, facts: u32) -> i32 {
-    // SAFETY: `phase` is null or live, aligned and exclusively lent for this call.
-    let Some(phase) = (unsafe { phase.as_mut() }) else {
-        return INVALID;
-    };
-    match *phase {
-        0 if facts & 3 == 3 => {
-            *phase = 1;
-            2
-        }
-        0 => 1,
-        1 if facts & 4 != 0 => {
-            *phase = 2;
-            3
-        }
-        1 => 0,
-        2 if facts & 8 != 0 => {
-            *phase = 3;
-            4
-        }
-        2 => i32::from(facts & 16 != 0),
-        3 => i32::from(facts & 32 != 0),
-        _ => INVALID,
-    }
-}
 /// Format the unknown-status TLS fallback using native snprintf prefix rules.
 /// # Safety
 /// Output is writable for capacity bytes and disjoint from aligned written.

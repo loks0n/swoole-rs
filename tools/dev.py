@@ -209,7 +209,7 @@ def plan(args, reports):
     if 'http' in modules:
         script('http-context', 'tests/modules/http/context_gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('http-context'))
-        for name, runner in [('http-native', 'gate.py'), ('http-ranges', 'range_gate.py'), ('http-framing', 'framing_gate.py'), ('http-headers', 'headers_gate.py'), ('http-proxy', 'proxy_gate.py'), ('http-static', 'static_gate.py'), ('http-paths', 'path_gate.py'), ('http-index-pages', 'index_page_gate.py'), ('http-conditionals', 'conditional_gate.py'), ('http-multipart', 'multipart_gate.py'), ('http-rewrites', 'rewrite_gate.py'), ('http-inline', 'inline_gate.py'), ('http-dispatch', 'dispatch_gate.py'), ('http-multipart-emit', 'multipart_emit_gate.py'), ('http-locales', 'locale_gate.py'), ('http-multipart-headers', 'multipart_headers_gate.py')]:
+        for name, runner in [('http-native', 'gate.py'), ('http-framing', 'framing_gate.py'), ('http-headers', 'headers_gate.py'), ('http-proxy', 'proxy_gate.py'), ('http-static', 'static_gate.py'), ('http-conditionals', 'conditional_gate.py'), ('http-multipart', 'multipart_gate.py'), ('http-rewrites', 'rewrite_gate.py'), ('http-dispatch', 'dispatch_gate.py'), ('http-multipart-emit', 'multipart_emit_gate.py'), ('http-locales', 'locale_gate.py'), ('http-multipart-headers', 'multipart_headers_gate.py')]:
             script(name, 'tests/modules/http/' + runner, '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report(name))
         for phase, flags in [('http-cookie-flow-positive', []), ('http-status-buffer-positive', ['--status-only']), ('http-status-codes-positive', ['--codes-only'])]:
@@ -217,8 +217,6 @@ def plan(args, reports):
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *flags, *report(phase))
         script('http-request-lifecycle', 'tests/modules/http/request_lifecycle_gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('http-request-lifecycle'))
-        script('http-directory-compatibility', 'tests/modules/http/directory_compat.py', '--source', ROOT / 'target/upstream/src',
-               *report('http-directory-compatibility'))
     if 'locks' in modules:
         script('locks-native', 'tests/modules/locks/gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report('locks-native'))

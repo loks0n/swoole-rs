@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_http2_client_coro.cc b/ext-src/swoole_http2_client_coro.cc
-index e0342e15c..83f966175 100644
+index e0342e1..83f9661 100644
 --- a/ext-src/swoole_http2_client_coro.cc
 +++ b/ext-src/swoole_http2_client_coro.cc
 @@ -29,2 +29,5 @@ END_EXTERN_C()
@@ -579,7 +579,7 @@ index e0342e15c..83f966175 100644
 +#endif
      if (debug_data_len > 0) {
 diff --git a/ext-src/swoole_http2_server.cc b/ext-src/swoole_http2_server.cc
-index a283ebcb7..937c79522 100644
+index a283ebc..2885841 100644
 --- a/ext-src/swoole_http2_server.cc
 +++ b/ext-src/swoole_http2_server.cc
 @@ -17,2 +17,5 @@
@@ -608,6 +608,21 @@ index a283ebcb7..937c79522 100644
      Http2::set_frame_header(frame, SW_HTTP2_TYPE_WINDOW_UPDATE, SW_HTTP2_WINDOW_UPDATE_SIZE, 0, stream_id);
 +#endif
      ctx->send(ctx, frame, SW_HTTP2_FRAME_HEADER_SIZE + SW_HTTP2_WINDOW_UPDATE_SIZE);
+@@ -194,3 +207,3 @@ static bool http2_server_is_static_file(Server *serv, HttpContext *ctx) {
+ 
+-        if (handler.status_code == SW_HTTP_NOT_FOUND) {
++        if (handler.get_status() == SW_HTTP_NOT_FOUND) {
+             String body(SW_STRL(SW_HTTP_PAGE_404));
+@@ -238,6 +251,6 @@ static bool http2_server_is_static_file(Server *serv, HttpContext *ctx) {
+         handler.parse_range(zrange ? Z_STRVAL_P(zrange) : nullptr, zif_range ? Z_STRVAL_P(zif_range) : nullptr);
+-        ctx->response.status = handler.status_code;
+-        auto tasks = handler.get_tasks();
++        ctx->response.status = handler.get_status();
++        auto tasks = handler.copy_tasks();
+         if (1 == tasks.size()) {
+-            if (SW_HTTP_PARTIAL_CONTENT == handler.status_code) {
++            if (SW_HTTP_PARTIAL_CONTENT == handler.get_status()) {
+                 std::stringstream content_range;
 @@ -327,2 +340,5 @@ static ssize_t http2_server_build_header(HttpContext *ctx, uchar *buffer, const
      // status code
 +#ifdef SW_USE_RUST_HTTP2
@@ -848,12 +863,22 @@ index a283ebcb7..937c79522 100644
      return stream->send_header(nullptr, true);
 +#endif
  }
-@@ -773,2 +966,13 @@ static bool http2_server_send_range_file(HttpContext *ctx, StaticHandler *handle
-     auto tasks = handler->get_tasks();
+@@ -759,3 +952,4 @@ static bool http2_server_send_range_file(HttpContext *ctx, StaticHandler *handle
+     if (!zend_hash_str_exists(Z_ARRVAL_P(zheader), ZEND_STRL("content-type"))) {
+-        ctx->set_header(ZEND_STRL("content-type"), handler->get_content_type(), false);
++        std::string content_type_scratch;
++        ctx->set_header(ZEND_STRL("content-type"), handler->get_content_type(content_type_scratch), false);
+     }
+@@ -772,5 +966,18 @@ static bool http2_server_send_range_file(HttpContext *ctx, StaticHandler *handle
+ 
+-    auto tasks = handler->get_tasks();
++    auto tasks = handler->copy_tasks();
++    char filename[PATH_MAX];
++    handler->copy_filename(filename, sizeof(filename));
 +#ifdef SW_USE_RUST_HTTP2
 +    auto mode = sw_rs_http2_file_mode(tasks.size(), tasks.size() == 1 ? tasks[0].length : 0);
 +    if (mode != SW_RS_HTTP2_FILE_EMPTY) {
-+        File fp(handler->get_filename(), O_RDONLY);
++        File fp(filename, O_RDONLY);
 +        if (!fp.ready()) {
 +            return false;
 +        }
@@ -862,11 +887,20 @@ index a283ebcb7..937c79522 100644
 +        if (mode == SW_RS_HTTP2_FILE_MULTI) {
 +#else
      if (!tasks.empty()) {
-@@ -781,2 +985,3 @@ static bool http2_server_send_range_file(HttpContext *ctx, StaticHandler *handle
+-        File fp(handler->get_filename(), O_RDONLY);
++        File fp(filename, O_RDONLY);
+         if (!fp.ready()) {
+@@ -781,2 +988,3 @@ static bool http2_server_send_range_file(HttpContext *ctx, StaticHandler *handle
          if (tasks.size() > 1) {
 +#endif
              for (auto i = tasks.begin(); i != tasks.end(); ++i) {
-@@ -809,3 +1014,7 @@ static bool http2_server_send_range_file(HttpContext *ctx, StaticHandler *handle
+@@ -804,3 +1012,4 @@ static bool http2_server_send_range_file(HttpContext *ctx, StaticHandler *handle
+             if (!error) {
+-                body = std::make_shared<String>(handler->get_end_part());
++                char end_part[64];
++                body = std::make_shared<String>(end_part, handler->copy_end_part(end_part, sizeof(end_part)));
+                 if (!stream->send_body(body.get(), end_stream, client)) {
+@@ -809,3 +1018,7 @@ static bool http2_server_send_range_file(HttpContext *ctx, StaticHandler *handle
              }
 +#ifdef SW_USE_RUST_HTTP2
 +        } else if (mode == SW_RS_HTTP2_FILE_SINGLE) {
@@ -874,17 +908,17 @@ index a283ebcb7..937c79522 100644
          } else if (tasks[0].length > 0) {
 +#endif
              auto callback = [&]() -> bool {
-@@ -837,2 +1046,5 @@ static bool http2_server_send_range_file(HttpContext *ctx, StaticHandler *handle
+@@ -837,2 +1050,5 @@ static bool http2_server_send_range_file(HttpContext *ctx, StaticHandler *handle
  
 +#ifdef SW_USE_RUST_HTTP2
 +    return http2_server_complete_file(ctx, stream, client, ztrailer != nullptr, error, true);
 +#else
      if (!error && ztrailer) {
-@@ -850,2 +1062,3 @@ static bool http2_server_send_range_file(HttpContext *ctx, StaticHandler *handle
+@@ -850,2 +1066,3 @@ static bool http2_server_send_range_file(HttpContext *ctx, StaticHandler *handle
      return true;
 +#endif
  }
-@@ -872,3 +1085,7 @@ bool swoole_http2_server_send_file(HttpContext *ctx, zend_string *file, off_t of
+@@ -872,3 +1089,7 @@ bool swoole_http2_server_send_file(HttpContext *ctx, zend_string *file, off_t of
      }
 +#ifdef SW_USE_RUST_HTTP2
 +    body->length = sw_rs_http2_file_length(length, body->length);
@@ -892,17 +926,17 @@ index a283ebcb7..937c79522 100644
      body->length = SW_MIN(length, body->length);
 +#endif
  
-@@ -902,2 +1119,5 @@ bool swoole_http2_server_send_file(HttpContext *ctx, zend_string *file, off_t of
+@@ -902,2 +1123,5 @@ bool swoole_http2_server_send_file(HttpContext *ctx, zend_string *file, off_t of
  
 +#ifdef SW_USE_RUST_HTTP2
 +    return http2_server_complete_file(ctx, stream, client, ztrailer != nullptr, error, false);
 +#else
      if (!error && ztrailer) {
-@@ -915,2 +1135,3 @@ bool swoole_http2_server_send_file(HttpContext *ctx, zend_string *file, off_t of
+@@ -915,2 +1139,3 @@ bool swoole_http2_server_send_file(HttpContext *ctx, zend_string *file, off_t of
      return true;
 +#endif
  }
-@@ -976,2 +1197,9 @@ static int http2_server_parse_header(
+@@ -976,2 +1201,9 @@ static int http2_server_parse_header(
  
 +#ifdef SW_USE_RUST_HTTP2
 +            auto header_kind = Http2::rust_header_kind(SW_RS_HTTP2_REQUEST_HEADERS, (const char *) nv.name, nv.namelen);
@@ -912,11 +946,11 @@ index a283ebcb7..937c79522 100644
 +                } else if (header_kind == SW_RS_HTTP2_HEADER_PATH) {
 +#else
              if (nv.name[0] == ':') {
-@@ -980,2 +1208,3 @@ static int http2_server_parse_header(
+@@ -980,2 +1212,3 @@ static int http2_server_parse_header(
                  } else if (SW_STRCASEEQ((char *) nv.name + 1, nv.namelen - 1, "path")) {
 +#endif
                      char *pathbuf = sw_tg_buffer()->str;
-@@ -1007,2 +1236,13 @@ static int http2_server_parse_header(
+@@ -1007,2 +1240,13 @@ static int http2_server_parse_header(
                      add_assoc_str_ex(zserver, ZEND_STRL("path_info"), zstr_path);
 +#ifdef SW_USE_RUST_HTTP2
 +                } else if (header_kind == SW_RS_HTTP2_HEADER_AUTHORITY) {
@@ -930,11 +964,11 @@ index a283ebcb7..937c79522 100644
 +                    } else if (media_kind == SW_RS_HTTP2_MEDIA_MULTIPART) {
 +#else
                  } else if (SW_STRCASEEQ((char *) nv.name + 1, nv.namelen - 1, "authority")) {
-@@ -1015,2 +1255,3 @@ static int http2_server_parse_header(
+@@ -1015,2 +1259,3 @@ static int http2_server_parse_header(
                      } else if (SW_STR_ISTARTS_WITH((char *) nv.value, nv.valuelen, "multipart/form-data")) {
 +#endif
                          size_t offset = sizeof("multipart/form-data") - 1;
-@@ -1025,2 +1266,91 @@ static int http2_server_parse_header(
+@@ -1025,2 +1270,91 @@ static int http2_server_parse_header(
                      }
 +#ifdef SW_USE_RUST_HTTP2
 +                } else if (header_kind == SW_RS_HTTP2_HEADER_COOKIE) {
@@ -1026,11 +1060,11 @@ index a283ebcb7..937c79522 100644
 +                swoole_trace_log(SW_TRACE_HTTP2, "setting: %s=%u", labels[plan.field], value);
 +#else
                  } else if (SW_STRCASEEQ((char *) nv.name, nv.namelen, "cookie")) {
-@@ -1130,2 +1460,3 @@ int swoole_http2_server_parse(const std::shared_ptr<Http2Session> &client, const
+@@ -1130,2 +1464,3 @@ int swoole_http2_server_parse(const std::shared_ptr<Http2Session> &client, const
                  break;
 +#endif
              }
-@@ -1139,3 +1470,7 @@ int swoole_http2_server_parse(const std::shared_ptr<Http2Session> &client, const
+@@ -1139,3 +1474,7 @@ int swoole_http2_server_parse(const std::shared_ptr<Http2Session> &client, const
      }
 +#ifdef SW_USE_RUST_HTTP2
 +    case SW_RS_HTTP2_HEADERS: {
@@ -1038,7 +1072,7 @@ index a283ebcb7..937c79522 100644
      case SW_HTTP2_TYPE_HEADERS: {
 +#endif
          auto stream = client->get_stream(stream_id);
-@@ -1160,2 +1495,122 @@ int swoole_http2_server_parse(const std::shared_ptr<Http2Session> &client, const
+@@ -1160,2 +1499,122 @@ int swoole_http2_server_parse(const std::shared_ptr<Http2Session> &client, const
      }
 +#ifdef SW_USE_RUST_HTTP2
 +    case SW_RS_HTTP2_DATA: {
@@ -1161,12 +1195,12 @@ index a283ebcb7..937c79522 100644
 +        value = sw_rs_http2_read_u32((const uint8_t *) (buf));
 +#else
      case SW_HTTP2_TYPE_DATA: {
-@@ -1255,2 +1710,3 @@ int swoole_http2_server_parse(const std::shared_ptr<Http2Session> &client, const
+@@ -1255,2 +1714,3 @@ int swoole_http2_server_parse(const std::shared_ptr<Http2Session> &client, const
          value = ntohl(*(uint32_t *) (buf));
 +#endif
          buf += 4;
 diff --git a/src/protocol/http2.cc b/src/protocol/http2.cc
-index 4e56ef9a3..5f2f096d1 100644
+index 4e56ef9..5f2f096 100644
 --- a/src/protocol/http2.cc
 +++ b/src/protocol/http2.cc
 @@ -21,2 +21,5 @@

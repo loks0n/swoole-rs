@@ -43,7 +43,6 @@ int32_t swr_v2_http_directory_insert(swr_v2_http_directory *, const uint8_t *, s
 size_t swr_v2_http_directory_count(const swr_v2_http_directory *);
 int32_t swr_v2_http_directory_contains(const swr_v2_http_directory *, const uint8_t *, size_t);
 
-typedef struct { size_t cursor, total; uint32_t started, done; } swr_v1_http_range_state;
 typedef struct {
     const uint8_t *data; size_t length;
 } swr_v1_http_range_text;
@@ -51,14 +50,8 @@ typedef struct {
     swr_v1_http_range_text boundary, mime;
     size_t offset, length, filesize; uint32_t part, separator;
 } swr_v1_http_range_format_input;
-typedef struct {
-    size_t content_length, last_length, task_count, filesize, end_length;
-    uint32_t phase; int32_t status; uint32_t if_range, modified;
-} swr_v1_http_range_finish_state;
 int32_t swr_v1_http_range_format(const swr_v1_http_range_format_input *, uint8_t *, size_t, size_t *);
 int32_t swr_v2_http_tasks_prepare(swr_v2_http_tasks *, int64_t, size_t, const swr_v1_http_range_format_input *, size_t *);
-int32_t swr_v1_http_range_finish(swr_v1_http_range_finish_state *);
-int32_t swr_v1_http_range_next(const uint8_t *, size_t, size_t, swr_v1_http_range_state *, swr_v1_http_span *);
 typedef struct {
     size_t offset; uint64_t content_length;
     uint32_t method, version, excepted, url_offset, url_length, line_length, header_length, known_length;
@@ -85,13 +78,7 @@ int32_t swr_v1_http_cookie_next(uint8_t *, size_t, size_t *, swr_v1_http_cookie 
 typedef struct { uint32_t phase, source_inside; size_t source_offset, required, cursor; swr_v1_http_cookie cookie; } swr_v2_http_cookie_flow_state;
 int32_t swr_v2_http_cookie_flow(swr_v2_http_cookie_flow_state *, const uint8_t *, size_t, uint8_t *, size_t, uint32_t, uint32_t);
 typedef struct { const uint8_t *data; size_t length; } swr_v1_http_proxy_text;
-typedef struct { uint32_t phase; size_t index, count; } swr_v2_http_rewrite_state;
-int32_t swr_v2_http_rewrite_step(swr_v2_http_rewrite_state *, size_t, uint32_t, const swr_v1_http_proxy_text *, const swr_v1_http_proxy_text *, size_t *);
-typedef struct {
-    swr_v1_http_proxy_text url, pattern, replacement;
-} swr_v1_http_rewrite_input;
 int32_t swr_v1_http_rewrite_rule(const uint8_t *, size_t, swr_v1_http_span *, uint32_t *);
-int32_t swr_v1_http_rewrite_literal(const swr_v1_http_rewrite_input *, uint8_t *, size_t, size_t *);
 typedef struct {
     swr_v1_http_proxy_text target, host, version, authorization;
     int32_t port; uint32_t authenticated;
@@ -159,12 +146,10 @@ const swr_v1_http_multipart_action *swr_v1_http_multipart_emit(uint32_t, uint32_
 size_t swr_v1_http_multipart_body_length(size_t, size_t);
 int32_t swr_v1_http_transport_route(uint32_t, uint32_t);
 int32_t swr_v1_http_proxy_auth_enabled(size_t, size_t);
-int32_t swr_v1_http_index_file(uint32_t *, uint32_t);
 int32_t swr_v1_http_unknown_status(int32_t, uint8_t *, size_t, size_t *);
 const uint8_t *swr_v1_http_static_boundary(size_t, size_t *);
 const uint8_t *swr_v1_http_static_content_prefix(size_t);
 int32_t swr_v1_http_static_content_type(const swr_v1_http_proxy_text *, uint8_t *, size_t, size_t *);
-int32_t swr_v1_http_static_path_check(const uint8_t *, size_t, const uint8_t *, size_t, uint32_t);
 int32_t swr_v1_http_static_catch(uint32_t, int32_t *);
 int32_t swr_v1_http_static_headers(const swr_v1_http_static_header *, uint8_t *, size_t, size_t *);
 int32_t swr_v2_http_proxy_authorization(const swr_v1_http_proxy_text *, uint8_t *, size_t *);
