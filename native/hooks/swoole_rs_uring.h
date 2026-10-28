@@ -4,6 +4,8 @@
  * coroutine switches, the thread's engine and the log lines. */
 #ifndef SWOOLE_RS_URING_H
 #define SWOOLE_RS_URING_H
+/* The archive exports these only when the build enables io_uring. */
+#ifdef SW_USE_IOURING
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -105,5 +107,6 @@ ssize_t swr_v1_uring_tls_recv(swr_v1_uring_tls tls, void *buf, size_t n);
 ssize_t swr_v1_uring_tls_send(swr_v1_uring_tls tls, const void *buf, size_t n);
 #ifdef __cplusplus
 }
+#endif
 #endif
 #endif
