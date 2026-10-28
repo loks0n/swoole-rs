@@ -128,9 +128,17 @@ def prepare(source, destination, cases, support_files=()):
     if original.count(remote_setup) != 1:
         raise ValueError('Upstream bootstrap remote setup changed; review adapter')
     bootstrap.write_text(original.replace(remote_setup, '// Remote-object service excluded from this isolated selection.\n'))
+    # The httpbin/guzzle/symfony cases need the pinned composer libraries. When the
+    # upstream tree has them installed (the phpt job runs `composer install` there from
+    # the committed lock), copy that vendor dir in; otherwise fall back to a stub that
+    # autoloads only the SwooleTest\ fixtures, so the lib-free cases still run offline.
     vendor = destination / 'tests/include/lib/vendor'
-    vendor.mkdir(parents=True)
-    (vendor / 'autoload.php').write_text(AUTOLOAD)
+    source_vendor = source / 'tests/include/lib/vendor'
+    if source_vendor.is_dir():
+        shutil.copytree(source_vendor, vendor)
+    else:
+        vendor.mkdir(parents=True)
+        (vendor / 'autoload.php').write_text(AUTOLOAD)
 
 
 def run_cases(engine, cases, sandbox, artifacts, timeout, jobs, *, offline=True, runner_ini=(), match_child_php=False):
