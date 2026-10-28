@@ -103,7 +103,7 @@
     },
     {
       "path": "0010-php-process.patch",
-      "sha256": "b3a5fd679b433b4c75ed93eaee7107fc24cbc7e783857dd6eabca75519ce98f3",
+      "sha256": "932fc095bb50160a29b09cb01a50078cd35f97914fae7d9ebd0aeffec133bb46",
       "upstream_paths": [
         "ext-src/swoole_process.cc"
       ]

@@ -28,7 +28,7 @@ typedef struct {
     bool redirect_stdin;
     bool redirect_stdout;
     bool redirect_stderr;
-} swr_v1_phpprocess_worker_view;
+} swr_phpprocess_worker_view;
 
 typedef struct {
     struct _zend_class_entry *exception;
@@ -45,7 +45,7 @@ typedef struct {
     void (*worker_redirect)(void *worker);
     void (*worker_set_id)(void *worker, uint32_t id);
     int (*worker_pipe)(void *worker, int socket_type); /* master fd, or -1 */
-    swr_v1_phpprocess_worker_view (*worker_view)(const void *worker);
+    swr_phpprocess_worker_view (*worker_view)(const void *worker);
     int (*queue_use)(void *worker, int32_t key, int64_t mode, bool blocking, int64_t capacity);
     bool (*queue_stat)(void *worker, size_t *num, size_t *bytes);
     bool (*queue_free)(void *worker);
@@ -95,6 +95,7 @@ bool swr_v1_phpprocess_signal_isset(int signo);
 bool swr_v1_phpprocess_array_to_cpu_set(const struct _zval_struct *array, void *cpu_set);
 void swr_v1_phpprocess_cpu_set_to_array(struct _zval_struct *array, const void *cpu_set);
 #endif
+
 #ifdef __cplusplus
 }
 #endif

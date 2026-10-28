@@ -1,5 +1,5 @@
 diff --git a/ext-src/swoole_process.cc b/ext-src/swoole_process.cc
-index 1a4d3f9..9486563 100644
+index 1a4d3f9..b73bea1 100644
 --- a/ext-src/swoole_process.cc
 +++ b/ext-src/swoole_process.cc
 @@ -22,2 +22,3 @@
@@ -405,7 +405,7 @@ index 1a4d3f9..9486563 100644
 +    return process->pipe_master->fd;
 +}
 +
-+static swr_v1_phpprocess_worker_view host_worker_view(const void *worker) {
++static swr_phpprocess_worker_view host_worker_view(const void *worker) {
 +    auto process = static_cast<const Worker *>(worker);
 +    return {process->get_id(),
 +            process->get_pid(),
