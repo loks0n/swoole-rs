@@ -1,7 +1,7 @@
 //! `network::Socket`'s TLS operations, OpenSSL calls included: creating the SSL,
 //! handshake steps, reads and writes, host and verify checks, PEM export and error
-//! reasons. Native code keeps the socket's flags, errno, last error and logs, which
-//! need the socket's address.
+//! reasons, and the socket's TLS state group they set. Native code keeps errno, the
+//! last error and logs, which need the socket's address.
 use openssl_sys::{
     BIO_ctrl, BIO_free_all, BIO_new, BIO_read, BIO_s_mem, ERR_GET_REASON, ERR_clear_error,
     ERR_get_error, ERR_reason_error_string, PEM_write_bio_X509, SSL, SSL_CTX, SSL_ERROR_SSL,
@@ -36,8 +36,8 @@ const READY: c_int = 5;
 const OK: c_int = 0;
 const ERR: c_int = -1;
 /// `SW_SSL_STATE_READY` and `SW_SSL_STATE_WAIT_STREAM`.
-const STATE_READY: c_int = 1;
-const STATE_WAIT_STREAM: c_int = 2;
+const STATE_READY: u32 = 1;
+const STATE_WAIT_STREAM: u32 = 2;
 
 fn errno() -> c_int {
     std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
@@ -45,17 +45,70 @@ fn errno() -> c_int {
 
 /// A TLS read or write: what `ssl_recv`/`ssl_send` return, the socket's new want
 /// flags, the errno to set when nonzero, and whether to log a protocol error first.
+/// `network::Socket`'s TLS state group (`ssl_state`, `ssl_want_read`,
+/// `ssl_want_write`), which `Socket` embeds in this layout.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SocketTls {
+    pub state: u32,
+    pub want_read: u8,
+    pub want_write: u8,
+}
+
+impl SocketTls {
+    fn want(&mut self, read: bool, write: bool) {
+        self.want_read = u8::from(read);
+        self.want_write = u8::from(write);
+    }
+}
+
+/// `Socket::ssl_clear_error`: clears this thread's OpenSSL error queue and the want flags.
+///
+/// # Safety
+/// `tls` is a live socket's TLS state group.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_socket_ssl_clear(tls: *mut SocketTls) {
+    // SAFETY: clears this thread's OpenSSL error queue.
+    unsafe { ERR_clear_error() };
+    // SAFETY: the caller's live state group.
+    unsafe { (*tls).want(false, false) };
+}
+
+const EVENT_READ: c_int = 1 << 9;
+const EVENT_WRITE: c_int = 1 << 10;
+
+/// `Socket::what_event_want`: the event a pending TLS read or write waits for, when
+/// the socket has an SSL, else `default_event`.
+///
+/// # Safety
+/// `tls` is a live socket's TLS state group.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_socket_tls_event(
+    tls: *const SocketTls,
+    ssl: bool,
+    default_event: c_int,
+) -> c_int {
+    // SAFETY: the caller's live state group.
+    let tls = unsafe { *tls };
+    if !ssl || tls.want_read == 0 && tls.want_write == 0 {
+        default_event
+    } else if tls.want_write != 0 {
+        EVENT_WRITE
+    } else {
+        EVENT_READ
+    }
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SslIoResult {
     pub value: isize,
-    pub want_read: bool,
-    pub want_write: bool,
     pub error: c_int,
     pub protocol_error: bool,
 }
 
-fn classify(ssl: *const SSL, n: c_int, write: bool) -> SslIoResult {
+fn classify(tls: &mut SocketTls, ssl: *const SSL, n: c_int, write: bool) -> SslIoResult {
+    tls.want(false, false);
     let mut result = SslIoResult {
         value: n as isize,
         ..SslIoResult::default()
@@ -66,11 +119,11 @@ fn classify(ssl: *const SSL, n: c_int, write: bool) -> SslIoResult {
     // SAFETY: `ssl` is the caller's live SSL and `n` its last I/O result.
     match unsafe { SSL_get_error(ssl, n) } {
         SSL_ERROR_WANT_READ => {
-            result.want_read = true;
+            tls.want(true, false);
             result.error = libc::EAGAIN;
         }
         SSL_ERROR_WANT_WRITE => {
-            result.want_write = true;
+            tls.want(false, true);
             result.error = libc::EAGAIN;
         }
         SSL_ERROR_SYSCALL if write => result.error = RESET,
@@ -91,9 +144,11 @@ fn classify(ssl: *const SSL, n: c_int, write: bool) -> SslIoResult {
 /// `Socket::ssl_recv`: `SSL_read` up to `length` bytes.
 ///
 /// # Safety
-/// `ssl` is a live SSL owned by the caller and `buffer` denotes `length` writable bytes.
+/// `tls` is the live state group of the socket owning `ssl`, a live SSL, and
+/// `buffer` denotes `length` writable bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_socket_ssl_recv(
+    tls: *mut SocketTls,
     ssl: *mut SSL,
     buffer: *mut c_void,
     length: usize,
@@ -107,16 +162,19 @@ pub unsafe extern "C" fn swr_v1_socket_ssl_recv(
     )]
     // SAFETY: the caller lends `length` writable bytes to its SSL.
     let n = unsafe { SSL_read(ssl, buffer, length as c_int) };
-    classify(ssl, n, false)
+    // SAFETY: the caller's live state group.
+    classify(unsafe { &mut *tls }, ssl, n, false)
 }
 
 /// `Socket::ssl_send`: `SSL_write` of `length` bytes (native code applies the DTLS
 /// chunk limit first).
 ///
 /// # Safety
-/// `ssl` is a live SSL owned by the caller and `buffer` denotes `length` readable bytes.
+/// `tls` is the live state group of the socket owning `ssl`, a live SSL, and
+/// `buffer` denotes `length` readable bytes.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_socket_ssl_send(
+    tls: *mut SocketTls,
     ssl: *mut SSL,
     buffer: *const c_void,
     length: usize,
@@ -130,21 +188,19 @@ pub unsafe extern "C" fn swr_v1_socket_ssl_send(
     )]
     // SAFETY: the caller lends `length` readable bytes to its SSL.
     let n = unsafe { SSL_write(ssl, buffer, length as c_int) };
-    classify(ssl, n, true)
+    // SAFETY: the caller's live state group.
+    classify(unsafe { &mut *tls }, ssl, n, true)
 }
 
-/// A handshake step for `Socket::ssl_accept`/`ssl_connect`. Native code stores the
-/// want flags, the `ssl_state` when `state` is nonnegative and the last error when
-/// `last_error` is nonzero, then logs: 1 a bad client (accept), 2 a failed handshake
-/// with `ssl_error`, 3 a peer that closed (connect, debug). `code` is what the
-/// method returns.
+/// A handshake step for `Socket::ssl_accept`/`ssl_connect`, which also sets the
+/// socket's want flags and, once it changes, `ssl_state`. Native code sets the last
+/// error when `last_error` is nonzero, then logs: 1 a bad client (accept), 2 a failed
+/// handshake with `ssl_error`, 3 a peer that closed (connect, debug). `code` is what
+/// the method returns.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SslHandshakeResult {
     pub code: c_int,
-    pub want_read: bool,
-    pub want_write: bool,
-    pub state: c_int,
     pub last_error: c_int,
     pub log: c_int,
     pub ssl_error: c_int,
@@ -154,9 +210,6 @@ impl SslHandshakeResult {
     const fn returning(code: c_int) -> Self {
         Self {
             code,
-            want_read: false,
-            want_write: false,
-            state: -1,
             last_error: 0,
             log: 0,
             ssl_error: 0,
@@ -168,18 +221,23 @@ impl SslHandshakeResult {
 /// syscall error that left errno 0.
 ///
 /// # Safety
-/// `ssl` is a live SSL owned by the caller.
+/// `tls` is the live state group of the socket owning `ssl`, a live SSL.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_socket_ssl_accept(ssl: *mut SSL, dtls: bool) -> SslHandshakeResult {
+pub unsafe extern "C" fn swr_v1_socket_ssl_accept(
+    tls: *mut SocketTls,
+    ssl: *mut SSL,
+    dtls: bool,
+) -> SslHandshakeResult {
+    // SAFETY: the caller's live state group.
+    let tls = unsafe { &mut *tls };
+    tls.want(false, false);
     // SAFETY: clears this thread's OpenSSL error queue.
     unsafe { ERR_clear_error() };
     // SAFETY: the caller's live SSL.
     let n = unsafe { SSL_accept(ssl) };
     if n == 1 {
-        return SslHandshakeResult {
-            state: STATE_READY,
-            ..SslHandshakeResult::returning(READY)
-        };
+        tls.state = STATE_READY;
+        return SslHandshakeResult::returning(READY);
     }
     if n == 0 {
         return SslHandshakeResult::returning(ERROR);
@@ -189,17 +247,17 @@ pub unsafe extern "C" fn swr_v1_socket_ssl_accept(ssl: *mut SSL, dtls: bool) -> 
     let mut result = SslHandshakeResult::returning(ERROR);
     match error {
         SSL_ERROR_WANT_READ => {
-            result.want_read = true;
+            tls.want(true, false);
             result.code = WAIT;
         }
         SSL_ERROR_WANT_WRITE => {
-            result.want_write = true;
+            tls.want(false, true);
             result.code = WAIT;
         }
         SSL_ERROR_SSL => result.log = 1,
         SSL_ERROR_SYSCALL => {
             if dtls && errno() == 0 {
-                result.want_read = true;
+                tls.want(true, false);
                 result.code = WAIT;
             }
         }
@@ -214,27 +272,30 @@ pub unsafe extern "C" fn swr_v1_socket_ssl_accept(ssl: *mut SSL, dtls: bool) -> 
 /// `Socket::ssl_connect`: one `SSL_connect` step.
 ///
 /// # Safety
-/// `ssl` is a live SSL owned by the caller.
+/// `tls` is the live state group of the socket owning `ssl`, a live SSL.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_socket_ssl_connect(ssl: *mut SSL) -> SslHandshakeResult {
+pub unsafe extern "C" fn swr_v1_socket_ssl_connect(
+    tls: *mut SocketTls,
+    ssl: *mut SSL,
+) -> SslHandshakeResult {
+    // SAFETY: the caller's live state group.
+    let tls = unsafe { &mut *tls };
+    tls.want(false, false);
     // SAFETY: clears this thread's OpenSSL error queue.
     unsafe { ERR_clear_error() };
     // SAFETY: the caller's live SSL.
     let n = unsafe { SSL_connect(ssl) };
     if n == 1 {
-        return SslHandshakeResult {
-            state: STATE_READY,
-            ..SslHandshakeResult::returning(OK)
-        };
+        tls.state = STATE_READY;
+        return SslHandshakeResult::returning(OK);
     }
     // SAFETY: `ssl` is the caller's live SSL and `n` its last result.
     let error = unsafe { SSL_get_error(ssl, n) };
     let mut result = SslHandshakeResult::returning(ERR);
     match error {
         SSL_ERROR_WANT_READ | SSL_ERROR_WANT_WRITE => {
-            result.want_read = error == SSL_ERROR_WANT_READ;
-            result.want_write = error == SSL_ERROR_WANT_WRITE;
-            result.state = STATE_WAIT_STREAM;
+            tls.want(error == SSL_ERROR_WANT_READ, error == SSL_ERROR_WANT_WRITE);
+            tls.state = STATE_WAIT_STREAM;
             result.code = OK;
             return result;
         }
@@ -363,14 +424,17 @@ pub extern "C" fn swr_v1_socket_ssl_peek_reason() -> c_int {
 
 /// `Socket::ssl_create`: a new SSL from `context` on `fd`, in connect state for
 /// `SW_SSL_CLIENT` or accept state for `SW_SSL_SERVER`, carrying `socket` as its
-/// ex data at `index`. `*ssl` is set once made. Returns 0, or 1 when `SSL_new`
+/// ex data at `index`, after clearing the want flags. `*ssl` is set once made and
+/// the state cleared on success. Returns 0, or 1 when `SSL_new`
 /// failed, 2 when `SSL_set_fd` failed (`*error` holds the peeked error) and 3 when
 /// `SSL_set_ex_data` failed; native code warns.
 ///
 /// # Safety
-/// `context` is a live `SSL_CTX`; `ssl` and `error` are writable.
+/// `tls` is the socket's live state group, `context` a live `SSL_CTX`; `ssl` and
+/// `error` are writable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn swr_v1_socket_ssl_new(
+    tls: *mut SocketTls,
     context: *mut SSL_CTX,
     fd: c_int,
     flags: c_int,
@@ -379,6 +443,9 @@ pub unsafe extern "C" fn swr_v1_socket_ssl_new(
     ssl: *mut *mut SSL,
     error: *mut std::os::raw::c_ulong,
 ) -> c_int {
+    // SAFETY: the caller's live state group.
+    let tls = unsafe { &mut *tls };
+    tls.want(false, false);
     // SAFETY: clears this thread's OpenSSL error queue.
     unsafe { ERR_clear_error() };
     // SAFETY: the caller's live context.
@@ -407,6 +474,7 @@ pub unsafe extern "C" fn swr_v1_socket_ssl_new(
     if unsafe { SSL_set_ex_data(made, index, socket) } == 0 {
         return 3;
     }
+    tls.state = 0;
     0
 }
 
@@ -433,19 +501,40 @@ mod tests {
     fn want_read_before_the_handshake() {
         unsafe {
             let (ssl, _) = client();
+            let mut tls = SocketTls::default();
             let mut buffer = [0_u8; 16];
-            let read = swr_v1_socket_ssl_recv(ssl, buffer.as_mut_ptr().cast(), buffer.len());
+            let read =
+                swr_v1_socket_ssl_recv(&raw mut tls, ssl, buffer.as_mut_ptr().cast(), buffer.len());
             assert_eq!(
                 read,
                 SslIoResult {
                     value: -1,
-                    want_read: true,
                     error: libc::EAGAIN,
                     ..Default::default()
                 }
             );
-            let sent = swr_v1_socket_ssl_send(ssl, buffer.as_ptr().cast(), buffer.len());
+            assert_eq!((tls.want_read, tls.want_write), (1, 0));
+            assert_eq!(swr_v1_socket_tls_event(&raw const tls, true, 0), EVENT_READ);
+            assert_eq!(
+                swr_v1_socket_tls_event(&raw const tls, false, 7),
+                7,
+                "no SSL"
+            );
+            tls.want_write = 1;
+            let sent =
+                swr_v1_socket_ssl_send(&raw mut tls, ssl, buffer.as_ptr().cast(), buffer.len());
             assert_eq!(sent, read, "a write also waits for the server's hello");
+            assert_eq!(
+                (tls.want_read, tls.want_write),
+                (1, 0),
+                "and replaces the flags"
+            );
+            swr_v1_socket_ssl_clear(&raw mut tls);
+            assert_eq!(
+                swr_v1_socket_tls_event(&raw const tls, true, 7),
+                7,
+                "nothing pending"
+            );
             SSL_free(ssl);
         }
     }
@@ -454,14 +543,20 @@ mod tests {
     fn handshake_steps() {
         unsafe {
             let (ssl, read) = client();
+            let mut tls = SocketTls::default();
             assert_eq!(
-                swr_v1_socket_ssl_connect(ssl),
-                SslHandshakeResult {
-                    want_read: true,
+                swr_v1_socket_ssl_connect(&raw mut tls, ssl),
+                SslHandshakeResult::returning(OK),
+                "the client hello is out"
+            );
+            assert_eq!(
+                tls,
+                SocketTls {
                     state: STATE_WAIT_STREAM,
-                    ..SslHandshakeResult::returning(OK)
+                    want_read: 1,
+                    want_write: 0
                 },
-                "the client hello is out; waiting for the server"
+                "waiting for the server"
             );
             let garbage = [
                 0x16_u8, 0x03, 0x03, 0x00, 0x05, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -471,26 +566,30 @@ mod tests {
                 garbage.as_ptr().cast(),
                 c_int::try_from(garbage.len()).unwrap(),
             );
-            let failed = swr_v1_socket_ssl_connect(ssl);
+            let failed = swr_v1_socket_ssl_connect(&raw mut tls, ssl);
             assert_eq!(
                 (failed.code, failed.last_error, failed.log),
                 (ERR, HANDSHAKE_FAILED, 2)
             );
             assert_eq!(failed.ssl_error, SSL_ERROR_SSL);
+            assert_eq!(
+                (tls.state, tls.want_read),
+                (STATE_WAIT_STREAM, 0),
+                "a failure keeps the state"
+            );
             SSL_free(ssl);
 
             let context = SSL_CTX_new(TLS_method());
             let server = SSL_new(context);
             SSL_CTX_free(context);
             SSL_set_bio(server, BIO_new(BIO_s_mem()), BIO_new(BIO_s_mem()));
+            let mut tls = SocketTls::default();
             assert_eq!(
-                swr_v1_socket_ssl_accept(server, false),
-                SslHandshakeResult {
-                    want_read: true,
-                    ..SslHandshakeResult::returning(WAIT)
-                },
+                swr_v1_socket_ssl_accept(&raw mut tls, server, false),
+                SslHandshakeResult::returning(WAIT),
                 "no client hello yet"
             );
+            assert_eq!((tls.state, tls.want_read, tls.want_write), (0, 1, 0));
             SSL_free(server);
         }
     }
@@ -590,7 +689,13 @@ mod tests {
             let mut error = 0;
             let mut socket = 7_u8;
             let index = SSL_get_ex_new_index(0, std::ptr::null_mut(), None, None, None);
+            let mut tls = SocketTls {
+                state: STATE_READY,
+                want_read: 1,
+                want_write: 1,
+            };
             let made = swr_v1_socket_ssl_new(
+                &raw mut tls,
                 context,
                 3,
                 CLIENT,
@@ -600,11 +705,17 @@ mod tests {
                 &raw mut error,
             );
             assert_eq!(made, 0);
+            assert_eq!(
+                tls,
+                SocketTls::default(),
+                "a fresh SSL clears the state group"
+            );
             assert_eq!(SSL_is_server(ssl), 0, "connect state");
             assert_eq!(SSL_get_ex_data(ssl, index), (&raw mut socket).cast());
             SSL_free(ssl);
             assert_eq!(
                 swr_v1_socket_ssl_new(
+                    &raw mut tls,
                     context,
                     3,
                     SERVER,
@@ -630,8 +741,9 @@ mod tests {
     fn garbage_is_a_protocol_error() {
         unsafe {
             let (ssl, read) = client();
+            let mut tls = SocketTls::default();
             let mut buffer = [0_u8; 16];
-            swr_v1_socket_ssl_recv(ssl, buffer.as_mut_ptr().cast(), buffer.len());
+            swr_v1_socket_ssl_recv(&raw mut tls, ssl, buffer.as_mut_ptr().cast(), buffer.len());
             let garbage = [
                 0x16_u8, 0x03, 0x03, 0x00, 0x05, 0xff, 0xff, 0xff, 0xff, 0xff,
             ];
@@ -640,14 +752,14 @@ mod tests {
                 garbage.as_ptr().cast(),
                 c_int::try_from(garbage.len()).unwrap(),
             );
-            let result = swr_v1_socket_ssl_recv(ssl, buffer.as_mut_ptr().cast(), buffer.len());
+            let result =
+                swr_v1_socket_ssl_recv(&raw mut tls, ssl, buffer.as_mut_ptr().cast(), buffer.len());
             assert_eq!(
                 result,
                 SslIoResult {
                     value: -1,
                     error: BAD_CLIENT,
                     protocol_error: true,
-                    ..Default::default()
                 }
             );
             assert_ne!(ERR_get_error(), 0, "the queue is left for ssl_catch_error");

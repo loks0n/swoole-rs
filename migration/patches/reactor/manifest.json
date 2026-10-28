@@ -106,6 +106,15 @@
         "include/swoole_socket.h",
         "src/reactor/base.cc"
       ]
+    },
+    {
+      "path": "0014-tls-state.patch",
+      "sha256": "67aad56ad7bfca9074c4b017f680cfd10e028a9737d82fcf7f68c12511556716",
+      "upstream_paths": [
+        "include/swoole_socket.h",
+        "src/network/socket.cc",
+        "src/reactor/base.cc"
+      ]
     }
   ]
 }
