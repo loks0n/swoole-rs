@@ -1,10 +1,6 @@
 /* Value, string, array and object helpers (crates/phpprocess and later families). */
 #include "shim.h"
 
-zend_string *swr_zend_string_alloc(size_t length) {
-    return zend_string_alloc(length, 0);
-}
-
 void swr_zend_set_stringl(zval *target, const char *bytes, size_t length) {
     ZVAL_STRINGL(target, bytes, length);
 }
@@ -52,10 +48,6 @@ bool swr_zend_module_loaded(const char *name, size_t length) {
 
 zend_long swr_zval_get_long(const zval *value) {
     return zval_get_long(value);
-}
-
-void swr_zend_string_free(zend_string *string) {
-    efree(string);
 }
 
 bool swr_zend_is_true(const zval *value) {
