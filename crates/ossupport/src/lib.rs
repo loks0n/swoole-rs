@@ -1,5 +1,5 @@
-//! OS support: the async thread pool, file IO loops, sendfile, entropy and the
-//! `SysV` message queue policies.
+//! OS support: the async thread pool, file IO, sendfile, entropy, process and
+//! thread identity, and the `SysV` message queue.
 #![cfg_attr(
     not(test),
     deny(
@@ -11,8 +11,21 @@ mod file;
 #[cfg(any(target_vendor = "apple", target_os = "freebsd"))]
 pub use file::swr_v1_os_sendfile;
 pub use file::{
-    FileIo, FileSize, Sendfile, swr_v1_os_file_read_all, swr_v1_os_file_read_line,
-    swr_v1_os_file_size, swr_v1_os_file_write_all, swr_v1_os_random_bytes, swr_v1_os_sendfile_copy,
+    FileIo, FileSize, Sendfile, swr_v1_os_file_close, swr_v1_os_file_open, swr_v1_os_file_read_all,
+    swr_v1_os_file_read_line, swr_v1_os_file_size, swr_v1_os_file_write_all,
+    swr_v1_os_random_bytes, swr_v1_os_sendfile_copy, swr_v1_os_tmpfile,
+};
+mod system;
+pub use system::{
+    IsolationWarn, swr_v1_os_daemon_detach, swr_v1_os_is_root_user, swr_v1_os_set_isolation,
+    swr_v1_os_set_process_death_signal, swr_v1_os_thread_get_name, swr_v1_os_thread_native_id,
+    swr_v1_os_thread_set_name,
+};
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "freebsd"))]
+pub use system::{swr_v1_os_get_cpu_affinity, swr_v1_os_set_cpu_affinity};
+mod msg_queue;
+pub use msg_queue::{
+    MsgOpen, MsgPop, swr_v1_os_msg_flags, swr_v1_os_msg_open, swr_v1_os_msg_pop, swr_v1_os_msg_push,
 };
 mod pool;
 pub use pool::{
@@ -20,83 +33,3 @@ pub use pool::{
     swr_v1_os_pool_notify_one, swr_v1_os_pool_queue_size, swr_v1_os_pool_release,
     swr_v1_os_pool_task_id, swr_v1_os_pool_worker_num,
 };
-
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_os_permissions(perms: i32) -> i32 {
-    if perms <= 0 || perms >= 0o1000 {
-        0o666
-    } else {
-        perms
-    }
-}
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_os_queue_flags(flags: i32, blocking: bool, nowait: i32) -> i32 {
-    if blocking {
-        flags & !nowait
-    } else {
-        flags | nowait
-    }
-}
-/// Msgsnd failed: 1 retry, 2 quiet final failure, 3 warned final failure.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_os_queue_error(interrupted: bool, again: bool) -> i32 {
-    if interrupted {
-        1
-    } else if again {
-        2
-    } else {
-        3
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn message_queue_policies_match_the_native_expressions() {
-        for perms in -1024..2048 {
-            assert_eq!(
-                swr_v1_os_permissions(perms),
-                if perms <= 0 || perms >= 0o1000 {
-                    0o666
-                } else {
-                    perms
-                },
-                "perms {perms}"
-            );
-        }
-        for flags in -128..128 {
-            for nowait in [1, 8, 2048] {
-                for block in [false, true] {
-                    let expected = if block {
-                        flags & !nowait
-                    } else {
-                        flags | nowait
-                    };
-                    assert_eq!(
-                        swr_v1_os_queue_flags(flags, block, nowait),
-                        expected,
-                        "flags {flags}"
-                    );
-                }
-            }
-        }
-        for interrupted in [false, true] {
-            for again in [false, true] {
-                let expected = if interrupted {
-                    1
-                } else if again {
-                    2
-                } else {
-                    3
-                };
-                assert_eq!(
-                    swr_v1_os_queue_error(interrupted, again),
-                    expected,
-                    "msgsnd error"
-                );
-            }
-        }
-    }
-}
