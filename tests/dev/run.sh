@@ -18,8 +18,6 @@ for test in \
     tests/modules/memory/test_benchmark.py \
     tests/modules/phpcollections/test_body_map.py \
     tests/modules/phpcollections/test_gate.py \
-    tests/modules/phpcollections/test_handlers.py \
-    tests/modules/phpcollections/test_originals.py \
     tests/modules/phpcollections/test_prepare_benchmark.py \
     tests/modules/phpcollections/test_runtime.py \
     tests/modules/phpcollections/test_sdk.py \

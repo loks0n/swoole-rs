@@ -62,21 +62,8 @@ Optional PHP dependencies use repeated `--php-extension NAME`. Registered as
 
 ## Originals
 
-`handlers.py` takes the runtime arguments plus `--source PINNED`, runs the runtime
-prerequisite, then runs `channel_construct_check`, `unset_deny` and
-`unset_property_01` with PHP's official runner (`phpcollections-global-handlers`).
-
-`originals.py` takes the same arguments plus `--redis-extension FILE` and runs all
-63 Table/Channel originals against a private Redis (`phpcollections-prerequisites`).
-Linux defaults to managed `redis-server`/`redis-cli` (or `--redis-server`,
-`--redis-cli`); load `--php-extension igbinary` before Redis. macOS can use
-`--redis-image sha256:IMMUTABLE_ID`. Port 6379 is refused; teardown is verified.
-`--case PATH` runs a supplemental subset.
-
-Known results: macOS 53 PASS / 10 SKIP; Linux 52 PASS / 1 FAIL / 10 SKIP per
-engine. Linux `force_unlock` misses its expected native warning. The ten Channel
-skips are eight `select`, one hanging and one offline case. The mixed
-`serialize_deny` case is not run under M27.
+The PHPT gate (merge tier `phpt-*` jobs) runs every pinned Table, Channel and
+`swoole_global` original on upstream and on the all-modules hybrid.
 
 ## Benchmark preparation (`prepare_benchmark.py`)
 
@@ -99,3 +86,23 @@ for t in tests/modules/phpcollections/test_*.py; do python3 -m unittest "$t"; do
 Fresh loaded production, originals, lifetime and performance runs for the current
 TableV2/`value_plan` source; the 324/16-check runtime results so far come from the
 earlier vector-backed production build.
+
+## Gate audit (#490)
+
+Kept (3):
+
+- `phpcollections-policy`: native-versus-selected traces of the extracted
+  capacity, push/pop, arithmetic and set bodies, against scripted effect doubles.
+- `phpcollections-runtime` and `phpcollections-column-bytes`: 324 and 16 loaded-PHP
+  checks whose summaries must match upstream exactly. They cover COW isolation,
+  object and resource custody, suspended FIFO transfer and binary column names,
+  which the PHPTs only pass or fail.
+
+Deleted (2), each a duplicate:
+
+- `phpcollections-global-handlers` reran `phpcollections-runtime`, then three
+  `swoole_global` PHPTs that the PHPT gate already runs on both engines.
+- `phpcollections-prerequisites` reran the 63 Table/Channel PHPTs that the PHPT
+  gate already runs, with Redis services. It ran only under `--redis-extension`,
+  which no CI lane passed, so that option and `--redis-image` are gone too.
+
