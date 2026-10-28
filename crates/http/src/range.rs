@@ -1,5 +1,5 @@
 //! Incremental legacy byte-range parsing; native constructs response headers/tasks.
-use super::{HttpSpan, INVALID, bytes};
+use super::{HttpSpan, INVALID};
 #[repr(C)]
 #[derive(Default)]
 pub struct HttpRangeState {
@@ -113,38 +113,6 @@ impl HttpRangeState {
         }
     }
 }
-/// Return 1=next range, 0=done, 2=wrong-unit/full-file immediate fallback,
-/// negative=invalid range (native retains already emitted parts, sets status416).
-/// Native owns all allocation, response formatting, IO and if-range date policy.
-/// # Safety
-/// Input is initialized/readable; state and span are valid/aligned/disjoint from
-/// each other/input. Initialize state to zero per parse and do not alter its
-/// fields or input between steps. No borrow/callback/allocator survives return.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn swr_v1_http_range_next(
-    data: *const u8,
-    length: usize,
-    size: usize,
-    state: *mut HttpRangeState,
-    span: *mut HttpSpan,
-) -> i32 {
-    if state.is_null() || span.is_null() {
-        return INVALID;
-    }
-    // SAFETY: `span` is non-null (checked above), aligned and writable.
-    unsafe {
-        span.write(HttpSpan::default());
-    }
-    // SAFETY: the caller lends `length` initialized bytes at `data` (null only when empty).
-    let input = match unsafe { bytes(data, length) } {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    // SAFETY: `state` is non-null (checked above), aligned and exclusive per the caller contract.
-    let state = unsafe { &mut *state };
-    // SAFETY: `span` is non-null (checked above), aligned and exclusive per the caller contract.
-    state.step(input, size, unsafe { &mut *span })
-}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,15 +121,7 @@ mod tests {
         let mut output = HttpSpan::default();
         let mut parts = Vec::new();
         loop {
-            let status = unsafe {
-                swr_v1_http_range_next(
-                    input.as_ptr(),
-                    input.len(),
-                    size,
-                    &raw mut state,
-                    &raw mut output,
-                )
-            };
+            let status = state.step(input, size, &mut output);
             if status != 1 {
                 return (status, parts);
             }

@@ -20,7 +20,7 @@ def main():
     parser.add_argument('--output', default='target/reports/http-rewrites.json')
     args = parser.parse_args(); local = Path(__file__).resolve().parent
     patch = ROOT/'migration/patches/http/0002-static-ranges.patch'
-    report = {'pin': PIN, 'scope': 'Actual pinned/patched add_rewrite_rule/apply_rewrite_rules; native regex/std::string and publication facade, not socket/PHP parity', 'native_sanitizers': True, 'rust_instrumented': args.rust_sanitize, 'rust_std_instrumented': False, 'passed': False}
+    report = {'pin': PIN, 'scope': 'Actual pinned/patched add_rewrite_rule/apply_rewrite_rules; native regex/std::string facade upstream, the Rust static context selected; not socket/PHP parity', 'native_sanitizers': True, 'rust_instrumented': args.rust_sanitize, 'rust_std_instrumented': False, 'passed': False}
     with tempfile.TemporaryDirectory(prefix='swr-http-rewrite-') as temp:
         tree = Path(temp)
         if not prepare_archive(args, tree, report):
@@ -52,7 +52,7 @@ def main():
         report['compile'] = {'returncode': compiled.returncode, 'stderr': compiled.stderr}
         if compiled.returncode: write_report(args.output, report); print(compiled.stderr, file=sys.stderr); return 1
         symbols = subprocess.check_output(['nm', '-g', str(binary)], text=True)
-        assert 'swr_v1_http_rewrite_literal' in symbols and 'swr_v2_http_rewrite_step' in symbols
+        assert 'swr_v1_http_rewrite_rule' in symbols and 'swr_v2_http_context_rewrite_step' in symbols
         result = run_isolated([str(binary)], timeout=30); report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
         if result.returncode: write_report(args.output, report); print(result.stderr, file=sys.stderr); return 1
         report['outcome'] = json.loads(result.stdout.splitlines()[-1]); report['passed'] = True

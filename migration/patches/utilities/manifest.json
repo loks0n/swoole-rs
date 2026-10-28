@@ -29,6 +29,15 @@
       "upstream_paths": [
         "include/swoole_log.h"
       ]
+    },
+    {
+      "path": "0005-rust-helpers.patch",
+      "sha256": "8be21e556a10bb66815df63107fa80ff8c9e93d9228cbdf233771237ff263a5b",
+      "upstream_paths": [
+        "include/swoole.h",
+        "include/swoole_util.h",
+        "src/core/misc.cc"
+      ]
     }
   ]
 }

@@ -667,7 +667,7 @@ fn multipart_nul(bytes: &[u8], start: usize, end: usize) -> bool {
     })
 }
 
-const RANGE_BOUNDARY: &[u8] = b"SwooleRangeBoundary0123\0";
+const RANGE_BOUNDARY: &[u8] = b"SwooleBoundary0123456789abcdefghijklmn\0";
 
 fn range_on(
     engine: http_range::ParseRange,
@@ -701,13 +701,19 @@ fn range_on(
 }
 
 /// A flags byte (If-Range sent, file modified), a MIME type length, a file size and a
-/// Range header: `StaticHandler::parse_range` on both engines gives the same status,
-/// content length, tasks, part headers and closing boundary.
+/// Range header: upstream's `StaticHandler::parse_range` and the selected one over
+/// the Rust static context give the same status, content length, tasks, part
+/// headers and closing boundary.
 pub fn http_range(bytes: &[u8]) {
     let Some((&[flags, mime_length, size @ ..], range)) = bytes.split_first_chunk::<10>() else {
         return;
     };
     let filesize = u64::from_le_bytes(size);
+    // `st_size` is an `off_t`: no file holds more than `i64::MAX` bytes, and the
+    // selected handler keeps task offsets in that type.
+    if i64::try_from(filesize).is_err() {
+        return;
+    }
     let mime: Vec<c_char> = b"application/octet-stream"
         .iter()
         .cycle()

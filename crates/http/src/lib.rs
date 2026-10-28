@@ -22,8 +22,7 @@ pub use directory::{
 };
 mod dispatch;
 pub use dispatch::{
-    swr_v1_http_index_file, swr_v1_http_proxy_auth_enabled, swr_v1_http_transport_route,
-    swr_v1_http_unknown_status,
+    swr_v1_http_proxy_auth_enabled, swr_v1_http_transport_route, swr_v1_http_unknown_status,
 };
 mod framing;
 pub use framing::{
@@ -33,7 +32,7 @@ pub use framing::{
 mod headers;
 mod index_page;
 pub use headers::{HttpCookie, HttpHeaderInfo, swr_v1_http_cookie_next, swr_v1_http_header_info};
-pub use index_page::{HttpIndexPage, swr_v1_http_index_page, swr_v2_http_index_page_emit};
+pub use index_page::{HttpIndexPage, swr_v1_http_index_page};
 mod maps;
 mod multipart;
 mod multipart_emit;
@@ -53,16 +52,14 @@ pub use proxy::{
 };
 mod range;
 mod range_response;
-pub use range_response::{
-    HttpRangeFinish, HttpRangeFormat, swr_v1_http_range_finish, swr_v1_http_range_format,
-};
+pub use range_response::{HttpRangeFinish, HttpRangeFormat, swr_v1_http_range_format};
 mod request_context;
 pub use request_context::*;
 mod request_lifecycle;
 pub use request_lifecycle::swr_v1_http_request_lifecycle;
 mod rewrite;
-pub use rewrite::{HttpRewriteLiteral, swr_v1_http_rewrite_literal, swr_v1_http_rewrite_rule};
-pub use rewrite::{HttpRewriteState, swr_v2_http_rewrite_step};
+pub use rewrite::HttpRewriteState;
+pub use rewrite::swr_v1_http_rewrite_rule;
 mod static_context;
 pub use static_context::*;
 mod static_body;
@@ -78,14 +75,14 @@ pub use tasks::{
 mod static_meta;
 pub use static_meta::{
     swr_v1_http_static_boundary, swr_v1_http_static_catch, swr_v1_http_static_content_prefix,
-    swr_v1_http_static_content_type, swr_v1_http_static_path_check,
+    swr_v1_http_static_content_type,
 };
 mod status_buffer;
 pub use status_buffer::{NATIVE_STATUS_CODES, swr_v2_http_status_message};
 mod static_headers;
 mod static_path;
 pub use maps::{swr_v1_http_method, swr_v1_http_method_string, swr_v1_http_status};
-pub use range::{HttpRangeState, swr_v1_http_range_next};
+pub use range::HttpRangeState;
 pub use static_headers::{HttpStaticHeaders, swr_v1_http_static_headers};
 pub use static_path::{
     HttpStaticPath, swr_v1_http_static_index_path, swr_v1_http_static_location,

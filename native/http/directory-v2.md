@@ -1,9 +1,8 @@
 # Rust directory storage (`swr_v2_http_directory_*`)
 
-`StaticHandlerV2`, chosen by `Server::select_static_handler`, keeps directory
-names in one opaque Rust owner. There is no native copy of the collection, no
-side table and no exported Rust name pointer. The legacy `StaticHandler` keeps its
-native `std::set`. V2 cannot be copied.
+`StaticHandler` keeps directory names in one opaque Rust owner. There is no
+native copy of the collection, no side table and no exported Rust name pointer.
+The handler cannot be copied.
 
 ## Exports
 
@@ -47,7 +46,6 @@ continuation; V2 queries again on each call.
 Known difference: allocation cadence, peak memory and destruction order differ
 from native set nodes.
 
-Tests: `tests/modules/http/context_gate.py`, `directory_compat.py`,
-`index_page_gate.py`. C++20 builds of the pinned SDK fail
+Tests: `tests/modules/http/context_gate.py`. C++20 builds of the pinned SDK fail
 `-Werror` on a deprecated volatile increment in `swoole_process_pool.h`
 (upstream). Use C++14/17.

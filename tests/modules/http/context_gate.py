@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Actual pinned static context bodies versus sole-Rust V2; normal effects only."""
+"""Actual pinned static handler bodies versus the Rust-context StaticHandler; normal effects only."""
 import argparse
 import io
 import json
@@ -52,6 +52,7 @@ def main():
         apply_http_patch(tree, patch, report)
         selected=path.read_text()
         apply_static_header(tree,report);prepare_index_buffer(tree,report)
+        selected_header=(tree/'include/swoole_static_handler.h').read_text()
         flags=['-std=c++17','-O1','-g','-I'+str(tree/'include'),'-I'+str(ROOT/'native/http'),'-I'+str(local),'-I'+str(tree),'-fsanitize=address,undefined','-fno-sanitize-recover=all']
         flags+=shlex.split(subprocess.check_output(['pkg-config','--cflags','openssl'],text=True))
         if not checked(['c++',*['-std=c++14' if flag=='-std=c++17' else flag for flag in flags],'-c',str(path),'-o',str(tree/'static.o')],'whole_native_translation_unit'):return 1
@@ -66,15 +67,16 @@ def main():
 };\n'''
         candidate_server=server.replace('std::shared_ptr<std::vector<RewriteRule>> rewrite_rules;', 'RewriteRulesField rewrite_rules;')
         original_class=body(original_header,'class StaticHandler')+';\n'
-        typed=body((ROOT/'native/http/swoole_rs_http_static_v2.h').read_text(),'class StaticHandlerV2')+';\n'
+        # The selected class befriends the server that drives its rewrites: here the facade Server.
+        typed=body(selected_header,'class StaticHandler').replace('friend class swoole::Server;','friend struct Server;')+';\n'
         headers='#pragma once\n#include "context_oracle.h"\n'
         headers+='namespace upstream_context {using swoole::starts_with; class StaticHandler;\n'+server+original_class+'}\n'
-        headers+='namespace candidate_context {using StaticHandler=swoole::http_server::StaticHandler;using RewriteRulesField=std::shared_ptr<std::vector<RewriteRule>>;\n'+candidate_server+typed+'}\n'
+        headers+='namespace candidate_context {using swoole::starts_with; class StaticHandler;using RewriteRulesField=std::shared_ptr<std::vector<RewriteRule>>;\n'+candidate_server+typed+'}\n'
         (tree/'context_candidate.h').write_text(headers)
         old_signatures=re.findall(r'^((?:bool|size_t|void|std::string) StaticHandler::[^\n]+?)\s*\{',original,re.M)
-        v2_signatures=re.findall(r'^((?:(?:bool|size_t|void|int32_t|uint32_t|time_t|std::string|swr_v2_http_observation|const std::string &|std::vector<swr_v2_http_static_task>)\s*)?StaticHandlerV2::[^\n{]+|StaticHandlerV2::~StaticHandlerV2\([^\n{]+)',selected,re.M)
-        # Constructor spans a second signature line; body() retains its complete initializer.
-        v2_signatures=['StaticHandlerV2::StaticHandlerV2(', 'StaticHandlerV2::~StaticHandlerV2(']+[signature for signature in v2_signatures if '::StaticHandlerV2(' not in signature and '::~StaticHandlerV2(' not in signature]
+        v2_signatures=re.findall(r'^((?:(?:bool|size_t|void|int32_t|uint32_t|time_t|std::string|swr_v2_http_observation|const std::string &|std::vector<swr_v2_http_static_task>)\s*)?StaticHandler::[^\n{]+|StaticHandler::~StaticHandler\([^\n{]+)',selected,re.M)
+        # The constructor's initializer spans lines; body() retains it whole.
+        v2_signatures=['StaticHandler::StaticHandler(', 'StaticHandler::~StaticHandler(']+[signature for signature in v2_signatures if '::StaticHandler(' not in signature and '::~StaticHandler(' not in signature]
         report['selected_method_signatures']=v2_signatures
         assert 'core_' not in typed and 'directory_' not in typed and 'tasks_' not in typed
         report['native_context_storage_absent']=True
@@ -89,6 +91,7 @@ def main():
                 parts += ['template<typename Handler>\n'+body(selected,'static bool conditional_file_date(')]
                 parts += [body(selected,signature) for signature in ['static void append_directory_part(', 'static int32_t resume_range_header(', 'static int32_t resume_static_path(']]
                 parts += [body(selected,signature) for signature in v2_signatures]
+                parts += [body(selected,'bool Server::apply_rewrite_rules(').replace('http_server::StaticHandler *','StaticHandler *')]
             extracted=tree/(namespace+'.cc')
             extracted.write_text('#include "context_candidate.h"\nnamespace '+namespace+' {\n'+'\n'.join(parts).replace('lstat(',namespace+'::lstat(')+'\n}\n')
         dependency=tree/'dependencies.cc';dependency.write_text('#include "context_oracle.h"\n'+body(native_base,'size_t sw_snprintf('))
