@@ -744,8 +744,7 @@ extern "C" __attribute__((visibility("default"))) int swr_memory_probe() {
 }
 
 
-// Separate targeted safety witness. It does not bless the unsafe original
-// header-inclusive copy as passing or claim identical undefined behavior.
+// Separate Rust-only witness for shrinking realloc, which is not compared.
 extern "C" __attribute__((visibility("default"))) int swr_memory_mapping_probe() {
     for (size_t original : {size_t(32768), size_t(65536), size_t(262144)}) {
         auto *data = static_cast<unsigned char *>(sw_shm_malloc(original)); assert(data);

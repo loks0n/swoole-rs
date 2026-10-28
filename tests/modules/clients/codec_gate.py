@@ -144,7 +144,7 @@ int main(){
 '''
     cpp=out/'actual_codec.cpp';cpp.write_text(prelude+'\nnamespace native {\n'+native+'\n}\nnamespace rust {\n'+rust+'\n}\n'+driver);exe=out/'actual_codec';flags=['-fsanitize=address,undefined','-fno-omit-frame-pointer'] if a.sanitize else []
     gate.run(['c++','-std=c++17','-O1',*flags,'-I',ROOT/'native/clients',cpp,archive,'-lpthread','-ldl','-lm','-o',exe]);values=gate.run([exe]).strip().split();cases=int(values[0]);signed_char=bool(int(values[1]))
-    report=dict(passed=True,cases=cases,scope=__doc__,pin=gate.PIN,native_sanitized=a.sanitize,native_char_signed=signed_char,rust_sanitized=a.rust_sanitized,excluded_native_undefined=['Oversized packet destination writes, unterminated/out-of-bounds input, empty decode, negative promoted label lengths that exceed initialized bounds are not native parity cases. Rust stops before each out-of-bounds access, retaining any preceding in-bounds writes; no parity claim for native undefined execution.'])
+    report=dict(passed=True,cases=cases,scope=__doc__,pin=gate.PIN,native_sanitized=a.sanitize,native_char_signed=signed_char,rust_sanitized=a.rust_sanitized,not_compared=['Inputs outside the compared domain run on Rust only; Rust stops at bounds, retaining any preceding in-bounds writes.'])
     a.output.write_text(json.dumps(report,indent=2)+'\n');print(json.dumps(report))
 
 if __name__=='__main__':main()

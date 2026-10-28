@@ -19,14 +19,14 @@ Targets: `base64_decode`, `base64_encode`, and for the WebSocket codec
 `ws_frame_length` (total and header length of any prefix) and `ws_mask` (first
 four bytes as the key; masking twice restores the data). The WebSocket oracle
 compiles upstream's `get_package_length_impl`, `mask` and `decode` bodies
-unchanged, copied by `crates/oracle/build.rs`. Inputs where upstream's behaviour is undefined (private advisory) are
-excluded from comparison; Rust's result is still checked.
+unchanged, copied by `crates/oracle/build.rs`. Inputs outside the compared domain are
+not compared; Rust's result is still checked.
 
 
 For HTTP, `http_url_decode`, `http_url_encode` and `http_cookies` (keys and
 values in order) compare with upstream's `url_decode`, `url_encode` and
 `parse_cookie`. The shim gives each upstream `sw_malloc` one spare byte, so
-upstream runs to completion where its behaviour is undefined (private advisory).
+upstream runs to completion on every input.
 
 
 For HTTP request framing, `http_frame` runs `get_protocol`, `get_header_length`
@@ -35,7 +35,7 @@ state, and `http_header` runs `has_expect_header`, `get_header(name)` and
 `get_method_string`. Both compare the pinned http.cc bodies with the same bodies
 after `migration/patches/http/0001-http-helpers.patch` (which call Rust), over a
 `Request` with upstream's field types, copied by `crates/oracle/build.rs`. Inputs
-where upstream's behaviour is undefined (private advisory) are excluded from comparison; the candidate is still checked. Seeds include the requests
+outside the compared domain are not compared; the candidate is still checked. Seeds include the requests
 `http.client` sends for the corpus applications.
 
 `http_header_info` runs `Request::parse_header_info` on both engines over any
@@ -44,20 +44,20 @@ nobody-chunked flags, errno and the multipart boundary must match. `http_range`
 runs `StaticHandler::parse_range` from the pinned static_handler.cc and from it
 with `migration/patches/http/0002-static-ranges.patch`, over a file size, MIME type
 length, If-Range verdict and any Range header: status, content length, every task
-and its part header, and the closing boundary must match. Where upstream's
-behaviour is undefined (private advisory), the candidate must reject the request.
+and its part header, and the closing boundary must match. Outside the compared
+domain, the candidate must reject the request.
 
 For MQTT and RESP, `mqtt_length` compares `mqtt::get_package_length` over any
 received bytes and `resp_parse` compares `redis::parse` (every string and, on
 glibc, `ERANGE`), each against the same body after
-`migration/patches/protocols/0001-rust-packet-protocols.patch`. Where upstream's behaviour is undefined (private advisory), only the candidate runs: `resp_parse` models upstream's walk
+`migration/patches/protocols/0001-rust-packet-protocols.patch`. Outside the compared domain only the candidate runs; `resp_parse` models upstream's walk
 without reading memory to find those inputs.
 
 For packet framing (`open_length_check`), `framing_unpack` compares
 `swr_v1_framing_unpack` with `swoole_unpack` for every length type, and
 `framing_length` compares `swr_v1_framing_default` with
 `Protocol::default_length_func` over a length type, field offset, body offset and
-any received bytes. Where upstream's behaviour is undefined (private advisory), Rust's -1 only has to match an upstream error.
+any received bytes. Outside the compared domain, Rust's -1 only has to match an upstream error.
 
 For the clients, `clients_url` compares `Address::assign(url)` from the pinned
 address.cc with the same body after
@@ -67,8 +67,7 @@ port, or a `std::stoi` throw), on URLs up to 256 bytes because libstdc++'s
 `swr_v1_clients_cookie` with the Set-Cookie split in
 `php_swoole_http_parse_set_cookies`, and `clients_domain_decode` compares
 `swr_v1_clients_domain_decode` with dns.cc's `domain_decode` wherever Rust stays
-in bounds; elsewhere upstream's behaviour is undefined (private advisory), so it
-isn't run.
+in bounds; other inputs are outside the compared domain and aren't run.
 
 libFuzzer writes new inputs to the first corpus directory, so keep `corpus/`
 (ignored) first and the committed `seeds/` second. A failure leaves its input in

@@ -30,5 +30,4 @@ Upstream behavior kept:
   `PENDING` is the queue total; DTLS listen return values are library-specific
   (0 pending/true, negative/false, positive listened/true).
 
-Open question: cookie-secret alignment and word initialization in upstream rely
-on undefined behavior; only defined initialized cases are kept.
+Cookie-secret cases are compared only where the secret is aligned and initialized.

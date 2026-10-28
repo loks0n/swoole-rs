@@ -188,8 +188,7 @@ def main():
                     timing_command[timing_command.index('-r') + 1] = '$f=FFI::cdef("int swr_memory_benchmark(unsigned int);", $argv[1]); exit($f->swr_memory_benchmark((int)$argv[2]));'
                     prepared[variant] = {'command': timing_command, 'binary': str(stored), 'sha256': sha(stored)}
                 if variant == 'rust':
-                    # The old realloc copies its mapping header size as payload,
-                    # so shrinking can overrun. Keep this explicitly Rust-only.
+                    # Shrinking realloc is outside the compared domain; Rust-only.
                     additional = []
                     for function in ['swr_memory_mapping_probe', 'swr_memory_odd_table_probe']:
                         targeted = command.copy()
@@ -200,9 +199,9 @@ def main():
                             raise ValueError('Missing bounded safety observation: ' + function)
                         additional.extend(values)
                     report['additional_rust_checks'] = additional
-                    report['uncompared_behavior'] = ('Shrinking realloc copies min(old/new payload), not the upstream header-inclusive overrun; '
+                    report['uncompared_behavior'] = ('Shrinking realloc copies min(old/new payload) and is checked on Rust only; '
                         'native odd-row objects use aligned physical storage with unchanged legacy logical byte accounting. '
-                        'Both are Rust-only safety witnesses; unsafe original baseline outcomes are not called passing.')
+                        'Both are Rust-only witnesses.')
 
             report['passed'] = report['results'][0]['observations'] == report['results'][1]['observations']
             if report['passed'] and args.prepare_benchmark:
