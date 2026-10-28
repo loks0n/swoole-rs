@@ -4,6 +4,7 @@
 #include <functional>
 #include <sstream>
 #include <stdexcept>
+#include <memory>
 #include <iostream>
 #include "swoole_rs_clients.h"
 #define SW_OK 0
@@ -46,9 +47,18 @@ static int swoole_event_set(Socket*,int){observe("read-interest");if(effect_hook
 // DECLARATIONS: inserted once for each actual native/selected body.
 namespace BODY_NAMESPACE {
 struct Client {
-    // The patched bodies reach the flags through the Client accessors (#447).
-    bool is_active() const{return active;} void set_active(bool v){active=v;}
-    Socket *socket=nullptr;bool active=false,open_ssl=false,high_watermark=false;
+#ifdef SELECTED_STATE
+    // The selected Client's flags are Rust's (#447); scenarios set and read them the same way.
+    std::unique_ptr<swr_v1_clients_state,decltype(&swr_v1_clients_state_free)> state_{swr_v1_clients_state_new(true),swr_v1_clients_state_free};
+    bool flag(uint32_t f) const{return swr_v1_clients_flag(state_.get(),f);}
+    void set_flag(uint32_t f,bool v){swr_v1_clients_set_flag(state_.get(),f,v);}
+#else
+    bool active=false,closed=false;
+    bool flag(uint32_t f) const{return f==SWR_CLIENTS_CLOSED?closed:active;}
+    void set_flag(uint32_t f,bool v){(f==SWR_CLIENTS_CLOSED?closed:active)=v;}
+#endif
+    bool is_active() const{return flag(SWR_CLIENTS_ACTIVE);} void set_active(bool v){set_flag(SWR_CLIENTS_ACTIVE,v);} bool is_closed() const{return flag(SWR_CLIENTS_CLOSED);}
+    Socket *socket=nullptr;bool open_ssl=false,high_watermark=false;
     size_t buffer_low_watermark=4;Proxy *socks5_proxy=nullptr,*http_proxy=nullptr;
     std::function<void(Client*)> onBufferEmpty,onError,onConnect;
     bool *destroyed=nullptr;
@@ -66,15 +76,15 @@ static std::string run(unsigned bits,unsigned scenario,unsigned outcome){
     second.ssl_state=SW_SSL_STATE_READY;first.ssl_want_read=bits&16;first.output_length=bits&2048?4:5;
     Proxy socks,http;socks.state=bits&256?SW_SOCKS5_STATE_WAIT:0;http.state=bits&1024?SW_HTTP_PROXY_STATE_WAIT:0;
     auto *cli=new Client;cli->destroyed=&destroyed;cli->socket=&first;first.object=second.object=cli;
-    cli->active=bits&1;cli->open_ssl=bits&2;cli->high_watermark=bits&64;
+    cli->set_active(bits&1);cli->open_ssl=bits&2;cli->high_watermark=bits&64;
     cli->socks5_proxy=bits&128?&socks:nullptr;cli->http_proxy=bits&512?&http:nullptr;
     handshake_result=outcome%3==0?-1:0;handshake_state=outcome%3==1?SW_SSL_STATE_READY:0;
     writable_result=outcome/3==0?-1:0;option_result=outcome/3==1?-1:0;option_error=outcome/3==2?111:0;
     send_result=scenario==4?-1:7;
     probe=[&]{if(destroyed)return std::string("deleted");std::ostringstream s;
-        s<<cli->active<<cli->open_ssl<<cli->high_watermark<<":"<<first.ssl_state<<":"<<socks.state<<":"<<http.state<<":"<<(cli->socket==&second);return s.str();};
+        s<<cli->is_active()<<cli->open_ssl<<cli->high_watermark<<":"<<first.ssl_state<<":"<<socks.state<<":"<<http.state<<":"<<(cli->socket==&second);return s.str();};
     auto callback=[&](Client*c){observe("callback");
-        if(scenario==1){c->active=false;c->close();}
+        if(scenario==1){c->set_active(false);c->close();}
         if(scenario==2)throw std::runtime_error("native callback");
         if(scenario==3)delete c;
     };
