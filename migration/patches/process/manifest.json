@@ -34,6 +34,13 @@
       "upstream_paths": [
         "src/server/process.cc"
       ]
+    },
+    {
+      "path": "0005-worker-status-methods.patch",
+      "sha256": "00094615dfa5645c924611a390a22b4102c32f3d7144931ba8831bcc79d922b4",
+      "upstream_paths": [
+        "include/swoole_process_pool.h"
+      ]
     }
   ]
 }

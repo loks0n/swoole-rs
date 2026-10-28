@@ -90,7 +90,7 @@ void swr_v1_process_worker_registry_terminate(const swr_v1_process_worker_regist
  * fails the build rather than corrupting shared memory. The scalar process fields
  * (pid/status/type/id) migrate behind the accessors; pointer/atomic fields stay
  * C++-owned storage. See #629. */
-typedef struct {
+typedef struct swr_v1_worker_record {
     int pid;
     uint32_t id;
     void *pool;
