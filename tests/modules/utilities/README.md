@@ -126,19 +126,6 @@ implementation (macOS also needs `--asan-runtime`).
 `--single-profile`, `--cpp-standard` and `--extra-cxx-flag` adjust the build. The
 output directory must exist.
 
-## Standalone probes
-
-Compile and run by hand against a utility archive; each exits nonzero on failure.
-
-- `ffi_smoke.c`, `production_abi_c.c`: C11 linkage of the shared FFI archive (ABI
-  version, feature bits, owned-state context/query).
-- `inline_span_c.c`: C11 caller of the v2 trim/search span exports.
-- `frontdoor_c.c`, `frontdoor_integer.cc`: C11 layout and complete-program caller
-  of the macro frontdoor, and native integer-comparison rules.
-- `logger_output.c`, `logger_output.rs`: line/microsecond formatting into
-  uninitialized output storage.
-- `asan_fault.cc`: deliberately invalid caller; Rust ASan must report the read.
-
 ## Benchmark preparation
 
 ```sh
