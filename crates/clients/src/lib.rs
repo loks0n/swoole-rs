@@ -9,6 +9,7 @@
 
 pub mod address;
 pub mod async_client;
+pub mod connect;
 pub mod coro_client;
 pub mod dns;
 pub mod http_connection;
@@ -522,119 +523,6 @@ pub extern "C" fn swr_v1_clients_read_next(stage: u32, facts: u32) -> ReadPlan {
         _ => (Success, stage),
     };
     ReadPlan {
-        action,
-        stage: next,
-    }
-}
-
-#[repr(u32)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ConnectAction {
-    Advance = 0,
-    SetTimeout = 1,
-    KernelTimeout = 2,
-    Address = 3,
-    Nonblocking = 4,
-    Blocking = 5,
-    AsyncPending = 6,
-    Activate = 7,
-    SocksSend = 8,
-    SocksPublish = 9,
-    SocksReceive = 10,
-    SocksHandshake = 11,
-    HttpSend = 12,
-    HttpReceive = 13,
-    HttpHandshake = 14,
-    SslHandshake = 15,
-    ReturnResult = 16,
-    Success = 17,
-    Error = 18,
-    WarnCallbacks = 19,
-    AllocateBuffer = 20,
-    Watermark = 21,
-    DnsLookup = 22,
-    AsyncConnect = 23,
-    AddTimer = 24,
-    AddEvent = 25,
-    FailCallback = 26,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ConnectPlan {
-    pub action: ConnectAction,
-    pub stage: u32,
-}
-
-/// Sync stages start at0; async stages at100. Native owns the saved syscall
-/// result, proxy pointer, buffer, timers and every effect/callback.
-#[unsafe(no_mangle)]
-pub extern "C" fn swr_v1_clients_connect_next(stage: u32, facts: u32) -> ConnectPlan {
-    use ConnectAction::{
-        Activate, AddEvent, AddTimer, Address, Advance, AllocateBuffer, AsyncConnect, AsyncPending,
-        Blocking, DnsLookup, Error, FailCallback, HttpHandshake, HttpReceive, HttpSend,
-        KernelTimeout, Nonblocking, ReturnResult, SetTimeout, SocksHandshake, SocksPublish,
-        SocksReceive, SocksSend, SslHandshake, Success, WarnCallbacks, Watermark,
-    };
-    let (action, next) = match stage {
-        0 => (SetTimeout, 1),
-        1 if facts != 0 => (KernelTimeout, 2),
-        1 => (Advance, 2),
-        2 => (Address, 3),
-        3 if facts != 0 => (Error, 3),
-        3 => (Advance, 4),
-        4 if facts != 0 => (Nonblocking, 5),
-        4 => (Blocking, 6),
-        5 => (
-            match facts {
-                1 => Success,
-                2 => AsyncPending,
-                _ => Error,
-            },
-            5,
-        ),
-        6 if facts != 0 => (ReturnResult, 6),
-        6 => (Activate, 7),
-        7 if facts != 0 => (SocksSend, 8),
-        7 => (Advance, 14),
-        8 if facts != 0 => (Error, 8),
-        8 => (SocksPublish, 9),
-        9 => (SocksReceive, 10),
-        10 if facts != 0 => (SocksHandshake, 11),
-        10 => (Error, 10),
-        11 if facts != 0 => (Advance, 12),
-        11 => (Error, 11),
-        12 => (Advance, if facts != 0 { 20 } else { 9 }),
-        14 if facts != 0 => (HttpSend, 15),
-        14 => (Advance, 20),
-        15 if facts != 0 => (Error, 15),
-        15 => (HttpReceive, 16),
-        16 if facts != 0 => (Error, 16),
-        16 => (HttpHandshake, 17),
-        17 if facts != 0 => (Advance, 20),
-        17 => (Error, 17),
-        20 if facts != 0 => (SslHandshake, 21),
-        20 => (ReturnResult, 20),
-        21 => (if facts != 0 { Error } else { ReturnResult }, 21),
-        100 if facts != 0 => (SetTimeout, 101),
-        100 => (WarnCallbacks, 100),
-        101 => (if facts != 0 { AllocateBuffer } else { Advance }, 102),
-        102 => (if facts != 0 { Watermark } else { Advance }, 103),
-        103 => (Address, 104),
-        104 if facts != 0 => (Error, 104),
-        104 => (Advance, 105),
-        105 if facts != 0 => (DnsLookup, 105),
-        105 => (AsyncConnect, 106),
-        106 if facts != 0 => (AsyncConnect, 106),
-        106 => (Advance, 107),
-        107 if facts != 0 => (Advance, 108),
-        107 => (FailCallback, 107),
-        108 if facts != 0 => (AddTimer, 109),
-        108 => (AddEvent, 108),
-        109 => (if facts != 0 { AddEvent } else { Error }, 109),
-        _ => (Error, stage),
-    };
-    ConnectPlan {
         action,
         stage: next,
     }

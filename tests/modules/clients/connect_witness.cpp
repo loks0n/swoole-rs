@@ -5,6 +5,8 @@
 #include <functional>
 #include <sstream>
 #include <stdexcept>
+#include <exception>
+#include <memory>
 #include <iostream>
 #include "swoole_rs_clients.h"
 #define SW_OK 0
@@ -61,11 +63,20 @@ template<typename Function,typename Client>static TimerNode *swoole_timer_add(do
 // DECLARATIONS
 namespace BODY_NAMESPACE {
 struct Client {
-    // The patched bodies reach the flags through the Client accessors (#447).
-    bool is_active() const{return active;} void set_active(bool v){active=v;}
+#ifdef SELECTED_STATE
+    // The selected Client's flags are Rust's (#447); scenarios set and read them the same way.
+    std::unique_ptr<swr_v1_clients_state,decltype(&swr_v1_clients_state_free)> state_{swr_v1_clients_state_new(true),swr_v1_clients_state_free};
+    bool flag(uint32_t f) const{return swr_v1_clients_flag(state_.get(),f);}
+    void set_flag(uint32_t f,bool v){swr_v1_clients_set_flag(state_.get(),f,v);}
+#else
+    bool active=false,async_connect=false,wait_dns=false,onerror_called=false;
+    bool *field(uint32_t f){return f==SWR_CLIENTS_ACTIVE?&active:f==SWR_CLIENTS_ASYNC_CONNECT?&async_connect:f==SWR_CLIENTS_WAIT_DNS?&wait_dns:&onerror_called;}
+    bool flag(uint32_t f) const{return *const_cast<Client*>(this)->field(f);}
+    void set_flag(uint32_t f,bool v){*field(f)=v;}
+#endif
+    bool is_active() const{return flag(SWR_CLIENTS_ACTIVE);} void set_active(bool v){set_flag(SWR_CLIENTS_ACTIVE,v);}
     Socket *socket=nullptr;String *buffer=nullptr;Address server_addr;
     ProxyPtr socks5_proxy,http_proxy;
-    bool active=false,async_connect=false,wait_dns=false,onerror_called=false;
     bool open_ssl=false;uint32_t input_buffer_size=16,buffer_high_watermark=0;
     TimerNode *timer=nullptr;bool *destroyed=nullptr;
     std::function<void(Client*)> onConnect,onError,onReceive,onClose,onBufferFull;
@@ -88,13 +99,13 @@ static std::string run(unsigned bits,unsigned scenario,unsigned outcome,unsigned
     transfer_buffer.length=0;Socket first,second;Proxy socks,http,replacement;String existing;
     auto *cli=new Client;cli->destroyed=&destroyed;cli->socket=&first;
     cli->socks5_proxy.ptr=bits&1?&socks:nullptr;cli->http_proxy.ptr=bits&2?&http:nullptr;cli->open_ssl=bits&4;
-    cli->buffer=bits&16?&existing:nullptr;cli->buffer_high_watermark=bits&64?7:0;cli->wait_dns=bits&128;
+    cli->buffer=bits&16?&existing:nullptr;cli->buffer_high_watermark=bits&64?7:0;cli->set_flag(SWR_CLIENTS_WAIT_DNS,bits&128);
     blocking_result=int(outcome%3)-1;nonblocking_result=int(outcome%3);send_result=int(outcome/3)-1;receive_result=int(outcome%3)-1;
     handshake_ok=outcome>=3;ssl_result=outcome<3?-1:0;timer_ok=bits&512;
     async_result=outcome%3==1?0:-1;async_errno=outcome%3==0?EINPROGRESS:ECONNREFUSED;
     event_result=scenario&1?-1:7;dns_result=scenario&1?-1:9;address_result=scenario==1?-1:0;first_interrupt=scenario==5;
     probe=[&]{if(destroyed)return std::string("deleted");std::ostringstream s;
-        s<<cli->active<<cli->async_connect<<cli->wait_dns<<cli->onerror_called<<cli->open_ssl<<":"<<first.removed<<":"<<second.removed<<":"<<socks.state<<":"<<http.state<<":"<<replacement.state<<":"<<cli->buffer_high_watermark<<":"<<(cli->buffer!=nullptr)<<":"<<(cli->timer!=nullptr)<<":"<<(cli->socket==&second)<<":"<<transfer_buffer.length;return s.str();};
+        s<<cli->flag(SWR_CLIENTS_ACTIVE)<<cli->flag(SWR_CLIENTS_ASYNC_CONNECT)<<cli->flag(SWR_CLIENTS_WAIT_DNS)<<cli->flag(SWR_CLIENTS_ONERROR_CALLED)<<cli->open_ssl<<":"<<first.removed<<":"<<second.removed<<":"<<socks.state<<":"<<http.state<<":"<<replacement.state<<":"<<cli->buffer_high_watermark<<":"<<(cli->buffer!=nullptr)<<":"<<(cli->timer!=nullptr)<<":"<<(cli->socket==&second)<<":"<<transfer_buffer.length;return s.str();};
     auto callback=[&](Client*c){observe("callback");if(scenario==3)throw std::runtime_error("native callback");if(scenario==4)delete c;};
     cli->onConnect=callback;cli->onError=callback;cli->onReceive=callback;if(bits&8)cli->onClose=callback;if(bits&32)cli->onBufferFull=callback;
     effect_hook=[&](const std::string&name){
