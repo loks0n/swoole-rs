@@ -57,6 +57,19 @@
         "include/swoole_reactor.h",
         "src/reactor/poll.cc"
       ]
+    },
+    {
+      "path": "0009-handler-tables.patch",
+      "sha256": "583ce13572d6a4f20da37d7e4a5bb1b6af857ed09755eefa8ff4ee50d8bc2a0c",
+      "upstream_paths": [
+        "include/swoole_reactor.h",
+        "src/reactor/base.cc",
+        "src/reactor/epoll.cc",
+        "src/reactor/kqueue.cc",
+        "src/reactor/poll.cc",
+        "src/server/reactor_process.cc",
+        "src/server/reactor_thread.cc"
+      ]
     }
   ]
 }

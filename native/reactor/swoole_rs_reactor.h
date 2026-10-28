@@ -83,6 +83,18 @@ size_t swr_v1_reactor_callbacks_copy_layout(uint32_t);
 /* Each backend's whole wait() loop in one call (#336, #391). Rust runs the loop and its readiness
    order; these are the native effects, each passed `context` (prepare/remove also the socket). */
 enum { SWR_REACTOR_POLL, SWR_REACTOR_EPOLL, SWR_REACTOR_KQUEUE };
+/* Reactor handler tables (read/write/error per fd type, write and error defaults).
+ * Handlers are ReactorHandler: int (*)(Reactor *, Event *). get kind: 0 read, 1 write,
+ * 2 error; error_only false adds get_error_handler's read and write fallbacks. */
+typedef struct swr_v1_reactor_handlers swr_v1_reactor_handlers;
+typedef int (*swr_v1_reactor_handler)(void *, void *);
+swr_v1_reactor_handlers *swr_v1_reactor_handlers_new(void);
+void swr_v1_reactor_handlers_free(swr_v1_reactor_handlers *);
+bool swr_v1_reactor_handlers_set(swr_v1_reactor_handlers *, int fd_type, int events, swr_v1_reactor_handler);
+bool swr_v1_reactor_handlers_isset(const swr_v1_reactor_handlers *, int fd_type, int events);
+swr_v1_reactor_handler swr_v1_reactor_handlers_get(const swr_v1_reactor_handlers *, uint32_t kind, int fd_type, bool error_only);
+void swr_v1_reactor_handlers_set_default(swr_v1_reactor_handlers *, uint32_t kind, swr_v1_reactor_handler);
+swr_v1_reactor_handler swr_v1_reactor_handlers_default(const swr_v1_reactor_handlers *, uint32_t kind);
 typedef struct {
     void *context;
     uint32_t backend;
@@ -97,10 +109,12 @@ typedef struct {
     int (*interrupted)(void *); /* nullable: epoll io_uring builds only */
     void (*interrupt)(void *);  /* nullable */
     void (*wait_failed)(void *);
-    void (*prepare)(void *, void *socket, int fd, int hup); /* fd -1: the socket's own */
+    int (*prepare)(void *, void *socket, int fd, int hup); /* fd -1: the socket's own; returns its fd type */
     int (*removed)(void *socket);
     int (*oneshot)(void *socket);
-    int (*handle)(void *, uint32_t kind); /* 0 read, 1 write, 2 error */
+    const swr_v1_reactor_handlers *handlers; /* each runs as handler(reactor, event) */
+    void *reactor;
+    void *event;
     void (*handler_failed)(void *, uint32_t kind);
     void (*remove)(void *, void *socket);
     void (*signal)(void *signal);      /* nullable: kqueue only */

@@ -40,6 +40,9 @@ pub use deferred::*;
 mod callbacks;
 pub use callbacks::*;
 
+mod handlers;
+pub use handlers::*;
+
 mod owner;
 
 mod wait;

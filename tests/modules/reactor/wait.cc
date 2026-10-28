@@ -53,6 +53,15 @@ struct Reactor {
     static int write(Reactor*,Event*) { effects.emplace_back("write");return 0; }
     ReactorHandler get_handler(int,int type) { return type==SW_EVENT_READ?read:write; }
     ReactorHandler get_error_handler(int) { assert(false && "errors excluded");return read; }
+    // The selected bodies dispatch through the Rust tables, filled like get_handler above.
+    swr_v1_reactor_handlers *handlers=[] {
+        auto h=swr_v1_reactor_handlers_new();
+        swr_v1_reactor_handlers_set(h,2,SW_EVENT_READ,reinterpret_cast<swr_v1_reactor_handler>(read));
+        swr_v1_reactor_handlers_set(h,2,SW_EVENT_WRITE,reinterpret_cast<swr_v1_reactor_handler>(write));
+        return h;
+    }();
+    ~Reactor() { swr_v1_reactor_handlers_free(handlers); }
+    const swr_v1_reactor_handlers *get_handlers() const { return handlers; }
     void _del(Socket *s) { effects.emplace_back("delete");s->removed=true; }
 };
 #ifdef __APPLE__
