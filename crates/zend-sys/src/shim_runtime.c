@@ -6,10 +6,6 @@ int swr_zend_runtime_version(void) {
     return PHP_VERSION_ID;
 }
 
-zend_function *swr_zend_runtime_function(const char *name, size_t length) {
-    return (zend_function *) zend_hash_str_find_ptr(EG(function_table), name, length);
-}
-
 zend_internal_arg_info *swr_zend_runtime_copy_arginfo(const zend_internal_function *function,
                                                       zend_internal_arg_info *arg_info_) {
     uint32_t num_args = function->num_args + 1;
@@ -69,24 +65,6 @@ zend_class_entry *swr_zend_runtime_find_class(const char *name, size_t length) {
     zend_string_release(lcname);
     zend_string_release(class_name);
     return ce;
-}
-
-typedef struct {
-    zend_string *name;
-    zend_class_entry *found;
-} swr_zend_runtime_lookup;
-
-static void swr_zend_runtime_lookup_body(void *arg) {
-    swr_zend_runtime_lookup *lookup = arg;
-    lookup->found = zend_lookup_class(lookup->name);
-}
-
-int swr_zend_runtime_lookup_class(const char *name, size_t length, zend_class_entry **found) {
-    swr_zend_runtime_lookup lookup = {zend_string_init(name, length, 0), NULL};
-    int bailed = swr_zend_try(swr_zend_runtime_lookup_body, &lookup);
-    zend_string_release(lookup.name);
-    *found = lookup.found;
-    return bailed;
 }
 
 zend_class_entry *swr_zend_runtime_parent(const zend_class_entry *ce) {

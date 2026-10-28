@@ -18,12 +18,13 @@ use std::{
 use swoole_rs_zend::{
     Call, E_WARNING, bailout,
     sys::{
-        ZEND_ACC_FAKE_CLOSURE, swr_zend_runtime_call_handler, swr_zend_runtime_copy_arginfo,
-        swr_zend_runtime_disabled, swr_zend_runtime_free_arginfo, swr_zend_runtime_function,
-        swr_zend_runtime_instanceof, swr_zend_runtime_lookup_class, swr_zend_runtime_parent,
-        swr_zend_runtime_set_parent, swr_zend_runtime_unsupported, swr_zend_runtime_version,
-        swr_zend_set_stringl, zend_class_entry, zend_execute_data, zend_fcall_info, zend_function,
-        zend_internal_arg_info, zend_string, zif_handler, zval, zval_ptr_dtor,
+        ZEND_ACC_FAKE_CLOSURE, swr_zend_function_find, swr_zend_runtime_call_handler,
+        swr_zend_runtime_copy_arginfo, swr_zend_runtime_disabled, swr_zend_runtime_free_arginfo,
+        swr_zend_runtime_instanceof, swr_zend_runtime_parent, swr_zend_runtime_set_parent,
+        swr_zend_runtime_unsupported, swr_zend_runtime_version, swr_zend_set_stringl,
+        swr_zend_string_release, swr_zend_try_lookup_class, zend_class_entry, zend_execute_data,
+        zend_fcall_info, zend_function, zend_internal_arg_info, zend_string, zif_handler, zval,
+        zval_ptr_dtor,
     },
 };
 
@@ -81,7 +82,7 @@ fn bytes<'a>(string: *const zend_string) -> &'a [u8] {
 /// `zend::get_function(name)`: the function table's entry, if any.
 fn function(name: &[u8]) -> *mut zend_function {
     // SAFETY: a name and its length.
-    unsafe { swr_zend_runtime_function(name.as_ptr().cast(), name.len()) }
+    unsafe { swr_zend_function_find(name.as_ptr().cast(), name.len()) }
 }
 
 /// The internal function of a function-table entry.
@@ -418,10 +419,12 @@ pub(crate) fn user_func(
 /// `zend_lookup_class`, which may run an autoloader.
 fn lookup_class(name: &CStr) -> Result<*mut zend_class_entry, Bailout> {
     let mut found = ptr::null_mut();
-    // SAFETY: a name, its length and a writable slot; the shim traps a bailout.
-    if unsafe { swr_zend_runtime_lookup_class(name.as_ptr(), name.count_bytes(), &raw mut found) }
-        != 0
-    {
+    let name = swoole_rs_zend::string::copy(name.to_bytes());
+    // SAFETY: a fresh string and a writable slot; the shim traps a bailout.
+    let bailed = unsafe { swr_zend_try_lookup_class(name, &raw mut found) } != 0;
+    // SAFETY: the string made above, released once.
+    unsafe { swr_zend_string_release(name) };
+    if bailed {
         return Err(Bailout);
     }
     Ok(found)

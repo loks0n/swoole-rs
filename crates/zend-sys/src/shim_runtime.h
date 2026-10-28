@@ -7,8 +7,6 @@
 
 /* PHP_VERSION_ID. */
 int swr_zend_runtime_version(void);
-/* zend_hash_str_find_ptr(EG(function_table), name, length). */
-zend_function *swr_zend_runtime_function(const char *name, size_t length);
 /* Swoole's copy_arginfo: a persistent copy of a function's arginfo (and the
  * return slot before it) with its class-name types duplicated. */
 zend_internal_arg_info *swr_zend_runtime_copy_arginfo(const zend_internal_function *function,
@@ -17,8 +15,6 @@ zend_internal_arg_info *swr_zend_runtime_copy_arginfo(const zend_internal_functi
 void swr_zend_runtime_free_arginfo(const zend_internal_function *function, zend_internal_arg_info *copy);
 /* The lowercased name in EG(class_table), without autoloading. */
 zend_class_entry *swr_zend_runtime_find_class(const char *name, size_t length);
-/* zend_lookup_class (which autoloads) inside zend_try: 1 if it bailed out. */
-int swr_zend_runtime_lookup_class(const char *name, size_t length, zend_class_entry **found);
 /* ce->parent, a member of an anonymous union. */
 zend_class_entry *swr_zend_runtime_parent(const zend_class_entry *ce);
 void swr_zend_runtime_set_parent(zend_class_entry *ce, zend_class_entry *parent);
