@@ -207,6 +207,10 @@ enum SetupAction {
 /// Facts: password,cert,key,cookie-capable-DTLS,verify,http,boring,clientCA.
 /// Observe requests a fresh fact at next stage; never eagerly snapshot later fields.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "a decision table, one arm per state; it goes when the operation moves into Rust whole"
+)]
 pub extern "C" fn swr_v1_tls_setup(stage: u32, facts: u32, result: i32) -> SetupPlan {
     let (action, next) = match stage {
         // Disjoint entry cursors for the existing native CA/cipher methods.

@@ -18,6 +18,10 @@ pub extern "C" fn swr_v1_phphelpers_empty(count: usize) -> u8 {
     u8::from(count == 0)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one lookup table of PHP function aliases"
+)]
 fn alias(family: u32, name: &[u8]) -> Option<&'static [u8]> {
     match (family, name) {
         (0, b"all") => Some(b"array_all\0"),

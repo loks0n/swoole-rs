@@ -9,6 +9,10 @@ pub struct ClientsCoroPlan {
 /// Operations5..10 cover datagram/peek/connected/endpoint/close bindings. Facts
 /// are stage-local, result is native `ssize_t`, length is a native initialized size.
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "a decision table, one arm per state; it goes when the operation moves into Rust whole"
+)]
 pub extern "C" fn swr_v1_clients_coro_next(
     operation: u32,
     stage: u32,

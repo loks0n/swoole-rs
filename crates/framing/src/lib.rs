@@ -79,6 +79,10 @@ unsafe fn bytes<'a>(p: *const u8, n: usize) -> Option<&'a [u8]> {
 }
 
 #[unsafe(no_mangle)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "a decision table, one arm per state; it goes when the operation moves into Rust whole"
+)]
 pub unsafe extern "C" fn swr_v1_framing_step(state: *mut State, input: *const Snapshot) -> Action {
     // SAFETY: the caller passes null or its live, exclusive framing state.
     let state = unsafe { state.as_mut() };

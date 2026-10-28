@@ -27,9 +27,10 @@ struct_field_names = "allow"
 inline_always = "allow"
 # Allowed: protocol lengths and native type codes are decimal by nature.
 decimal_bitwise_operands = "allow"
-# Allowed until #213 and #159 fix them.
+# Allowed until #213 fixes it.
 wildcard_imports = "allow"
-too_many_lines = "allow"
+# Function size, at clippy.toml's thresholds (#159).
+cognitive_complexity = "deny"
 allow_attributes = "deny"
 allow_attributes_without_reason = "deny"
 dbg_macro = "deny"
