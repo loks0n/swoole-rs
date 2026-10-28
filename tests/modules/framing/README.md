@@ -12,15 +12,16 @@ Default activation is not claimed.
 
 ```sh
 mkdir -p target/reports
-python3 tests/modules/framing/trace.py --output target/reports/framing-trace.json
+python3 tests/modules/framing/trace.py --archive target/hybrid/BUILD/src/../rust-prefix/lib/libswoole_rs_ffi.a \
+  --output target/reports/framing-trace.json
 rustc --edition=2024 --crate-type=staticlib --crate-name swoole_rs_framing \
   -O -Dwarnings crates/framing/src/lib.rs -o target/libframing.a
 python3 tests/modules/framing/gate.py --archive target/libframing.a \
   --sanitize --output target/reports/framing-gate.json
 ```
 
-- `trace.py` compiles the exact pinned C++ bodies and the same files with
-  `migration/patches/framing` applied
+- `trace.py` compiles the exact pinned C++ bodies and the same files from the
+  hybrid build's patched tree (linked to its archive)
   against instrumented IO/String boundaries and compares the traces line by
   line. The traces cover partial packets, split residuals, callback
   failure/removal ordering, reentry, TLS pending, allocation exceptions and
