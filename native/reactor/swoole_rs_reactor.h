@@ -128,6 +128,8 @@ swr_v1_reactor_epoll_events *swr_v1_reactor_epoll_new(size_t);
 void swr_v1_reactor_epoll_free(swr_v1_reactor_epoll_events *);
 struct epoll_event *swr_v1_reactor_epoll_data(swr_v1_reactor_epoll_events *);
 swr_v1_reactor_backend_layout swr_v1_reactor_epoll_layout(void);
+/* epoll_ctl for op 0 add, 1 set (MOD), 2 del, with the socket as token; the kernel's result. */
+int swr_v1_reactor_epoll_ctl(int epfd, uint32_t op, int fd, void *socket, int events);
 #endif
 #if (defined(__APPLE__) && TARGET_OS_OSX) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
 typedef struct swr_v1_reactor_kqueue_events swr_v1_reactor_kqueue_events;
@@ -135,6 +137,12 @@ swr_v1_reactor_kqueue_events *swr_v1_reactor_kqueue_new(size_t);
 void swr_v1_reactor_kqueue_free(swr_v1_reactor_kqueue_events *);
 struct kevent *swr_v1_reactor_kqueue_data(swr_v1_reactor_kqueue_events *);
 swr_v1_reactor_backend_layout swr_v1_reactor_kqueue_layout(void);
+/* ReactorKqueue add/set/del's kevent calls; errno is the kernel's. add: 0, or the failed
+ * filter (1 read, 2 write). set: 0, or 1 read add, 2 read delete, 3 write add, 4 write delete.
+ * del: each failed filter's errno in errors (0 if it took); -1 stops at one not EBADF/ENOENT. */
+int swr_v1_reactor_kqueue_add(int kq, int fd, void *socket, int events);
+int swr_v1_reactor_kqueue_set(int kq, int fd, void *socket, int events);
+int swr_v1_reactor_kqueue_del(int kq, int fd, void *socket, int events, int *errors);
 #endif
 typedef struct swr_v1_reactor_poll_snapshot swr_v1_reactor_poll_snapshot;
 typedef struct { size_t size, alignment, fd, events, revents; } swr_v1_reactor_poll_layout_info;

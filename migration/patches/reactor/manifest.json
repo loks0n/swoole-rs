@@ -70,6 +70,14 @@
         "src/server/reactor_process.cc",
         "src/server/reactor_thread.cc"
       ]
+    },
+    {
+      "path": "0010-backend-registration.patch",
+      "sha256": "fc92f4ff440431d1f5ae5b146809f99b032d8ff97770c15541832f0860fa24f3",
+      "upstream_paths": [
+        "src/reactor/epoll.cc",
+        "src/reactor/kqueue.cc"
+      ]
     }
   ]
 }
