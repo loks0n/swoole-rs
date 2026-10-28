@@ -1,0 +1,153 @@
+//! `Swoole\Atomic` and `Swoole\Atomic\Long`: a word in Swoole's global memory
+//! pool, so processes forked after construction share it.
+use crate::word::{self, Word, methods};
+use std::{
+    ffi::c_void,
+    ptr,
+    sync::{
+        OnceLock,
+        atomic::{AtomicPtr, Ordering},
+    },
+};
+use swoole_rs_zend::{
+    Call, Class, Object,
+    sys::{ZEND_ACC_NOT_SERIALIZABLE, zend_class_entry, zend_function_entry, zend_object},
+    throw_exception, unset_property_deny,
+};
+
+/// `SW_ERROR_MALLOC_FAIL`.
+const MALLOC_FAIL: i64 = 501;
+
+/// `sw_mem_pool()->alloc` and `->free`, which only C++ can call.
+struct Pool {
+    alloc: unsafe extern "C" fn(size: u32) -> *mut c_void,
+    release: unsafe extern "C" fn(word: *mut c_void),
+}
+
+static POOL: OnceLock<Pool> = OnceLock::new();
+static EXCEPTION: AtomicPtr<zend_class_entry> = AtomicPtr::new(ptr::null_mut());
+static ATOMIC: Class = Class::new();
+static LONG: Class = Class::new();
+
+/// `struct AtomicObject { sw_atomic_t *ptr; zend_object std; }` and its Long twin.
+type Atomic<W> = Object<*mut W>;
+
+trait Kind: Word {
+    fn class() -> &'static Class;
+}
+
+impl Kind for u32 {
+    fn class() -> &'static Class {
+        &ATOMIC
+    }
+}
+
+impl Kind for i64 {
+    fn class() -> &'static Class {
+        &LONG
+    }
+}
+
+unsafe extern "C" fn create<W: Kind>(ce: *mut zend_class_entry) -> *mut zend_object {
+    // SAFETY: Zend calls `create_object` with this class or a subclass of it;
+    // a null pointer is valid zeroed data.
+    let std = unsafe { Atomic::<W>::create(W::class(), ce) };
+    let word = POOL.get().map_or(ptr::null_mut(), |pool| {
+        #[expect(clippy::cast_possible_truncation, reason = "a word is 4 or 8 bytes")]
+        // SAFETY: the pool's allocator, called at object creation as upstream does.
+        unsafe {
+            (pool.alloc)(size_of::<W>() as u32)
+        }
+    });
+    if word.is_null() {
+        // SAFETY: in a handler, with Swoole's exception class.
+        unsafe {
+            throw_exception(
+                EXCEPTION.load(Ordering::Relaxed),
+                c"global memory allocation failure",
+                MALLOC_FAIL,
+            );
+        }
+    }
+    // SAFETY: `std` is the object just created.
+    unsafe { *Atomic::<W>::data(std) = word.cast() };
+    std
+}
+
+unsafe extern "C" fn free<W: Kind>(std: *mut zend_object) {
+    // SAFETY: Zend frees an object this class created.
+    let word = unsafe { *Atomic::<W>::data(std) };
+    if let Some(pool) = POOL.get() {
+        // SAFETY: the word came from this pool, as upstream frees it.
+        unsafe { (pool.release)(word.cast()) };
+    }
+    // SAFETY: as above.
+    unsafe { Atomic::<W>::dtor(std) };
+}
+
+fn this_word<W>(call: &Call) -> *mut W {
+    // SAFETY: Atomic methods are non-static, so `$this` is one of our objects.
+    unsafe { *Atomic::<W>::data(call.this()) }
+}
+
+/// MINIT: register both classes as `php_swoole_atomic_minit` did.
+/// # Safety
+/// Called once, at MINIT, with static `PHP_FE_END`-terminated method tables,
+/// Swoole's exception class and the global pool's allocator.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_phplocks_atomic_minit(
+    atomic_methods: *const zend_function_entry,
+    long_methods: *const zend_function_entry,
+    exception: *mut zend_class_entry,
+    alloc: Option<unsafe extern "C" fn(size: u32) -> *mut c_void>,
+    release: Option<unsafe extern "C" fn(word: *mut c_void)>,
+) {
+    if let (Some(alloc), Some(release)) = (alloc, release) {
+        POOL.get_or_init(|| Pool { alloc, release });
+    }
+    EXCEPTION.store(exception, Ordering::Relaxed);
+    // SAFETY: MINIT, with the caller's tables.
+    unsafe { ATOMIC.register(c"Swoole\\Atomic", atomic_methods, configure::<u32>) };
+    // SAFETY: as above.
+    unsafe { LONG.register(c"Swoole\\Atomic\\Long", long_methods, configure::<i64>) };
+}
+
+/// `SW_SET_CLASS_NOT_SERIALIZABLE`, clone and unset denied, custom object.
+fn configure<W: Kind>(
+    entry: &mut zend_class_entry,
+    handlers: &mut swoole_rs_zend::sys::zend_object_handlers,
+) {
+    entry.ce_flags |= ZEND_ACC_NOT_SERIALIZABLE;
+    handlers.clone_obj = None;
+    handlers.unset_property = Some(unset_property_deny);
+    Atomic::<W>::install(entry, handlers, create::<W>, free::<W>);
+}
+
+fn construct(call: &Call, word: *mut u32) {
+    word::construct(call, word);
+}
+
+/// `Atomic\Long::__construct` returns true.
+fn construct_long(call: &Call, word: *mut i64) {
+    if word::construct(call, word) {
+        call.set_bool(true);
+    }
+}
+
+methods! {
+    this_word;
+    zim_swoole_atomic___construct: u32 => construct;
+    zim_swoole_atomic_add: u32 => word::add;
+    zim_swoole_atomic_sub: u32 => word::sub;
+    zim_swoole_atomic_get: u32 => word::get;
+    zim_swoole_atomic_set: u32 => word::set;
+    zim_swoole_atomic_cmpset: u32 => word::cmpset;
+    zim_swoole_atomic_wait: u32 => word::wait;
+    zim_swoole_atomic_wakeup: u32 => word::wakeup;
+    zim_swoole_atomic_long___construct: i64 => construct_long;
+    zim_swoole_atomic_long_add: i64 => word::add;
+    zim_swoole_atomic_long_sub: i64 => word::sub;
+    zim_swoole_atomic_long_get: i64 => word::get;
+    zim_swoole_atomic_long_set: i64 => word::set;
+    zim_swoole_atomic_long_cmpset: i64 => word::cmpset;
+}

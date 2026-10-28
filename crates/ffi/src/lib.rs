@@ -75,6 +75,9 @@ pub use swoole_rs_utilities::*;
 #[cfg(feature = "locks")]
 pub use swoole_rs_locks::*;
 
+#[cfg(feature = "locks")]
+pub use swoole_rs_phplocks::*;
+
 #[cfg(feature = "wrappers")]
 pub use swoole_rs_wrappers::*;
 

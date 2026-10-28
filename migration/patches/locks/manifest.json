@@ -31,14 +31,14 @@
     },
     {
       "path": "0005-swoole_atomic.patch",
-      "sha256": "1c23041756e45e05274ba815a50b4aebf0f49eb2c9809dc383c0f506ead1bc66",
+      "sha256": "4373ed0ea86733cf1ae80f8336d372eccb9ec49effa690cc4863d7826131284e",
       "upstream_paths": [
         "ext-src/swoole_atomic.cc"
       ]
     },
     {
       "path": "0006-swoole_thread_atomic.patch",
-      "sha256": "33698ca1d9885703dcfa31394bb4db9058a6564d8bbec45e488b1ec8594f27ee",
+      "sha256": "99533998c8c2dddfffde8cefe3d6789bb30dc0a52a1ebd8d2221cbe37ecb8e59",
       "upstream_paths": [
         "ext-src/swoole_thread_atomic.cc"
       ]

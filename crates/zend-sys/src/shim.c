@@ -11,3 +11,8 @@ zend_class_entry *swr_zend_register_class(const char *name, size_t length,
     INIT_CLASS_ENTRY_EX(ce, name, length, functions);
     return zend_register_internal_class_ex(&ce, parent);
 }
+
+void swr_zend_class_set_create_object(zend_class_entry *ce,
+                                      zend_object *(*create)(zend_class_entry *ce)) {
+    ce->create_object = create;
+}

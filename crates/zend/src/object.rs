@@ -3,11 +3,12 @@
 use crate::{
     Class,
     sys::{
-        object_properties_init, swr_zend_object_alloc, zend_class_entry, zend_object,
-        zend_object_std_dtor, zend_object_std_init,
+        _zval_struct__bindgen_ty_1, IS_OBJECT_EX, object_properties_init,
+        swr_zend_class_set_create_object, swr_zend_object_alloc, zend_class_entry, zend_object,
+        zend_object_handlers, zend_object_std_dtor, zend_object_std_init, zend_value, zval,
     },
 };
-use std::mem::offset_of;
+use std::{ffi::c_int, mem::offset_of};
 
 /// `data` followed by the object Zend sees; `std` must stay last, since Zend
 /// allocates the class's property slots after it.
@@ -40,13 +41,29 @@ impl<T> Object<T> {
         std
     }
 
-    /// The object around `std` (`fetch_object`).
+    /// Swoole's `SW_SET_CLASS_CUSTOM_OBJECT`: the class creates `Object<T>`s
+    /// with `create` and frees them with `free`.
+    pub fn install(
+        entry: &mut zend_class_entry,
+        handlers: &mut zend_object_handlers,
+        create: unsafe extern "C" fn(*mut zend_class_entry) -> *mut zend_object,
+        free: unsafe extern "C" fn(*mut zend_object),
+    ) {
+        // SAFETY: a registered entry, written at MINIT.
+        unsafe { swr_zend_class_set_create_object(entry, Some(create)) };
+        handlers.free_obj = Some(free);
+        handlers.offset = c_int::try_from(Self::OFFSET).unwrap_or(c_int::MAX);
+    }
+
+    /// The data of the object around `std` (`fetch_object(std)->data`).
     /// # Safety
-    /// `std` is the `std` of a live `Object<T>`.
+    /// `std` is the `std` of a live `Object<T>`, and no other reference to its
+    /// data is live while the result is.
     #[must_use]
-    pub unsafe fn from_std(std: *mut zend_object) -> *mut Self {
-        // SAFETY: `std` sits `OFFSET` bytes into its `Object<T>`.
-        unsafe { std.byte_sub(Self::OFFSET) }.cast()
+    pub unsafe fn data<'a>(std: *mut zend_object) -> &'a mut T {
+        let this = std.wrapping_byte_sub(Self::OFFSET).cast::<Self>();
+        // SAFETY: per the caller, `this` is the live object around `std`.
+        unsafe { &mut (*this).data }
     }
 
     #[must_use]
@@ -60,6 +77,20 @@ impl<T> Object<T> {
     pub unsafe fn dtor(std: *mut zend_object) {
         // SAFETY: per the caller.
         unsafe { zend_object_std_dtor(std) };
+    }
+}
+
+/// `ZVAL_OBJ(target, std)`: `target` takes over the reference `std` carries.
+/// # Safety
+/// `target` is a writable zval and `std` a live object.
+pub unsafe fn set_object(target: *mut zval, std: *mut zend_object) {
+    // SAFETY: per the caller.
+    unsafe { (*target).value = zend_value { obj: std } };
+    // SAFETY: as above.
+    unsafe {
+        (*target).u1 = _zval_struct__bindgen_ty_1 {
+            type_info: IS_OBJECT_EX,
+        };
     }
 }
 
@@ -79,7 +110,7 @@ mod tests {
         assert_eq!(
             Object::std(this).addr() - this.addr(),
             Object::<u64>::OFFSET,
-            "std() and from_std() agree on the offset"
+            "std() sits OFFSET bytes in"
         );
     }
 }
