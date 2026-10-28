@@ -340,9 +340,9 @@ def plan(args, reports):
         script('hooks-compile', 'tests/modules/hooks/compile_gate.py', '--source', ROOT / 'target/upstream/src',
                '--config', manifest.parent / 'src/config.h', '--report', reports / 'hooks-compile.json')
     if 'httpbindings' in modules:
-        for family in ['cookie', 'server']:
+        for family, runner in [('cookie', 'cookie_gate.py'), ('server', 'server_gate.py')]:
             name = 'httpbindings-' + family
-            script(name, 'tests/modules/httpbindings/' + family + '_gate.py', '--source', ROOT / 'target/upstream/src',
+            script(name, 'tests/modules/httpbindings/' + runner, '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report(name))
         for suffix, options in [('', []), ('-without-compression', ['--without-compression'])]:
             name = 'httpbindings-request' + suffix
@@ -371,14 +371,14 @@ def plan(args, reports):
             name = 'httpbindings-settings' + suffix
             script(name, 'tests/modules/httpbindings/settings_gate.py', '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *options, *report(name))
-        for family, profiles in [
-            ('emission', [('', []), ('-without-zlib', ['--without-zlib']),
-                          ('-without-compression', ['--without-compression'])]),
-            ('file', [('', []), ('-without-compression', ['--without-compression'])]),
+        for family, runner, profiles in [
+            ('emission', 'emission_gate.py', [('', []), ('-without-zlib', ['--without-zlib']),
+                                              ('-without-compression', ['--without-compression'])]),
+            ('file', 'file_gate.py', [('', []), ('-without-compression', ['--without-compression'])]),
         ]:
             for suffix, options in profiles:
                 name = 'httpbindings-' + family + suffix
-                script(name, 'tests/modules/httpbindings/' + family + '_gate.py',
+                script(name, 'tests/modules/httpbindings/' + runner,
                        '--source', ROOT / 'target/upstream/src',
                        '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
                        *options, *report(name))
@@ -413,9 +413,12 @@ def plan(args, reports):
             script(name, 'tests/modules/clients/' + runner, '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--sanitize', *report(name))
         if integrate:
-            for family in ['http', 'dns', 'lifecycle', 'pool', 'resolver', 'pool_fork', 'http_connection', 'http_format', 'coro', 'async', 'coro_io']:
+            for family, runner in [('http', 'php_http.py'), ('dns', 'php_dns.py'), ('lifecycle', 'php_lifecycle.py'),
+                                   ('pool', 'php_pool.py'), ('resolver', 'php_resolver.py'), ('pool_fork', 'php_pool_fork.py'),
+                                   ('http_connection', 'php_http_connection.py'), ('http_format', 'php_http_format.py'),
+                                   ('coro', 'php_coro.py'), ('async', 'php_async.py'), ('coro_io', 'php_coro_io.py')]:
                 name = 'clients-php-' + family
-                script(name, 'tests/modules/clients/php_' + family + '.py', '--build-manifest', manifest,
+                script(name, 'tests/modules/clients/' + runner, '--build-manifest', manifest,
                        *(['--source-ref', 'HEAD'] if family != 'lifecycle' else []),
                        *php_for('curl', 'sockets'), *engines, *report(name))
     if 'phpcollections' in modules:
