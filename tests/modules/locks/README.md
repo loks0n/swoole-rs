@@ -8,8 +8,8 @@ real classes and atomic exports. See
 ownership, timeout, ordering, fork and coroutine contracts, and
 [PLATFORMS.md](PLATFORMS.md) for the macOS/Linux platform guard.
 
-`overlay.py` generates the patched lock sources from the pinned upstream; run it
-directly to rewrite `migration/patches/locks/`.
+`overlay.py` applies `migration/patches/locks/` to the pinned sources for the gates;
+edit the patches with `tools/patches.py`.
 
 ```sh
 python3 tools/build_hybrid.py --module locks --dev --jobs 2
