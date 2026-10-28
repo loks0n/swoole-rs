@@ -14,6 +14,7 @@ pub mod buffered;
 pub mod flock;
 pub mod lifecycle;
 pub mod packet;
+pub mod resolve;
 pub mod sendfile;
 pub mod setup;
 pub mod shutdown;
