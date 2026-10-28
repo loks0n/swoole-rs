@@ -36,7 +36,9 @@ fn sigset() -> libc::sigset_t {
 }
 
 fn clear_mask() {
-    MASK.iter().for_each(|word| word.store(0, Relaxed));
+    for word in &MASK {
+        word.store(0, Relaxed);
+    }
 }
 
 fn errno() -> i32 {
