@@ -26,6 +26,19 @@ class PhaseReports(unittest.TestCase):
                 self.assertEqual(set(phases),{parent,child})
                 self.assertLess(phases.index(parent),phases.index(child))
 
+    def test_with_prerequisites_adds_reports_and_builds(self):
+        command=[sys.executable,'tools/dev.py','integrate','--module','phphelpers','--phase','phphelpers-async-sqlite-sdk',
+                 '--with-prerequisites','--plan']
+        result=subprocess.run(command,cwd=ROOT,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        phases=[row['phase'] for row in json.loads(result.stdout)]
+        # The report it reads, then the builds behind both, in plan order.
+        self.assertIn('phphelpers-sdk',phases)
+        self.assertIn('build',phases)
+        self.assertLess(phases.index('build'),phases.index('phphelpers-async-sqlite-sdk'))
+        self.assertLess(phases.index('phphelpers-sdk'),phases.index('phphelpers-async-sqlite-sdk'))
+        self.assertNotIn('phphelpers-async-odbc-sdk',phases)
+
     def test_independent_selection_stays_independent(self):
         result=subprocess.run([sys.executable,'tools/dev.py','integrate','--module', 'locks',
             '--phase','buffer-string-compatibility','--plan'],cwd=ROOT,capture_output=True,text=True)
