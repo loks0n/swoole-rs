@@ -1,5 +1,5 @@
 //! PHP client classes in Rust over the zend crate: `Swoole\Coroutine\Socket`
-//! (registration, constants, objects and methods). C++ keeps the method table
+//! and `Swoole\Coroutine\Client` (registration, constants, objects and methods). C++ keeps the method table
 //! built from the stub's arginfo and the coroutine socket itself, which the
 //! methods reach through `native`. See docs/zend.md.
 //!
@@ -13,8 +13,10 @@
     )
 )]
 
+mod client;
 mod constants;
 mod native;
 mod socket;
 
+pub use client::*;
 pub use socket::*;

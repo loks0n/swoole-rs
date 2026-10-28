@@ -19,6 +19,7 @@ struct _zend_function_entry;
 struct _zend_class_entry;
 struct _zend_object;
 struct _zval_struct;
+struct _zend_string;
 void swr_v1_phpclients_socket_minit(const struct _zend_function_entry *methods,
                                     struct _zend_class_entry *exception,
                                     bool shortname,
@@ -47,7 +48,7 @@ bool swoole_socket_coro_check_liveness(void *socket);
 int64_t swoole_socket_coro_bound_cid(void *socket, int64_t event);
 /* op: 0 peek, 1 recv, 2 recv_all, 3 recv_line, 4 recv_with_buffer, 5 send, 6 send_all. */
 ssize_t swoole_socket_coro_transfer(void *socket, int op, char *buffer, size_t length, double timeout);
-ssize_t swoole_socket_coro_recv_packet(void *socket, double timeout);
+ssize_t swoole_socket_coro_recv_packet(void *socket, double timeout, bool clear_empty);
 char *swoole_socket_coro_pop_packet(void *socket);
 /* op: 0 readv, 1 readv_all, 2 writev, 3 writev_all. */
 ssize_t swoole_socket_coro_vector(
@@ -63,6 +64,30 @@ bool swoole_socket_coro_getpeername(void *socket, char *address, size_t size, in
 bool swoole_socket_coro_cancel(void *socket, int event);
 bool swoole_socket_coro_ssl_handshake(void *socket);
 bool swoole_socket_coro_set_protocol(void *socket, const struct _zval_struct *settings);
+
+/* PHP Coroutine\Client (crates/phpclients): MINIT and, from
+ * ext-src/swoole_client_coro.cc, what its methods need beyond the socket calls. */
+void swr_v1_phpclients_client_minit(const struct _zend_function_entry *methods,
+                                    bool shortname,
+                                    struct _zend_class_entry **client_class);
+void swoole_rs_check_reactor(void);
+void swoole_rs_set_last_error(int code);
+void *swoole_client_coro_create_socket(struct _zend_object *object, int64_t type);
+bool swoole_client_coro_apply(void *socket, const struct _zval_struct *settings);
+void swoole_client_coro_merge_setting(struct _zend_object *object, const struct _zval_struct *settings);
+struct _zval_struct *swoole_client_coro_setting(struct _zend_object *object);
+int64_t swoole_client_coro_type_property(struct _zend_object *object);
+bool swoole_client_coro_connect(void *socket, const char *host, int64_t port, double timeout, int64_t flags);
+void swoole_client_coro_rdwr_timeout(void *socket, double timeout);
+bool swoole_client_coro_close(void *socket);
+bool swoole_client_coro_is_tcp(void *socket);
+int swoole_client_coro_type(void *socket);
+bool swoole_client_coro_packet_mode(void *socket);
+bool swoole_client_coro_is_connected(void *socket);
+bool swoole_client_coro_has_ssl(void *socket);
+int swoole_client_coro_enable_ssl(struct _zend_object *object, void *socket);
+struct _zend_string *swoole_client_coro_peer_cert(void *socket);
+bool swoole_client_coro_verify_peer(void *socket, bool allow_self_signed);
 
 #ifdef __cplusplus
 }

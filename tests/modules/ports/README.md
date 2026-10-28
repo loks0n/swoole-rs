@@ -40,8 +40,10 @@ python3 tests/modules/ports/native.py --source PINNED_REFERENCE --archive SELECT
   bind failure. `--archive` skips the Rust rebuild.
 
 Exact-body model gates share the `count.py` runner (`main()`), which extracts the
-named bodies, compiles a witness against the archive and, with `--core`, syntax
-checks the full original and selected `port.cc` / `swoole_server_port.cc`:
+named bodies (original from the pin, selected from the hybrid build's tree), compiles
+each side's witness translation unit and links them to the archive. With `--core`
+(a configured pinned tree) it syntax checks the full original `port.cc` /
+`swoole_server_port.cc` there and the selected ones in the hybrid build's tree:
 
 ```text
 python3 tests/modules/ports/NAME.py --source PINNED_REFERENCE --archive SELECTED_ARCHIVE --output REPORT [--core CONFIGURED_CORE] [--sanitize] [--rust-asan] [--openssl-root DIR] [--php-config PATH] [--sdk-origin ORIGINAL_SRC] [--include DIR]

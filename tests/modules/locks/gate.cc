@@ -1,15 +1,20 @@
-#include "swoole_lock.h"
+// Two translation units: LOCKS_REFERENCE builds the pinned bodies against the pinned header,
+// the other the hybrid tree's bodies against its header, plus the driver.
+#ifdef LOCKS_REFERENCE
 #include "reference.h"
-#include "swoole_rs_locks.h"
 #include "original.inc"
+#else
+#include "swoole_lock.h"
+#include "swoole_rs_locks.h"
 #include "ported.inc"
+#endif
 #include <cassert>
 #include <iostream>
 #include <thread>
 #include <vector>
 #include <sys/wait.h>
 
-static int checks;
+inline int checks;
 #define CHECK(x) do { ++checks; if (!(x)) { std::cerr << "failed: " << #x << " line " << __LINE__ << std::endl; std::abort(); } } while(0)
 
 template<class Mutex, class RW, class Barrier>
@@ -63,6 +68,42 @@ static void shared_barrier() {
     barrier->wait();CHECK(*value==9876);int status;CHECK(waitpid(pid,&status,0)==pid);CHECK(WIFEXITED(status)&&WEXITSTATUS(status)==0);barrier->destroy();munmap(page,4096);
 }
 
+template<class Spin>
+static std::vector<int> spin() {
+    Spin lock(false);
+    return {lock.lock(),lock.lock(LOCK_NB),lock.lock(LOCK_EX,3),lock.unlock()};
+}
+
+// The reference side's entry points.
+namespace entry {
+std::vector<int> exercise();
+std::vector<int> spin();
+void shared_barrier();
+size_t size(int kind);
+size_t align(int kind);
+int wait(uint32_t *word,double timeout);
+int wake(uint32_t *word,int count);
+void wait_init();
+}
+
+#ifdef LOCKS_REFERENCE
+namespace entry {
+std::vector<int> exercise() { return ::exercise<reference::Mutex,reference::RWLock,reference::Barrier>(); }
+#ifdef HAVE_SPINLOCK
+std::vector<int> spin() { return ::spin<reference::SpinLock>(); }
+#endif
+#ifndef SW_USE_PTHREAD_BARRIER
+void shared_barrier() { ::shared_barrier<reference::Barrier>(); }
+#endif
+size_t size(int kind) { return kind==3?sizeof(reference::MutexImpl):sizeof(reference::RWLockImpl); }
+size_t align(int kind) { return kind==3?alignof(reference::MutexImpl):alignof(reference::RWLockImpl); }
+int wait(uint32_t *word,double timeout) { return sw_atomic_futex_wait(word,timeout); }
+int wake(uint32_t *word,int count) { return sw_atomic_futex_wakeup(word,count); }
+#ifndef HAVE_FUTEX
+void wait_init() { sw_atomic_wait_init(); }
+#endif
+}
+#else
 static uint64_t random_state=0x28574a92;
 static uint64_t next(){random_state^=random_state<<13;random_state^=random_state>>7;random_state^=random_state<<17;return random_state;}
 static void atomics() {
@@ -107,13 +148,13 @@ static void coroutine_policy() {
 static void wait_wake() {
     // Rust implements only the futex path; non-futex builds run upstream's registry.
 #ifdef HAVE_FUTEX
-#define WAIT(w,t) (rust?swr_v1_locks_wait(w,t):sw_atomic_futex_wait(w,t))
-#define WAKE(w,n) (rust?swr_v1_locks_wakeup(w,n):sw_atomic_futex_wakeup(w,n))
+#define WAIT(w,t) (rust?swr_v1_locks_wait(w,t):entry::wait(w,t))
+#define WAKE(w,n) (rust?swr_v1_locks_wakeup(w,n):entry::wake(w,n))
     for(int rust: {0,1}) {
 #else
-#define WAIT(w,t) sw_atomic_futex_wait(w,t)
-#define WAKE(w,n) sw_atomic_futex_wakeup(w,n)
-    sw_atomic_wait_init();
+#define WAIT(w,t) entry::wait(w,t)
+#define WAKE(w,n) entry::wake(w,n)
+    entry::wait_init();
     {
 #endif
         auto *word=(uint32_t*)mmap(nullptr,4096,PROT_READ|PROT_WRITE,MAP_SHARED|MAP_ANON,-1,0);CHECK(word!=MAP_FAILED);
@@ -130,20 +171,20 @@ static void wait_wake() {
 }
 
 int main() {
-    CHECK(swr_v1_locks_size(3)==sizeof(reference::MutexImpl));
-    CHECK(swr_v1_locks_align(3)==alignof(reference::MutexImpl));
-    CHECK(swr_v1_locks_size(1)==sizeof(reference::RWLockImpl));
-    CHECK(swr_v1_locks_align(1)==alignof(reference::RWLockImpl));
-    CHECK((exercise<reference::Mutex,reference::RWLock,reference::Barrier>()==exercise<swoole::Mutex,swoole::RWLock,swoole::Barrier>()));
+    CHECK(swr_v1_locks_size(3)==entry::size(3));
+    CHECK(swr_v1_locks_align(3)==entry::align(3));
+    CHECK(swr_v1_locks_size(1)==entry::size(1));
+    CHECK(swr_v1_locks_align(1)==entry::align(1));
+    CHECK((entry::exercise()==exercise<swoole::Mutex,swoole::RWLock,swoole::Barrier>()));
 #ifdef HAVE_SPINLOCK
-    reference::SpinLock reference_spin(false);swoole::SpinLock rust_spin(false);
-    CHECK(reference_spin.lock()==rust_spin.lock());CHECK(reference_spin.lock(LOCK_NB)==rust_spin.lock(LOCK_NB));
-    CHECK(reference_spin.lock(LOCK_EX,3)==rust_spin.lock(LOCK_EX,3));CHECK(reference_spin.unlock()==rust_spin.unlock());
+    auto reference_spin=entry::spin(),rust_spin=spin<swoole::SpinLock>();
+    for(size_t i=0;i<reference_spin.size();i++)CHECK(reference_spin[i]==rust_spin[i]);
 #endif
     CHECK(swr_v1_locks_init(nullptr,3,0)==EINVAL);CHECK(swr_v1_locks_size(99)==0);
     shared_barrier<swoole::Barrier>();
 #ifndef SW_USE_PTHREAD_BARRIER
-    shared_barrier<reference::Barrier>();
+    entry::shared_barrier();
 #endif
     atomics();wait_wake();coroutine_policy();std::cout<<"{\"checks\":"<<checks<<",\"passed\":true}"<<std::endl;
 }
+#endif

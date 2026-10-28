@@ -1,19 +1,13 @@
 #!/usr/bin/env python3
 """Actual pinned static handler bodies versus the Rust-context StaticHandler; normal effects only."""
 import argparse
-import io
-import json
 from pathlib import Path
 import re
-import shlex
 import shutil
-import subprocess
 import sys
-import tarfile
 import tempfile
-from gate import PIN, body, apply_static_header, prepare_index_buffer, add_archive_arguments, prepare_archive, apply_http_patch
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from tools.harness import ROOT, run_isolated, write_report
+from gate import PIN, body, prepare_index_buffer, add_archive_arguments, prepare_archive, Sides, run
+from tools.harness import ROOT, write_report
 
 
 def main():
@@ -22,41 +16,26 @@ def main():
     add_archive_arguments(parser)
     parser.add_argument('--output',default='target/reports/http-context.json')
     args=parser.parse_args();local=Path(__file__).resolve().parent
-    patch=ROOT/'migration/patches/http/0002-static-ranges.patch'
     report={'pin':PIN,'scope':__doc__,'passed':False,'full_gate_passed':False,
         'rust_instrumented':args.rust_sanitize,'rust_std_instrumented':False,
         'unrun_profiles':['previous private V2 core/reference adapter assertions','native allocation/error/partial/lifetime/reentry profiles',
             'full configured PHP/original/IO','performance','other platforms/locales']}
-    def checked(command,label,timeout=60):
+    def guard():
         free=shutil.disk_usage(ROOT).free
         if free<4*1024**3:
-            report[label]={'command':command,'blocked':'unchanged disk guard','free_bytes':free,'guard_bytes':4*1024**3}
+            report['blocked']={'reason':'unchanged disk guard','free_bytes':free,'guard_bytes':4*1024**3}
             write_report(args.output,report);return False
-        result=run_isolated(command,timeout=timeout)
-        report[label]={'command':command,'returncode':result.returncode,'stdout':result.stdout,'stderr':result.stderr}
-        if result.returncode:
-            write_report(args.output,report);print(result.stderr,file=sys.stderr)
-            return False
         return True
     with tempfile.TemporaryDirectory(prefix='swr-http-context-') as temporary:
-        tree=Path(temporary)
-        if not prepare_archive(args,tree,report):write_report(args.output,report);return 1
-        data=subprocess.check_output(['git','-C',str(args.source),'archive',PIN,'include','src/server/static_handler.cc','src/protocol/http.cc'])
-        with tarfile.open(fileobj=io.BytesIO(data)) as archive:
-            for member in archive:
-                if member.isfile():
-                    path=tree/member.name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(archive.extractfile(member).read())
-        path=tree/'src/server/static_handler.cc';original=path.read_text()
-        original_header=(tree/'include/swoole_static_handler.h').read_text()
-        protocol=(tree/'src/protocol/http.cc').read_text()
-        apply_http_patch(tree, patch, report)
-        selected=path.read_text()
-        apply_static_header(tree,report);prepare_index_buffer(tree,report)
-        selected_header=(tree/'include/swoole_static_handler.h').read_text()
-        flags=['-std=c++17','-O1','-g','-I'+str(tree/'include'),'-I'+str(ROOT/'native/http'),'-I'+str(local),'-I'+str(tree),'-fsanitize=address,undefined','-fno-sanitize-recover=all']
-        flags+=shlex.split(subprocess.check_output(['pkg-config','--cflags','openssl'],text=True))
-        if not checked(['c++',*['-std=c++14' if flag=='-std=c++17' else flag for flag in flags],'-c',str(path),'-o',str(tree/'static.o')],'whole_native_translation_unit'):return 1
-        native_base=subprocess.check_output(['git','-C',str(args.source),'show',PIN+':src/core/base.cc'],text=True)
+        tree=Path(temporary);handler='src/server/static_handler.cc';header='include/swoole_static_handler.h'
+        archive=prepare_archive(args,tree,report)
+        if not archive:write_report(args.output,report);return 1
+        sides=Sides(args.source,args.archive,tree,handler,'src/protocol/http.cc','src/core/base.cc')
+        original=sides.original(handler);original_header=sides.original(header)
+        protocol=sides.original('src/protocol/http.cc');native_base=sides.original('src/core/base.cc')
+        selected=sides.selected(handler);selected_header=sides.selected(header)
+        prepare_index_buffer(sides)
+        if not guard() or not sides.native(report,handler):write_report(args.output,report);return 1
         server='''struct Server {
  std::string root="/root";bool http_autoindex=false;long timezone_=0;
  std::shared_ptr<std::unordered_set<std::string>> locations=std::make_shared<std::unordered_set<std::string>>();
@@ -96,13 +75,7 @@ def main():
             extracted.write_text('#include "context_candidate.h"\nnamespace '+namespace+' {\n'+'\n'.join(parts).replace('lstat(',namespace+'::lstat(')+'\n}\n')
         dependency=tree/'dependencies.cc';dependency.write_text('#include "context_oracle.h"\n'+body(native_base,'size_t sw_snprintf('))
         binary=tree/'gate'
-        command=['c++',*flags,str(tree/'upstream_context.cc'),str(tree/'candidate_context.cc'),str(dependency),str(local/'context_gate.cc'),str(args.archive.resolve()),'-lm','-o',str(binary)]
-        if sys.platform.startswith('linux'):command+=['-ldl','-lpthread','-lrt','-lutil']
-        if not checked(command,'compile'):return 1
-        symbols=subprocess.check_output(['nm','-g',str(binary)],text=True)
-        assert all(name in symbols for name in ['swr_v2_http_context_new','swr_v2_http_context_tasks','swr_v2_http_context_path','swr_v2_http_context_scan','swr_v2_http_context_index','swr_v2_http_context_page_step','swr_v2_http_context_page_emit','swr_v2_http_context_boundary','swr_v2_http_context_serve'])
-        if not checked([str(binary)],'run',30):return 1
-        report['outcome']=json.loads(report['run']['stdout'].splitlines()[-1]);report['passed']=True
-        write_report(args.output,report);print(json.dumps(report['outcome']))
-    return 0
+        units=[('upstream',tree/'upstream_context.cc'),('candidate',tree/'candidate_context.cc'),('upstream',dependency),('candidate',local/'context_gate.cc')]
+        if not guard() or not sides.build(binary,units,archive,report):write_report(args.output,report);return 1
+        return run(binary,['swr_v2_http_context_new','swr_v2_http_context_tasks','swr_v2_http_context_path','swr_v2_http_context_scan','swr_v2_http_context_index','swr_v2_http_context_page_step','swr_v2_http_context_page_emit','swr_v2_http_context_boundary','swr_v2_http_context_serve'],args.output,report)
 if __name__=='__main__':sys.exit(main())
