@@ -445,11 +445,6 @@ def plan(args, reports):
             script('phpevents-sdk', 'tests/modules/phpevents/sdk.py', '--source', ROOT / 'target/upstream/src',
                    '--sdk-export', selected_export / 'export.json', '--native-export', native_export,
                    *report('phpevents-sdk'))
-        if integrate and 'phphelpers' in modules:
-            script('phpevents-descriptors', 'tests/modules/phpevents/descriptor_runtime.py',
-                   '--sdk-report', reports / 'phphelpers-sdk.json', *php_for('curl'), *engines,
-                   '--build-manifest', manifest, '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-                   '--source-ref', 'HEAD', *report('phpevents-descriptors'))
     if 'phpcoroutines' in modules:
         for suffix, options in [('', []), ('-native-sanitized', ['--sanitize'])]:
             name = 'phpcoroutines-method-catalogue' + suffix

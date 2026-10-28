@@ -53,34 +53,33 @@ selected-only header is relabeled as native by disabling its feature macros.
 `--native-export DIR` selects the observed production flags/config and checks
 exact `CXXFLAGS`. Registered as `phpevents-sdk`.
 
-## Descriptor consumer (`descriptor_runtime.py`)
-
-```sh
-python3 tests/modules/phpevents/descriptor_runtime.py \
-  --sdk-report COMPLETED_PHPHELPERS_SDK --prepare-only --output FILE
-```
-
-Builds a private native ABI consumer (`descriptor_entrypoint.cc/.php`) using
-`tests/modules/phphelpers/entrypoint.py`. With native and selected
-`--engine NAME=DSO`, `--source-ref`, `--build-manifest`, `--archive` and
-optional `--php-extension`, it loads both engines, verifies the selected build,
-requires the Rust catalogue/descriptor/stream/query callers in the Event overlay
-(refusing older same-bit artifacts), and compares the startup catalogue, four
-scalar values, conversion of a private plain file and one idle `isset`. No Event
-operations, reactor, callbacks, sockets or IPC. Registered as
-`phpevents-descriptors`.
-
 ## Unit tests
 
 ```sh
 cd tests/modules/phpevents && python3 -m unittest test_identity.py
 ```
 
-`test_identity.py` covers the caller and import checks.
+`test_identity.py` covers `sdk.py`'s object-import checks.
 
-## Originals and open gates
+## Originals
 
-Of the 20 pinned `swoole_event` originals, only `function_alias.phpt` runs
-(`phpevents-alias-original`); 19 remain unrun. Loaded registration, repeat
-initialization, ZTS, Linux, callback lifetime, allocator failure and performance
-remain open.
+The PHPT gate (merge tier `phpt-*` jobs) runs all 20 pinned `swoole_event`
+originals on upstream and on the all-modules hybrid.
+
+## Gate audit (#492)
+
+Kept (2):
+
+- `phpevents-policy`: the full original and selected bodies against modeled
+  native APIs, with exact ordered effects. It also checks the byte-exact method
+  table and links the C11 ABI caller against the Rust archive.
+- `phpevents-sdk`: the only complete compile of the Event file, for native,
+  Event-only and combined builds, with sockets off and on, at C++14/17 with
+  `-Werror`. It also checks that selected objects import Rust and native
+  objects don't.
+
+Deleted (1): `phpevents-descriptors` loaded both engines to compare the method
+catalogue, four scalars, one plain-file conversion and one idle `isset`. The
+20 `swoole_event` PHPTs exercise the same calls on real descriptors in both
+engines, and `api-surface` compares the reflected catalogue, including aliases.
+Its Rust-caller check repeats `phpevents-sdk`'s import check.
