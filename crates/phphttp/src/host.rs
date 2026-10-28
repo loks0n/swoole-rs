@@ -39,19 +39,18 @@ unsafe extern "C" {
     pub(crate) fn swr_http_host_fd(context: *const Context) -> zend_long;
     pub(crate) fn swr_http_host_mark(context: *mut Context, flag: u32);
     pub(crate) fn swr_http_host_request_free(context: *mut Context);
-    pub(crate) fn swr_http_host_request_body(
+    pub(crate) fn swr_http_host_request_create(return_value: *mut zval, options: *mut zval)
+    -> bool;
+    fn swr_http_host_log(level: c_int, error: c_int, func: *const c_char, message: *const c_char);
+    pub(crate) fn swr_http_host_treat_data(arg: c_int, text: *mut c_char, array: *mut zval);
+    pub(crate) fn swr_http_host_websocket_connection(context: *mut Context) -> c_int;
+    pub(crate) fn swr_http_host_upload_tmp_dir(context: *const Context) -> *const c_char;
+    pub(crate) fn swr_http_host_tmpfile(path: *mut c_char) -> c_int;
+    pub(crate) fn swr_http_host_http2_data(
         context: *mut Context,
         length: *mut usize,
     ) -> *const c_char;
-    pub(crate) fn swr_http_host_request_data(context: *mut Context) -> *mut zval;
-    pub(crate) fn swr_http_host_request_create(return_value: *mut zval, options: *mut zval);
-    pub(crate) fn swr_http_host_request_parse(
-        context: *mut Context,
-        data: *const c_char,
-        length: usize,
-    ) -> zend_long;
-    pub(crate) fn swr_http_host_request_method(context: *mut Context, return_value: *mut zval);
-    pub(crate) fn swr_http_host_response_free(context: *mut Context);
+    pub(crate) fn swr_http_host_response_free(context: *mut Context) -> bool;
     pub(crate) fn swr_http_host_response_create(
         object: *mut zval,
         fd: zend_long,
@@ -63,24 +62,24 @@ unsafe extern "C" {
         context: *mut Context,
         data: *mut zend_string,
         return_value: *mut zval,
-    );
+    ) -> bool;
     pub(crate) fn swr_http_host_end(
         context: *mut Context,
         data: *mut zend_string,
         return_value: *mut zval,
-    );
+    ) -> bool;
     pub(crate) fn swr_http_host_send_file(
         context: *mut Context,
         file: *mut zend_string,
         offset: zend_long,
         length: zend_long,
-    ) -> bool;
+    ) -> c_int;
     pub(crate) fn swr_http_host_redirect(
         context: *mut Context,
         url: *mut zval,
         code: *mut zval,
         return_value: *mut zval,
-    );
+    ) -> bool;
     pub(crate) fn swr_http_host_status(
         context: *mut Context,
         status: zend_long,
@@ -106,7 +105,7 @@ unsafe extern "C" {
         opcode: zend_long,
         flags: *mut zval,
         return_value: *mut zval,
-    );
+    ) -> bool;
     pub(crate) fn swr_http_host_ping(
         context: *mut Context,
         data: *mut zend_string,
@@ -117,9 +116,21 @@ unsafe extern "C" {
         code: zend_long,
         debug: *mut zend_string,
     ) -> bool;
-    pub(crate) fn swr_http_host_upgrade(context: *mut Context) -> bool;
+    pub(crate) fn swr_http_host_upgrade(context: *mut Context) -> c_int;
     pub(crate) fn swr_http_host_close(context: *mut Context) -> bool;
     pub(crate) fn swr_http_host_recv(context: *mut Context, timeout: f64, return_value: *mut zval);
+}
+
+/// Re-raise a bailout a host call trapped (`zend_bailout()`). Host calls that
+/// can run user code (a header value's `__toString`, `exit()` in it) trap a
+/// bailout in C++ and report it; the handler finishes, then raises it here as
+/// its last step, so the `longjmp` crosses only the handler's own frames,
+/// which own nothing to drop (docs/zend.md).
+pub(crate) fn raise(bailed: bool) {
+    if bailed {
+        // SAFETY: Zend's own `zend_bailout()`, from the outermost Rust frame.
+        unsafe { swoole_rs_zend::sys::_zend_bailout(c"phphttp".as_ptr().cast_mut(), 0) };
+    }
 }
 
 /// `swoole_set_last_error(code)`.
@@ -149,6 +160,19 @@ pub(crate) fn report(code: c_int, always: bool, message: impl Into<Vec<u8>>) {
     let message = CString::new(message).unwrap_or_default();
     // SAFETY: a NUL-terminated message, printed through "%s".
     unsafe { swr_http_host_error(code, c_int::from(always), message.as_ptr()) };
+}
+
+/// Swoole's log line as `func` would print it: `swoole_error_log(level, error)`
+/// when `error > 0`, `swoole_warning` when 0, `swoole_sys_warning` for `-errno`.
+/// The message ends at its first NUL, as `%s`/`%.*s` do.
+pub(crate) fn log(level: c_int, error: c_int, func: &std::ffi::CStr, message: impl Into<Vec<u8>>) {
+    let mut message = message.into();
+    if let Some(nul) = message.iter().position(|&byte| byte == 0) {
+        message.truncate(nul);
+    }
+    let message = CString::new(message).unwrap_or_default();
+    // SAFETY: NUL-terminated strings, printed through "%s".
+    unsafe { swr_http_host_log(level, error, func.as_ptr(), message.as_ptr()) };
 }
 
 /// The context's state bits.
