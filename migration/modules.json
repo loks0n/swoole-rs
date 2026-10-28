@@ -13,6 +13,7 @@
       "depends_on": [],
       "owned_paths": [
         "crates/ffi/",
+        "crates/server/",
         "crates/zend-sys/",
         "crates/zend/",
         "native/include/",
