@@ -107,6 +107,13 @@
       "upstream_paths": [
         "ext-src/swoole_process.cc"
       ]
+    },
+    {
+      "path": "0011-php-process-pool.patch",
+      "sha256": "49427f2ed4cee50a6d32745a657b09121f2fea3a25febc1ff6244a3e98c03630",
+      "upstream_paths": [
+        "ext-src/swoole_process_pool.cc"
+      ]
     }
   ]
 }
