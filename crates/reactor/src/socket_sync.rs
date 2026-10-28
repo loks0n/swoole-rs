@@ -100,30 +100,29 @@ pub unsafe extern "C" fn swr_v1_socket_sync(
         };
         // SAFETY: the caller's I/O call on the rest of its buffer.
         let n = unsafe { (hooks.io)(hooks.socket, at, rest, call_flags) };
-        let step = if n < 0 {
-            let error = errno();
-            let retry = error == libc::EINTR
+        let step = match n.cmp(&0) {
+            core::cmp::Ordering::Less => {
+                let error = errno();
+                let retry = error == libc::EINTR
                 // SAFETY: the caller's kernel_nobufs flag.
                 || unsafe { crate::swr_v1_socket_catch_error(error, hooks.kernel_nobufs) } == WAIT;
-            if retry {
-                Step::Continue
-            } else {
-                // SAFETY: native swoole_set_last_error.
-                unsafe { (hooks.set_last_error)(error) };
-                Step::Error
+                if retry {
+                    Step::Continue
+                } else {
+                    // SAFETY: native swoole_set_last_error.
+                    unsafe { (hooks.set_last_error)(error) };
+                    Step::Error
+                }
             }
-        } else if n == 0 {
-            if kind == SYNC_SENDFILE {
-                Step::Error
-            } else {
-                Step::Ready
-            }
-        } else {
-            bytes += n.cast_unsigned();
-            match kind {
-                SYNC_SEND | SYNC_SENDFILE if bytes < length => Step::Continue,
-                SYNC_RECV if flags & libc::MSG_WAITALL != 0 && bytes < length => Step::Continue,
-                _ => Step::Ready,
+            core::cmp::Ordering::Equal if kind == SYNC_SENDFILE => Step::Error,
+            core::cmp::Ordering::Equal => Step::Ready,
+            core::cmp::Ordering::Greater => {
+                bytes += n.cast_unsigned();
+                match kind {
+                    SYNC_SEND | SYNC_SENDFILE if bytes < length => Step::Continue,
+                    SYNC_RECV if flags & libc::MSG_WAITALL != 0 && bytes < length => Step::Continue,
+                    _ => Step::Ready,
+                }
             }
         };
         match step {

@@ -63,7 +63,7 @@ fn apply(original: &str, patch: &str) -> String {
         cursor = at + length;
     }
     output.extend_from_slice(&lines[cursor..]);
-    output.iter().map(|line| format!("{line}\n")).collect()
+    output.iter().flat_map(|line| [*line, "\n"]).collect()
 }
 
 /// Apply an overlay patch to its vendored original, so the adapter compiled here
@@ -87,7 +87,7 @@ fn original_test(file: &str, test: &str, name: &str) -> PathBuf {
     let start = source.find(test).expect("original test");
     let end = start + source[start..].find("\n}\n").expect("test body") + 3;
     let text: String =
-        fixtures.map(|line| format!("{line}\n")).collect::<String>() + &source[start..end];
+        fixtures.flat_map(|line| [line, "\n"]).collect::<String>() + &source[start..end];
     let path = out(name);
     fs::write(&path, text).unwrap();
     path
@@ -320,7 +320,7 @@ fn websocket() {
     let constants: String = header
         .lines()
         .filter(|line| line.starts_with("#define SW_WEBSOCKET_"))
-        .map(|line| format!("{line}\n"))
+        .flat_map(|line| [line, "\n"])
         .collect();
     let text = [
         constants,

@@ -186,6 +186,7 @@ pub unsafe extern "C" fn swr_v1_error_strerror(
     system: Option<extern "C" fn(i32) -> *const c_char>,
 ) -> *const c_char {
     use std::io::Write;
+    static mut UNKNOWN: [u8; 32] = [0; 32];
     if code < 500 {
         return system.map_or(std::ptr::null(), |format| format(code));
     }
@@ -193,7 +194,6 @@ pub unsafe extern "C" fn swr_v1_error_strerror(
     if !known.is_null() {
         return known;
     }
-    static mut UNKNOWN: [u8; 32] = [0; 32];
     // SAFETY: The caller serializes unknown-message use. No mutable reference
     // survives this call; the C-string pointer and storage lifetime match upstream.
     let buffer = unsafe { &mut *std::ptr::addr_of_mut!(UNKNOWN) };

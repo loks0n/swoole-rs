@@ -222,34 +222,31 @@ pub unsafe extern "C" fn swr_v1_socket_iov(
     // SAFETY: the caller lends its cursor copy for this call.
     let state = unsafe { &mut *state };
     loop {
-        let result = match tls {
-            Some(io) => {
-                let mut total: isize = 0;
-                loop {
-                    // SAFETY: the current iovec is live while any remain.
-                    let current = unsafe { *state.iterator };
-                    // SAFETY: the caller's TLS call for this socket, on that iovec.
-                    let done = unsafe { io(socket, current.iov_base, current.iov_len) };
-                    total += done.max(0);
-                    // SAFETY: the iterator still names `remain_count` iovecs.
-                    unsafe { state.update(done) };
-                    if !(done > 0 && state.remain_count > 0) {
-                        break if total > 0 { total } else { done };
-                    }
-                }
-            }
-            None => {
-                let done = if write {
-                    // SAFETY: `remain_count` iovecs from the iterator are the caller's buffers.
-                    unsafe { libc::writev(fd, state.iterator, state.remain_count) }
-                } else {
-                    // SAFETY: as above, writable.
-                    unsafe { libc::readv(fd, state.iterator, state.remain_count) }
-                };
+        let result = if let Some(io) = tls {
+            let mut total: isize = 0;
+            loop {
+                // SAFETY: the current iovec is live while any remain.
+                let current = unsafe { *state.iterator };
+                // SAFETY: the caller's TLS call for this socket, on that iovec.
+                let done = unsafe { io(socket, current.iov_base, current.iov_len) };
+                total += done.max(0);
                 // SAFETY: the iterator still names `remain_count` iovecs.
                 unsafe { state.update(done) };
-                done
+                if !(done > 0 && state.remain_count > 0) {
+                    break if total > 0 { total } else { done };
+                }
             }
+        } else {
+            let done = if write {
+                // SAFETY: `remain_count` iovecs from the iterator are the caller's buffers.
+                unsafe { libc::writev(fd, state.iterator, state.remain_count) }
+            } else {
+                // SAFETY: as above, writable.
+                unsafe { libc::readv(fd, state.iterator, state.remain_count) }
+            };
+            // SAFETY: the iterator still names `remain_count` iovecs.
+            unsafe { state.update(done) };
+            done
         };
         if !(result < 0 && interrupted()) {
             return result;
@@ -312,6 +309,7 @@ pub unsafe extern "C" fn swr_v1_socket_ssl_sendfile(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::fd::AsRawFd;
 
     fn pair() -> [c_int; 2] {
         let mut fds = [0; 2];
@@ -543,7 +541,6 @@ mod tests {
         let path = std::env::temp_dir().join(format!("swr-ssl-sendfile-{}", std::process::id()));
         std::fs::write(&path, b"0123456789").unwrap();
         let file = std::fs::File::open(&path).unwrap();
-        use std::os::fd::AsRawFd;
         let mut offset: libc::off_t = 4;
         let mut nobufs = false;
         // SAFETY: local offset and flag; the callback ignores its socket.

@@ -101,7 +101,7 @@ pub unsafe extern "C" fn swr_v2_http_context_serve(
     loop {
         let action = owner.path_step(root, owner.serve.facts);
         match action {
-            3 => continue, // Directory bytes were published by the owned path step.
+            3 => {} // Directory bytes were published by the owned path step.
             7 => {
                 // SAFETY: `owner.facts.status` is a live, exclusive field.
                 let result = unsafe {
