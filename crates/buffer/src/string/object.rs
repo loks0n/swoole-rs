@@ -4,7 +4,7 @@
 //! change either String, and no reference to a String outlives an allocator call.
 use super::{
     APPEND, APPEND_I32, COPY, INVALID, NO_SOURCE, NOMEM, OK, OVERFLOW, POP, REPEAT, StringEdit,
-    StringState, TERMINATE, WRITE, aligned, ptr,
+    StringState, TERMINATE, WRITE, aligned, page_align, ptr,
 };
 use std::ffi::c_void;
 
@@ -272,7 +272,7 @@ unsafe fn write(
             }
         } else if end > s.capacity {
             Some(if edit.operation == WRITE {
-                aligned(end.checked_mul(2).ok_or(OVERFLOW)?, edit.page)?
+                page_align(end.checked_mul(2).ok_or(OVERFLOW)?, edit.page)?
             } else {
                 end
             })
