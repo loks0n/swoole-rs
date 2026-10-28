@@ -122,14 +122,14 @@ bool swr_http_host_request_create(struct _zval_struct *return_value, struct _zva
  * `context` is a swoole::http::Context. MINIT passes the codecs built in
  * (1 zlib, 2 brotli, 4 zstd, 8 any). */
 enum { SWR_PHPHTTP_PARSE_SIZE = 144, SWR_PHPHTTP_STATE_SIZE = 544 };
-void swr_v1_phphttp_parse_minit(uint32_t compression);
+void swr_v1_phphttp_parse_minit(uint32_t codecs);
 size_t swr_v1_phphttp_parse(void *context, const char *data, size_t length);
 void swr_v1_phphttp_parse_free(void *context);
 bool swr_v1_phphttp_multipart_boundary(void *context, const char *at, size_t length, size_t offset,
     char **boundary, int *boundary_length);
-bool swr_v1_phphttp_multipart_init(void *context, const char *boundary, int boundary_length);
+bool swr_v1_phphttp_multipart_init(void *context, const char *boundary, int length);
 bool swr_v1_phphttp_multipart_parse(void *context, const char *at, size_t length);
-void swr_v1_phphttp_compression_method(void *context, const char *accept_encoding, size_t length);
+void swr_v1_phphttp_compression_method(void *context, const char *at, size_t length);
 /* What the parser asks of Swoole. `swr_http_host_log` is swoole_error_log
  * (error > 0), swoole_warning (0) or swoole_sys_warning (-errno) from `func`. */
 void swr_http_host_log(int level, int error, const char *func, const char *message);
