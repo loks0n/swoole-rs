@@ -62,14 +62,14 @@ so no laptop fills its disk with many agents' builds. Each executor loops:
    ruleset refuses anything else, including direct pushes. `hybrid` and `gates`
    keep running but don't block the merge: watch the whole PR tier with
    `python3 tools/ci.py wait --workflow pr.yml --commit <branch>` (in the
-   background). If one of them fails because of your change, fix it in a
+   background; a branch auto-merge deleted still resolves). If one of them fails because of your change, fix it in a
    follow-up PR straight away, even if your PR already merged; otherwise the merge
    tier's red-main rule picks it up. If the PR conflicts, merge `origin/main` and
    push.
 5. The merge tier runs on `main`: everything above plus every gate, application
    and original PHPT for all modules. Watch it with `python3 tools/ci.py wait
-   --commit <merge sha>` (`gh pr view <pr> --json mergeCommit -q
-   .mergeCommit.oid`) in the background, and claim the next issue meanwhile;
+   --pr <pr>`, which waits for the merge and then for the merge tier on its merge
+   commit, in the background, and claim the next issue meanwhile;
    finish steps 5 and 6 when it reports. If that run was cancelled (exit 3), a
    later run covers your commit; nothing to do. If it failed, handle its **new
    failures** as described under *Red main* (CI).
