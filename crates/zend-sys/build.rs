@@ -32,7 +32,12 @@ mod php {
     }
 
     pub(super) fn bind() {
-        for file in ["src/shim.h", "src/shim.c"] {
+        for file in [
+            "src/shim.h",
+            "src/shim.c",
+            "src/shim_clients.h",
+            "src/shim_clients.c",
+        ] {
             println!("cargo::rerun-if-changed={file}");
         }
         let includes = includes();
@@ -44,7 +49,7 @@ mod php {
             .allowlist_function("(_?zend_|object_properties_init|php_error_docref|php_url_encode|php_format_date|php_time|swr_zend_|swr_zval_|zval_|add_assoc_|add_next_index_|add_index_).*")
             .allowlist_type("(_?zend_|_?zval).*")
             .allowlist_var(
-                "(std_object_handlers|zend_ce_.*|ZEND_ACC_.*|IS_.*|_IS_BOOL|E_.*|ZPP_ERROR_.*|CONST_.*)",
+                "(std_object_handlers|module_registry|zend_ce_.*|ZEND_ACC_.*|IS_.*|_IS_BOOL|E_.*|ZPP_ERROR_.*|CONST_.*)",
             )
             // PHP 8.5's tail-call VM types opcode handlers preserve_none, which
             // bindgen cannot express; every VM kind but SWITCH stores a pointer,
@@ -57,6 +62,7 @@ mod php {
             .expect("zend-sys: write bindings");
         cc::Build::new()
             .file("src/shim.c")
+            .file("src/shim_clients.c")
             .includes(&includes)
             .warnings(true)
             .compile("swoole_rs_zend_shim");

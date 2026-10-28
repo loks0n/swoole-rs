@@ -18,10 +18,14 @@ mod call;
 mod class;
 mod error;
 mod object;
+pub mod string;
+pub mod value;
 
-pub use call::{Call, Invalid};
-pub use class::{Class, class_name, unset_property_deny};
-pub use class::{register_double_constant, register_long_constant};
+pub use call::{Call, Invalid, type_of};
+pub use class::{
+    Class, class_name, declare_bool, declare_long, declare_string, register_double_constant,
+    register_long_constant, unset_property_deny,
+};
 pub use error::{throw_constructed_twice, throw_error, throw_exception};
 pub use object::{Object, set_object};
 pub use swoole_rs_zend_sys as sys;

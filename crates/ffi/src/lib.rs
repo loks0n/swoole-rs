@@ -113,6 +113,8 @@ pub use swoole_rs_process::*;
 
 #[cfg(feature = "clients")]
 pub use swoole_rs_clients as clients;
+#[cfg(feature = "clients")]
+pub use swoole_rs_phpclients::*;
 // The clients patch calls the HTTP inflate stream in crates/inflate.
 #[cfg(feature = "clients")]
 pub use swoole_rs_inflate as inflate;
