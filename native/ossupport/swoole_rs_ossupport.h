@@ -7,11 +7,25 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-typedef struct { size_t core; size_t workers; double wait; double idle; } swr_v1_os_pool_config_t;
-swr_v1_os_pool_config_t swr_v1_os_pool_config(size_t cpu, size_t core, size_t workers, double wait, double idle);
-size_t swr_v1_os_pool_expand(size_t idle, size_t queued, size_t threads, size_t workers, double threshold, double age);
-int32_t swr_v1_os_event_action(bool handler, bool canceled);
-int32_t swr_v1_os_worker_action(bool event, bool handler, bool canceled, bool timeout, size_t closing);
+/* The process-wide async thread pool. Event tokens are native AsyncEvent
+ * pointers: native runs, sends and frees them through the hooks. */
+typedef struct swr_v1_os_pool swr_v1_os_pool;
+typedef struct {
+    void (*thread_init)(void);
+    void (*thread_clean)(void);
+    void (*execute)(uintptr_t event);
+    void (*retire)(uintptr_t key);
+    void (*spawn_failed)(void);
+} swr_v1_os_pool_hooks;
+const swr_v1_os_pool *swr_v1_os_pool_acquire(swr_v1_os_pool_hooks hooks, size_t cpu, size_t core,
+                                             size_t workers, double wait, double idle);
+void swr_v1_os_pool_release(const swr_v1_os_pool *pool);
+size_t swr_v1_os_pool_task_id(const swr_v1_os_pool *pool);
+void swr_v1_os_pool_dispatch(const swr_v1_os_pool *pool, uintptr_t event);
+bool swr_v1_os_pool_join(const swr_v1_os_pool *pool, uintptr_t key);
+size_t swr_v1_os_pool_worker_num(const swr_v1_os_pool *pool);
+size_t swr_v1_os_pool_queue_size(const swr_v1_os_pool *pool);
+void swr_v1_os_pool_notify_one(const swr_v1_os_pool *pool);
 int32_t swr_v1_os_fs_error(int64_t result, bool retry);
 int32_t swr_v1_os_content(uint64_t length, uint64_t maximum);
 /* Native initial String allocation precedes first call. Exclusive zeroed state.
@@ -59,14 +73,6 @@ enum swr_v1_os_sendfile_fallback_action {
 };
 uint32_t swr_v1_os_sendfile_fallback_next(swr_v1_os_sendfile_fallback_state *state,
                                        size_t size, size_t capacity, int64_t observed);
-typedef struct swr_v1_os_queue swr_v1_os_queue;
-typedef struct { uintptr_t token; bool present; } swr_v1_os_queue_item;
-swr_v1_os_queue *swr_v1_os_queue_create(void);
-void swr_v1_os_queue_destroy(swr_v1_os_queue *queue);
-bool swr_v1_os_queue_push(swr_v1_os_queue *queue, uintptr_t token);
-swr_v1_os_queue_item swr_v1_os_queue_pop(swr_v1_os_queue *queue);
-swr_v1_os_queue_item swr_v1_os_queue_front(const swr_v1_os_queue *queue);
-size_t swr_v1_os_queue_count(const swr_v1_os_queue *queue);
 #ifdef __cplusplus
 }
 static_assert(sizeof(uintptr_t) == sizeof(void *), "opaque token width");

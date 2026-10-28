@@ -5,27 +5,23 @@ Feature value 131072 (`--module ossupport`). Upstream targets:
 `src/os/timer.cc` belongs to M03. Follows the
 [policy/effect split](abi-v1.md#policyeffect-split).
 
-Rust decides worker sizing, scheduling, event results, lifecycle and file/IPC
-progress. Native code runs every syscall, allocation, thread/mutex/condition/pipe
-operation, log and callback. The process-wide shared pool, thread-local
-AsyncThreads, pipe and AsyncEvent custody stay native.
+Rust owns the async thread pool: the process-wide pool, its queue, worker
+threads, scheduling and idle retirement (`crates/ossupport/src/pool.rs`). File,
+message queue and sendfile code follows the
+[policy/effect split](abi-v1.md#policyeffect-split): native code runs every
+syscall, allocation, log and callback.
 
 ## Async thread pool
 
-- Scheduling uses the old queue state before the new task is published.
+- Scheduling counts the new task: it runs after the push, under the queue lock.
 - Default worker count is `cpu * 8` even when an explicit core count is larger.
-- `max_idle_time` is cast to `long` before multiplying by microseconds.
+- `max_idle_time` is truncated to whole seconds.
 - A missing handler takes precedence over the canceled status.
 - A failed completion write deletes the event without counting a delivery.
 - Idle retirement keeps its compensating task counter.
-- Callbacks are invoked natively, then the thread-local pool is reacquired for
-  the decrement/delete. Destruction drops local pool custody before shared
-  shutdown and pipe release.
-- With the module selected, the private EventQueue `std::queue` is one Rust
-  `VecDeque` of opaque event tokens, used only under the existing `event_mutex`.
-  Rust never reads token fields. Allocation failure returns a status; native
-  throws afterwards. The backing store is dropped after native shutdown/join and
-  never frees the `AsyncEvent` payloads.
+- The thread-local `AsyncThreads`, its pipe, `task_num` and `AsyncEvent` custody
+  stay native; native hooks run, send and free events. Destruction releases the
+  pool reference (the last one shuts down and joins) before closing the pipe.
 
 Known gap: the native `uint8` `canceled` field is read across threads without
 proven synchronization.
