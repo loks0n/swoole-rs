@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Complete optional Context constructor/query against exact loaded Native effects and Rust marker symbols; no switches or coroutine execution."""
 import argparse
-import importlib.util
 import json
 from pathlib import Path
 import platform
@@ -11,14 +10,10 @@ import sys
 import uuid
 sys.path.insert(0,str(Path(__file__).resolve().parents[3]))
 from tools.harness import ROOT,Engine,run_isolated,write_report
+from tools import hybrid_identity as shared
 from tools.hybrid_identity import attest,sha
 from tools.build_upstream import require_build_space
 
-# Reuse the already-qualified exact source/config mirror and immutable-export
-# binding. No duplicate source reconstruction or second DSO copy/cache policy.
-helper=ROOT/'tests/modules/buffer/string/production.py'
-spec=importlib.util.spec_from_file_location('swr_production_headers',helper)
-shared=importlib.util.module_from_spec(spec);spec.loader.exec_module(shared)
 p=argparse.ArgumentParser(description=__doc__)
 for name in ['source','selected-export','native-export','output']:
     p.add_argument('--'+name,type=Path,required=True)

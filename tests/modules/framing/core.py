@@ -79,8 +79,8 @@ def main():
             if not shutil.which(command):
                 parser.error('Missing build prerequisite: ' + command)
         build_root = args.build_root.resolve()
-        if any(build_root == root or root in build_root.parents for root in [source, ROOT]):
-            parser.error('Build root must be outside the reference and repository')
+        if any(build_root == root or root in build_root.parents for root in [source]):
+            parser.error('Build root must be outside the reference')
         build_root.mkdir(parents=True, exist_ok=True)
     report = {'created_utc': datetime.now(timezone.utc).isoformat(), 'upstream_pin': PIN,
               'scope': 'Unchanged original native M18 GoogleTests; isolated full native reference vs framing-only overlay. No PHP, combined-module, sanitizer or performance claim.',
