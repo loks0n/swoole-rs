@@ -407,7 +407,7 @@ pub(crate) fn run<H: Host>(h: &mut H, operation: u32, arg: u64) -> i64 {
             heartbeat_thread(h);
             SW_OK
         }
-        _ => SW_ERR,
+        _ => crate::dispatch::run(h, operation, arg),
     }
 }
 

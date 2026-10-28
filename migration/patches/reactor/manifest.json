@@ -122,6 +122,13 @@
       "upstream_paths": [
         "src/server/reactor_thread.cc"
       ]
+    },
+    {
+      "path": "0016-server-base-factory.patch",
+      "sha256": "5839155fabd96ab91ba627b2213c161bf203448f49f2f48266b3bff4cad7c062",
+      "upstream_paths": [
+        "src/server/base.cc"
+      ]
     }
   ]
 }

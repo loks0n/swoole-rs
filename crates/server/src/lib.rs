@@ -13,6 +13,7 @@ use core::ffi::c_void;
 
 mod connection;
 mod control;
+mod dispatch;
 pub mod local_addr;
 pub mod ops;
 mod reactor_thread;
