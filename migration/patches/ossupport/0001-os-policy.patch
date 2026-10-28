@@ -13,7 +13,7 @@ index 8f0a9eb..8d74b62 100644
 +    const swr_v1_os_pool *pool = nullptr;
      network::Socket *read_socket = nullptr;
 diff --git a/src/os/async_thread.cc b/src/os/async_thread.cc
-index 096c5f5..0ca17b6 100644
+index 096c5f5..db3b6de 100644
 --- a/src/os/async_thread.cc
 +++ b/src/os/async_thread.cc
 @@ -17,2 +17,7 @@
@@ -380,24 +380,54 @@ index 096c5f5..0ca17b6 100644
 +    swr_v1_os_pool_dispatch(SwooleTG.async_threads->pool, reinterpret_cast<uintptr_t>(event));
 +    SwooleTG.async_threads->task_num++;
      return event;
-@@ -356,3 +129,3 @@ int AsyncThreads::callback(Reactor *reactor, Event *event) {
+@@ -336,6 +109,14 @@ AsyncEvent *dispatch(const AsyncEvent *request) {
+ 
++static void complete(uintptr_t token) {
++    auto *_event = reinterpret_cast<AsyncEvent *>(token);
++    if (!_event->canceled) {
++        _event->callback(_event);
++    }
++    SwooleTG.async_threads->task_num--;
++    delete _event;
++}
++
+ int AsyncThreads::callback(Reactor *reactor, Event *event) {
+-    AsyncEvent *events[SW_AIO_EVENT_NUM];
+-    ssize_t n = event->socket->read(events, sizeof(AsyncEvent *) * SW_AIO_EVENT_NUM);
+-    if (n < 0) {
++    static_assert(SW_AIO_EVENT_NUM == 128, "the Rust completion read takes 128 tokens");
++    if (swr_v1_os_pool_complete(event->socket->fd, complete) < 0) {
+         swoole_sys_warning("read() aio events failed");
+@@ -343,11 +124,2 @@ int AsyncThreads::callback(Reactor *reactor, Event *event) {
+     }
+-    for (size_t i = 0; i < n / sizeof(AsyncEvent *); i++) {
+-        AsyncEvent *_event = events[i];
+-        if (!_event->canceled) {
+-            _event->callback(_event);
+-        }
+-        SwooleTG.async_threads->task_num--;
+-        delete _event;
+-    }
+-
+     return SW_OK;
+@@ -356,3 +128,3 @@ int AsyncThreads::callback(Reactor *reactor, Event *event) {
  size_t AsyncThreads::get_worker_num() const {
 -    return pool ? pool->get_worker_num() : 0;
 +    return swr_v1_os_pool_worker_num(pool);
  }
-@@ -360,3 +133,3 @@ size_t AsyncThreads::get_worker_num() const {
+@@ -360,3 +132,3 @@ size_t AsyncThreads::get_worker_num() const {
  size_t AsyncThreads::get_queue_size() const {
 -    return pool ? pool->get_queue_size() : 0;
 +    return swr_v1_os_pool_queue_size(pool);
  }
-@@ -364,5 +137,3 @@ size_t AsyncThreads::get_queue_size() const {
+@@ -364,5 +136,3 @@ size_t AsyncThreads::get_queue_size() const {
  void AsyncThreads::notify_one() const {
 -    if (pool) {
 -        pool->notify_one();
 -    }
 +    swr_v1_os_pool_notify_one(pool);
  }
-@@ -406,12 +177,10 @@ AsyncThreads::AsyncThreads() {
+@@ -406,12 +176,10 @@ AsyncThreads::AsyncThreads() {
  
 -    async_thread_lock.lock();
 -    if (!async_thread_pool) {
@@ -418,7 +448,7 @@ index 096c5f5..0ca17b6 100644
 +                                  SwooleG.aio_max_wait_time,
 +                                  SwooleG.aio_max_idle_time);
  
-@@ -422,12 +191,5 @@ AsyncThreads::AsyncThreads() {
+@@ -422,12 +190,5 @@ AsyncThreads::AsyncThreads() {
  AsyncThreads::~AsyncThreads() {
 -    pool.reset();
 -    async_thread_lock.lock();
@@ -735,7 +765,7 @@ index d9907a0..3b8ec7d 100644
 +    return check_pthread_return_value(swr_v1_os_thread_get_name(buf, len));
  }
 diff --git a/src/os/file.cc b/src/os/file.cc
-index 56e78fc..5b9b0f8 100644
+index 56e78fc..ba67634 100644
 --- a/src/os/file.cc
 +++ b/src/os/file.cc
 @@ -18,9 +18,9 @@
@@ -753,7 +783,20 @@ index 56e78fc..5b9b0f8 100644
 +int swoole_tmpfile(char *filename) {
 +    int tmp_fd = swr_v1_os_tmpfile(filename);
      if (tmp_fd < 0) {
-@@ -50,12 +50,7 @@ ssize_t file_get_size(const std::string &filename) {
+@@ -41,8 +41,7 @@ ssize_t file_get_size(FILE *fp) {
+ ssize_t file_get_size(const std::string &filename) {
+-    File file(filename, File::READ);
+-    if (!file.ready()) {
+-        swoole_set_last_error(errno);
+-        return -1;
++    const auto size = swr_v1_os_file_size_path(filename.c_str());
++    if (size.error != 0) {
++        swoole_set_last_error(size.error);
+     }
+-    return file.get_size();
++    return size.size;
+ }
+@@ -50,12 +49,7 @@ ssize_t file_get_size(const std::string &filename) {
  ssize_t file_get_size(int fd) {
 -    FileStatus file_stat;
 -    if (fstat(fd, &file_stat) < 0) {
@@ -770,7 +813,63 @@ index 56e78fc..5b9b0f8 100644
 -    return file_stat.st_size;
 +    return size.size;
  }
-@@ -130,10 +125,3 @@ File::File(const std::string &path, int oflags, int mode) {
+@@ -63,15 +57,16 @@ ssize_t file_get_size(int fd) {
+ std::shared_ptr<String> file_get_contents(const std::string &filename) {
+-    File fp(filename, O_RDONLY);
+-    if (!fp.ready()) {
++    const auto opened = swr_v1_os_file_contents_open(filename.c_str(), SwooleG.max_file_content);
++    switch (opened.status) {
++    case 0:
++        break;
++    case 1:
+         swoole_sys_warning("open('%s') failed", filename.c_str());
+         return nullptr;
+-    }
+-
+-    ssize_t filesize = fp.get_size();
+-    if (filesize < 0) {
++    case 2:
++        swoole_set_last_error(opened.error);
+         return nullptr;
+-    } else if (filesize == 0) {
++    case 3:
+         swoole_error_log(SW_LOG_TRACE, SW_ERROR_FILE_EMPTY, "file[%s] is empty", filename.c_str());
+         return nullptr;
+-    } else if (filesize > SwooleG.max_file_content) {
++    default:
+         swoole_error_log(SW_LOG_WARNING, SW_ERROR_FILE_TOO_LARGE, "file[%s] is too large", filename.c_str());
+@@ -80,2 +75,4 @@ std::shared_ptr<String> file_get_contents(const std::string &filename) {
+ 
++    File fp(opened.fd, filename);
++    ssize_t filesize = opened.size;
+     std::shared_ptr<String> content = std::make_shared<String>(filesize + 1);
+@@ -99,7 +96,13 @@ File make_tmpfile() {
+ bool file_put_contents(const std::string &filename, const char *content, size_t length) {
+-    if (length == 0) {
++    const auto opened = swr_v1_os_file_put_open(filename.c_str(), length, SwooleG.max_file_content);
++    switch (opened.status) {
++    case 0:
++        return File(opened.fd, filename).write_all(content, length);
++    case 1:
++        swoole_sys_warning("open('%s') failed", filename.c_str());
++        return false;
++    case 3:
+         swoole_error_log(SW_LOG_WARNING, SW_ERROR_FILE_EMPTY, "content is empty");
+         return false;
+-    }
+-    if (length > SwooleG.max_file_content) {
++    default:
+         swoole_error_log(SW_LOG_WARNING, SW_ERROR_FILE_TOO_LARGE, "content is too large");
+@@ -107,8 +110,2 @@ bool file_put_contents(const std::string &filename, const char *content, size_t
+     }
+-    File file(filename, O_WRONLY | O_TRUNC | O_CREAT, 0666);
+-    if (!file.ready()) {
+-        swoole_sys_warning("open('%s') failed", filename.c_str());
+-        return false;
+-    }
+-    return file.write_all(content, length);
+ }
+@@ -130,10 +127,3 @@ File::File(const std::string &path, int oflags, int mode) {
  bool File::open(const std::string &path, int oflags, int mode) {
 -    if (fd_ != -1) {
 -        ::close(fd_);
@@ -782,7 +881,7 @@ index 56e78fc..5b9b0f8 100644
 -    }
 +    fd_ = swr_v1_os_file_open(fd_, path.c_str(), oflags, mode);
      path_ = path;
-@@ -144,8 +132,3 @@ bool File::open(const std::string &path, int oflags, int mode) {
+@@ -144,8 +134,3 @@ bool File::open(const std::string &path, int oflags, int mode) {
  bool File::close() {
 -    if (fd_ == -1) {
 -        return false;
@@ -792,7 +891,7 @@ index 56e78fc..5b9b0f8 100644
 -    return ::close(tmp_fd) == 0;
 +    return swr_v1_os_file_close(std::exchange(fd_, -1));
  }
-@@ -166,34 +149,8 @@ File::~File() {
+@@ -166,34 +151,8 @@ File::~File() {
  
 -static swReturnCode catch_fs_error(const ssize_t rv, const int error) {
 -    if (rv == 0) {
@@ -831,7 +930,7 @@ index 56e78fc..5b9b0f8 100644
 -    return written_bytes;
 +    return io.done;
  }
-@@ -201,18 +158,7 @@ size_t File::write_all(const void *data, size_t len) const {
+@@ -201,18 +160,7 @@ size_t File::write_all(const void *data, size_t len) const {
  size_t File::read_all(void *buf, size_t len) const {
 -    size_t read_bytes = 0;
 -    while (read_bytes < len) {
@@ -854,7 +953,7 @@ index 56e78fc..5b9b0f8 100644
 -    return read_bytes;
 +    return io.done;
  }
-@@ -220,18 +166,3 @@ size_t File::read_all(void *buf, size_t len) const {
+@@ -220,18 +168,3 @@ size_t File::read_all(void *buf, size_t len) const {
  ssize_t File::read_line(void *_buf, size_t _n) const {
 -    char *buf = (char *) _buf;
 -    auto offset = get_offset();
@@ -875,7 +974,7 @@ index 56e78fc..5b9b0f8 100644
 +    return swr_v1_os_file_read_line(fd_, _buf, _n);
  }
 diff --git a/src/os/msg_queue.cc b/src/os/msg_queue.cc
-index 2ed0f01..a2aa05f 100644
+index 2ed0f01..e8773a6 100644
 --- a/src/os/msg_queue.cc
 +++ b/src/os/msg_queue.cc
 @@ -18,2 +18,7 @@
@@ -886,6 +985,11 @@ index 2ed0f01..a2aa05f 100644
 +#include "swoole_rs_ossupport.h"
 +
  namespace swoole {
+@@ -24,3 +29,3 @@ namespace swoole {
+ bool MsgQueue::destroy() {
+-    if (msgctl(msg_id_, IPC_RMID, nullptr) < 0) {
++    if (!swr_v1_os_msg_remove(msg_id_)) {
+         swoole_sys_warning("msgctl(%d, IPC_RMID) failed", msg_id_);
 @@ -33,7 +38,3 @@ bool MsgQueue::destroy() {
  void MsgQueue::set_blocking(const bool blocking) {
 -    if (blocking == 0) {

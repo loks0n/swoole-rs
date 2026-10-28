@@ -3,7 +3,7 @@
   "patches": [
     {
       "path": "0001-os-policy.patch",
-      "sha256": "15058cc7529e0b2e85e469d8419d6fa247b0c628a931f8c98801c781f2593c0b",
+      "sha256": "aaf1cc1ebfbcb5c4a86489c12c9134f64e655f454da1714dbe3b959e6df6b47f",
       "upstream_paths": [
         "include/swoole_async.h",
         "src/os/async_thread.cc",

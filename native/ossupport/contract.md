@@ -20,7 +20,8 @@ Event tokens are native `AsyncEvent` pointers that Rust never dereferences. Nati
 hooks (`swr_v1_os_pool_hooks`) run on worker threads: `execute` runs the handler
 (missing handler wins over canceled) and writes the event to its pipe; `retire`
 sends the idle worker's key to the default pipe, whose callback joins it with
-`swr_v1_os_pool_join`. Defaults, scheduling and the whole-second idle wait match
+`swr_v1_os_pool_join`. `swr_v1_os_pool_complete` reads up to 128 tokens from the
+reactor's end of the pipe and hands each to native's completion callback. Defaults, scheduling and the whole-second idle wait match
 upstream v6.2.4. Workers get an 8 MiB stack. Known remaining issues: the
 unsynchronized `canceled` field and the retirement leak in
 [retirement-shutdown-gap.md](retirement-shutdown-gap.md).
@@ -45,15 +46,20 @@ so the native `swoole_sys_warning` sees its errno.
 - `swr_v1_os_random_bytes`: `getrandom` on Linux/Android (retrying `EINTR`/`EAGAIN`,
   a zero result repeats), `arc4random_buf` elsewhere.
 
-`file_get_contents`, `file_put_contents` and `File::read_content` stay native:
-they compose the calls above with `String` and the upstream logs.
+- `swr_v1_os_file_contents_open` / `swr_v1_os_file_put_open`: the open and
+  empty/too-large checks of `file_get_contents` / `file_put_contents`, in upstream
+  order; on success the descriptor stays open for native to read into its
+  `String` (or write) and close. `swr_v1_os_file_size_path` is
+  `file_get_size(filename)`.
+
+`File::read_content` stays native: it grows a native `String`.
 
 ## SysV message queue
 
 `msg_queue.rs`: `swr_v1_os_msg_open` defaults permissions outside (0, 01000) to
 0666 and calls `msgget(key, IPC_CREAT | perms)`; `swr_v1_os_msg_flags` changes
 only `IPC_NOWAIT`; push retries `EINTR` and stays quiet on `EAGAIN`; pop does not
-retry and is quiet on `ENOMSG`/`EINTR`. Removal, stat and capacity stay native.
+retry and is quiet on `ENOMSG`/`EINTR`. `swr_v1_os_msg_remove` is `IPC_RMID`. Stat and capacity stay native (`msqid_ds`).
 Module tests use a private queue and remove it.
 
 ## Process and thread identity
