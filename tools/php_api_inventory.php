@@ -1,5 +1,11 @@
 <?php
 // Read-only token/reflection census. Never evaluate stub source or invoke API methods.
+// A default that names a constant is recorded by name; evaluating one can need an absent extension.
+function swr_inventory_default(ReflectionParameter $p): array {
+    if (!$p->isDefaultValueAvailable()) { return ['available' => false]; }
+    try { return ['available' => true, 'value' => $p->getDefaultValue()]; }
+    catch (Error $error) { return ['available' => true, 'unevaluated' => get_class($error)]; }
+}
 function swr_inventory_class_constants(ReflectionClass $class): array {
     $out = [];
     foreach ($class->getReflectionConstants() as $constant) {
@@ -21,8 +27,9 @@ if (($argv[1] ?? '') === '--tokens') {
     $describe = static function (ReflectionFunctionAbstract $f) {
         return ['name' => $f->getName(), 'return_type' => (string) $f->getReturnType(), 'returns_reference' => $f->returnsReference(),
             'parameters' => array_map(static fn($p) => ['name' => $p->getName(), 'type' => (string) $p->getType(),
-                'optional' => $p->isOptional(), 'default_available' => $p->isDefaultValueAvailable(),
-                'default_constant' => $p->isDefaultValueAvailable() && $p->isDefaultValueConstant() ? $p->getDefaultValueConstantName() : null, 'variadic' => $p->isVariadic(), 'by_reference' => $p->isPassedByReference()], $f->getParameters())];
+                'optional' => $p->isOptional(),
+                'default_constant' => $p->isDefaultValueAvailable() && $p->isDefaultValueConstant() ? $p->getDefaultValueConstantName() : null,
+                'default' => swr_inventory_default($p), 'variadic' => $p->isVariadic(), 'by_reference' => $p->isPassedByReference()], $f->getParameters())];
     };
     $classes = [];
     foreach (array_merge(get_declared_classes(), get_declared_interfaces(), get_declared_traits()) as $name) {
@@ -41,7 +48,8 @@ if (($argv[1] ?? '') === '--tokens') {
         $classes[$name] = ['canonical_name' => $c->getName(), 'provider' => $c->getExtensionName() ?: 'embedded_or_userland',
             'source_file' => $c->getFileName() ?: null, 'parent' => ($c->getParentClass() ?: null)?->getName(),
             'interfaces' => $c->getInterfaceNames(), 'methods' => $methods, 'properties' => $properties,
-            'abstract' => $c->isAbstract(), 'final' => $c->isFinal(), 'constants' => $c->getConstants(), 'constant_metadata' => swr_inventory_class_constants($c)];
+            'abstract' => $c->isAbstract(), 'final' => $c->isFinal(), 'modifiers' => $c->getModifiers(),
+            'default_properties' => $c->getDefaultProperties(), 'constants' => $c->getConstants(), 'constant_metadata' => swr_inventory_class_constants($c)];
     }
     ksort($classes);
     $functions = [];

@@ -17,12 +17,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--archive', type=Path, required=True)
-    parser.add_argument('--positive-only', action='store_true', help='Partial ordinary append/render controls; skips fault warmup, failures, random/invalid/zero-capacity profiles')
     parser.add_argument('--output', default='target/reports/http-index-pages.json')
     args = parser.parse_args(); local = Path(__file__).resolve().parent
     if Path(args.output).exists(): parser.error('Refusing an existing receipt')
     patch = ROOT/'migration/patches/http/0002-static-ranges.patch'
-    report = {'pin': PIN, 'scope': 'Actual pinned/patched make_index_page and pinned String formatting template; counted storage/directory facades, not IO/PHP parity', 'native_sanitizers': True, 'rust_instrumented': False, 'positive_only': args.positive_only, 'full_gate_passed': False}
+    report = {'pin': PIN, 'scope': 'Actual pinned/patched make_index_page and pinned String formatting template; counted storage/directory facades, not IO/PHP parity', 'native_sanitizers': True, 'rust_instrumented': False}
     with tempfile.TemporaryDirectory(prefix='swr-http-index-page-') as temp:
         tree = Path(temp)
         data = subprocess.check_output(['git', '-C', str(args.source), 'archive', PIN, 'include', 'src/server/static_handler.cc'])
@@ -54,7 +53,7 @@ def main():
         report['compile'] = {'returncode': compiled.returncode, 'stderr': compiled.stderr}
         if compiled.returncode: write_report(args.output, report); print(compiled.stderr, file=sys.stderr); return 1
         assert 'swr_v1_http_index_page' in subprocess.check_output(['nm', '-g', str(binary)], text=True)
-        report['run_command'] = [str(binary), *(['--positive-only'] if args.positive_only else [])]
+        report['run_command'] = [str(binary)]
         result = run_isolated(report['run_command'], timeout=30); report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
         if result.returncode: write_report(args.output, report); print(result.stderr, file=sys.stderr); return 1
         report['outcome'] = json.loads(result.stdout.splitlines()[-1]); report['passed'] = True

@@ -17,11 +17,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
     add_archive_arguments(parser)
-    parser.add_argument('--positive-only', action='store_true', help='Normal literal/valid-regex controls; injected allocation errors, invalid regex and random inputs remain unrun')
     parser.add_argument('--output', default='target/reports/http-rewrites.json')
     args = parser.parse_args(); local = Path(__file__).resolve().parent
     patch = ROOT/'migration/patches/http/0002-static-ranges.patch'
-    report = {'pin': PIN, 'scope': 'Actual pinned/patched add_rewrite_rule/apply_rewrite_rules; native regex/std::string and publication facade, not socket/PHP parity', 'native_sanitizers': True, 'rust_instrumented': args.rust_sanitize, 'rust_std_instrumented': False, 'passed': False, 'full_gate_passed': False, 'positive_only': args.positive_only, 'unrun_profiles': ['injected publication allocation errors', 'invalid regex', 'random byte rules'] if args.positive_only else []}
+    report = {'pin': PIN, 'scope': 'Actual pinned/patched add_rewrite_rule/apply_rewrite_rules; native regex/std::string and publication facade, not socket/PHP parity', 'native_sanitizers': True, 'rust_instrumented': args.rust_sanitize, 'rust_std_instrumented': False, 'passed': False}
     with tempfile.TemporaryDirectory(prefix='swr-http-rewrite-') as temp:
         tree = Path(temp)
         if not prepare_archive(args, tree, report):
@@ -54,9 +53,9 @@ def main():
         if compiled.returncode: write_report(args.output, report); print(compiled.stderr, file=sys.stderr); return 1
         symbols = subprocess.check_output(['nm', '-g', str(binary)], text=True)
         assert 'swr_v1_http_rewrite_literal' in symbols and 'swr_v2_http_rewrite_step' in symbols
-        result = run_isolated([str(binary)] + (['--positive-only'] if args.positive_only else []), timeout=30); report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
+        result = run_isolated([str(binary)], timeout=30); report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
         if result.returncode: write_report(args.output, report); print(result.stderr, file=sys.stderr); return 1
-        report['outcome'] = json.loads(result.stdout.splitlines()[-1]); report['passed'] = True; report['full_gate_passed'] = not args.positive_only
+        report['outcome'] = json.loads(result.stdout.splitlines()[-1]); report['passed'] = True
         write_report(args.output, report); print(json.dumps(report['outcome']))
     return 0
 if __name__ == '__main__': sys.exit(main())

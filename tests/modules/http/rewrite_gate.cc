@@ -13,10 +13,10 @@ static void compare(const std::string &url,const Rules &rules,bool fail=false){
  if(tx&&(a.url!=url||b.url!=url))throw std::runtime_error("failed publication changed request");
  ++cases;failures+=tx;
 }
-int main(int argc,char **argv){const bool positive_only=argc==2 && std::string(argv[1])=="--positive-only";try{if(!positive_only){try{throw std::bad_alloc();}catch(const std::bad_alloc&){}}
+int main(){try{try{throw std::bad_alloc();}catch(const std::bad_alloc&){}
  std::vector<Rules> rules={ {},{{"",""}},{{"","/fallback"}},{{"/a","/b"}},{{"/a","/a"}},{{"/a","/first"},{"/a","/second"}},{{"~^/a$~","/regex"},{"/","/literal"}},{{"~[~","invalid"},{"/a","fallback"}},{{"~a~","a"},{"","fallback"}},{{"~~","x"}},{{"~(a)(b)~","$2/$1"}},{{"~","/literal"}},{{std::string("/a\0",3),std::string("/b\0",3)}} };
  std::vector<std::string> urls={"","/","/a","/a/b","/ab","/aa",std::string("/a\0tail",7),std::string(4096,'a')};
- for(auto &url:urls)for(auto &r:rules){if(positive_only && !r.empty() && r[0].first=="~[~")continue;compare(url,r);if(!positive_only)compare(url,r,true);}
- if(!positive_only){std::mt19937 rng(34129);for(unsigned i=0;i<2048;++i){std::string url;for(unsigned n=rng()%80;n--;)url.push_back(static_cast<char>(rng()%256));Rules r;for(unsigned n=rng()%8;n--;){std::string prefix=url.substr(0,url.empty()?0:rng()%(url.size()+1)),replacement;for(unsigned m=rng()%80;m--;)replacement.push_back(static_cast<char>(rng()%256));if(rng()%2)prefix="mismatch"+prefix;r.emplace_back(prefix,replacement);}compare(url,r);}}
+ for(auto &url:urls)for(auto &r:rules){compare(url,r);compare(url,r,true);}
+ {std::mt19937 rng(34129);for(unsigned i=0;i<2048;++i){std::string url;for(unsigned n=rng()%80;n--;)url.push_back(static_cast<char>(rng()%256));Rules r;for(unsigned n=rng()%8;n--;){std::string prefix=url.substr(0,url.empty()?0:rng()%(url.size()+1)),replacement;for(unsigned m=rng()%80;m--;)replacement.push_back(static_cast<char>(rng()%256));if(rng()%2)prefix="mismatch"+prefix;r.emplace_back(prefix,replacement);}compare(url,r);}}
  upstream_rewrite::Server a;candidate_rewrite::Server b;if(a.apply_rewrite_rules(nullptr)||b.apply_rewrite_rules(nullptr))throw std::runtime_error("null rules short circuit");
- std::cout<<"{\"rewrite_cases\":"<<cases<<",\"native_publication_failures\":"<<failures<<",\"null_rule_short_circuit_groups\":1,\"positive_only\":"<<(positive_only?"true":"false")<<",\"errors\":0}\n";return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}
+ std::cout<<"{\"rewrite_cases\":"<<cases<<",\"native_publication_failures\":"<<failures<<",\"null_rule_short_circuit_groups\":1,\"errors\":0}\n";return 0;}catch(const std::exception &e){std::cerr<<e.what()<<'\n';return 1;}}

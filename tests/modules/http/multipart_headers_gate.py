@@ -17,11 +17,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
     add_archive_arguments(parser)
-    parser.add_argument('--positive-only', action='store_true', help='Only ordinary headers and successful upload acquisition; excludes fault/reentry profiles')
     parser.add_argument('--output', default='target/reports/http-multipart-headers.json')
     args = parser.parse_args(); local = Path(__file__).resolve().parent
     patch = ROOT/'migration/patches/http/0001-http-helpers.patch'
-    report = {'pin': PIN, 'scope': 'Actual pinned/patched multipart header field/value and cookie bodies; native append/file facades, not full parser/PHP parity', 'native_sanitizers': True, 'rust_instrumented': args.rust_sanitize, 'rust_std_instrumented': False, 'passed': False, 'positive_only':args.positive_only, 'full_gate_passed':False, 'unrun_profiles':['allocation/stdio failure, seeded/partial state, malformed/random input, reentry/lifetime and actual IO/PHP'] if args.positive_only else []}
+    report = {'pin': PIN, 'scope': 'Actual pinned/patched multipart header field/value and cookie bodies; native append/file facades, not full parser/PHP parity', 'native_sanitizers': True, 'rust_instrumented': args.rust_sanitize, 'rust_std_instrumented': False, 'passed': False}
     with tempfile.TemporaryDirectory(prefix='swr-http-multipart-headers-') as temp:
         tree = Path(temp)
         if not prepare_archive(args, tree, report):
@@ -56,7 +55,7 @@ def main():
         if compiled.returncode: write_report(args.output, report); print(compiled.stderr, file=sys.stderr); return 1
         symbols = subprocess.check_output(['nm', '-g', str(binary)], text=True)
         assert 'swr_v1_http_multipart_filename' in symbols and 'swr_v2_http_multipart_upload' in symbols
-        result = run_isolated([str(binary), *(['--positive-only'] if args.positive_only else [])], timeout=30); report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
+        result = run_isolated([str(binary)], timeout=30); report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
         if result.returncode: write_report(args.output, report); print(result.stderr, file=sys.stderr); return 1
         report['outcome'] = json.loads(result.stdout.splitlines()[-1]); report['passed'] = True
         write_report(args.output, report); print(json.dumps(report['outcome']))

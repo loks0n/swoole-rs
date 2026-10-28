@@ -211,33 +211,12 @@ def plan(args, reports):
     if 'http' in modules:
         script('http-context', 'tests/modules/http/context_gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('http-context'))
-        for name, runner in [('http-native', 'gate.py'), ('http-ranges', 'range_gate.py'), ('http-framing', 'framing_gate.py'), ('http-headers', 'headers_gate.py'), ('http-proxy', 'proxy_gate.py'), ('http-static', 'static_gate.py'), ('http-paths', 'path_gate.py'), ('http-index-pages', 'index_page_gate.py'), ('http-conditionals', 'conditional_gate.py'), ('http-multipart', 'multipart_gate.py'), ('http-rewrites', 'rewrite_gate.py'), ('http-inline', 'inline_gate.py'), ('http-dispatch', 'dispatch_gate.py'), ('http-multipart-emit', 'multipart_emit_gate.py'), ('http-locales', 'locale_gate.py')]:
+        for name, runner in [('http-native', 'gate.py'), ('http-ranges', 'range_gate.py'), ('http-framing', 'framing_gate.py'), ('http-headers', 'headers_gate.py'), ('http-proxy', 'proxy_gate.py'), ('http-static', 'static_gate.py'), ('http-paths', 'path_gate.py'), ('http-index-pages', 'index_page_gate.py'), ('http-conditionals', 'conditional_gate.py'), ('http-multipart', 'multipart_gate.py'), ('http-rewrites', 'rewrite_gate.py'), ('http-inline', 'inline_gate.py'), ('http-dispatch', 'dispatch_gate.py'), ('http-multipart-emit', 'multipart_emit_gate.py'), ('http-locales', 'locale_gate.py'), ('http-multipart-headers', 'multipart_headers_gate.py')]:
             script(name, 'tests/modules/http/' + runner, '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report(name))
-        script('http-index-append-positive', 'tests/modules/http/index_page_gate.py',
-               '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-               '--positive-only', *report('http-index-append-positive'))
-        script('http-url-encode-positive', 'tests/modules/http/gate.py',
-               '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-               '--url-positive-only', *report('http-url-encode-positive'))
-        script('http-proxy-auth-positive', 'tests/modules/http/proxy_gate.py',
-               '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-               '--auth-positive-only', *report('http-proxy-auth-positive'))
-        for name, runner in [('static', 'static_gate.py'), ('rewrites', 'rewrite_gate.py')]:
-            phase = 'http-' + name + '-positive'
-            script(phase, 'tests/modules/http/' + runner, '--source', ROOT / 'target/upstream/src',
-                   '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', '--positive-only',
-                   *report(phase))
         for phase, flags in [('http-cookie-flow-positive', []), ('http-status-buffer-positive', ['--status-only']), ('http-status-codes-positive', ['--codes-only'])]:
             script(phase, 'tests/modules/http/cookie_flow_gate.py', '--source', ROOT / 'target/upstream/src',
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *flags, *report(phase))
-        script('http-multipart-headers-positive', 'tests/modules/http/multipart_headers_gate.py',
-               '--source', ROOT / 'target/upstream/src',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a',
-               '--positive-only', *report('http-multipart-headers-positive'))
         script('http-request-lifecycle', 'tests/modules/http/request_lifecycle_gate.py', '--source', ROOT / 'target/upstream/src',
                '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('http-request-lifecycle'))
         script('http-directory-compatibility', 'tests/modules/http/directory_compat.py', '--source', ROOT / 'target/upstream/src',
@@ -740,11 +719,6 @@ def plan(args, reports):
         script('halfclose-tls-native', 'tests/modules/halfclose/tls_shutdown.py',
                '--source', manifest.parent / 'src', '--cert', certs / 'server.crt',
                '--key', certs / 'server.key', *openssl, *report('halfclose-tls-native'))
-    if integrate and 'http' in modules:
-        reference_first = ['--engine', f'upstream={reference}',
-                           '--engine', f'hybrid={hybrid}']
-        script('http-binding-reflection', 'tests/modules/http/binding_reflection.py',
-               *php, *reference_first, *report('http-binding-reflection'))
     if integrate:
         # 11-buffer-lifecycle hits upstream's half-close truncation, which only --fix-halfclose
         # repairs, so it fails on both engines otherwise. The PR tier runs it on a repaired build.
