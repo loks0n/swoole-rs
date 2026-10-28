@@ -215,6 +215,119 @@ pub(crate) fn signal_state_lock() -> std::sync::MutexGuard<'static, ()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Each decision against the native expression it replaces (upstream v6.2.4).
+    #[test]
+    fn exit_records_keep_their_c_layout() {
+        assert_eq!(
+            (
+                size_of::<ExitObservation>(),
+                std::mem::offset_of!(ExitObservation, callback_called)
+            ),
+            (8, 4)
+        );
+        assert_eq!(
+            (
+                size_of::<ExitBudget>(),
+                std::mem::offset_of!(ExitBudget, timeout_msec)
+            ),
+            (8, 4)
+        );
+    }
+    #[test]
+    fn worker_task_and_reload_decisions_match_the_native_expressions() {
+        for bits in 0..16 {
+            let [a, b, c, d] = [bits & 1 != 0, bits & 2 != 0, bits & 4 != 0, bits & 8 != 0];
+            let step = swr_v1_process_worker_exit(a, b, c);
+            let action = if a {
+                0
+            } else if b && !c {
+                1
+            } else {
+                2
+            };
+            assert_eq!(
+                (step.action, step.callback_called),
+                (action, c || (!a && b))
+            );
+            assert_eq!(
+                swr_v1_process_discard_data(a, b, c, d),
+                if a { b } else { !c || d }
+            );
+            assert_eq!(
+                swr_v1_process_task_action(a, b, c),
+                if a {
+                    1
+                } else if b {
+                    2
+                } else {
+                    u32::from(c) * 3
+                }
+            );
+            assert_eq!(
+                swr_v1_process_finish_error(a, b),
+                if a { 1 } else { u32::from(b) * 2 }
+            );
+            assert_eq!(
+                swr_v1_process_reload_action(a, b),
+                if a { 1 } else { u32::from(b) * 2 }
+            );
+            assert_eq!(
+                swr_v1_process_reload_kill(a, b, c),
+                if !a {
+                    0
+                } else if b || c {
+                    1
+                } else {
+                    2
+                }
+            );
+        }
+    }
+    #[test]
+    fn exit_budget_matches_the_native_expression() {
+        for remaining in [i32::MIN, -1, 0, 1, 2, 1000, i32::MAX / 1000] {
+            for timeout in [i32::MIN, -1, 0, 1, 999, 1000, i32::MAX] {
+                let plan = swr_v1_process_exit_budget(remaining, timeout);
+                let limit = remaining.saturating_mul(1000);
+                let (timed_out, update, expected) = if remaining <= 0 {
+                    (true, false, timeout)
+                } else if timeout < 0 || timeout > limit {
+                    (false, true, limit)
+                } else {
+                    (false, false, timeout)
+                };
+                assert_eq!(
+                    (plan.timed_out, plan.update_timeout, plan.timeout_msec),
+                    (timed_out, update, expected)
+                );
+            }
+        }
+    }
+    #[test]
+    fn result_flags_add_the_callback_or_coroutine_flag() {
+        let mut random = 0x0518_bc19_u32;
+        for _ in 0..100_000 {
+            random ^= random << 13;
+            random ^= random >> 17;
+            random ^= random << 5;
+            let flags = random.cast_signed();
+            for (callback, coroutine) in
+                [(false, false), (true, false), (false, true), (true, true)]
+            {
+                let expected = if callback {
+                    flags | 4
+                } else if coroutine {
+                    flags | 8
+                } else {
+                    flags
+                };
+                assert_eq!(
+                    swr_v1_process_result_flags(flags, callback, coroutine, 4, 8),
+                    expected
+                );
+            }
+        }
+    }
     #[test]
     fn worker_exit_refreshes_after_callback() {
         let first = swr_v1_process_worker_exit(false, true, false);

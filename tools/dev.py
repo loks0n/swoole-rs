@@ -494,9 +494,6 @@ def plan(args, reports):
             script(phase, 'tests/modules/ports/' + name + '.py', '--source', ROOT / 'target/upstream/src',
                    *(['--core', ROOT / 'target/hybrid' / native_variant / 'src'] if integrate else []), '--sanitize', *port_options,
                    '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report(phase))
-    if 'process' in modules:
-        script('process-policy', 'tests/modules/process/gate.py',
-               '--archive', manifest.parent / 'src/../rust-prefix/lib/libswoole_rs_ffi.a', *report('process-policy'))
     if 'coroutine' in modules and integrate:
         native_options = ['--php-prefix', subprocess.check_output(['php-config', '--prefix'], text=True).strip()] if sys.platform == 'darwin' else []
         if getattr(args, 'gtest_prefix', None):

@@ -723,7 +723,6 @@ class Lanes(unittest.TestCase):
         self.assertIn('--sanitize',commands['clients-http'])
         self.assertIn('--archive',commands['clients-codec'])
         self.assertIn('--sanitize',commands['clients-codec'])
-        self.assertIn('--archive',commands['process-policy'])
         self.assertIn('--archive', commands['corebase-lifecycle'])
         self.assertIn('--config', commands['corebase-lifecycle'])
         self.assertNotIn('--prepared', commands['corebase-lifecycle'])
