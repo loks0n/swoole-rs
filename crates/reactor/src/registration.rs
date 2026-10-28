@@ -19,7 +19,7 @@ fn writes(events: c_int) -> bool {
 
 #[cfg(target_os = "linux")]
 mod epoll {
-    use super::*;
+    use super::{c_int, c_void, reads, writes};
 
     const SW_EVENT_ERROR: c_int = 1 << 11;
     const SW_EVENT_ONCE: c_int = 1 << 12;
@@ -79,6 +79,7 @@ mod epoll {
 
     #[cfg(test)]
     mod tests {
+        use super::super::{SW_EVENT_READ, SW_EVENT_WRITE};
         use super::*;
 
         #[test]
@@ -131,7 +132,7 @@ pub use kqueue::*;
     target_os = "dragonfly"
 ))]
 mod kqueue {
-    use super::*;
+    use super::{SW_EVENT_READ, SW_EVENT_WRITE, c_int, c_void, reads, writes};
 
     /// `NOTE_EOF` where the platform defines it (upstream's `#ifdef NOTE_EOF`).
     #[cfg(any(target_os = "freebsd", target_os = "openbsd"))]
