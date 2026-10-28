@@ -280,7 +280,7 @@ fn set_received(call: &Call, buffer: *mut zend_string, length: usize, bytes: isi
             // SAFETY: an unshared buffer string the transfer filled `used` bytes of.
             let buffer = unsafe { recycle(buffer, length, used) };
             // SAFETY: the return value takes the buffer's only reference.
-            unsafe { call.set_str(buffer) };
+            unsafe { call.set_string(buffer) };
         }
         result => {
             // SAFETY: the buffer was never shared.
@@ -530,7 +530,7 @@ fn recv_packet(call: &Call) {
     // SAFETY: as above.
     unsafe { string::truncate(packet, length) };
     // SAFETY: as above.
-    unsafe { call.set_str(packet) };
+    unsafe { call.set_string(packet) };
 }
 
 /// `send` and `sendAll`: `(string $data, float $timeout = 0): int|false`.
@@ -869,7 +869,7 @@ fn recvfrom(call: &Call) {
     // SAFETY: an unshared buffer string `used` bytes of which were filled.
     unsafe { string::truncate(buffer, used) };
     // SAFETY: the return value takes the buffer's only reference.
-    unsafe { call.set_str(buffer) };
+    unsafe { call.set_string(buffer) };
 }
 
 /// `address` and `port` of the socket's last address into `array`.

@@ -6,6 +6,8 @@
 #include "php.h"
 #include "zend_exceptions.h"
 #include "zend_interfaces.h"
+#include "ext/standard/url.h"
+#include "ext/date/php_date.h"
 
 /* zend_object_alloc: emalloc the object and its property slots and zero the
  * bytes before the embedded zend_object. */
@@ -26,8 +28,7 @@ zend_string *swr_zend_string_alloc(size_t length);
 zend_string *swr_zend_string_realloc(zend_string *string, size_t length);
 void swr_zend_string_free(zend_string *string);
 
-/* ZVAL_STR, ZVAL_EMPTY_STRING and ZVAL_EMPTY_ARRAY. */
-void swr_zval_str(zval *target, zend_string *string);
+/* ZVAL_EMPTY_STRING and ZVAL_EMPTY_ARRAY. */
 void swr_zval_empty_string(zval *target);
 void swr_zval_empty_array(zval *target);
 
@@ -41,6 +42,13 @@ void swr_zval_try_delref(zval *value);
 
 /* array_init. */
 void swr_zend_array_init(zval *value);
+
+/* zend_string_init (request memory), zend_string_copy (add a reference),
+ * zend_string_release and ZVAL_STR (the zval takes over the reference). */
+zend_string *swr_zend_string_init(const char *text, size_t length);
+zend_string *swr_zend_string_copy(zend_string *string);
+void swr_zend_string_release(zend_string *string);
+void swr_zval_str(zval *value, zend_string *string);
 
 /* Swoole's sw_zend_register_class_alias for a name without a leading
  * backslash: a lowercased, interned, persistent alias. */

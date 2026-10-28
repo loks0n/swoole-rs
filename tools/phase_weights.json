@@ -120,7 +120,6 @@
  "httpbindings-codec-5": 10,
  "httpbindings-codec-6": 8,
  "httpbindings-codec-7": 10,
- "httpbindings-cookie": 11,
  "httpbindings-emission": 14,
  "httpbindings-emission-without-compression": 10,
  "httpbindings-emission-without-zlib": 10,
