@@ -24,16 +24,9 @@ return {buffer.bytes,std::string(temporary.str,24),form.upload_filesize,request.
 RUN(upstream_multipart_headers)
 RUN(candidate_multipart_headers)
 #undef RUN
-int main(int argc,char **argv){try{unsigned cases=0,failures=0;auto check=[&](const std::string &name,const std::string &value,int fail,int file,bool seeded){auto a=run_upstream_multipart_headers(name,value,fail,file,seeded);auto b=run_candidate_multipart_headers(name,value,fail,file,seeded);if(a.buffer!=b.buffer||a.temp!=b.temp||a.uploaded!=b.uploaded||a.excepted!=b.excepted||a.fp!=b.fp||a.error!=b.error||a.threw!=b.threw||a.events!=b.events||a.scratch!=b.scratch){std::cerr<<"name="<<name<<" value="<<value<<" append="<<fail<<" file="<<file<<" seeded="<<seeded<<'\n';throw std::runtime_error("multipart header effects/scratch/state mismatch");}++cases;if(a.threw)++failures;};
+int main(){try{unsigned cases=0,failures=0;auto check=[&](const std::string &name,const std::string &value,int fail,int file,bool seeded){auto a=run_upstream_multipart_headers(name,value,fail,file,seeded);auto b=run_candidate_multipart_headers(name,value,fail,file,seeded);if(a.buffer!=b.buffer||a.temp!=b.temp||a.uploaded!=b.uploaded||a.excepted!=b.excepted||a.fp!=b.fp||a.error!=b.error||a.threw!=b.threw||a.events!=b.events||a.scratch!=b.scratch){std::cerr<<"name="<<name<<" value="<<value<<" append="<<fail<<" file="<<file<<" seeded="<<seeded<<'\n';throw std::runtime_error("multipart header effects/scratch/state mismatch");}++cases;if(a.threw)++failures;};
 const std::vector<std::string>names={"Content-Disposition","content-disposition","CONTENT-DISPOSITION","Content-Disposition ","Content-Type","",std::string("content-disposition\0x",21)};
 const std::vector<std::string>values={"","form-data; name=\"x\"","filename","filename=","FiLeNaMe=\"x.txt\"; filename=\"y\"","filename =x;filename=z","=filename;\tfilename=ignored",";; \r\nfilename=x;other=y",std::string("form-data\0;filename=x",21),"filename=x\0", "fileName;other=value"};
-if(argc==2 && std::string(argv[1])=="--positive-only") {
-    for(const auto &name:std::vector<std::string>{"Content-Disposition","content-disposition","CONTENT-DISPOSITION","Content-Type"})
-        for(const auto &value:std::vector<std::string>{"form-data; name=\"field\"", "form-data; name=\"upload\"; filename=\"plain.txt\"", "filename=plain.txt", "text/plain"})
-            check(name,value,-1,0,false);
-    std::cout<<"{\"multipart_header_cases\":"<<cases<<",\"native_append_failures\":"<<failures<<",\"errors\":0,\"positive_only\":true}\n";
-    return 0;
-}
 // Warm native exception/stdio-independent paths before comparing errno.
 check("Content-Disposition","filename=x",0,0,false);
 for(auto &name:names)for(auto &value:values)for(int fail:{-1,0,1,2,3})for(int file:{0,1,2})for(bool seeded:{false,true})check(name,value,fail,file,seeded);

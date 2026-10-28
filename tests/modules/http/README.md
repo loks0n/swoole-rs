@@ -26,23 +26,23 @@ ASan/UBSan; the Rust archive is uninstrumented unless `--rust-sanitize` is used
 (Linux; builds a private ASan HTTP archive, precompiled std stays
 uninstrumented). Gates marked `[A|R]` take `--archive PATH` or `--rust-sanitize`;
 the rest require `--archive PATH`. All take `--source PINNED_GIT --output REPORT`.
-`tools/dev.py` registers most of them.
+`tools/dev.py` registers each as an `http-*` phase.
 
 | Script | Checks |
 | --- | --- |
-| `gate.py` (`--url-positive-only`) | URL encode/decode, boundary, method, status helpers; five unchanged original core-test bodies |
+| `gate.py` | URL encode/decode, boundary, method, status helpers; five unchanged original core-test bodies |
 | `framing_gate.py` | Request framing and buffer metadata; original `get_protocol`, `has_expect_header`, `all_method` bodies |
 | `range_gate.py` [A\|R] | `parse_range`, including allocation-failure injection and the pinned `sw_snprintf` |
 | `headers_gate.py` | FormData/header callbacks, errno, reentrancy |
-| `proxy_gate.py` [A\|R] (`--auth-positive-only`) | Proxy auth packing/handshake with actual base64 |
-| `static_gate.py` [A\|R] (`--positive-only`) | Static response method, send order, HEAD/keep-alive changes |
+| `proxy_gate.py` [A\|R] | Proxy auth packing/handshake with actual base64 |
+| `static_gate.py` [A\|R] | Static response method, send order, HEAD/keep-alive changes |
 | `path_gate.py` [A\|R] | `try_serve`/`get_absolute_path`/`set_filename` |
 | `conditional_gate.py` | Date callers with libc `strptime`/`gmtime`/`mktime` |
-| `index_page_gate.py` (`--positive-only`) | `make_index_page` with pinned String `format_impl` |
+| `index_page_gate.py` | `make_index_page` with pinned String `format_impl` |
 | `multipart_gate.py` | Multipart upload accounting callbacks |
-| `multipart_headers_gate.py` [A\|R] (`--positive-only`) | Multipart header field/value and filename callbacks |
+| `multipart_headers_gate.py` [A\|R] | Multipart header field/value and filename callbacks |
 | `multipart_emit_gate.py` [A\|R] | Header-complete/data-end/part-begin/body-end callbacks |
-| `rewrite_gate.py` [A\|R] (`--positive-only`) | `add_rewrite_rule`/`apply_rewrite_rules` |
+| `rewrite_gate.py` [A\|R] | `add_rewrite_rule`/`apply_rewrite_rules` |
 | `inline_gate.py` [A\|R] | StaticHandler inline content-type/boundary/path/error bodies |
 | `dispatch_gate.py` [A\|R] | Route/index/proxy-init/status bodies, TLS status buffer |
 | `locale_gate.py` | Case-insensitive helpers against libc `strncasecmp` across available locales |
@@ -66,11 +66,9 @@ These compile the real pinned and patched headers/translation units (no
 
 ## PHP checks
 
-These take `--engine NAME=/abs/swoole.so` (first `upstream=`), optional
-`--php`/`--php-extension`, and `--output`.
-
-- `binding_reflection.py`: class/method metadata of five HTTP PHP classes
-  must equal the upstream engine.
+The merge tier's `api-surface` phase (`tools/capability_inventory.py
+--require-same-api`) compares every Swoole class's reflected metadata,
+including parameter and property defaults, against upstream.
 
 ### Original PHPTs
 
@@ -91,3 +89,34 @@ Upstream PHPTs for this module run in the merge tier's PHPT gate (the `phpt-*` j
 - `boundary_rng_gate.py` covers only the positive 24-byte length.
 - RequestV2's capability stays off pending paired callers. Mixed Rust/native ASan
   linking fails on macOS.
+
+## Gate audit (#482)
+
+Kept (23). Each differential gate compares pinned and patched native bodies
+under ASan/UBSan, most with allocation-failure or errno injection that no PHPT,
+Rust unit test or fuzz target reaches:
+`http-native` (also the five original core-test bodies), `-ranges`, `-framing`,
+`-headers`, `-proxy`, `-static`, `-paths`, `-index-pages`, `-conditionals`,
+`-multipart`, `-multipart-headers`, `-multipart-emit`, `-rewrites`, `-inline`,
+`-dispatch`, `-locales` (libc locales), `-context`, `-request-lifecycle`,
+`-boundary-rng` (production corebase export) and `-cookie-flow-positive`.
+`-status-buffer-positive` covers the TLS status buffer across threads.
+`-status-codes-positive` covers the public `int[128]` ABI.
+`-directory-compatibility` covers legacy StaticHandler layout under C++14 and C++17.
+
+Deleted (6 duplicates and one ported phase):
+
+- `http-url-encode-positive`: the same 4,096 seeded encodings (same seed and
+  check) run inside `http-native`.
+- `http-static-positive`, `http-rewrites-positive`: strict subsets of `http-static`
+  and `http-rewrites`, which run the same scenarios plus injected failures.
+- `http-index-append-positive`, `http-proxy-auth-positive`: fault-free
+  `make_index_page` and proxy auth differentials. `http-index-pages` and
+  `http-proxy` run the same functions over a wider path, entry, credential and
+  capacity domain.
+- `http-multipart-headers-positive`: replaced by the full
+  `http-multipart-headers`, which had no phase before. It adds append and stdio
+  failures, seeded state and 2,048 random values.
+- `http-binding-reflection`: ported into `api-surface`. `tools/php_api_inventory.php`
+  now records parameter default values, class modifiers and default properties
+  for every Swoole class, not just these five.

@@ -16,23 +16,8 @@ void sw_free(void *p) { std::free(p); }
 size_t sw_snprintf(char *data, size_t size, const char *format, ...) {
     va_list args; va_start(args, format); int n = std::vsnprintf(data, size, format, args); va_end(args); return n < 0 ? 0 : size_t(n);
 }
-int main(int argc, char **argv) {
+int main() {
     try {
-        if (argc == 2 && std::string(argv[1]) == "url-positive-only") {
-            uint32_t random = 8293;
-            auto next = [&]() { random ^= random << 13; random ^= random >> 17; random ^= random << 5; return random; };
-            for (size_t n = 0; n < 4096; ++n) {
-                // The compared domain: inputs that start with an unreserved byte.
-                std::string input("A");
-                for (size_t i = 0; i < n % 257; ++i) input += char(next());
-                auto before = upstream::url_encode(input.data(), input.size());
-                allocations = 0; auto after = candidate::url_encode(input.data(), input.size());
-                check(allocations == 1 && std::strcmp(before, after) == 0, "encoded bytes/single allocation");
-                sw_free(before); sw_free(after);
-            }
-            std::cout << "{\"positive_encoding_cases\":4096,\"original_tests_executed\":0,\"errors\":0}\n";
-            return 0;
-        }
         run_original_assertions();
         unsigned cases = 0;
         for (int code = -128; code <= 1024; ++code) {

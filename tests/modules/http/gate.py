@@ -6,7 +6,6 @@ import io
 import json
 import os
 import shlex
-import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -117,23 +116,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--archive', type=Path, required=True)
-    parser.add_argument('--url-positive-only', action='store_true', help='Existing defined positive encoding controls only; no decoder, failure or reference diagnostic')
     parser.add_argument('--output', default='target/reports/http-helpers.json')
     args = parser.parse_args(); local = Path(__file__).resolve().parent
     patch = ROOT / 'migration/patches/http/0001-http-helpers.patch'
     report = {'pin': PIN, 'scope': 'Extracted actual first-party helper bodies; not full native TU, original parser/server tests or PHP parity', 'cpp_sanitized_rust_not_instrumented': True}
-    if args.url_positive_only:
-        report.update(positive_encoding_only=True, full_gate_passed=False, passed=False, unrun_profiles=['original helper tests', 'status/method/boundary controls', 'all decoding', 'empty/fully-escaped reference encoding', 'allocation failures/bailouts', 'reference diagnostic', 'performance'])
-    def room_before_compile(name):
-        if not args.url_positive_only:
-            return True
-        free = shutil.disk_usage(ROOT).free
-        report.setdefault('compiler_preflights', []).append({'name': name, 'free_bytes': free, 'guard_bytes': 4*1024**3})
-        if free < 4*1024**3:
-            report['blocked'] = 'unchanged disk guard'
-            write_report(args.output, report)
-            return False
-        return True
     with tempfile.TemporaryDirectory(prefix='swr-http-') as temp:
         tree = Path(temp)
         data = subprocess.check_output(['git', '-C', str(args.source), 'archive', PIN, 'include', 'thirdparty/multipart_parser.h', 'src/protocol/http.cc'])
@@ -144,11 +130,10 @@ def main():
         source = tree / 'src/protocol/http.cc'; original = source.read_text()
         tests = subprocess.check_output(['git', '-C', str(args.source), 'show', PIN + ':core-tests/src/server/http_server.cpp'], text=True)
         assertions = tree / 'original_assertions.cc'; assertions.write_text(original_assertions(tests))
-        report['selected_original_tests'] = [] if args.url_positive_only else ORIGINAL_TESTS
+        report['selected_original_tests'] = ORIGINAL_TESTS
         apply_http_patch(tree, patch, report)
         native_command = ['c++', '-std=c++14', '-O1', '-g', '-I'+str(tree/'include'), '-I'+str(tree), '-I'+str(ROOT/'native/http'), '-fsanitize=address,undefined', '-fno-sanitize-recover=all', '-c', str(source), '-o', str(tree/'http.o')]
         native_command += shlex.split(subprocess.check_output(['pkg-config', '--cflags', 'openssl'], text=True))
-        if not room_before_compile('whole_native_tu'): return 1
         native = run_isolated(native_command, timeout=60)
         report['native_cxx_standard'] = 'c++14'
         report['shim_cxx_standard'] = 'c++17'
@@ -161,12 +146,11 @@ def main():
         command += shlex.split(subprocess.check_output(['pkg-config', '--cflags', '--libs', 'openssl'], text=True))
         if sys.platform.startswith('linux'): command += ['-ldl', '-lpthread', '-lrt', '-lutil']
         report['compile_command'] = command
-        if not room_before_compile('actual_positive_bodies'): return 1
         compiled = run_isolated(command, timeout=60); report['compile'] = {'returncode': compiled.returncode, 'stderr': compiled.stderr}
         if compiled.returncode: write_report(args.output, report); print(compiled.stderr, file=sys.stderr); return 1
         symbols = subprocess.check_output(['nm', '-g', str(binary)], text=True)
         assert all(name in symbols for name in ['swr_v1_http_status', 'swr_v1_http_boundary', 'swr_v1_http_url_encode', 'swr_v1_http_url_decode', 'swr_v1_http_method'])
-        result = run_isolated([str(binary), *(['url-positive-only'] if args.url_positive_only else [])], timeout=30); report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
+        result = run_isolated([str(binary)], timeout=30); report['run'] = {'returncode': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}
         if result.returncode: write_report(args.output, report); print(result.stderr, file=sys.stderr); return 1
         report['outcome'] = json.loads(result.stdout.splitlines()[-1])
         report['passed'] = True

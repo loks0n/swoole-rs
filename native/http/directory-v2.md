@@ -48,6 +48,6 @@ Known difference: allocation cadence, peak memory and destruction order differ
 from native set nodes.
 
 Tests: `tests/modules/http/context_gate.py`, `directory_compat.py`,
-`index_page_gate.py --positive-only`. C++20 builds of the pinned SDK fail
+`index_page_gate.py`. C++20 builds of the pinned SDK fail
 `-Werror` on a deprecated volatile increment in `swoole_process_pool.h`
 (upstream). Use C++14/17.
