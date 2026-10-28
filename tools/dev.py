@@ -950,6 +950,8 @@ git config --global --add safe.directory '*'
 rustup install >/dev/null
 cargo fetch --locked -q
 python3 tools/build_upstream.py > target/upstream/build-upstream.log 2>&1 || { tail -20 target/upstream/build-upstream.log; exit 1; }
+# A repository script (benchmarks/callgrind.py, a gate) runs as itself.
+case "$1" in *.py) exec python3 "$@" ;; esac
 extensions=
 case " $* " in *" --php-extension "*) ;; *" candidate "*|*" integrate "*)
     for name in $(sed -n 's/^extension=\(.*\)/\1/p' /etc/php/*/cli/conf.d/*.ini | sed 's/\.so$//' | sort -u); do
@@ -961,11 +963,12 @@ exec python3 tools/dev.py "$@" $extensions
 
 
 def docker(arguments):
-    """dev.py docker [-- dev.py arguments]: run a dev.py command in the Linux dev image."""
+    """dev.py docker [-- dev.py arguments | -- SCRIPT.py arguments]: run a dev.py command, or a
+    repository script, in the Linux dev image."""
     if arguments[:1] == ['--']:
         arguments = arguments[1:]
     if not arguments:
-        sys.exit('usage: dev.py docker [--] LANE [dev.py options]')
+        sys.exit('usage: dev.py docker [--] LANE [dev.py options] | [--] SCRIPT.py [arguments]')
     if '--phase' in arguments and '--with-prerequisites' not in arguments:
         arguments = [*arguments, '--with-prerequisites']
     free = shutil.disk_usage(ROOT).free
