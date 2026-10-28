@@ -118,6 +118,8 @@ typedef struct swr_v1_worker_record {
 } swr_v1_worker_record;
 uint8_t swr_v1_worker_status(const swr_v1_worker_record *);
 void swr_v1_worker_set_status(swr_v1_worker_record *, uint8_t status);
+uint8_t swr_v1_worker_type(const swr_v1_worker_record *);
+void swr_v1_worker_set_type(swr_v1_worker_record *, uint8_t kind);
 #ifdef __cplusplus
 }
 #endif

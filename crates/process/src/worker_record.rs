@@ -62,6 +62,27 @@ pub unsafe extern "C" fn swr_v1_worker_set_status(worker: *mut WorkerRecord, sta
     unsafe { (*worker).status = status };
 }
 
+/// The worker's kind (C++ `type`: `SW_EVENT_WORKER`/`SW_TASK_WORKER`/`SW_USER_WORKER`/…).
+///
+/// # Safety
+/// `worker` points to a live `Worker`/`WorkerRecord` in its backing memory.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_worker_type(worker: *const WorkerRecord) -> u8 {
+    // SAFETY: the caller lends a live worker record; only the field is read, with no
+    // reference to the whole record (other processes write it in shared memory).
+    unsafe { (*worker).kind }
+}
+
+/// Set the worker's kind (C++ `type`).
+///
+/// # Safety
+/// `worker` points to a live, writable `Worker`/`WorkerRecord`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn swr_v1_worker_set_type(worker: *mut WorkerRecord, kind: u8) {
+    // SAFETY: the caller lends a live, writable worker record; only the field is written.
+    unsafe { (*worker).kind = kind };
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,6 +103,18 @@ mod tests {
         unsafe {
             swr_v1_worker_set_status(&raw mut record, 2);
             assert_eq!(swr_v1_worker_status(&raw const record), 2);
+        }
+    }
+
+    #[test]
+    fn type_accessors_round_trip() {
+        let mut record: WorkerRecord = unsafe { std::mem::zeroed() };
+        unsafe {
+            swr_v1_worker_set_type(&raw mut record, 3);
+            assert_eq!(swr_v1_worker_type(&raw const record), 3);
+            // independent of status
+            swr_v1_worker_set_status(&raw mut record, 1);
+            assert_eq!(swr_v1_worker_type(&raw const record), 3);
         }
     }
 }

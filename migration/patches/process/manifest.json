@@ -52,6 +52,20 @@
         "src/server/process.cc",
         "src/server/thread.cc"
       ]
+    },
+    {
+      "path": "0007-worker-type-field.patch",
+      "sha256": "e430b3ed18da7a33296f631c8d1fa7481e33da1331b41311f69115cb1717fa71",
+      "upstream_paths": [
+        "include/swoole_process_pool.h",
+        "src/os/process_pool.cc",
+        "src/server/manager.cc",
+        "src/server/master.cc",
+        "src/server/process.cc",
+        "src/server/reactor_process.cc",
+        "src/server/thread.cc",
+        "src/server/worker.cc"
+      ]
     }
   ]
 }
