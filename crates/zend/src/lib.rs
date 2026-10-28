@@ -17,9 +17,34 @@ mod call;
 mod class;
 mod error;
 mod object;
+mod value;
 
 pub use call::{Call, Invalid};
 pub use class::{Class, class_name, unset_property_deny};
 pub use error::{throw_error, throw_exception};
-pub use object::{Object, set_object};
+pub use object::{Object, init_object, set_object};
 pub use swoole_rs_zend_sys as sys;
+pub use value::{
+    bytes, declare_long, declare_null, long_of, push_string, set_key, string_of, type_of,
+    update_long, value_of,
+};
+
+/// Export method handlers under Zend's names (`zim_<class>_<method>`), each
+/// running a body that takes the parsed `Call`.
+#[macro_export]
+macro_rules! handlers {
+    ($($name:ident => $body:expr;)*) => {$(
+        /// A Zend method handler.
+        /// # Safety
+        /// Called by Zend with a live frame and return slot.
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(
+            frame: *mut $crate::sys::zend_execute_data,
+            value: *mut $crate::sys::zval,
+        ) {
+            // SAFETY: per Zend's handler contract.
+            let call = unsafe { $crate::Call::new(frame, value) };
+            $body(&call);
+        }
+    )*};
+}

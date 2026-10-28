@@ -3,7 +3,7 @@
 use crate::{
     Class,
     sys::{
-        _zval_struct__bindgen_ty_1, IS_OBJECT_EX, object_properties_init,
+        _zval_struct__bindgen_ty_1, IS_OBJECT_EX, object_init_ex, object_properties_init,
         swr_zend_class_set_create_object, swr_zend_object_alloc, zend_class_entry, zend_object,
         zend_object_handlers, zend_object_std_dtor, zend_object_std_init, zend_value, zval,
     },
@@ -93,6 +93,14 @@ pub unsafe fn set_object(target: *mut zval, std: *mut zend_object) {
             type_info: IS_OBJECT_EX,
         };
     }
+}
+
+/// `object_init_ex(target, ce)`: a new object of class `ce` in `target`.
+/// # Safety
+/// `target` is a writable zval and `ce` a registered, instantiable class.
+pub unsafe fn init_object(target: *mut zval, ce: *mut zend_class_entry) {
+    // SAFETY: per the caller; it only fails for abstract classes and interfaces.
+    let _ = unsafe { object_init_ex(target, ce) };
 }
 
 #[cfg(test)]

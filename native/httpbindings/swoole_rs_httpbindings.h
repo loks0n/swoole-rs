@@ -2,6 +2,9 @@
 #define SWOOLE_RS_HTTPBINDINGS_H
 #include <stddef.h>
 #include <stdint.h>
+#ifndef __cplusplus
+#include <stdbool.h>
+#endif
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -73,6 +76,54 @@ uint32_t swr_v1_httpbindings_server_level(int64_t);
 int32_t swr_v1_httpbindings_handler(swr_v1_httpbindings_text, swr_v1_httpbindings_text);
 typedef struct {int32_t per_process,system,timeout,bad_ssl,canceled;} swr_v1_httpbindings_accept_errors;
 int32_t swr_v1_httpbindings_accept(uint32_t,int64_t,int32_t,const swr_v1_httpbindings_accept_errors *);
+
+/* PHP Swoole\Http\Request and Swoole\Http\Response (crates/phphttp). MINIT
+ * passes upstream's method tables and gets the registered class back; both
+ * objects hold their swoole::http::Context pointer. */
+struct _zend_class_entry;
+struct _zend_function_entry;
+struct _zend_object;
+struct _zend_string;
+struct _zval_struct;
+struct _zend_class_entry *swr_v1_phphttp_request_minit(const struct _zend_function_entry *methods);
+struct _zend_class_entry *swr_v1_phphttp_response_minit(const struct _zend_function_entry *methods);
+void *swr_v1_phphttp_context(const struct _zend_object *object);
+void swr_v1_phphttp_set_context(struct _zend_object *object, void *context);
+
+/* What those methods ask of the context, implemented in ext-src over
+ * swoole::http::Context until it moves to Rust. */
+enum { SWR_PHPHTTP_DETACHED = 2, SWR_PHPHTTP_SEND_TRAILER = 256 };
+enum { SWR_PHPHTTP_HEADER = 0, SWR_PHPHTTP_COOKIE = 1, SWR_PHPHTTP_TRAILER = 2 };
+void swr_http_host_error(int code, int always, const char *message);
+uint32_t swr_http_host_flags(const void *context);
+int64_t swr_http_host_fd(const void *context);
+void swr_http_host_mark(void *context, uint32_t flag);
+void swr_http_host_request_free(void *context);
+const char *swr_http_host_request_body(void *context, size_t *length);
+struct _zval_struct *swr_http_host_request_data(void *context);
+void swr_http_host_request_create(struct _zval_struct *return_value, struct _zval_struct *options);
+int64_t swr_http_host_request_parse(void *context, const char *data, size_t length);
+void swr_http_host_request_method(void *context, struct _zval_struct *return_value);
+void swr_http_host_response_free(void *context);
+void swr_http_host_response_create(struct _zval_struct *object, int64_t fd, struct _zval_struct *return_value);
+struct _zval_struct *swr_http_host_response_property(void *context, int which);
+void swr_http_host_write(void *context, struct _zend_string *data, struct _zval_struct *return_value);
+void swr_http_host_end(void *context, struct _zend_string *data, struct _zval_struct *return_value);
+bool swr_http_host_send_file(void *context, struct _zend_string *file, int64_t offset, int64_t length);
+void swr_http_host_redirect(void *context, struct _zval_struct *url, struct _zval_struct *code, struct _zval_struct *return_value);
+struct _zend_string *swr_http_host_cookie(struct _zval_struct *name_or_object, bool encode, struct _zend_string *value,
+    int64_t expires, struct _zend_string *path, struct _zend_string *domain, bool secure, bool http_only,
+    struct _zend_string *same_site, struct _zend_string *priority, bool partitioned);
+void swr_http_host_status(void *context, int64_t status, const char *reason, size_t reason_length);
+bool swr_http_host_set_header(void *context, const char *key, size_t key_length, struct _zval_struct *value, bool format);
+void swr_http_host_disconnect(void *context, int64_t code, struct _zend_string *reason, struct _zval_struct *return_value);
+void swr_http_host_push(void *context, struct _zval_struct *data, int64_t opcode, struct _zval_struct *flags,
+    struct _zval_struct *return_value);
+void swr_http_host_ping(void *context, struct _zend_string *data, struct _zval_struct *return_value);
+bool swr_http_host_goaway(void *context, int64_t code, struct _zend_string *debug);
+bool swr_http_host_upgrade(void *context);
+bool swr_http_host_close(void *context);
+void swr_http_host_recv(void *context, double timeout, struct _zval_struct *return_value);
 #ifdef __cplusplus
 }
 #endif

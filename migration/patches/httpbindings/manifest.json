@@ -28,6 +28,14 @@
       "upstream_paths": [
         "ext-src/swoole_http_server_coro.cc"
       ]
+    },
+    {
+      "path": "0006-php-request-response.patch",
+      "sha256": "8119b5fb45ae0c56e9ac314da277cacdd560e822ec3feb356abc74baf60814ed",
+      "upstream_paths": [
+        "ext-src/swoole_http_request.cc",
+        "ext-src/swoole_http_response.cc"
+      ]
     }
   ]
 }

@@ -121,6 +121,9 @@ pub use swoole_rs_inflate as inflate;
 // Keep local Rust type names scoped; C exports retain their no_mangle names.
 pub use swoole_rs_httpbindings as httpbindings;
 
+#[cfg(feature = "httpbindings")]
+pub use swoole_rs_phphttp::*;
+
 #[cfg(feature = "http2")]
 pub use swoole_rs_http2 as http2;
 
