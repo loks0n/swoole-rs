@@ -131,7 +131,6 @@ pub(crate) fn range_format(
     i32::from(libc_overflow)
 }
 
-#[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct HttpRangeFinish {
     pub(crate) content_length: usize,
@@ -141,8 +140,8 @@ pub(crate) struct HttpRangeFinish {
     pub(crate) end_length: usize,
     pub(crate) phase: u32,
     pub(crate) status: i32,
-    pub(crate) if_range: u32,
-    pub(crate) modified: u32,
+    pub(crate) if_range: bool,
+    pub(crate) modified: bool,
 }
 
 impl HttpRangeFinish {
@@ -153,7 +152,7 @@ impl HttpRangeFinish {
         self.next()
     }
     fn check_date(&mut self) -> i32 {
-        if self.if_range != 0 {
+        if self.if_range {
             self.phase = 3;
             3
         } else {
@@ -183,7 +182,7 @@ impl HttpRangeFinish {
                 self.status = 206;
                 self.check_date()
             }
-            3 if self.modified != 0 => {
+            3 if self.modified => {
                 self.phase = 4;
                 4
             }
@@ -312,7 +311,7 @@ mod tests {
             task_count: 2,
             filesize: 100,
             status: 299,
-            if_range: 1,
+            if_range: true,
             ..Default::default()
         };
         assert_eq!(state.step(), 2);
@@ -320,7 +319,7 @@ mod tests {
         state.end_length = 9;
         assert_eq!(state.step(), 3);
         assert_eq!((state.status, state.content_length), (206, 132));
-        state.modified = 1;
+        state.modified = true;
         assert_eq!(state.step(), 4);
         assert_eq!((state.status, state.content_length), (206, 132));
         assert_eq!(state.step(), 1);
