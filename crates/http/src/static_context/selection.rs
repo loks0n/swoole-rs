@@ -13,7 +13,7 @@ impl HttpStaticContext {
         autoindex: bool,
         effects: &impl StaticEffects,
     ) -> bool {
-        if files.is_empty() || self.facts.file_ready == 0 || self.facts.kind & DIRECTORY == 0 {
+        if files.is_empty() || !self.facts.file_ready || self.facts.kind & DIRECTORY == 0 {
             return true;
         }
         if !self.get_dir_files(effects) {

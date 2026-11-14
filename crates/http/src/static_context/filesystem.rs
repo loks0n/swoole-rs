@@ -143,7 +143,7 @@ impl HttpStaticContext {
         if !self.directory.is_empty() {
             return true;
         }
-        if self.facts.file_ready == 0 || self.facts.kind & DIRECTORY == 0 {
+        if !self.facts.file_ready || self.facts.kind & DIRECTORY == 0 {
             return false;
         }
         let Some(names) = self.effect_path().and_then(|path| effects.list(path)) else {

@@ -121,7 +121,7 @@ impl<'a, E: Effects> StaticHandler<'a, E> {
         let value = context.observe();
         context.index_file().is_empty()
             && self.autoindex()
-            && value.file_ready != 0
+            && value.file_ready
             && value.kind & PATH_IS_DIRECTORY != 0
     }
 

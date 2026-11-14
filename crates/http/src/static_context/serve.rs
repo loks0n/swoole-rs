@@ -33,7 +33,7 @@ impl HttpStaticContext {
                 has_index,
                 autoindex,
             } => {
-                self.path.phase = 0;
+                self.path.phase = path::StaticPhase::Root;
                 self.path.url_length = 0;
                 self.serve.facts = if has_locations { path::LOCATIONS } else { 0 }
                     | if has_index { path::INDEX } else { 0 }
@@ -114,7 +114,7 @@ mod tests {
                 owner.serve_step(ROOT, &Event::Mime(true)),
                 Ok(Action::Done(true))
             );
-            assert_eq!(owner.path.last, 1);
+            assert_eq!(u32::from(owner.path.last), 1);
         }
     }
     #[test]

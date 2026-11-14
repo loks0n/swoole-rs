@@ -42,8 +42,7 @@ pub struct HttpStaticObservation {
     pub task_count: usize,
     pub status: i32,
     pub kind: u32,
-    pub file_ready: u32,
-    pub last: u32,
+    pub file_ready: bool,
 }
 pub struct HttpStaticContext {
     original: Vec<u8>,
@@ -122,7 +121,6 @@ impl HttpStaticContext {
     #[must_use]
     pub fn observe(&self) -> HttpStaticObservation {
         HttpStaticObservation {
-            last: self.path.last,
             directory_count: self.directory.len(),
             task_count: self.tasks.count(),
             ..self.facts
@@ -257,7 +255,7 @@ impl HttpStaticContext {
         self.facts.filesize = input.filesize;
         self.facts.mtime = input.mtime;
         self.facts.kind = input.kind;
-        self.facts.file_ready = 1;
+        self.facts.file_ready = true;
     }
     /// The multipart content type over the boundary.
     fn format_content(&mut self) -> i32 {
@@ -384,7 +382,7 @@ mod tests {
         let mut owner = make();
         let facts = owner.observe();
         assert_eq!(facts.status, 200);
-        assert_eq!(facts.file_ready, 0);
+        assert_eq!(u32::from(facts.file_ready), 0);
         for name in [b"z".as_slice(), b"a", b"z"] {
             assert_eq!(owner.directory.scan_append(name), Ok(()));
         }
