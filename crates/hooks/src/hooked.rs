@@ -185,19 +185,12 @@ pub fn connect(fd: c_int, address: &SocketAddress) -> c_int {
     if connected { 0 } else { -1 }
 }
 
-/// `accept(2)` on `fd`, the peer's address and its length into `peer`.
-fn sys_accept(fd: c_int, peer: &mut SocketAddress) -> c_int {
-    peer.len = SocketAddress::CAPACITY;
-    // SAFETY: the storage is writable for the `len` given.
-    unsafe { libc::accept(fd, (&raw mut peer.addr).cast(), &raw mut peer.len) }
-}
-
 /// Hooked `accept(2)`, the peer's address into `peer`: the accepted socket joins the
 /// map unless its fd has one.
 #[must_use]
 pub fn accept(fd: c_int, peer: &mut SocketAddress) -> c_int {
     let Some((_, socket)) = hooked(fd) else {
-        return sys_accept(fd, peer);
+        return peer.accept(fd);
     };
     let Some(conn) = socket.accept(0.0) else {
         return -1;
