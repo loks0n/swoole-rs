@@ -288,12 +288,12 @@ pub fn send_message(pool: PoolRef<'_>, worker_id: u32, message: &[u8]) -> bool {
     let index = worker_id.wrapping_sub(u32::from(pool.start_id)) as usize;
     // `pipes` owns the workers' pipes: `create` makes one per worker or none, and
     // `destroy` frees them and clears it.
-    let Some(worker) = pool.worker(index).filter(|_| !pool.pipes.is_null()) else {
+    let Some(worker) = pool.worker(index).filter(|_| pool.pipes.is_some()) else {
         return false;
     };
     let pipe = worker.pipe_master();
     let length = message.len();
-    if pool.message_bus.is_null() {
+    if !pool.has_message_bus() {
         // `pipe_master->send_async(message)`: the pipe's write, through the event
         // loop while one is available.
         let (id, flags) = (worker.id(), crate::pool::PIPE_NONBLOCK);
