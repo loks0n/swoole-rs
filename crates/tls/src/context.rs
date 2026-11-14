@@ -1002,7 +1002,8 @@ thread_local! {
     static ERROR_TEXT: RefCell<Vec<u8>> = RefCell::new(vec![0]);
 }
 
-/// `ERR_print_errors_cb`'s callback: keeps `line` as the thread's last error line.
+/// `ERR_print_errors_cb`'s callback: keeps `line` as the thread's error line. It returns
+/// 0, as upstream's `ssl_error_cb` does, so OpenSSL stops after this one error.
 extern "C" fn keep_last_line(
     line: CText<'_>,
     _length: usize,
@@ -1017,8 +1018,8 @@ extern "C" fn keep_last_line(
     0
 }
 
-/// `swoole_ssl_get_error`: drains this thread's error queue and returns its last
-/// line ("" when empty), valid until the thread's next call.
+/// `swoole_ssl_get_error`: pops this thread's oldest queued error and returns its line
+/// ("" when none is queued), valid until the thread's next call.
 #[cfg_attr(
     feature = "upstream-symbols",
     unsafe(export_name = "_Z20swoole_ssl_get_errorv")
@@ -1038,7 +1039,7 @@ pub fn error_line() -> String {
     })
 }
 
-/// Drains this thread's error queue, keeping its last line.
+/// Pops this thread's oldest queued error, keeping its line (none when the queue is empty).
 fn drain_errors() {
     ERROR_TEXT.with_borrow_mut(|text| {
         text.clear();
