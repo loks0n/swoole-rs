@@ -204,7 +204,7 @@ impl Handshake {
     /// Whether the socket is a `UringSocket`, whose handshake runs through the ring.
     #[cfg(feature = "iouring")]
     fn uring(&self) -> bool {
-        crate::uring_socket::of(self.socket).is_some()
+        crate::uring_socket::with(self.socket, |_| ()).is_some()
     }
 
     /// The socket's session over its own context.
