@@ -300,7 +300,7 @@ pub(crate) const fn status(ok: bool) -> c_int {
     if ok { OK } else { ERR }
 }
 /// `SW_EVENT_READ`, `SW_EVENT_WRITE` and `SW_SSL_STATE_READY`.
-const SSL_READY: u32 = swoole_rs_tls::SslState::SW_SSL_STATE_READY as u32;
+use swoole_rs_tls::SslState::SW_SSL_STATE_READY as SSL_READY;
 
 /// Whether the socket has TLS whose handshake is not finished.
 fn handshaking(sock: Socket<'_>) -> bool {

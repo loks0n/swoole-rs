@@ -19,7 +19,7 @@ pub(crate) mod native;
 /// `SW_FD_SESSION`, `SW_FD_STREAM_SERVER` and `SW_SSL_STATE_READY`.
 const FD_SESSION: c_int = 0;
 const FD_STREAM_SERVER: c_int = 1;
-const SSL_READY: u32 = swoole_rs_tls::SslState::SW_SSL_STATE_READY as u32;
+use swoole_rs_tls::SslState::SW_SSL_STATE_READY as SSL_READY;
 
 /// `Socket::is_stream(type)`.
 fn is_stream(port: view::Port<'_>) -> bool {

@@ -1293,7 +1293,7 @@ mod tests {
                 0
             );
             let mut socket = SocketRecord::with_fd(fds[0], 0);
-            socket.tls.state = 2;
+            socket.tls.state = crate::SslState::SW_SSL_STATE_WAIT_STREAM;
             socket.tls.want_read = true;
             let created = socket_ssl_create(
                 Socket::from_ptr(&raw mut socket).unwrap(),
@@ -1303,7 +1303,7 @@ mod tests {
             assert!(created);
             assert!(!socket.ssl().is_null());
             assert_eq!(
-                (socket.tls.state, socket.tls.want_read),
+                (socket.tls.state as u32, socket.tls.want_read),
                 (0, false),
                 "state and want flags cleared"
             );

@@ -284,8 +284,8 @@ impl Handshaking for Handshake {
             Some(Ok(Accept::Ready)) => Step::Ready,
             Some(Ok(Accept::Wait)) => Step::Wait,
             Some(Err(true)) => match socket.net(|record| record.tls.state) {
-                Some(state) if state == SslState::SW_SSL_STATE_READY as u32 => Step::Ready,
-                Some(state) if state == SslState::SW_SSL_STATE_WAIT_STREAM as u32 => Step::Wait,
+                Some(SslState::SW_SSL_STATE_READY) => Step::Ready,
+                Some(SslState::SW_SSL_STATE_WAIT_STREAM) => Step::Wait,
                 _ => Step::Again,
             },
         }
