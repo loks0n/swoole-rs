@@ -355,7 +355,7 @@ pub fn add_port<'a>(
         port.ssl = true;
         (methods().ssl_context_init)(&mut port);
     }
-    if !(methods().create_socket)(&port) {
+    if !(methods().create_socket)(&port, serv.config().enable_reuse_port.get()) {
         let errno = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
         swoole_rs_corebase::log::set_last_error(errno);
         port.delete();
@@ -687,7 +687,7 @@ mod tests {
                 },
                 close: |_| unreachable!(),
                 listen: |_| unreachable!(),
-                create_socket: |config| config.port.get() != 1,
+                create_socket: |config, _| config.port.get() != 1,
                 close_socket: |_| unreachable!(),
                 get_protocols: |_| unreachable!(),
                 init_protocol: |_| unreachable!(),

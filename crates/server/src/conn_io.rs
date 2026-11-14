@@ -168,14 +168,12 @@ fn verify_ssl(
     };
     conn.set_ssl_ready(true);
     let config = port.map(view::Port::config);
-    let fields = config.and_then(PortConfig::ssl_fields);
-    let verify_peer = fields.is_some_and(|f| f.verify_peer);
+    let (verify_peer, allow_self_signed) = config
+        .and_then(|config| config.with_ssl_fields(|_, f| (f.verify_peer, f.allow_self_signed)))
+        .unwrap_or_default();
     let peer =
         || with_thread_buffer(|buffer| tls::socket_ssl_peer_certificate_string(sock, buffer));
-    let verified = || {
-        let allow_self_signed = fields.is_some_and(|f| f.allow_self_signed);
-        tls::socket_ssl_verify(sock, allow_self_signed)
-    };
+    let verified = || tls::socket_ssl_verify(sock, allow_self_signed);
     let wanted = config.is_some_and(client_cert_file);
     match certificate(wanted, verify_peer, peer, verified) {
         Certificate::Rejected => return Handshake::Error,
@@ -243,11 +241,11 @@ fn certificate(
 
 /// Whether the TLS port has a client certificate file.
 fn client_cert_file(port: &PortConfig) -> bool {
-    let Some(context) = port.ssl_context.as_deref() else {
+    let Some(context) = port.ssl_context.get() else {
         return false;
     };
     // `client_cert_file`'s slot.
-    let slot = swr_v1_tls_owner_view(context).strings[7];
+    let slot = swr_v1_tls_owner_view(&context).strings[7];
     // SAFETY: a stable slot of the port's live owner.
     !unsafe { &*slot }.bytes().is_empty()
 }

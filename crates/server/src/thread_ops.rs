@@ -6,7 +6,7 @@
 use crate::Mode;
 use crate::reactor_thread::{HEARTBEAT, each_connection, send_event};
 use crate::records::{Connection, Lookup};
-use core::ffi::{c_int, c_long, c_void};
+use core::ffi::{c_int, c_long};
 use core::ptr;
 use swoole_rs_corebase::ServerEvent;
 use swoole_rs_reactor::Events;
@@ -30,12 +30,6 @@ const THREAD_REACTOR: u8 = 2;
 const FD_PIPE: c_int = 3;
 /// `Server::CLOSE_ACTIVELY`.
 const CLOSE_ACTIVELY: c_int = 1 << 2;
-
-/// The `MessageBus` of the context's thread, once an op has set it.
-fn bus_of(ctx: &ReactorContext<'_>) -> Option<*mut c_void> {
-    let thread = ctx.thread?;
-    Some(ptr::from_ref(&thread.bus).cast_mut().cast())
-}
 
 /// `thread->message_bus.get_pipe_socket(sock)`.
 fn pipe_socket<'b>(
@@ -242,9 +236,7 @@ pub(crate) fn main_loop(serv: view::Server<'_>, id: u16) {
         return;
     };
     record.id.set(c_int::from(id));
-    if let Some(bus) = bus_of(&ctx) {
-        swoole_rs_corebase::set_thread_message_bus(bus);
-    }
+    swoole_rs_corebase::set_thread_message_bus(ptr::from_ref(&record.bus).cast_mut().cast());
     if swoole_rs_reactor::swoole_event_init(0) < 0 {
         return;
     }
@@ -315,15 +307,10 @@ extern "C" fn on_pipe_read(reactor: Running<'_>, event: &mut Event) -> c_int {
     // SAFETY: the handler is registered only on server reactors.
     let serv = unsafe { entry::server(reactor) };
     let mut ctx = ReactorContext::new(serv, Some(reactor));
-    // `serv->get_thread(reactor->id)`, unchecked as upstream's: every worker message
-    // passes here.
-    let threads = serv.state().tables_ref().reactor_threads_ptr();
-    let thread = threads
-        .cast::<crate::reactor_ops::ThreadRecord>()
-        .wrapping_add(usize::from(reactor.handle().id()));
-    // SAFETY: this reactor thread's own record in the server's live array, which
-    // holds one for each reactor id.
-    ctx.thread = unsafe { thread.as_ref() };
+    ctx.thread = serv
+        .state()
+        .tables_ref()
+        .reactor_thread(usize::from(reactor.handle().id()));
     pipe_read(&mut ctx, event).unwrap_or(-1)
 }
 
@@ -335,12 +322,11 @@ fn pipe_read(ctx: &mut ReactorContext<'_>, event: &Event) -> Option<c_int> {
     let thread = ctx.thread_record()?;
     let bus = thread.message_bus();
     let sock = event.socket()?;
-    ctx.resp = bus.buffer();
     loop {
         if bus.read_dgram(sock) <= 0 {
             return Some(0);
         }
-        let head = *ctx.message()?;
+        let head = bus.head();
         let session = head.fd;
         match head.event() {
             Some(ServerEvent::Incoming) => {
@@ -372,7 +358,7 @@ fn pipe_read(ctx: &mut ReactorContext<'_>, event: &Event) -> Option<c_int> {
                 // SAFETY: the bus's buffer: its `EventData`, its head and the payload it
                 // counts.
                 let event =
-                    unsafe { swoole_rs_process::task_file::Packed::from_raw(ctx.resp.cast()) };
+                    unsafe { swoole_rs_process::task_file::Packed::from_raw(bus.buffer().cast()) };
                 if head.event() == Some(ServerEvent::Finish) {
                     let _ = state.callbacks.task(TaskSlot::Finish, serv, event);
                 } else {

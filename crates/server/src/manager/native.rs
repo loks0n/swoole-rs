@@ -93,15 +93,8 @@ pub(crate) fn start_manager_process(serv: view::Server<'_>) -> bool {
     if pool.message_box().is_null() && !methods::create_message_box(pool, MESSAGE_BOX_SIZE) {
         return false;
     }
-    if serv.workers().user_count() > 0 {
-        let workers = worker_methods::create_user_workers(serv);
-        let created = !workers.is_null();
-        // SAFETY: in the master before it forks or starts a thread; `config` isn't
-        // read after the write.
-        unsafe { serv.config_mut() }.user_workers = workers;
-        if !created {
-            return false;
-        }
+    if serv.workers().user_count() > 0 && !worker_methods::create_user_workers(serv) {
+        return false;
     }
     if serv.config().mode_ == Mode::Base {
         main(serv);
