@@ -1342,5 +1342,14 @@ mod tests {
         assert_ne!(swr_v1_tls_connection_index(), swr_v1_tls_port_index());
         unsafe { ERR_clear_error() };
         assert_eq!(error_line(), "");
+        // A failed open queues OpenSSL's errors (fopen's, then the BIO's), which the
+        // callback receives as lines: it returns 0, so, as upstream's, it reads one per call.
+        assert!(crate::OwnedBio::open(c"/nonexistent/swoole-rs-tls.pem").is_none());
+        for _ in 0..2 {
+            let line = error_line();
+            assert!(line.contains(":error:"), "{line}");
+            assert!(line.to_lowercase().contains("no such file"), "{line}");
+        }
+        assert_eq!(error_line(), "");
     }
 }
