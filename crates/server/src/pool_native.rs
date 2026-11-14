@@ -8,7 +8,7 @@
 //! Each hook that can reach PHP runs inside the bailout trap crates/process sets
 //! up; the frames here hold nothing to drop, so the `longjmp` may cross them.
 use core::cell::Cell;
-use core::ffi::{CStr, c_int, c_long, c_void};
+use core::ffi::{CStr, c_int, c_long};
 use core::ptr;
 use swoole_rs_corebase::CCast;
 use swoole_rs_process::worker_record::Worker as Record;
@@ -68,17 +68,6 @@ fn ipc_listener(pool: Pool<'_>) -> Option<Socket<'_>> {
     crate::view::pool_ipc_listener(pool)
 }
 
-/// The socket a hook works on, or `None`.
-fn call_socket<'a>(c: &'a PoolCall<'_>) -> Option<Socket<'a>> {
-    // SAFETY: null, or the live native socket the call holds (`PoolCall::socket`).
-    unsafe { Socket::from_ptr(c.socket().cast()) }
-}
-
-/// `socket->send_sync(data, length)` of the call's bytes on its socket, or -1 without one.
-fn send_sync(c: &PoolCall) -> isize {
-    call_socket(c).map_or(-1, |socket| upstream::send_sync(socket, c.bytes(), 0))
-}
-
 fn errno() -> c_int {
     std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
 }
@@ -98,46 +87,44 @@ fn exit_status(exited: u64) -> ExitStatus {
 
 // ---------------------------------------------------------------- message bus
 
-/// The pool's bus, which `Op::NewMessageBus` made, or `None` without one.
-fn bus_of(pool: Pool<'_>) -> Option<crate::objects::Bus<'_>> {
-    PoolBus::of_pool(pool).map(crate::objects::Bus::over)
+/// An operation over the pool's bus; the borrow ends before any PHP callback.
+fn with_bus<R>(pool: Pool<'_>, f: impl FnOnce(crate::objects::Bus<'_>) -> R) -> Option<R> {
+    PoolBus::with_pool(pool, |bus| f(crate::objects::Bus::over(bus)))
 }
 
 /// `MessageBus::read(sock)`; -1 without a socket or a bus.
 fn bus_read(pool: Pool<'_>, sock: Option<Socket<'_>>) -> isize {
-    sock.zip(bus_of(pool))
-        .map_or(-1, |(sock, bus)| bus.read(sock))
+    sock.and_then(|sock| with_bus(pool, |bus| bus.read(sock)))
+        .unwrap_or(-1)
 }
 
 /// `onMessage` with the bus's packet, then `message_bus->pop()`.
 fn bus_deliver(pool: Pool<'_>) {
-    let Some(bus) = bus_of(pool) else {
-        return;
-    };
-    let mut info = bus.head();
-    let packet = bus.packet();
-    info.len = packet.length.c_cast::<u32>();
-    on_message(
-        pool,
-        &RecvData {
+    let Some(message) = with_bus(pool, |bus| {
+        let mut info = bus.head();
+        let packet = bus.packet();
+        info.len = packet.length.c_cast::<u32>();
+        RecvData {
             info,
             data: packet.data,
-        },
-    );
-    bus.pop();
+        }
+    }) else {
+        return;
+    };
+    on_message(pool, &message);
+    PoolBus::with_pool(pool, |bus| bus.parts().0.pop());
 }
 
-/// The pool's new bus, which the pool keeps; null when its counter can't be allocated.
-fn new_message_bus() -> *mut c_void {
-    let Some([msg_id]) = mem_pool::words::<AtomicU64>(1) else {
-        return ptr::null_mut();
+/// The pool's new bus, owned, or None when its counter can't be allocated.
+fn new_message_bus() -> Option<Box<dyn core::any::Any>> {
+    let [msg_id] = mem_pool::words::<AtomicU64>(1)? else {
+        return None;
     };
     *msg_id.get_mut() = 1;
-    Box::into_raw(Box::new(new_bus(msg_id))).cast()
+    Some(Box::new(new_bus(msg_id)))
 }
 
-/// `new MessageBus()` numbering its messages from `counter`. Its owner boxes and
-/// leaks it into the `MessageBus *` it keeps, or owns it.
+/// `new MessageBus()` numbering its messages from `counter`.
 pub(crate) fn new_bus(counter: &'static AtomicU64) -> PoolBus {
     let bus = MessageBus::create(swoole_rs_corebase::constants::SW_BUFFER_SIZE_STD as usize);
     bus.count_ids(counter);
@@ -145,50 +132,33 @@ pub(crate) fn new_bus(counter: &'static AtomicU64) -> PoolBus {
 }
 
 fn bus_buffer(pool: Pool<'_>, size: u64) -> i64 {
-    i64::from(bus_of(pool).is_some_and(|bus| bus.alloc_buffer(size.c_cast::<usize>())))
-}
-
-/// `delete bus`: the record and the Rust bus it owns.
-fn free_message_bus(pool: Pool<'_>) {
-    // SAFETY: `new_message_bus`'s box, freed once: the pool forgets it after this op.
-    drop(unsafe { Box::from_raw(pool.message_bus().cast::<PoolBus>()) });
+    i64::from(with_bus(pool, |bus| bus.alloc_buffer(size.c_cast::<usize>())).unwrap_or(false))
 }
 
 // ---------------------------------------------------------------- pipes and box
 
-/// `pool->pipes`: each worker's `UnixSocket`, boxed so a worker's record keeps its
-/// pair's address while the list grows.
-type Pipes = Vec<Box<SocketPair>>;
+/// A worker's pipe, boxed in the pool's owner list so its address stays put.
+struct Pipe(SocketPair);
 
-fn free_pipes(pool: Pool<'_>) {
-    let pipes = pool.pipes().cast::<Pipes>();
-    if pipes.is_null() {
-        return;
-    }
-    // SAFETY: `Op::NewPipes`'s box, freed once.
-    for mut pair in *unsafe { Box::from_raw(pipes) } {
-        socket_pair::drop(&mut pair);
+impl Drop for Pipe {
+    fn drop(&mut self) {
+        socket_pair::drop(&mut self.0);
     }
 }
 
 /// `new UnixSocket(true, SOCK_DGRAM)` for `worker`: 0 (and no pipes) when it fails.
 fn new_pipe(pool: Pool<'_>, worker: Record<'_>) -> i64 {
-    let mut built = Box::new(unix_socket(true, libc::SOCK_DGRAM));
-    let (master, end) = built.raw_ends();
+    let mut built = Box::new(Pipe(unix_socket(true, libc::SOCK_DGRAM)));
+    let (master, end) = built.0.raw_ends();
     if master.is_null() || end.is_null() {
-        socket_pair::drop(&mut built);
-        // The pool forgets the list when this fails.
-        free_pipes(pool);
         return 0;
     }
-    // SAFETY: `Op::NewPipes` made the list.
-    let pipes = unsafe { &mut *pool.pipes().cast::<Pipes>() };
-    pipes.push(built);
     // The box keeps the pair at this address while the list owns it.
-    let pair = pipes
-        .last_mut()
-        .map_or(ptr::null_mut(), |pair| &raw mut **pair);
-    // SAFETY: the two ends of the pair the pool's list now owns until `free_pipes`,
+    let pair = &raw mut built.0;
+    if !pool.keep_pipe(built) {
+        return 0;
+    }
+    // SAFETY: the two ends of the pair the pool's list now owns until it drops,
     // in the pool's `destroy`, after which this process sends to its workers no more.
     unsafe { worker.set_pipes(pair.cast(), master.cast(), end.cast()) };
     1
@@ -352,14 +322,6 @@ fn objects(pool: Pool<'_>, op: Op, arg: u64) -> Option<i64> {
             0
         }
         Op::BusBuffer => bus_buffer(pool, arg),
-        Op::FreePipes => {
-            free_pipes(pool);
-            0
-        }
-        Op::FreeMessageBus => {
-            free_message_bus(pool);
-            0
-        }
         // The global pool's `free` is a no-op.
         Op::FreeWorkers => 0,
         _ => return None,
@@ -458,15 +420,15 @@ fn master_ops(pool: Pool<'_>, op: Op, arg: u64) -> i64 {
                 .for_each(swoole_rs_utilities::Logger::reopen);
         }
         Op::ReloadTimer => {
-            let task = pool.reload_task();
-            let timer = armed(pool, move || {
-                // SAFETY: the pool's live reload task, which owns the timer
-                // (`set_timer`), so dropping the task deletes it.
-                let task = unsafe { &mut *task };
-                task.kill_all(libc::SIGKILL, reload_warn);
+            pool.arm_reload_timer(|task| {
+                let task = ptr::from_ref(task);
+                armed(pool, move || {
+                    // SAFETY: the boxed task owns this timer and deletes it on drop;
+                    // its cell stays at this address even if the pool record moves.
+                    let task = unsafe { &*task };
+                    task.borrow_mut().kill_all(libc::SIGKILL, reload_warn);
+                })
             });
-            // SAFETY: the pool's live reload task.
-            unsafe { &mut *task }.set_timer(timer);
         }
         Op::TimerInit => {
             if swoole_timer_is_available() {
@@ -524,11 +486,7 @@ impl PoolNative for Native {
         mem_pool::alloc(size.c_cast::<u32>()).cast()
     }
 
-    fn new_pipes(&self) -> *mut c_void {
-        Box::into_raw(Box::new(Pipes::new())).cast()
-    }
-
-    fn new_message_bus(&self) -> *mut c_void {
+    fn new_message_bus(&self) -> Option<Box<dyn core::any::Any>> {
         new_message_bus()
     }
 
@@ -585,16 +543,22 @@ impl PoolNative for Native {
     }
 
     fn recv(&self, c: &mut PoolCall) {
+        // SAFETY: null, or the live socket lent by this native call.
+        let socket = unsafe { Socket::from_ptr(c.socket().cast()) };
         io(c, |c| {
             let (data, length, flags) = (c.data(), c.length(), c.flags());
             // SAFETY: the call's buffer.
             let buffer = unsafe { swoole_rs_reactor::Fill::from_raw(data, length) };
-            call_socket(c).map_or(-1, |socket| recv_sync_fill(socket, buffer, flags))
+            socket.map_or(-1, |socket| recv_sync_fill(socket, buffer, flags))
         });
     }
 
     fn send(&self, c: &mut PoolCall) {
-        io(c, send_sync);
+        // SAFETY: null, or the live socket lent by this native call.
+        let socket = unsafe { Socket::from_ptr(c.socket().cast()) };
+        io(c, |c| {
+            socket.map_or(-1, |socket| upstream::send_sync(socket, c.bytes(), 0))
+        });
     }
 
     fn close(&self, c: &PoolCall) {
@@ -649,8 +613,8 @@ impl PoolNative for Native {
         message: &[u8],
     ) -> bool {
         worker_pipe(worker, true)
-            .zip(bus_of(pool))
-            .is_some_and(|(pipe, bus)| bus.write(pipe, head, message))
+            .and_then(|pipe| with_bus(pool, |bus| bus.write(pipe, head, message)))
+            .unwrap_or(false)
     }
 
     fn task(&self, c: &mut PoolCall) {
@@ -686,14 +650,14 @@ impl PoolNative for Native {
     }
 
     fn pipe_write(&self, c: &mut PoolCall) {
-        io(c, |c| {
-            if c.flags() != 0 && swoole_event_is_available() {
+        if c.flags() != 0 && swoole_event_is_available() {
+            io(c, |c| {
                 // SAFETY: the worker's pipe, in this thread's loop.
                 unsafe { swoole_event_write(c.socket().cast(), c.data(), c.length()) }
-            } else {
-                send_sync(c)
-            }
-        });
+            });
+        } else {
+            self.send(c);
+        }
     }
 
     /// A worker loop's warning. Upstream's trace logs exist only in trace builds,

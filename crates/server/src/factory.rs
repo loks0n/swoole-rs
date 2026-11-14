@@ -73,7 +73,7 @@ fn lifecycle_step(serv: crate::view::Server<'_>, step: crate::hybrid::Step) -> b
         Step::ReleasePipeBuffers => state.message_bus().free_buffer(),
         Step::ClosePorts => {
             for &port in state.tables_ref().ports() {
-                (crate::port_config::methods().close)(port);
+                (crate::port_config::methods().close)(port.config());
             }
         }
         Step::ClearSignals => signal_upstream::clear(),
@@ -87,7 +87,9 @@ fn lifecycle_step(serv: crate::view::Server<'_>, step: crate::hybrid::Step) -> b
             let (methods, config) = (crate::port_config::methods(), port.config());
             return match step {
                 Step::Listen(_) => (methods.listen)(config),
-                Step::CreatePortSocket(_) => (methods.create_socket)(config),
+                Step::CreatePortSocket(_) => {
+                    (methods.create_socket)(config, serv.config().enable_reuse_port.get())
+                }
                 _ => {
                     (methods.close_socket)(config);
                     true
