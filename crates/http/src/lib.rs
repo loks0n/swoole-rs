@@ -51,7 +51,7 @@ mod static_path;
 pub use maps::{method, method_string};
 use range::HttpRangeState;
 pub use static_headers::{HttpStaticHeaders, StaticHead, StaticRange, static_headers};
-pub use static_path::{HttpStaticPath, location_match};
+pub use static_path::{HttpStaticPath, StaticPhase, location_match};
 
 /// `input` up to its first NUL, or all of it.
 fn c_text(input: &[u8]) -> &[u8] {
