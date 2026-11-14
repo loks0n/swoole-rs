@@ -26,7 +26,7 @@ pub(super) struct HttpContextRange {
     last_length: usize,
     written: usize,
     length: usize,
-    if_range: u32,
+    if_range: bool,
 }
 /// The effect a range step waits on, or that the invocation is done.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,12 +39,11 @@ enum Effect {
     /// The If-Range date.
     Date,
 }
-/// What the last effect observed: the part's MIME type, the boundary, the date.
+/// What the last effect observed: the part's MIME type or the If-Range date.
 #[derive(Default)]
 struct Observation<'a> {
     mime: &'a [u8],
-    boundary_ready: u32,
-    modified: u32,
+    modified: bool,
 }
 impl HttpStaticContext {
     /// Upstream's `parse_range(range, if_range)`: the `Range` and `If-Range` headers
@@ -56,36 +55,31 @@ impl HttpStaticContext {
         effects: &impl StaticEffects,
     ) {
         let range = range.unwrap_or_default();
-        if self
-            .range_begin(range.len(), u32::from(if_range.is_some()))
-            .is_err()
-        {
+        if self.range_begin(range.len(), if_range.is_some()).is_err() {
             return;
         }
         loop {
             let observed = match self.range_step(range) {
                 Ok(Effect::Header) => {
                     // The pinned compiler's argument order: the boundary, then the MIME type.
-                    let boundary_ready = self.ensure_boundary(effects);
+                    self.ensure_boundary(effects);
                     let mime = effects.mime(self.filename());
                     let observed = Observation {
                         mime: &mime,
-                        boundary_ready,
-                        modified: 0,
+                        modified: false,
                     };
                     if self.range_resume(&observed) == Ok(true) {
                         effects.overflow();
                     }
                     continue;
                 }
-                Ok(Effect::Boundary) => Observation {
-                    boundary_ready: self.ensure_boundary(effects),
-                    ..Observation::default()
-                },
+                Ok(Effect::Boundary) => {
+                    self.ensure_boundary(effects);
+                    Observation::default()
+                }
                 Ok(Effect::Date) => Observation {
-                    modified: u32::from(
-                        effects.modified_range(if_range.unwrap_or_default(), self.facts.mtime),
-                    ),
+                    modified: effects
+                        .modified_range(if_range.unwrap_or_default(), self.facts.mtime),
                     ..Observation::default()
                 },
                 _ => return,
@@ -95,14 +89,13 @@ impl HttpStaticContext {
     }
     /// Upstream's `ensure_boundary`: the boundary, made from random characters
     /// the first time.
-    fn ensure_boundary(&mut self, effects: &impl StaticEffects) -> u32 {
+    fn ensure_boundary(&mut self, effects: &impl StaticEffects) {
         if let Some(count) = static_boundary(self.boundary.len()) {
             let mut random = [0u8; BOUNDARY_SIZE];
             let count = count.min(BOUNDARY_SIZE - 1);
             effects.random(&mut random, count);
             self.set_boundary(random.get(..count).unwrap_or_default());
         }
-        1
     }
     /// The response's `Content-Type`: multipart with several ranges, else the file's.
     pub fn content_type(&mut self, effects: &impl StaticEffects) -> Vec<u8> {
@@ -114,7 +107,7 @@ impl HttpStaticContext {
         self.content.clone()
     }
     /// Begin one invocation; previous committed tasks persist, scratch resets.
-    fn range_begin(&mut self, length: usize, if_range: u32) -> Result<(), i32> {
+    fn range_begin(&mut self, length: usize, if_range: bool) -> Result<(), i32> {
         if length > isize::MAX as usize {
             return Err(OVERFLOW);
         }
@@ -237,9 +230,6 @@ impl HttpStaticContext {
     fn range_resume(&mut self, observed: &Observation<'_>) -> Result<bool, i32> {
         match self.range.stage {
             Stage::Header => {
-                if observed.boundary_ready == 0 {
-                    return Err(INVALID);
-                }
                 let format = HttpRangeFormat {
                     boundary: &self.boundary,
                     mime: observed.mime,
@@ -262,9 +252,6 @@ impl HttpStaticContext {
                 Ok(result == 1)
             }
             Stage::End => {
-                if observed.boundary_ready == 0 {
-                    return Err(INVALID);
-                }
                 let result = self.format_end();
                 if result < 0 {
                     return Err(result);
@@ -320,10 +307,9 @@ mod tests {
         );
         owner
     }
-    fn observed(modified: u32) -> Observation<'static> {
+    fn observed(modified: bool) -> Observation<'static> {
         Observation {
             mime: b"text/plain",
-            boundary_ready: 1,
             modified,
         }
     }
@@ -344,18 +330,18 @@ mod tests {
     fn header_accounting_waits_for_native_errno_boundary_then_commits() {
         let mut owner = owner();
         let text = b"bytes=1-3,5-6";
-        assert_eq!(owner.range_begin(text.len(), 0), Ok(()));
+        assert_eq!(owner.range_begin(text.len(), false), Ok(()));
         assert_eq!(owner.range_step(text), Ok(Effect::Header));
-        assert_eq!(owner.range_resume(&observed(0)), Ok(false));
+        assert_eq!(owner.range_resume(&observed(false)), Ok(false));
         assert_eq!(owner.facts.content_length, 0);
         assert_eq!(owner.tasks.count(), 0);
         // The caller applies any errno effect before this next call can commit.
         assert_eq!(owner.range_step(text), Ok(Effect::Header));
         assert_eq!(owner.tasks.count(), 1);
         assert!(owner.facts.content_length > 3);
-        assert_eq!(owner.range_resume(&observed(0)), Ok(false));
+        assert_eq!(owner.range_resume(&observed(false)), Ok(false));
         assert_eq!(owner.range_step(text), Ok(Effect::Boundary));
-        assert_eq!(owner.range_resume(&observed(0)), Ok(false));
+        assert_eq!(owner.range_resume(&observed(false)), Ok(false));
         assert_eq!(owner.range_step(text), Ok(Effect::Done));
         assert_eq!(owner.facts.status, 206);
         let tasks: [HttpStaticTask; 2] = owner.tasks().try_into().unwrap();
@@ -387,8 +373,8 @@ mod tests {
     fn wrong_stage_and_changed_span_metadata_do_not_consume_effects() {
         let mut owner = owner();
         let text = b"bytes=0-0";
-        assert_eq!(owner.range_resume(&observed(0)), Err(INVALID));
-        assert_eq!(owner.range_begin(text.len(), 0), Ok(()));
+        assert_eq!(owner.range_resume(&observed(false)), Err(INVALID));
+        assert_eq!(owner.range_begin(text.len(), false), Ok(()));
         assert_eq!(owner.range_step(&text[..text.len() - 1]), Err(INVALID));
         assert_eq!(owner.tasks.count(), 0);
         assert_eq!(owner.range_step(text), Ok(Effect::Header));
