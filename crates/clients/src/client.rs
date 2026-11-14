@@ -142,8 +142,9 @@ const CLIENT_BUFFER_SIZE: usize = SW_CLIENT_BUFFER_SIZE as usize;
 const SOCKET_RETRY_COUNT: usize = SW_SOCKET_RETRY_COUNT as usize;
 /// crates/tls's `SW_SSL_STATE_READY`, `SW_SSL_STATE_WAIT_STREAM`, `SW_SSL_CLIENT`
 /// and `SW_SSL_DTLS`.
-pub const SSL_STATE_READY: u32 = SslState::SW_SSL_STATE_READY as u32;
-pub const SSL_STATE_WAIT_STREAM: u32 = SslState::SW_SSL_STATE_WAIT_STREAM as u32;
+pub use SslState::{
+    SW_SSL_STATE_READY as SSL_STATE_READY, SW_SSL_STATE_WAIT_STREAM as SSL_STATE_WAIT_STREAM,
+};
 pub const SSL_CLIENT: c_int = SslCreateFlag::SW_SSL_CLIENT as c_int;
 pub const SSL_DTLS: u32 = SslVersion::SW_SSL_DTLS as u32;
 /// The proxy states of `native/protocols/swoole_proxy.h`, which a test reads.
@@ -465,7 +466,7 @@ impl Handle {
         self.socket().read(|socket| socket.socket_type)
     }
 
-    fn tls_state(self) -> u32 {
+    fn tls_state(self) -> SslState {
         self.socket().read(|socket| socket.tls.state)
     }
 

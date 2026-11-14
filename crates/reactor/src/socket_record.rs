@@ -21,7 +21,7 @@ use swoole_rs_corebase::sys;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SocketTlsState {
-    pub state: u32,
+    pub state: swoole_rs_corebase::constants::SslState,
     pub want_read: bool,
     pub want_write: bool,
 }
